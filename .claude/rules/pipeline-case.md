@@ -439,6 +439,22 @@ the schema and the stage logic.
   declaration resolves
   against the RUN's base directory, never the interpreter's cwd. Gated by
   `tests/test_multiblock_case_selfdescribing.py`.
+- **A case a TEMPLATE drove stages its DOCUMENT, generated rather than copied**
+  (`services/case_sources.py::mesh_config_generated`, #135, closing a blind spot #134 named and
+  deferred). A hand-written topology document is COPIED IN as a source by `mesh_input_paths`; a
+  template's has no file to copy, and `cfg.mesh_topology_file` is EMPTY for it because that path
+  exists only once `save_config_to_file` has projected one — so a staged config carried no
+  `MESH_TOPOLOGY_FILE` line at all, and a case that cannot say what topology it was cut from is
+  exactly what `grid/cad/` exists to prevent. **One function, both hosts**:
+  `solver_ctrl._case_generated_files` and `pipeline_case_sources.case_sources_for` call it and
+  neither spells `Background_para_` any more, so the parameter file and the document it names
+  cannot be produced by one host and not the other. The pair is named by
+  `topology_model.projection_path` (one naming rule, not two) and quoted by **BARE FILENAME**,
+  because `stage_case_sources` writes a generated entry with `os.path.join(dest_dir, name)` and an
+  absolute name lands OUTSIDE the case folder — measured by an injection that was INERT until the
+  check stopped comparing the line against the name it came from. `config_to_text` stays PURE: it
+  is given the name as an override, and no caller fires a projection. Gate:
+  `tests/test_topology_persistence.py` checks 9-10b.
 - **The mesh stage's precondition is per MODE, stated once in
   `services/mesh_modes.py::missing_mesh_input()`** (#56). `geom_files` empty is fatal on the hybrid
   path and NORMAL on the multi-block one, where a topology may declare every corner itself. Both
@@ -549,10 +565,15 @@ list. #70 moved all four; #56 added the last three.
   stages no topology — the same staleness the list already has for the session's geometry and the
   output name, so it is a property of the whole list rather than of the topology. Nothing tracks
   which mode produced the grid on disk.
-- **The staged `Background_para_<case>.dat` names the topology at its ORIGINAL path, not the
-  staged copy** — exactly as it already does for `GEOM_FILE`. The case is self-DESCRIBING (you can
-  see which topology it used), not self-CONTAINED (you cannot re-mesh it from the folder alone),
-  and re-pointing one of the two and not the other would be worse than re-pointing neither.
+- **The staged `Background_para_<case>.dat` names a HAND-WRITTEN topology at its ORIGINAL path,
+  not the staged copy** — exactly as it already does for `GEOM_FILE`. The case is self-DESCRIBING
+  (you can see which topology it used), not self-CONTAINED (you cannot re-mesh it from the folder
+  alone), and re-pointing one of the two and not the other would be worse than re-pointing
+  neither. **A TEMPLATE's document is the stated exception** (#135) and does not weaken that
+  argument: it has no original path to name — the run projected it into a temp directory the GUI
+  deletes on exit — so the choice there is the staged sibling's filename or nothing at all, which
+  is what the staged config used to say. The asymmetry is therefore between a document that exists
+  elsewhere and one that does not, not between two files that both do.
 - **The export ships a staged topology because `_SOURCE_KEEP` already allows `.json`**, which is
   the topology browse filter's own default and every shipped topology's extension. One named
   `topo.mbt` is NAMED as a skip rather than shipped — the allow-list working, since widening it to

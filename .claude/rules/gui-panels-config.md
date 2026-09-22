@@ -426,6 +426,29 @@ holds `GEOM_FILE` tokens a `.dat` read could not resolve at all.
   table whose rows author something other than the panel's own config. Without it every topology
   row would be seeded from whatever Qt leaves in an un-set widget, which the panel->model sync then
   makes the session's default.
+- **The `topology` section is OPTIONAL, and ABSENT MEANS THE DEFAULT MODEL — in BOTH directions**
+  (#135). `to_dict` omits it unless `TopologyModel.is_configured()`, following the `stl3d`
+  precedent in `pipeline_config`; `load_from_dict` REBINDS a fresh model when the key is absent,
+  null or not an object. The second half is not tidiness: the project-undo snapshot IS `to_dict()`,
+  so the snapshot taken before the first template edit now carries no section at all, and an absent
+  section that did nothing would make that edit the one thing Ctrl+Z cannot walk back — measured,
+  with `test_undo_redo.py` and `test_topology_panel.py` both staying GREEN on the injection.
+  `is_configured()` compares against a freshly built model and so asks about EVERY parameter, never
+  about `family` alone: a number typed before the combo is touched is still something configured.
+  Gate: `tests/test_topology_persistence.py` checks 1-3b.
+- **What a template case STAGES is ruled on in `.claude/rules/pipeline-case.md`**, whose globs own
+  `services/case_*`: the document is generated into `grid/cad/` beside the parameter file that
+  names it (`case_sources.mesh_config_generated`, #135, closing #134's blind spot below). Named
+  here only so a reader of the projection is not left believing `save_config_to_file` is the only
+  place a document is written.
+- **A round-trip claim is measured on a FILE and by DRIVING both hosts, never on a dict and never
+  from a source scan.** The gate saves a real project file, reopens it through a real
+  `AppController`, reads the same file through the pipeline bridge, and compares the two documents
+  byte for byte — then runs both configs through the real mesher and compares the meshes node for
+  node. Two reasons, both measured: a dict round-trip cannot see a parameter the writer never
+  emitted, and a two-host comparison agrees with itself about a parameter BOTH hosts lost (injection
+  H reddened 5, 5b, 7, 8b and 13 while 8 stayed green). The live-model-against-round-tripped
+  asymmetry in check 13 is deliberate for exactly that.
 
 Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE LIBRARY".
 
@@ -445,15 +468,20 @@ against one list; #71 moved the first two here.
   is not reported as an undeclared parameter, it simply vanishes from the reads. It is still
   caught, but only from the other direction — the row whose field is no longer read goes red.
   Measured by injection C in that file, which corrected the prediction written beside it.
-- **`config_to_text`'s TWO OTHER CALLERS see no topology for a template case.** The solver case
-  staging its own runnable mesh parameters into `grid/cad/` (`controllers/solver_ctrl.py`) and the
-  source listing (`services/pipeline_case_sources.py`) call it directly, so they take
-  `cfg.mesh_topology_file` — which is empty when a family is named, because the path only exists
-  once `save_config_to_file` has projected one. A staged config for a template case therefore
-  carries no `MESH_TOPOLOGY_FILE` line at all. Named rather than half-fixed: making it right means
-  staging the DOCUMENT beside the config, which is the portable-reproduction work #135 owns, and a
-  projection fired from a pure text builder would write a document for a caller that is not about
-  to run anything.
+- **CLOSED by #135, kept as the shape:** `config_to_text`'s two other callers saw no topology for a
+  template case, because both read `cfg.mesh_topology_file` — empty when a family is named, since
+  that path exists only once `save_config_to_file` has projected one — so a staged config carried no
+  `MESH_TOPOLOGY_FILE` line at all. Both now go through `case_sources.mesh_config_generated`, which
+  GENERATES the document beside the parameter file; `config_to_text` stayed pure and neither caller
+  fires a projection. What is left is one asymmetry, deliberate and stated at that function: the
+  STAGED line quotes a bare filename while the line the run itself wrote is absolute, so the staged
+  config is runnable in place only from the staged folder. It is a record, not a rerun, and an
+  absolute path in it would be a record of one machine.
+- **A template case that cannot build its document loses its PARAMETER FILE with it.** Both hosts
+  wrap `mesh_config_generated` in the same downgrade-to-a-warning they already had, and the two
+  files are produced together, so a family function that raises costs the case both. Deliberate —
+  a staged parameter file naming a document that is not there is a more confident wrong record than
+  no record — but it is a narrowing of what a template case used to get, and nothing gates it.
 - **Nothing gates that a family's document MESHES except for the DEFAULTS.** The spread of eight
   parameter sets is checked structurally; only `TopologyModel()`'s defaults are run through the
   real binary, because eight mesher runs in a gate is a cost nobody asked for. A parameter set that

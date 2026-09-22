@@ -2111,15 +2111,77 @@ FOURTEENTH fired UNPLANNED: the first draft of the schema check selected each ke
 `where` argument of its `rejectUnknownKeys` call, which is a runtime-built variable at four of the
 five call sites, so it reported `None` and the check beside it passed VACUOUSLY.
 
-**Named blind spot: the two other `config_to_text` callers.** The solver case staging its runnable
-mesh parameters into `grid/cad/` and the pipeline source listing call `config_to_text` directly, so
-they read `cfg.mesh_topology_file` — empty for a template case, because that path only exists once
-`save_config_to_file` has projected one. A staged config for a template case carries no
-`MESH_TOPOLOGY_FILE` line. Named rather than half-fixed: doing it right means staging the DOCUMENT
-beside the config, which is the portable-reproduction work #135 owns, and firing a projection from
-a pure text builder would write a document for a caller that is not about to run anything. The
-alternative considered and rejected was having `config_to_text` fall back to projecting into a temp
-directory, which trades a missing line for a file nobody deletes.
+**Named blind spot, CLOSED by #135 and kept as the record.** The solver case staging its runnable
+mesh parameters into `grid/cad/` and the pipeline source listing called `config_to_text` directly,
+so they read `cfg.mesh_topology_file` — empty for a template case, because that path only exists
+once `save_config_to_file` has projected one. A staged config for a template case carried no
+`MESH_TOPOLOGY_FILE` line. It was named rather than half-fixed because doing it right means staging
+the DOCUMENT, which is the portable-reproduction work #135 owns; the alternative considered and
+rejected was having `config_to_text` fall back to projecting into a temp directory, which trades a
+missing line for a file nobody deletes. What #135 actually did is neither: a third caller,
+`case_sources.mesh_config_generated`, produces the parameter file and the document TOGETHER as the
+two `(name, text)` pairs the staging service already writes, so `config_to_text` stayed pure and
+still fires no projection. The rationale is in `docs/design_notes/pipeline.md`, beside the rest of
+what a case carries.
+
+#### THE TOPOLOGY MODEL SURVIVES THE SESSION (#135, parent #133)
+
+**Most of this ticket was already true, and saying so is the honest report.** #134 carried
+`MeshConfig.topology` through `to_dict`/`load_from_dict` by name and hooked the projection into the
+one call both hosts make, so save -> reload -> project already reproduced a byte-identical document
+and the two hosts already agreed. The four acceptance criteria about round-tripping passed on the
+first run of the gate written for them. What was NOT true is everything that only appears once the
+section is allowed to be ABSENT, which is the criterion the ticket leads with.
+
+**Optional, and its inverse, are ONE decision.** `to_dict` now omits `topology` unless
+`TopologyModel.is_configured()`, following the `stl3d` precedent in `pipeline_config`. That single
+line silently breaks undo unless the other direction moves with it: the project-undo snapshot IS
+`to_dict()`, so the snapshot taken *before* the first template edit carries no section at all, and
+a `load_from_dict` that treats an absent section as a no-op would restore that snapshot and leave
+the edit in place. Every other field on this model is restored by being PRESENT; this one has to be
+restored by being ABSENT. The rule is therefore stated as one sentence — *absent means the default
+model* — and `load_from_dict` rebinds a fresh `TopologyModel` before reading the key. **Measured,
+not reasoned**: under the injection that reverts `load_from_dict` to its #134 form,
+`test_undo_redo.py` and `test_topology_panel.py` both stay GREEN. Nothing else in the tree stands
+between the user and a first template edit that Ctrl+Z cannot walk back.
+
+**`is_configured()` asks about every parameter, never about `family`.** A user who types a domain
+range and a block count and only then opens the family combo has configured something, and a writer
+that asked `bool(self.family)` would drop every number they typed. It compares against a freshly
+built model rather than against a remembered snapshot of the defaults, so a new parameter is covered
+with no edit. Injection E is that mistake, and it reddens the check written for it.
+
+**A round-trip claim is measured on a FILE, and both hosts are DRIVEN.** The gate saves a real
+project file, reopens it through a real `AppController`, reads the same file through the pipeline
+bridge, and compares the two documents byte for byte — then runs both configs through the real
+mesher and compares the meshes node for node. Two reasons, both measured rather than argued. A dict
+round-trip cannot see a parameter the writer never emitted. And a two-host comparison agrees with
+itself about a parameter BOTH hosts lost: injection H, which drops one field from
+`TopologyModel.load_from_dict`, reddens checks 5, 5b, 7, 8b and 13 while check 8 — the two hosts
+against each other — stays green throughout. That is why check 5 compares BEFORE against AFTER and
+why check 13 is deliberately asymmetric, the live model's mesh against the round-tripped one.
+
+**The legacy case is a SHIPPED file, and its being legacy is checked first.**
+`config/pipeline/multiblock_cgrid_demo.json` is the strong version of "a project file written
+before this feature": `MESH_MODE 1` with a hand-written topology path and no template anywhere. The
+gate asserts it really has no `topology` section before using it as evidence, because a legacy check
+against a file that quietly grew one proves nothing.
+
+**Two injections changed the gate rather than the code, and both are kept.** One removed the
+document from the staged pair and CRASHED the file at an unguarded index instead of printing four
+red lines — the failure mode this repo has already recorded, where a reader scoring by FAIL count
+reads a total removal as no bite at all. The other named the staged document by its ABSOLUTE
+projection path and was INERT: the check compared the parameter file's line against the staged NAME,
+and both came from the same variable, so it agreed with itself about a name that is not a filename.
+It asserts the name has no directory part now, which is a real defect — `stage_case_sources` writes
+a generated entry with `os.path.join(dest_dir, name)`, and an absolute name lands outside the case
+folder entirely.
+
+**Named blind spot: a template case that cannot build its document loses its PARAMETER FILE with
+it.** Both hosts wrap the collector in the downgrade-to-a-warning they already had, and the two
+files are produced together, so a family function that raises costs the case both. Deliberate — a
+staged parameter file naming a document that is not there is a more confident wrong record than no
+record — but it is a narrowing of what a template case used to get, and nothing gates it.
 
 **Named blind spot, stated here as well as in the rule file:** only `TopologyModel()`'s DEFAULTS are
 run through the real binary. The other seven parameter sets in the spread are checked structurally,

@@ -37,8 +37,48 @@ parameters and the family functions agree in both directions
 (``test_topology_param_specs.py``), and that the panel displays and carries an edit
 (``test_topology_panel.py``).
 
-INJECTIONS: run by hand, 2026-09-22, each reverted and the file compared against
-its pre-injection copy afterwards.
+INJECTIONS: run by hand, 2026-09-22, each reverted with `git checkout` against a
+committed tree (the restore this repo has been bitten by doing on a mixed
+tracked/untracked set). Nine, all of which bit in the end — and THREE of them
+changed this file, which is recorded rather than tidied away:
+
+  A. `MeshConfig.to_dict` emits the section unconditionally again -> check 1, and
+     only check 1.
+  B. `load_from_dict` back to the no-op-on-absent form -> checks 3 and 3b. Run
+     under the same injection, `test_undo_redo.py` and `test_topology_panel.py`
+     BOTH stay green: check 3 is the only thing standing between the user and a
+     first template edit that Ctrl+Z cannot walk back, which is why it is stated
+     as the inverse of check 1 rather than as a defensive nicety.
+  C. `mesh_config_generated` drops its template branch -> checks 9, 9b, 9c, 10b.
+     The FIRST run of this injection CRASHED the file at `_names[1]` instead of
+     printing four red lines, which a reader scoring by FAIL count reads as no
+     bite at all. Section E is indexed defensively now, and the four reds above
+     are from the re-run.
+  D. the staged document named by its ABSOLUTE `projection_path` -> INERT on the
+     first run. Check 9b compared the parameter file's line against the staged
+     NAME, and both came from the same variable, so it agreed with itself about a
+     name that is not a filename. It now asserts the name has no directory part at
+     all, because `stage_case_sources` writes a generated entry with
+     `os.path.join(dest_dir, name)` and an absolute name lands OUTSIDE the case
+     folder — a real defect the check could not see. Red on the re-run.
+  E. `is_configured` asks `bool(self.family)` -> check 2. The number a user typed
+     before touching the family combo is dropped by the omission.
+  F. the pair ships but `config_to_text` is not given the path -> check 9b: the
+     document is staged and nothing names it.
+  G. the headless host keeps its own `Background_para_` copy of the rule ->
+     checks 10 and 10b.
+  H. `TopologyModel.load_from_dict` silently drops one parameter -> checks 5, 5b,
+     7, 8b and 13 — and check 8 stays GREEN, because both hosts reload the same
+     lossy way and agree about what they both lost. That is exactly why 5 compares
+     BEFORE against AFTER and 13 compares the LIVE model's mesh against the
+     round-tripped one; a two-host comparison alone cannot see a lossy restore.
+  I. the funnel projects for a model naming no family -> check 6c. The first run
+     CRASHED with `build_document`'s own ValueError out of the legacy config's
+     save; 6c catches and reports it now, so the legacy file's whole promise is
+     one red line rather than a stack trace.
+
+  Negative control: the unmutated tree passes all 24 checks, so the reds above are
+  the mutations and not the checker.
 """
 from __future__ import annotations
 
@@ -184,16 +224,23 @@ check("6b. it loads with no topology model, so nothing about it changed: the "
 
 with tempfile.TemporaryDirectory() as _tmp:
     _conf = os.path.join(_tmp, "legacy.dat")
-    save_config_to_file(_legacy, _conf)
+    # Caught rather than allowed to propagate: a funnel that projected for a model
+    # naming no family RAISES out of `build_document`, and an uncaught stack trace
+    # here is scored as no bite at all by a reader counting red lines.
+    try:
+        save_config_to_file(_legacy, _conf)
+        _raised = ""
+    except Exception as exc:                                   # noqa: BLE001
+        _raised = f"{type(exc).__name__}: {exc}"
     _sidecars = [n for n in os.listdir(_tmp) if n != "legacy.dat"]
-    with open(_conf, encoding="utf-8") as f:
-        _text = f.read()
+    _text = open(_conf, encoding="utf-8").read() if os.path.exists(_conf) else ""
     _line = next((ln for ln in _text.splitlines()
                   if ln.startswith("MESH_TOPOLOGY_FILE")), "")
-    check("6c. ...and writing its config projects NOTHING beside it and leaves the "
-          f"MESH_TOPOLOGY_FILE line exactly as the project file declares it "
-          f"(wrote {_sidecars}; line: {_line!r})",
-          not _sidecars
+    check("6c. ...and writing its config raises nothing, projects NOTHING beside "
+          f"it and leaves the MESH_TOPOLOGY_FILE line exactly as the project file "
+          f"declares it (raised {_raised or 'nothing'}; wrote {_sidecars}; "
+          f"line: {_line!r})",
+          not _raised and not _sidecars
           and _line == f"MESH_TOPOLOGY_FILE {_legacy.mesh_topology_file}")
 
 # ══ D. the two hosts, from ONE project file ═══════════════════════════════
@@ -263,17 +310,26 @@ check("9. a case a template drove stages BOTH the mesher parameters and the "
       len(_gen) == 2 and _names[0].endswith(".dat")
       and _names[1].endswith("_topology.json"))
 
-_para = dict(_gen)[_names[0]]
+# Indexed defensively, and every check below stated so that it can go RED rather
+# than raise: an injection that removes the document entirely made this section
+# CRASH at the first `_names[1]`, which a reader counting FAIL lines scores as a
+# weaker bite than the one that only mis-NAMES it.
+_doc_name = _names[1] if len(_names) > 1 else ""
+_para = dict(_gen).get(_names[0] if _names else "", "")
 _topo_line = next((ln for ln in _para.splitlines()
                    if ln.startswith("MESH_TOPOLOGY_FILE")), "")
-check("9b. ...and the parameter file names its sibling by BARE FILENAME, so the "
-      f"pair resolves wherever the case folder is copied to "
-      f"(line: {_topo_line!r})",
-      _topo_line == f"MESH_TOPOLOGY_FILE {_names[1]}")
+check("9b. ...and the parameter file names its sibling by BARE FILENAME — no "
+      "directory part at all, because `stage_case_sources` writes a generated "
+      "entry with `os.path.join(dest_dir, name)` and an absolute name lands "
+      f"OUTSIDE the case folder, where nothing then points at it "
+      f"(name: {_doc_name!r}, line: {_topo_line!r})",
+      bool(_doc_name) and _doc_name == os.path.basename(_doc_name)
+      and not os.path.isabs(_doc_name)
+      and _topo_line == f"MESH_TOPOLOGY_FILE {_doc_name}")
 
 check("9c. ...and the staged document is the same text the run itself projected, "
       "from the one builder rather than from a second copy",
-      dict(_gen)[_names[1]] == topology_model.document_text(
+      dict(_gen).get(_doc_name) == topology_model.document_text(
           topology_model.build_document(_case.topology)))
 
 _plain = MeshConfig()
@@ -387,8 +443,12 @@ else:
                   and int(mm.group(2)) > 0 and os.path.exists(vtk))
 
         a, b = _points(runs["gui"][2]), _points(runs["headless"][2])
-        check("13. ...and the two meshes are the SAME mesh, node for node, snapped "
-              f"to 1e-10 and canonically ordered ({len(a)} vs {len(b)} nodes)",
+        check("13. ...and they are the SAME mesh, node for node, snapped to 1e-10 "
+              "and canonically ordered. ASYMMETRIC on purpose: the gui side is the "
+              "LIVE model and the headless side has been through the file, so this "
+              "measures the round-trip in the mesh itself, where check 8 — reload "
+              "against reload — would agree with itself about a parameter both "
+              f"sides lost ({len(a)} vs {len(b)} nodes)",
               a == b and len(a) > 0)
 
 print()
