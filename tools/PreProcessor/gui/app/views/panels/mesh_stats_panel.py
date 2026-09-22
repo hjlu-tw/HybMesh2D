@@ -26,8 +26,8 @@ SHAPE_METRIC_TIP = (
 #: a mesh with no boundary layer.
 SHAPE_SPLIT_TIP = (
     "The same metric, measured separately over the cells clustered against a "
-    "surface (`layer`) and over everything else (`bulk`), as the mesher published "
-    "them. `layer` is the boundary layer on the hybrid path and the wall band in "
+    "surface (layer) and over everything else (bulk), as the mesher published "
+    "them. Layer is the boundary layer on the hybrid path and the wall band in "
     "MESH_MODE 1; the split comes from what the generator knows about the cells it "
     "emitted, never from a distance guess. No threshold and no colour: a large "
     "layer figure is what a clustered boundary layer IS."
@@ -145,14 +145,17 @@ class MeshStatsPanel(CollapsibleSection):
         # The text is `mesh_shape_stats.format_figures` verbatim — the SAME
         # rendering the headless hosts put on their line, so the panel and the
         # log cannot write one half two ways.
-        self.shape_layer_label = QLabel("—")
-        self.shape_layer_label.setStyleSheet("color: #dde6ff;")
-        self.shape_layer_label.setWordWrap(True)
-        self.shape_layer_label.setToolTip(SHAPE_SPLIT_TIP)
-        self.shape_bulk_label = QLabel("—")
-        self.shape_bulk_label.setStyleSheet("color: #dde6ff;")
-        self.shape_bulk_label.setWordWrap(True)
-        self.shape_bulk_label.setToolTip(SHAPE_SPLIT_TIP)
+        # Built in a loop rather than twice: the two rows differ in nothing but
+        # which half they hold, and the four setters written out twice is where a
+        # style or a tooltip lands on one row only. `setWordWrap` is the one
+        # divergence from the three rows above and is deliberate — those hold a
+        # single number, these hold a whole set of figures and a cell count.
+        self.shape_layer_label, self.shape_bulk_label = (
+            QLabel("—"), QLabel("—"))
+        for lbl in (self.shape_layer_label, self.shape_bulk_label):
+            lbl.setStyleSheet("color: #dde6ff;")
+            lbl.setWordWrap(True)
+            lbl.setToolTip(SHAPE_SPLIT_TIP)
 
         # Quality metrics (Skewness)
         self.sk_min_label = QLabel("—")
@@ -352,12 +355,19 @@ class MeshStatsPanel(CollapsibleSection):
         # that never published one would explain a row that is not there.
         layer_meaning = (mesh_shape_stats.LAYER_MEANING.get(summary.metric, "")
                          if summary.split else "")
+        def _tip(*parts):
+            """The tooltip parts that exist, blank-line separated. One spelling.
+
+            Two rows' worth of tooltips are composed here and the join was
+            written twice; a part that is empty is dropped rather than leaving a
+            tooltip that opens or closes on blank lines.
+            """
+            return "\n\n".join(x for x in parts if x)
+
         self.shape_metric_label.setToolTip(
-            "\n\n".join(x for x in (meaning, SHAPE_METRIC_TIP,
-                                     f"From {summary.source}") if x))
+            _tip(meaning, SHAPE_METRIC_TIP, f"From {summary.source}"))
         for lbl in (self.shape_layer_label, self.shape_bulk_label):
-            lbl.setToolTip("\n\n".join(x for x in (layer_meaning,
-                                                    SHAPE_SPLIT_TIP) if x))
+            lbl.setToolTip(_tip(layer_meaning, SHAPE_SPLIT_TIP))
         # `format_figures` and not a second set of f-strings here: the panel
         # renders a HALF exactly as the headless hosts render it, so the two
         # surfaces cannot drift on precision, on the cell-count parenthesis or on

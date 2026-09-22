@@ -1869,14 +1869,21 @@ bytecode cache, so the file on disk was correct while the gate went on failing u
   return shape two hosts read, and #132 does not ask for it. Recorded rather than left for
   rediscovery.
 
+- **`run_batch.py`'s end-of-batch summary does not carry the figures**, only the per-case `[Mesh]`
+  lines interleaved in the log — which is precisely the "forty interleaved logs" problem the
+  summary exists to solve, solved for status and not for quality. Left out as scope: the summary
+  dict is a published shape that three callers read, and #132 asks for the GUI queue.
+
 **THE SPLIT ARRIVED WITHOUT EITHER HEADLESS HOST CHANGING, WHICH IS WHAT #128's SEAM BOUGHT (#145,
 parent #128).** #143 and #144 made the two generation paths publish `layer` and `bulk` beside the
 whole-mesh set; this is the reader half, and the measure of the seam #131/#132 left behind is how
 little it needed. `services/pipeline_runner.py` and `services/batch_runner.py` are UNTOUCHED by
 this ticket — one `shape_report` call each, as before — and the split reaches both of them inside
-the string they already print. `views/batch_dialog.py` is untouched for the same reason: it
-displays what the job carries. What changed is one module and one panel. The rule is
-`.claude/rules/gui-handoff.md`'s.
+the string they already print. `views/batch_dialog.py` gained five lines of TOOLTIP prose and nothing else:
+it displays what the job carries, and what changed is one module, one panel and one hover text.
+It is stated that precisely because the first draft of this paragraph said "untouched" while the
+same commit edited the file — a false claim inside the record that argues for the work, which is
+this repo's named recurring failure. The rule is `.claude/rules/gui-handoff.md`'s.
 
 **One rendering of a HALF, and this time it IS shared with the panel.** #132's blind spot recorded
 that the panel and the report are two renderings pinned rather than merged, because a four-row
@@ -1921,6 +1928,37 @@ assertion both exit 1. What separated them was that the count was implausible fo
 size. The check now uses `find` and asserts both positions are real, and the harness prints stderr
 on every run rather than only on an unexpected exit code.
 
+**Five review findings, and the two that were defects in the RECORD rather than in the code.**
+The Spec axis found a fixture mixing two meshes: the `SPLIT` sidecar carried the shipped
+naca0012's whole-mesh count (11396) with halves taken from a different run of a different case
+(3215 + 12018 = 15233), so the two halves overran the whole mesh by 34% while the comment called
+them "the shipped NACA case's own shape". Nothing caught it, and nothing could: the blind spot
+below says in as many words that the reader never checks the halves partition anything, and the
+fixture was the first thing to demonstrate it. **It had a SECOND home the review did not reach** —
+`test_headless_shape_report.py`'s `split_q`, the same numbers with the same mismatch — which is the
+pattern this repo keeps paying for: a figure found in one place is found in one of its homes. Both
+now carry counts that sum to their own whole, with the shipped case's MAGNITUDES kept, and the
+comment says which half of the fixture is real. The Standards axis found the #145 section inserted
+INSIDE #132's blind-spot list, orphaning #132's last bullet under #145's heading, and this
+paragraph's own neighbour claiming `views/batch_dialog.py` was untouched while the commit edited
+it. Both fixed above; neither was visible from the diff of the code.
+
+**Two gate additions the review bought, and one thing kept as written.** #145's first criterion has
+two halves — "no host parses the sidecar itself and no host computes a figure of its own" — and
+only the second was gated; `test_headless_shape_report.py` check 10 now holds the first over the
+whole GUI package. Its scope was chosen by MEASUREMENT, not by banning what looks alike: a bare
+`["quality"]` subscript is also how `services/geometry_stats.py` keys its own unrelated dict,
+twice, so the check bans the `["mesh"]["quality"]` CHAIN and any read of `layer` or `bulk` by
+name, and proves itself non-vacuous against the shape it bans. Check 7 gained a pin on the state
+where the two surfaces genuinely differ: both producers set the split flag unconditionally, so an
+unmeasured run publishes two EMPTY halves, and there the line drops the clause while the panel
+keeps two `not measured` rows. Neither invents a zero, so the difference is layout and not
+disagreement — pinned rather than resolved, so that changing either becomes deliberate. **Kept as
+written**: `LAYER_MEANING`, which the Spec axis correctly named as the only net-new concept in the
+diff and one no criterion asks for. A row labelled `Layer` on a tool whose two banners call that
+band two different words is a row a user cannot connect to the output they just read; the gloss is
+a tooltip, is shown only when the sidecar HAS a split, and the sidecar's own key stays neutral.
+
 **Named blind spots.**
 - **The split is trusted exactly as far as the sidecar is**, so it inherits #131's staleness hole
   whole: nothing checks that the file beside the mesh describes the mesh. A stale sidecar now
@@ -1932,8 +1970,8 @@ on every run rather than only on an unexpected exit code.
   cheerfully as a correct one. Asserting the sum belongs to the PRODUCERS' gates (#143, #144),
   where what the counts mean is known; asserting it here would encode a relationship this module
   cannot know is true.
-- **A half that is present and MALFORMED loses the whole summary, not just the split.** `_figures`
-  tolerates absence and nothing else, so a corrupt `layer.median` raises into
+- **A half that is present and MALFORMED loses the whole summary, not just the split.**
+  `_half_from_json` tolerates absence and nothing else, so a corrupt `layer.median` raises into
   `read_shape_summary`'s handler and the mesh reads as having no sidecar at all. Deliberate — a
   corrupt sidecar is one state — and no producer writes it, but it is the one input on which the
   old-sidecar guarantee does NOT hold.
@@ -1942,11 +1980,6 @@ on every run rather than only on an unexpected exit code.
   reader actually makes is layer-against-bulk across all three at once, and six more rows push the
   whole-mesh set off the top of the section. Nothing here would notice the choice being reversed
   except the exact-text checks, which would simply be rewritten with it.
-- **`run_batch.py`'s end-of-batch summary does not carry the figures**, only the per-case `[Mesh]`
-  lines interleaved in the log — which is precisely the "forty interleaved logs" problem the
-  summary exists to solve, solved for status and not for quality. Left out as scope: the summary
-  dict is a published shape that three callers read, and #132 asks for the GUI queue.
-
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
 - `detectFeaturePoints()` → `splitPolyline()` → `alignEndpoints()` → `distributePointsProportionally()`

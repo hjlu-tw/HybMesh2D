@@ -69,19 +69,21 @@ METRIC_MEANING = {
 
 
 # metric key -> what the LAYER half is called in that path's own vocabulary, for
-# a tooltip. The sidecar's key is `layer` for both paths on purpose — it names the
+# a tooltip, spelled BARE rather than in backticks: a Qt tooltip is plain text
+# and renders them literally, and METRIC_MEANING beside this one already spells
+# its names bare. The sidecar's key is `layer` for both paths on purpose — it names the
 # band of cells a mesher clusters against a surface without claiming anything
 # about the BC on that surface — while each path's BANNER uses its own word
 # (`boundary layer`, `wall band`). A reader who saw one of those banners needs to
 # recognise the row, so the gloss carries the word and the key stays neutral.
 LAYER_MEANING = {
     "quad_midline_ratio": (
-        "`layer` is the WALL BAND: the rows of structured cells clustered against "
-        "a wall side, identified from the block's own indexing. `bulk` is every "
+        "layer is the WALL BAND: the rows of structured cells clustered against "
+        "a wall side, identified from the block's own indexing. bulk is every "
         "other structured cell, including every cell of a block with no wall side."),
     "tri_edge_ratio": (
-        "`layer` is the cells the BOUNDARY LAYER emitted, marked where they were "
-        "emitted rather than guessed at from distance to a wall. `bulk` is the "
+        "layer is the cells the BOUNDARY LAYER emitted, marked where they were "
+        "emitted rather than guessed at from distance to a wall. bulk is the "
         "far-field cells Gmsh filled."),
 }
 
@@ -184,7 +186,7 @@ def sidecar_for(mesh_path: str) -> str:
     return ""
 
 
-def _figures(obj) -> ShapeFigures | None:
+def _half_from_json(raw) -> ShapeFigures | None:
     """One half of the split, or ``None`` when the sidecar carries none.
 
     ABSENCE is tolerated and nothing else is: a sidecar written before #143/#144
@@ -193,10 +195,10 @@ def _figures(obj) -> ShapeFigures | None:
     `read_shape_summary`'s own handler, exactly as a malformed `median` on the
     whole-mesh set already does — a corrupt sidecar is one state, not two.
     """
-    if obj is None:
+    if raw is None:
         return None
-    return ShapeFigures(cells=int(obj["cells"]), median=float(obj["median"]),
-                        p95=float(obj["p95"]), maximum=float(obj["max"]))
+    return ShapeFigures(cells=int(raw["cells"]), median=float(raw["median"]),
+                        p95=float(raw["p95"]), maximum=float(raw["max"]))
 
 
 def read_shape_summary(mesh_path: str) -> ShapeSummary | None:
@@ -228,8 +230,8 @@ def read_shape_summary(mesh_path: str) -> ShapeSummary | None:
         # The two halves are read with `.get`, the whole-mesh four by subscript:
         # the split is OPTIONAL and its absence is an ordinary sidecar, while a
         # `quality` object missing `median` is a broken one.
-        layer = _figures(quality.get("layer"))
-        bulk = _figures(quality.get("bulk"))
+        layer = _half_from_json(quality.get("layer"))
+        bulk = _half_from_json(quality.get("bulk"))
         if layer is None or bulk is None:
             # Both or neither, matching the writer. Half a split is a sidecar
             # this tool did not write, and showing one band with nothing to

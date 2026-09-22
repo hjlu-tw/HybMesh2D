@@ -215,14 +215,19 @@ UNMEASURED = ('{ "metric": "tri_edge_ratio", "cells": 0, "median": -1.000000, '
               '"p95": -1.000000, "max": -1.000000 }')
 # ...and as a splitting path writes it (#145). The whole-mesh four are BYTE FOR
 # BYTE those of MEASURED above, so a check comparing the two sidecars is reading
-# the split and nothing else. The halves' figures are the shipped NACA case's own
-# shape — a layer p95 of 70.5 against a bulk 1.4 — so a check that confused them
-# could not pass by arithmetic accident.
+# the split and nothing else. The halves' FIGURES are the shipped NACA case's own
+# magnitudes — a layer p95 of 70.5 against a bulk 1.4 — so a check that confused
+# the two halves could not pass by arithmetic accident. Their COUNTS are this
+# fixture's own, chosen to sum to the 11396 above: the first draft took the
+# counts from a different run of a different case and they exceeded the whole
+# mesh by 34%, which nothing here would have caught — the reader does not check
+# that the halves partition anything, and the design note names that as a blind
+# spot. A fixture may not be the first demonstration of it.
 SPLIT = ('{ "metric": "tri_edge_ratio", "cells": 11396, "median": 1.584671, '
          '"p95": 9.901041, "max": 35.608279, '
-         '"layer": { "cells": 3215, "median": 35.281749, "p95": 70.541670, '
+         '"layer": { "cells": 2408, "median": 35.281749, "p95": 70.541670, '
          '"max": 78.703074 }, '
-         '"bulk": { "cells": 12018, "median": 1.112154, "p95": 1.411765, '
+         '"bulk": { "cells": 8988, "median": 1.112154, "p95": 1.411765, '
          '"max": 11.901852 } }')
 # A geometry meshed with NO boundary layer: the path split, and one half is
 # empty. An ordinary case, and the one that must never print 0.000.
@@ -411,9 +416,9 @@ mesh_split = case("split", SPLIT)
 sp = mesh_shape_stats.read_shape_summary(mesh_split)
 check(sp is not None and sp.split
       and (sp.layer.cells, sp.layer.median, sp.layer.p95, sp.layer.max)
-      == (3215, 35.281749, 70.541670, 78.703074)
+      == (2408, 35.281749, 70.541670, 78.703074)
       and (sp.bulk.cells, sp.bulk.median, sp.bulk.p95, sp.bulk.max)
-      == (12018, 1.112154, 1.411765, 11.901852),
+      == (8988, 1.112154, 1.411765, 11.901852),
       "12. both halves are read back, unrounded and not swapped")
 check(sp is not None
       and (sp.cells, sp.median, sp.p95, sp.max) == (11396, 1.584671, 9.901041,
@@ -446,9 +451,9 @@ check(_empty is not None and _empty.split
 # ── 13. the panel shows the split, in its three states ────────────────────
 panel.update_stats(VTKMesh.from_file(mesh_split), mesh_split)
 check(panel.shape_layer_label.text()
-      == "median 35.282, p95 70.542, max 78.703 (3215 cells)"
+      == "median 35.282, p95 70.542, max 78.703 (2408 cells)"
       and panel.shape_bulk_label.text()
-      == "median 1.112, p95 1.412, max 11.902 (12018 cells)",
+      == "median 1.112, p95 1.412, max 11.902 (8988 cells)",
       f"13. both halves are displayed, at the precision the other rows use "
       f"({panel.shape_layer_label.text()!r} / {panel.shape_bulk_label.text()!r})")
 check(panel.shape_median_label.text() == "1.585"

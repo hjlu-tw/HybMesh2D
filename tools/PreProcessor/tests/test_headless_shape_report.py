@@ -52,6 +52,17 @@ What this pins down:
      `format_figures` verbatim and the panel calls the same function for its two
      rows, so unlike the whole-mesh set (pinned by 7 because the layouts differ)
      there is no second place where a half's precision or wording is decided.
+ 10. NO HOST PARSES THE SIDECAR ITSELF, over the whole GUI package. The other
+     half of #145's one-reader criterion, which until a review found it was
+     asserted and not gated — `test_mesh_shape_panel.py` check 7 holds only "no
+     host COMPUTES a figure of its own". Scoped by MEASUREMENT to the shapes a
+     reach-through takes (a `["mesh"]["quality"]` chain, or `layer`/`bulk` read
+     by name), because a bare `["quality"]` is also how `services/geometry_stats.py`
+     keys its own unrelated dict. Shown non-vacuous against the banned shape.
+
+Check 7 also pins the two surfaces against each other on an UNMEASURED run that
+DID split — both producers set the flag unconditionally, so that state exists —
+where the line drops the clause and the panel keeps two `not measured` rows.
 
 Injections, RUN BY HAND on 2026-09-17 and dated here rather than claimed as
 automated (the harness lived in a scratchpad and is not in the tree). Each was
@@ -356,11 +367,17 @@ check("not measured" in _panel.shape_metric_label.text() and "not measured" in r
 # `pipeline_runner` and `batch_runner` still make one `shape_report` call each and
 # the split arrives in the string they already print. Section 5 below proves that
 # against the real binary; this proves what the string is.
+# The whole-mesh four are `measured`'s, so the prefix check below is reading the
+# split and nothing else. The halves' COUNTS sum to that 11396 — the first draft
+# took them from a different case and they overran the whole mesh by 34%, which
+# nothing here would have caught, the reader deliberately not checking that the
+# halves partition anything. Same fixture defect as `test_mesh_shape_panel.py`'s,
+# in its second home: a review found one of the two.
 split_q = {"metric": "tri_edge_ratio", "cells": 11396, "median": 1.584671,
            "p95": 9.901041, "max": 35.608279,
-           "layer": {"cells": 3215, "median": 35.281749, "p95": 70.541670,
+           "layer": {"cells": 2408, "median": 35.281749, "p95": 70.541670,
                      "max": 78.703074},
-           "bulk": {"cells": 12018, "median": 1.112154, "p95": 1.411765,
+           "bulk": {"cells": 8988, "median": 1.112154, "p95": 1.411765,
                     "max": 11.901852}}
 r_split = mesh_shape_stats.shape_report(_sidecar("split", split_q))
 check(r_split.startswith(r_measured),
@@ -368,8 +385,8 @@ check(r_split.startswith(r_measured),
       f"carried before #145 is still in it, in the same order and at the same "
       f"precision, so a log a user greps is not broken by the split arriving "
       f"({r_split!r})")
-check("layer median 35.282, p95 70.542, max 78.703 (3215 cells)" in r_split
-      and "bulk median 1.112, p95 1.412, max 11.902 (12018 cells)" in r_split,
+check("layer median 35.282, p95 70.542, max 78.703 (2408 cells)" in r_split
+      and "bulk median 1.112, p95 1.412, max 11.902 (8988 cells)" in r_split,
       f"8. ...and both halves follow it, named and at that same precision "
       f"({r_split!r})")
 # `find`, not `index`: a report that dropped the split entirely must FAIL this
@@ -427,6 +444,95 @@ check(_panel_fmt.count("format_figures") == 2,
       f"9. and the PANEL renders its two half rows through that same function, "
       f"once each — not a second set of f-strings that could round differently "
       f"({_panel_fmt})")
+
+# ── 10. NO HOST PARSES THE SIDECAR ITSELF ────────────────────────────────
+# The ticket's first criterion has two halves and only one of them was gated:
+# `test_mesh_shape_panel.py` check 7 holds "no host COMPUTES a figure of its
+# own", and nothing held "no host PARSES the sidecar itself" — a host that added
+# `json.load(...)["mesh"]["quality"]["layer"]` would have failed nothing. Scoped
+# to the SHAPES a sidecar reach-through actually takes, over the whole GUI
+# package, with `mesh_shape_stats` — the one module allowed to do it — derived
+# from where `read_shape_summary` lives rather than named.
+_READER_FILE = os.path.relpath(
+    mesh_shape_stats.__file__, _GUI).replace(os.sep, "/")
+
+
+def _sidecar_reachthrough(tree) -> list:
+    """Lines that read the sidecar's own keys out of a parsed document.
+
+    Two shapes, both chosen by MEASUREMENT rather than by ban-what-looks-alike:
+    a `["mesh"]["quality"]` CHAIN (a bare `["quality"]` is also how
+    `services/geometry_stats.py` keys its own unrelated dict, twice, and a check
+    that red-lights that gets worked around rather than obeyed), and any read of
+    `layer` or `bulk` by name, of which this tree has none outside the reader.
+    """
+    out = []
+    for n in ast.walk(tree):
+        key = None
+        if isinstance(n, ast.Subscript) and isinstance(n.slice, ast.Constant):
+            key = n.slice.value
+            if key == "quality":
+                inner = n.value
+                if not (isinstance(inner, ast.Subscript)
+                        and isinstance(inner.slice, ast.Constant)
+                        and inner.slice.value == "mesh"):
+                    key = None
+        elif (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+              and n.func.attr == "get" and len(n.args) >= 1
+              and isinstance(n.args[0], ast.Constant)):
+            key = n.args[0].value
+        if key in ("layer", "bulk") or key == "quality":
+            out.append(f"{key}@{n.lineno}")
+    return out
+
+
+_reachers = {}
+for _dp, _dirs, _files in os.walk(os.path.join(_GUI, "app")):
+    for _fn in _files:
+        if not _fn.endswith(".py"):
+            continue
+        _full = os.path.join(_dp, _fn)
+        _rel = os.path.relpath(_full, _GUI).replace(os.sep, "/")
+        if _rel == _READER_FILE:
+            continue
+        _found = _sidecar_reachthrough(
+            ast.parse(open(_full, encoding="utf-8").read(), _full))
+        if _found:
+            _reachers[_rel] = _found
+check(not _reachers,
+      f"10. no module but {_READER_FILE} reads the sidecar's `quality`, `layer` "
+      f"or `bulk` keys — the other half of 'one reader', which until #145 was "
+      f"asserted and not gated ({_reachers or 'none'})")
+check(_sidecar_reachthrough(ast.parse(
+          'd = json.load(f)\nx = d["mesh"]["quality"]["layer"]\n')),
+      "10. ...and the check is non-vacuous: the reach-through it bans is seen "
+      "when it is written")
+
+# ── 7 (continued). the two surfaces agree on an UNMEASURED run that split ────
+# Both producers set the split flag unconditionally, so a run that measured
+# nothing publishes two EMPTY halves. The report early-returns `<metric>: not
+# measured` and appends no clause; the panel shows `not measured` on both split
+# rows. Neither shows a number and neither claims a split that measured
+# something — but nothing pinned that they agreed, and an unmeasured run is
+# exactly where a surface is most likely to invent a zero.
+_un_split = mesh_shape_stats.ShapeSummary(
+    "tri_edge_ratio", 0, -1.0, -1.0, -1.0, "",
+    layer=mesh_shape_stats.ShapeFigures(0, -1.0, -1.0, -1.0),
+    bulk=mesh_shape_stats.ShapeFigures(0, -1.0, -1.0, -1.0))
+_un_line = mesh_shape_stats.format_shape_report(_un_split)
+_panel._apply_shape_summary(_un_split)
+_un_rows = [_panel.shape_layer_label.text(), _panel.shape_bulk_label.text()]
+check(_un_rows == ["not measured", "not measured"]
+      and "not measured" in _un_line,
+      f"7. an unmeasured run that DID split says `not measured` on both "
+      f"surfaces ({_un_rows} vs {_un_line!r})")
+check(all("0.000" not in x and "-1" not in x for x in _un_rows + [_un_line]),
+      f"7. ...and neither invents a 0.000 nor leaks the negative sentinel "
+      f"({_un_rows} vs {_un_line!r})")
+check("layer" not in _un_line,
+      f"7. the LINE drops the clause where the panel keeps the rows, which is a "
+      f"layout difference and not a disagreement — pinned so that a change to "
+      f"either becomes deliberate ({_un_line!r})")
 
 if not _BINS_READY:
     print(f"SKIP  5 and 6's real-binary leg need the compiled binaries "
