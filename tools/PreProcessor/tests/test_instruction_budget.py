@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 58,537 / 50,084 / 47,475 / 45,018 / 35,517 / 25,369 / 22,516 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, pipeline-case, gui-panels-config, mesher-smoothing, mesher, gui-seams, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 1,463 / 9,916 of
+    Ten rule files now — 58,537 / 54,451 / 50,084 / 45,018 / 35,517 / 25,369 / 22,516 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, gui-panels-config, pipeline-case, mesher-smoothing, mesher, gui-seams, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 1,463 / 5,549 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    eight, which have 12,525 / 14,982 / 24,483 / 34,631 / 37,484 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
+    eight, which have 9,916 / 14,982 / 24,483 / 34,631 / 37,484 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,13 +646,16 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 36,882 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 37,026 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 36,882 taken down to the boundary above is 36,500, to
+# are its size and its slack -- and 37,026 taken down to the boundary above is 37,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
-# #131, after that ticket's rule-file row and its two new globs took the slack to 303 --
-# under the floor, on 294 characters of prose about something else, which is `374ad04`'s
-# shape exactly. #109 wrote here that closing its own loop by hand was "the last time
+# #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
+# took the slack to 303, under the floor, on 294 characters of prose about something
+# else, which is `374ad04`'s shape exactly. #136 is that shape a THIRD time and by the
+# same two moves: a tripwire row rewritten and two globs added to a rule file, taking
+# the slack to 474. Three consecutive re-bands with one cause is no longer an anecdote,
+# which is what the corrected sentence next door is about. #109 wrote here that closing its own loop by hand was "the last time
 # this number will need one"; it was not, and the sentence is corrected rather than
 # deleted, because the useful half is WHY it was wrong: a band whose floor is 500 is
 # crossed by any ticket that adds a tripwire row, and #109 had no way to know how often
@@ -671,7 +674,7 @@ _SOURCES = {
 # shape. The figure then went stale at `77c2561` -- the FIRST commit after `9e33a6e` to
 # touch the root at all -- on an edit that stayed INSIDE the band with every check
 # reporting ALL PASS -- #109's defect one level down, inside #109's own fix.
-ROOT_BUDGET = 37_500
+ROOT_BUDGET = 38_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

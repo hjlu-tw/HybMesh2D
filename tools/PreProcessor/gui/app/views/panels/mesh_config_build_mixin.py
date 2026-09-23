@@ -82,8 +82,40 @@ class MeshConfigBuildMixin(SpecRowsMixin):
                 continue
             sig = edit_signal(w, spec)
             if sig is not None:
-                sig.connect(self._refresh_topology_counts)
+                sig.connect(self._on_topology_edited)
+        # The MODE is the other half of "is there a skeleton to draw"
+        # (`topology_skeleton.skeleton_for_config` asks both), and it is not a row
+        # of this table — so without this line the canvas would keep drawing a
+        # topology while this very section is hidden by `_apply_mode_visibility`.
+        # Wired here rather than in `_build_mode_section` because it is the
+        # TEMPLATE that cares; the mode row itself is unchanged.
+        self.mesh_mode.currentIndexChanged.connect(self._on_topology_edited)
         self._refresh_topology_counts()
+
+    def _on_topology_edited(self, *_args):
+        """A template parameter changed: refresh the read-out AND tell the canvas.
+
+        The emit is what makes the canvas skeleton follow the parameters as they
+        are typed (#136). It is needed because ``mesh_config_changed`` fires for
+        STRUCTURAL actions — the geometry list, a role, a BC — and not for a plain
+        spin box, which is the same gap ``undo_ctrl._wire_widget_edits`` exists to
+        cover for the undo recorder; the canvas has no such generic traversal, and
+        the overlay is the first thing on it that has to track a typed number.
+
+        Scoped to this table rather than fixed for every mesh field: widening it
+        would change what the canvas does on every other panel edit as well, which
+        is not this ticket's to change.
+
+        Suppressed while ``set_config`` populates — the `text` rows report
+        ``textChanged``, which Qt also emits for a programmatic write — because an
+        emit from inside a population re-enters the panel->model sync with the
+        widgets half-written. ``set_config`` ends with its own emit, so the canvas
+        still learns about a programmatic push; it simply learns once.
+        """
+        self._refresh_topology_counts()
+        if getattr(self, "_loading", False):
+            return
+        self.mesh_config_changed.emit(self.get_config())
 
     def _refresh_topology_counts(self, *_args):
         """Show what the family function derives from the parameters as typed.

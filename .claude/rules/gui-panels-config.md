@@ -10,12 +10,18 @@ paths:
   - tools/PreProcessor/gui/app/services/geom_path_identity.py
   - tools/PreProcessor/gui/app/services/units.py
   - tools/PreProcessor/gui/app/models/mesh_config*
+  - tools/PreProcessor/gui/app/views/mesh_canvas.py
+  - tools/PreProcessor/gui/app/views/mesh_canvas_skeleton_mixin.py
 ---
 
 # GUI panel-configuration rules
 
 Loaded on demand when a panel view, the physical-length spin box, a field-spec service, the unit
-service or a mesh-config model is read. Rules only — the rationale (the counted attributes, the
+service, a mesh-config model, or the mesh canvas / its topology-skeleton overlay is read. The last
+two globs are #136's and are the first here to name a CANVAS: the skeleton overlay is the TOPOLOGY
+MODEL drawn, so its rules are the template library's rather than a canvas area's. It is not the CAD
+canvas, whose edit-ownership rules are `.claude/rules/gui-canvas-edit.md` (`views/canvas*`, which
+does not match `mesh_canvas*`) and which this file says nothing about. Rules only — the rationale (the counted attributes, the
 measurements, the injections, the reversals) is `docs/design_notes/gui.md`. Read that note before
 overruling a rule here, and when a rule changes update BOTH.
 
@@ -452,6 +458,63 @@ holds `GEOM_FILE` tokens a `.dat` read could not resolve at all.
 
 Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE LIBRARY".
 
+**THE SKELETON IS THE TOPOLOGY MODEL DRAWN, AND THE NODE COUNT IS THE POINT** (#136, parent #133;
+`services/topology_skeleton.py`, `views/mesh_canvas_skeleton_mixin.py`, `views/mesh_canvas.py`)
+
+- **Every edge's count is RESOLVED by propagation, never read off the edge.** A `count` in the
+  document is a SEED: opposite sides of a block carry equal counts and a shared edge is one edge two
+  blocks name, so four declarations decide twelve edges on the shipped H-grid. An overlay drawing the
+  outline alone would show the easy half and hide the half a user cannot predict.
+  `resolve_counts` mirrors `resolveEdgeCounts` (`src/MultiBlock.cpp`) — union a block's OPPOSITE
+  sides, which for `[south, east, north, west]` are the pairs (0, 2) and (1, 3), then one seed per
+  class. **It is a SECOND HOME for one rule and says so**; the alternative is writing a document to
+  disk and launching the mesher for every keystroke, which a live overlay cannot pay. What keeps the
+  two together is a gate, not discipline: `tests/test_topology_skeleton.py` check 2 reads the
+  pairing literal out of BOTH sources and FAILS rather than skips when either is unfindable, and
+  check 12 compares the REAL mesher's own `Point counts` banner row — the declared/propagated split
+  and every propagated edge by name — against this module, on the shipped `hgrid_blocks.json` AND on
+  a document the family produced.
+- **A document the mesher would REFUSE resolves to NO number, never to a guess.** A class with no
+  seed, and a class with two seeds that disagree, both label `?` — the two refusals `resolveEdgeCounts`
+  exits with. Picking one of two conflicting seeds would label a mesh no run will produce, and a
+  blank would hide the one state that stops the run. Negative control in check 4: the same two-block
+  topology with a single seed resolves the whole chain across the shared edge.
+- **ONE owner for "is there a skeleton to draw" — `skeleton_for_config`** — which asks BOTH halves,
+  the multi-block mode and a family named, for the reason `mesh_modes.topology_file` asks both of
+  its own. The canvas holds no predicate, so it cannot come to a different answer than the panel
+  about what a template case is. `None` for a case with no topology model is also what CLEARS the
+  overlay on the way in, rather than leaving the last case's skeleton on screen.
+- **READ-ONLY in v1, and that is a decision about two interactions rather than a deferral.**
+  Dragging a BOUND corner edits a normalized arc-length position; dragging a FREE one moves a
+  coordinate — two interactions behind two identical-looking dots. Gate: check 9 walks the mixin's
+  **AST** for `TargetItem`, a `movable=` keyword and the mouse signals. Over the PARSE and not the
+  text, because the file's own header names `movable=True` to explain the rule and the first draft's
+  substring scan read that prose as the defect it rules out.
+- **A bound corner differs by SYMBOL as well as colour, and one nothing can place is drawn nowhere.**
+  Two dots that differ only in hue are two dots. No shipped family declares a bound corner until the
+  O-grid (#137), so `skeleton()` takes an optional `locate` callback and reports an unplaced corner
+  as bound-with-no-position — an invented coordinate would draw a topology the user did not declare.
+- **The hook is `update_mesh_config`, OUTSIDE its `if self.mesh_config:` branch.** That is the one
+  place this canvas learns the configuration changed, so a parameter edit and a case switch reach the
+  overlay by the same route and neither is the one that forgets; outside the branch because `cfg is
+  None` is exactly the case whose skeleton must not survive the one before it.
+- **The template rows AND the mode combo emit `mesh_config_changed`; no other mesh field does.**
+  `_on_topology_edited` in `views/panels/mesh_config_build_mixin.py`. That signal fires for
+  STRUCTURAL edits — the geometry list, a role, a BC — and not for a plain spin box, the same gap
+  `undo_ctrl._wire_widget_edits` covers for the recorder; the canvas has no such generic traversal.
+  The mode is wired because it is the other half of `skeleton_for_config`'s question, and without it
+  the canvas keeps drawing a topology while `_apply_mode_visibility` has hidden the section that owns
+  it. SCOPED to this table rather than fixed for every mesh field, which is not this ticket's to
+  change, and suppressed while `_loading` — the `text` rows report `textChanged`, which Qt emits for a
+  programmatic write too, and `set_config` ends with its own emit.
+- **`auto_range` gained a THIRD source and UNIONS it.** An empty `cads` is legal in `MESH_MODE 1`,
+  where a topology declaring its own corners is the whole input, so a template case can have no mesh
+  and no geometry preview and still have something to look at. Unioned rather than preferred, so a
+  bound topology still fits its geometry as well. Gate: check 11b — with no skeleton, `auto_range`
+  on an empty canvas still moves nothing.
+
+Why, and every measurement: `docs/design_notes/gui.md`, "THE BLOCK SKELETON ON THE CANVAS".
+
 ## Named blind spots
 
 Consolidated here rather than trailing the rules they belong to, so a coverage claim can be checked
@@ -487,6 +550,21 @@ against one list; #71 moved the first two here.
   rewritten in full. Nothing gates it. The earlier blind spot this replaces — a template case
   that could not build its document losing its PARAMETER FILE too — was CLOSED in review: the
   fallback is the pre-template parameter file with no `MESH_TOPOLOGY_FILE` line.
+- **The overlay draws the MODEL and never a hand-named topology FILE.** A case whose
+  `mesh_topology_file` was typed by hand — the path that existed before #134, and the only path a
+  multi-body case has — gets no skeleton at all. That is #136's own criterion ("does not survive
+  switching to a case with no topology model") read literally, and it costs the thing the BOUND
+  corner marker was written for: every shipped document that declares an `on_geometry` corner
+  (`cavity_block.json`, the O-grid, the C-grid) is a hand-named file. So that marker is exercised
+  only by handing `update_topology_skeleton` a skeleton built in the gate (check 8), not by any
+  shipped path, until #137 ships a family that declares one. Drawing a named file needs binding
+  resolution, which is #137's.
+- **The mesher can only be compared on a document it ACCEPTS.** Check 12's cross-check reads the
+  `Point counts` banner, which a refused run never prints — so the two refusal cases are compared
+  at the two ends and never in the middle: `test_multiblock_weld_surface.py` check 6 proves the
+  MESHER refuses them, check 4 here proves this module resolves them to `?`, and nothing asserts
+  the two agree about WHICH class was the unresolved one. A propagation defect that mis-partitions
+  the classes while still finding one seed per partition is invisible to both.
 - **Nothing gates that a family's document MESHES except for the DEFAULTS.** The spread of eight
   parameter sets is checked structurally; only `TopologyModel()`'s defaults are run through the
   real binary, because eight mesher runs in a gate is a cost nobody asked for. A parameter set that

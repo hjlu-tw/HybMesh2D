@@ -9,13 +9,15 @@ from app.utils import BC_COLORS, DEFAULT_BC_COLOR
 from app.views.mesh_canvas_fills_mixin import MeshCanvasFillsMixin
 from app.views.mesh_canvas_bc_mixin import MeshCanvasBCMixin
 from app.views.mesh_canvas_geom_mixin import MeshCanvasGeomMixin
+from app.views.mesh_canvas_skeleton_mixin import MeshCanvasSkeletonMixin
 
 # Dark-theme palette matching CAD Canvas
 _CANVAS_BG = '#0c0d16'
 _CANVAS_FG = '#6b738c'
 
 
-class MeshCanvasView(MeshCanvasFillsMixin, MeshCanvasBCMixin, MeshCanvasGeomMixin, QWidget):
+class MeshCanvasView(MeshCanvasFillsMixin, MeshCanvasBCMixin, MeshCanvasGeomMixin,
+                     MeshCanvasSkeletonMixin, QWidget):
     """Canvas widget for visualizing 2D unstructured meshes with quality and BC filters."""
 
     # Above this cell count the per-element translucent fills (O(cells)
@@ -100,6 +102,10 @@ class MeshCanvasView(MeshCanvasFillsMixin, MeshCanvasBCMixin, MeshCanvasGeomMixi
         # Refinement-seed previews (rendered dashed/orange, kept separate from
         # the boundary geometry previews so each can be refreshed independently)
         self.seed_preview_items: list[pg.PlotDataItem] = []
+
+        # The block-topology skeleton overlay (read-only; see
+        # views/mesh_canvas_skeleton_mixin.py).
+        self._init_skeleton_overlay()
 
         # Empty state guide label
         self.empty_label = QLabel("Please load geometry data in the CAD tab first\nor load config file.", self)
@@ -231,6 +237,12 @@ class MeshCanvasView(MeshCanvasFillsMixin, MeshCanvasBCMixin, MeshCanvasGeomMixi
     def update_mesh_config(self, cfg: MeshConfig | None, fit_view: bool = False):
         """Sync MeshConfig mapping for domain box and boundary conditions rendering."""
         self.mesh_config = cfg
+        # (#136) The block skeleton the template describes, or a clear. Here
+        # rather than at a caller, so a parameter edit and a case switch reach it
+        # by the same route and neither can be the one that forgets — and OUTSIDE
+        # the branch below, because `cfg` being None is exactly the case whose
+        # skeleton must not survive from the config before it.
+        self._rebuild_topology_skeleton()
         if self.mesh_config:
             self.update_domain_box(
                 self.mesh_config.domain_x_min,
@@ -279,6 +291,19 @@ class MeshCanvasView(MeshCanvasFillsMixin, MeshCanvasBCMixin, MeshCanvasGeomMixi
             if xs and ys:
                 xmin, xmax = min(xs), max(xs)
                 ymin, ymax = min(ys), max(ys)
+
+        # (#136) The skeleton is a third source, and sometimes the ONLY one: an
+        # empty `cads` is legal in MESH_MODE 1, where a topology declaring its own
+        # corners is the whole input, so a template case can have no mesh and no
+        # geometry preview and still have something to look at. Unioned rather
+        # than preferred, so a bound topology still fits its geometry too.
+        skel = self.skeleton_bounds()
+        if skel is not None:
+            if xmin is None:
+                xmin, xmax, ymin, ymax = skel
+            else:
+                xmin, xmax = min(xmin, skel[0]), max(xmax, skel[1])
+                ymin, ymax = min(ymin, skel[2]), max(ymax, skel[3])
 
         if xmin is not None:
             # Stretch to the rectangular domain box only when it is actually the

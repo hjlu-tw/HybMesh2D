@@ -1245,7 +1245,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 268, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 270, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -2218,6 +2218,82 @@ Nothing gates it.
 run through the real binary. The other seven parameter sets in the spread are checked structurally,
 because eight mesher runs in a gate is a cost nobody asked for — so a parameter set that is
 structurally legal and geometrically degenerate is not reached.
+
+#### THE BLOCK SKELETON ON THE CANVAS (#136, parent #133)
+
+Two modules, named here because the rule file's pointer resolves to this note for each of them:
+`services/topology_skeleton.py` (Qt-free — the count propagation, the corner placement and the ONE
+owner of "is there a skeleton to draw") and `views/mesh_canvas_skeleton_mixin.py` (pens, symbols and
+z-order, and nothing else). The hook and the third `auto_range` source are in
+`views/mesh_canvas.py`; the emit that makes a typed parameter reach the canvas is
+`_on_topology_edited` in `views/panels/mesh_config_build_mixin.py`. Gate:
+`tests/test_topology_skeleton.py`.
+
+**What the ticket is actually about is the NUMBER, not the outline.** A `count` in a topology
+document is a SEED. Opposite sides of a block carry equal counts and a shared edge is ONE edge two
+blocks name, so on the shipped four-block H-grid FOUR declarations decide TWELVE edges — measured,
+not asserted: the mesher's own banner on `examples/topology/hgrid_blocks.json` reads
+`Point counts : 4 declared, 8 propagated ('h02' = 7, 'h12' = 5, 'v20' = 4, 'v21' = 6, 'h01' = 7,
+'h11' = 5, 'v10' = 4, 'v11' = 6)`. An overlay drawing the block boundaries alone would show the half
+a user can already predict from the parameters they typed and hide the half they cannot.
+
+**The propagation is a SECOND HOME for `resolveEdgeCounts`, and the alternative was measured to be
+unaffordable rather than merely inelegant.** Asking the authority means writing a document to disk,
+launching a process and parsing its report — for every keystroke in a parameter box. So the rule is
+restated in Python: union each block's OPPOSITE sides, which for `[south, east, north, west]` are
+the index pairs (0, 2) and (1, 3), then one seed per class. What keeps the two together is two
+checks rather than discipline. Check 2 reads the pairing literal out of `src/MultiBlock.cpp` AND out
+of `services/topology_skeleton.py` and compares them — and FAILS, never skips, when either is
+unfindable, because a check that cannot see its subject must not report success about it. Check 12
+runs the REAL mesher and compares its `Point counts` row edge by edge, on the shipped document and
+on one the H-grid family produced: `5 declared, 12 propagated` against the same 5/12 and the same
+twelve values.
+
+**A refusal resolves to no number.** A class with no seed and a class with two seeds that disagree
+are the two documents `resolveEdgeCounts` exits over; both label `?` here. Picking one of two
+conflicting seeds would label a mesh no run will produce, and going blank would hide the one state
+that stops the run. The negative control is in the same check: the two-block fixture with a single
+seed resolves `w` = 3 through the shared edge `m` and on to `ee`, which is the chain the C++ gate
+uses for the same reason.
+
+**Read-only is a decision about two interactions.** Dragging a BOUND corner means editing a
+normalized arc-length position; dragging a FREE one means moving a coordinate — two interactions
+behind two identical-looking dots, which is why #133 deferred dragging rather than shipping half of
+it. Check 9 holds it by walking the mixin's AST for `TargetItem`, a `movable=` keyword and the mouse
+signals. **Its first draft was a substring scan, and it went red on the shipped file**: the mixin's
+own header names `movable=True` to explain the rule, and the scan read that prose as the defect it
+rules out. A check whose subject's documentation can fail it is measuring the wrong thing.
+
+**The emit, and why no other mesh field has one.** `mesh_config_changed` fires for STRUCTURAL
+edits — the geometry list, a role, a BC — and not for a plain spin box; that is the same gap
+`undo_ctrl._wire_widget_edits` exists to cover for the undo recorder, and the canvas has no
+equivalent generic traversal. Before this, the overlay tracked a programmatic `set_config` and
+nothing a user typed. `_on_topology_edited` is SCOPED to the template table (widening it to every
+mesh field would change what the canvas does on every other panel edit, which is not this ticket's
+to change) and to the MODE combo, which is the other half of `skeleton_for_config`'s question —
+without that one line the canvas kept drawing a topology while `_apply_mode_visibility` had hidden
+the section that owns it, which is how check 10d found it.
+
+**`auto_range` gained a third source because a template case can have nothing else.** An empty
+`cads` is legal in `MESH_MODE 1`, so a skeleton is sometimes the only thing on the canvas with an
+extent; it is UNIONED with the mesh and geometry-preview bounds rather than preferred, so a bound
+topology still fits its geometry too.
+
+**Named blind spot: the overlay draws the MODEL and never a hand-named topology FILE.** #136's own
+criterion — "does not survive switching to a case with no topology model" — read literally. The cost
+is that every shipped document declaring an `on_geometry` corner (`cavity_block.json`, the O-grid,
+the C-grid) is a hand-named file, so the BOUND-corner marker the ticket asks for is exercised only
+by handing `update_topology_skeleton` a skeleton built in the gate, not by any shipped path, until
+#137 ships a family that declares one. Drawing a named file needs binding resolution, which is
+#137's.
+
+**Named blind spot: the mesher can only be compared on a document it ACCEPTS.** The banner check 12
+reads is never printed by a refused run, so the two refusal cases are compared at the two ends and
+never in the middle — `test_multiblock_weld_surface.py` check 6 proves the mesher refuses them,
+check 4 here proves this module resolves them to `?`, and nothing asserts the two agree about WHICH
+class was the unresolved one. A defect that mis-partitions the classes while still finding one seed
+per partition is invisible to both.
+
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
