@@ -78,6 +78,21 @@ def missing_mesh_input(mesh_config) -> str:
         return "no mesh configuration"
     mode = int(getattr(mesh_config, "mesh_mode", MESH_MODE_HYBRID) or 0)
     if mode == MESH_MODE_MULTIBLOCK:
+        # A TEMPLATE case declares its topology without naming a file, and both
+        # hosts refused one outright until #139 measured it: `mesh_topology_file`
+        # is an OUTPUT while a family drives the run (#134), so it is empty right
+        # up to the moment `save_config_to_file` projects the document — which is
+        # AFTER this precondition runs. The GUI showed "MESH_TOPOLOGY_FILE names
+        # none" on a case that was fully configured, and `pipeline_runner` raised
+        # it as a PipelineError before writing anything, so a template case could
+        # not run through the pipeline at all. Asked through the model's own
+        # predicate rather than through `bool(cfg.topology.family)`, which is the
+        # one owner of "does a template drive this configuration" — and which is
+        # False again once the template is DETACHED, when the file it names is
+        # real and this branch is right to insist on it.
+        model = getattr(mesh_config, "topology", None)
+        if model is not None and model.names_a_family():
+            return ""
         if not topology_file(mesh_config):
             return ("the multi-block path fills a DECLARED block topology and "
                     "MESH_TOPOLOGY_FILE names none")

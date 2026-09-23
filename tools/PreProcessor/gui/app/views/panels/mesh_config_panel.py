@@ -13,6 +13,7 @@ from app.views.panels.mesh_config_config_mixin import MeshConfigConfigMixin
 from app.views.panels.mesh_domain_mixin import MeshConfigDomainMixin
 from app.views.panels.mesh_output_mixin import MeshConfigOutputMixin
 from app.views.panels.mesh_config_build_mixin import MeshConfigBuildMixin
+from app.views.panels.mesh_config_detach_mixin import MeshConfigDetachMixin
 from app.views.panels.mesh_config_repair_mixin import MeshConfigRepairMixin
 from app.views.panels.mesh_units_mixin import MeshConfigUnitsMixin
 
@@ -20,7 +21,8 @@ from app.views.panels.mesh_units_mixin import MeshConfigUnitsMixin
 class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
                       MeshConfigConfigMixin, MeshConfigDomainMixin,
                       MeshConfigOutputMixin, MeshConfigBuildMixin,
-                      MeshConfigRepairMixin, MeshConfigUnitsMixin):
+                      MeshConfigRepairMixin, MeshConfigDetachMixin,
+                      MeshConfigUnitsMixin):
     """Scrollable panel containing editor widgets for all Background_para.dat options."""
     geom_files_changed = pyqtSignal(list)
     mesh_config_changed = pyqtSignal(object)

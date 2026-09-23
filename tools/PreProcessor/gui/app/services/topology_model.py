@@ -45,6 +45,16 @@ class TopologyModel:
 
     family: str = FAMILY_NONE
 
+    # DETACHED: the family and every parameter below are still here, and NONE of
+    # them drives the run any more (#139). The document stopped being a projection
+    # and became a plain file the user maintains, named by
+    # `MeshConfig.mesh_topology_file` — which is the ONE home for that path, so
+    # this is a flag and never a second copy of it. What the family and the
+    # parameters are for once this is set is PROVENANCE: "where did this file come
+    # from", which is the only useful thing left three months later, and the reason
+    # detaching does not simply clear them.
+    detached: bool = False
+
     # ── H-grid ───────────────────────────────────────────────────────────────
     hgrid_x_min: float = 0.0
     hgrid_x_max: float = 2.0
@@ -134,8 +144,17 @@ class TopologyModel:
         line up: a user who has typed parameters but not yet picked a family has
         configured something (so the project file must carry it) while naming no
         family (so there is no document to build).
+
+        FALSE ONCE DETACHED, which is how one flag turns the whole feature off in
+        every place at once (#139): the funnel stops projecting, the case staging
+        stops generating, the canvas overlay stops drawing a model the run no
+        longer reads, and `mesh_topology_file` goes back to being an INPUT. The
+        family is still named — `names_a_family` is not `bool(self.family)` and
+        must not be re-spelled as one — because the panel still shows where the
+        file came from. That is the whole difference between "no template" and
+        "a template that has been detached".
         """
-        return bool(self.family)
+        return bool(self.family) and not self.detached
 
     def copy(self) -> "TopologyModel":
         """A detached copy — what the undo snapshot and the panel round-trip need."""
@@ -245,7 +264,15 @@ def broken_bindings(model: TopologyModel, ctx=None) -> tuple:
     first problem because it answers "can this run?"; this lists every position the
     user would have to repair, because repairing them one refusal at a time is the
     round trip #138 exists to remove.
+
+    Empty for a DETACHED model too, through the same predicate the projection asks
+    (#139): nothing resolves a binding on that path, so a flagged edge would name
+    an edge of a document no run reads and offer a dropdown that rewrites a
+    parameter nothing projects. That is the state #138's review already measured
+    once, for a family switched away from rather than detached.
     """
+    if not model.names_a_family():
+        return ()
     fam = family_for(model.family)
     fn = fam.broken if fam is not None else None
     if fn is None or ctx is None:

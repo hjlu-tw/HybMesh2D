@@ -12,7 +12,8 @@ Loaded on demand when a topology service, the mesh canvas or its two mixins, a m
 mixin, or the mesher-config writer is read. Rules only — the rationale (the measurements, the
 injections, the reversals and the named blind spots) is `docs/design_notes/gui.md`, sections "THE
 TOPOLOGY TEMPLATE LIBRARY", "THE TOPOLOGY MODEL SURVIVES THE SESSION", "THE BLOCK SKELETON ON THE
-CANVAS", "THE O-GRID BINDS TO THE CAD" and "THE BROKEN BINDING IS REPAIRED FROM THE PANEL". Read
+CANVAS", "THE O-GRID BINDS TO THE CAD", "THE BROKEN BINDING IS REPAIRED FROM THE PANEL" and "THE
+TOPOLOGY DETACHES INTO A FILE". Read
 the matching section before overruling a rule here; when a rule changes, update BOTH.
 
 **THE ELEVENTH RULE FILE, AND THE SECOND TAKEN BECAUSE ONE WAS FULL.** These four blocks (#134,
@@ -22,8 +23,8 @@ sentence there. #85's precedent is the one followed: when a rule file is full th
 file, not a squeeze, because compressing rules to fit a budget is how a rule quietly loses the
 clause that made it a rule. The area is coherent on its own terms as well as by size — a family
 registry, a projection, a binding, and the overlay that draws what they produce — and it had two
-tickets still to land when it was taken, of which #138's binding repair has since landed here and
-#139's detach has not.
+tickets still to land when it was taken, both of which have since landed here: #138's binding
+repair and #139's detach.
 
 **THIS FILE OVERLAPS `gui-panels-config.md` RATHER THAN PARTITIONING IT**, the same shape #89 and
 #85 took, and the overlap is the intended one: the template's parameters are field-spec rows and
@@ -33,6 +34,9 @@ the template's own rules from here. What is NOT duplicated is the rule text: eve
 here and none is there.
 
 **These rules also govern files OUTSIDE the globs above, which cannot hand a reader the text**:
+`services/mesh_modes.py`, whose `missing_mesh_input` is the mesh stage's precondition and must
+know what a TEMPLATE case is (#139) — no rule file's globs reach it but `gui-seams.md`'s tree-wide
+one, and that file carries no rule about it;
 `controllers/solver_ctrl.py` and `services/pipeline_case_sources.py` (both call
 `case_sources.mesh_config_generated`, whose own staging rules are in
 `.claude/rules/pipeline-case.md`), `controllers/undo_ctrl.py` (`_wire_widget_edits`, the traversal
@@ -208,6 +212,67 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE O-GRID BINDS TO THE
 
 Why, and every measurement: `docs/design_notes/gui.md`, "THE BROKEN BINDING IS REPAIRED FROM THE
 PANEL".
+
+**THE TOPOLOGY DETACHES INTO A FILE, AND THE PARAMETERS STAY AS PROVENANCE** (#139, parent #133;
+`services/topology_detach.py`, `views/panels/mesh_config_detach_mixin.py`)
+
+- **DETACHING IS ONE FLAG, AND IT TURNS OFF THE ONE PREDICATE.** `TopologyModel.detached` makes
+  `names_a_family()` False while `family` STAYS NAMED, so the funnel stops projecting, the case
+  staging stops generating, the canvas draws no skeleton and `mesh_topology_file` is an INPUT
+  again — four places, no edit in any of them. `names_a_family` is therefore NOT `bool(family)`
+  and must never be re-spelled as one; `topology_detach.is_detached` is the other question (a
+  family that HAS been detached, as against a config that never had one), and the two are not
+  interchangeable. `broken_bindings` asks the same predicate: a detached model resolves no
+  binding, so flagging one would name an edge of a document no run reads — #138's review measured
+  that state once already, for a family switched away from. Gate: `tests/test_topology_detach.py`
+  checks 1-3c, whose injection A shows one predicate carrying six of them.
+- **THE PATH HAS ONE HOME AND IT IS `MeshConfig.mesh_topology_file`.** Detach writes it there,
+  repo-relative when the file is inside the repo; re-attach CLEARS it. Clearing is not tidiness:
+  with a family attached the funnel overrides that line, so a path left in it decides nothing —
+  the control-that-does-nothing this ticket exists to remove — and it becomes live again the moment
+  the family combo goes back to "(none)". Measured: injection C leaves check 6 GREEN and only 6b
+  red, so no behavioural check can see it.
+- **THE DOCUMENT IS BUILT BEFORE ANYTHING IS CHANGED.** A family that refuses (an O-grid whose
+  binding the CAD no longer carries) leaves the configuration attached, with no file written and
+  no path stored. Half detached — the projection off and no file to read — is the one state
+  neither panel nor mesher has a message for. Gate: check 4d, the only check that reaches it.
+- **RE-ATTACH DISCARDS THE FILE'S EDITS, SAYS SO FIRST, AND DOES NOT DELETE IT.** One wording
+  (`REATTACH_WARNING`), asked through `confirm_destructive` — a NAMED button, Cancel as the
+  default, and NO `headless_default`, because there is no safe default for discarding work. The
+  file stays on disk; only the reading of it stops.
+- **WHAT SURVIVES IS PROVENANCE, AND THE PANEL SHOWS IT READ-ONLY.** Every template row is
+  greyed (`field_widgets.set_spec_row_enabled`, the enabled mirror of `set_spec_row_visible`) and
+  the summary names the family and every parameter — DERIVED from `TOPOLOGY_SPECS` by the
+  family's own prefix, never hand-listed, so a new parameter appears with no edit. An editable
+  panel whose edits no longer take effect is what the ticket refuses; a panel that vanished would
+  throw away the only thing worth having three months later. Gate: checks 10-12c, where 11 is the
+  only check that sees injection E (rows left editable) and 12b the only one that sees G (a
+  hand-listed summary).
+- **THE STATE IS A FIELD-SPEC ROW, AND THE BUTTONS WRITE INTO IT** — the shape #138's repair
+  combo already uses. `topo_detached` is a READ-ONLY `bool` row (`opts=dict(readonly=True)`, which
+  `field_widgets` spells `setEnabled(False)` since `QCheckBox` has no `setReadOnly`), so the state
+  is persisted, synced, projected and UNDONE by the machinery every other parameter uses and the
+  panel keeps no private copy of it. It is also why the detach box declares no `panel_edited`: a
+  checkbox emits `toggled` for a programmatic write, and that signal IS the funnel. The path row
+  is written FIRST and the checkbox SECOND, because the checkbox's emit is the one sync that reads
+  the whole panel back. Gate: checks 13-13d, including Ctrl+Z over the one panel action that
+  writes a file.
+- **`topo_detached` AND `topo_family` ARE STATE ROWS, DECLARED IN `TOPOLOGY_STATE_ROWS`.** The
+  bidirectional parameter gate requires every OTHER row to be read by some family; these two
+  cannot be, by construction — one SELECTS the function that reads, the other decides whether it
+  is called. Declared in the table rather than special-cased in the gate, and held honest from the
+  other side by `tests/test_topology_param_specs.py` check 3b: an entry must be a real row AND
+  must be read by no family, so the list cannot become a parking space for a parameter the
+  templates forgot.
+- **A TEMPLATE CASE IS NOT MISSING ITS TOPOLOGY** (`services/mesh_modes.py::missing_mesh_input`).
+  `mesh_topology_file` is empty while a family drives the run, and that precondition runs BEFORE
+  the projection — so until #139 every attached template case was refused by both hosts, the GUI
+  saying "MESH_TOPOLOGY_FILE names none" on a fully configured case and `pipeline_runner` raising
+  it as a `PipelineError` before writing anything. It asks `names_a_family()`, so a DETACHED case
+  is held to the file it names, as a hand-written one always was. Gate: check 15, over all four
+  multi-block cases at once.
+
+Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES INTO A FILE".
 
 
 **THE SKELETON IS THE TOPOLOGY MODEL DRAWN, AND THE NODE COUNT IS THE POINT** (#136, parent #133;

@@ -61,7 +61,7 @@ sys.path.insert(0, _GUI)
 
 from app.services import topology_model as tm  # noqa: E402
 from app.services.topology_field_specs import (  # noqa: E402
-    TOPOLOGY_READONLY, TOPOLOGY_SPECS,
+    TOPOLOGY_READONLY, TOPOLOGY_SPECS, TOPOLOGY_STATE_ROWS,
 )
 
 failures = []
@@ -110,6 +110,7 @@ check(f"1. every family's module yielded at least one model-field read, so the "
 
 # ── 2. every parameter a family reads has a row ────────────────────────────
 _row_models = {s.model_name for s in TOPOLOGY_SPECS if s.model_name}
+_by_attr = {s.attr: s for s in TOPOLOGY_SPECS}
 missing = sorted({a for r in FAMILY_READS.values() for a in r} - _row_models)
 check("2. every model field a family function reads has a field-spec row "
       "(otherwise: a parameter the user cannot reach): "
@@ -117,14 +118,35 @@ check("2. every model field a family function reads has a field-spec row "
       not missing)
 
 # ── 3. every row is read by a family ───────────────────────────────────────
-# `family` is excluded: it SELECTS the family rather than being read by one, so it
-# is the one row that cannot appear in any family's reads by construction.
+# The STATE rows are excluded, and they are excluded by NAME from a list the table
+# declares rather than by a condition written here: `family` SELECTS the function
+# that does the reading and `detached` (#139) decides whether it is called at all,
+# so neither can appear in any family's reads by construction. Check 3b below holds
+# the exclusion honest in the other direction.
+_state_models = {_by_attr[a].model_name for a in TOPOLOGY_STATE_ROWS
+                 if a in _by_attr and _by_attr[a].model_name}
 _read_any = {a for r in FAMILY_READS.values() for a in r}
 unread = sorted(m for m in _row_models
-                if m != "family" and m not in _read_any)
+                if m not in _state_models and m not in _read_any)
 check("3. every field-spec row is read by some family (otherwise: a control that "
-      "does nothing): " + (", ".join(unread) + " are read by none"
-                           if unread else "all read"), not unread)
+      f"does nothing), the {len(_state_models)} STATE rows aside "
+      f"({sorted(_state_models)}): "
+      + (", ".join(unread) + " are read by none" if unread else "all read"),
+      not unread)
+
+# ── 3b. ...and the exclusion list is not a place to hide a parameter ───────
+# The whole risk of naming an exclusion is that the next unread row is added to it
+# instead of being fixed. Two things stop that: every entry must BE a row of this
+# table (so the list cannot drift into fiction), and no entry may be read by a
+# family (so a real parameter cannot be parked here — it would fail rather than
+# fall silently out of check 3).
+_bad_state = [a for a in TOPOLOGY_STATE_ROWS if a not in _by_attr]
+_bad_state += [m for m in _state_models if m in _read_any]
+check("3b. every declared STATE row is a row of this table and is read by NO "
+      "family, so the exclusion above cannot become a parking space for a "
+      "parameter the templates forgot: "
+      + (", ".join(_bad_state) + " disagree" if _bad_state else "all hold"),
+      bool(TOPOLOGY_STATE_ROWS) and not _bad_state)
 
 # ── 4. every row names a field the model actually has ──────────────────────
 bogus = sorted(m for m in _row_models if m not in _MODEL_FIELDS)
@@ -179,7 +201,6 @@ check(f"9. every half of every geometry->binding pair is a row of this table "
 # #133: "Which edges bind is the template's decision, not the user's". A row the
 # user can type a segment id into is a more internal control than the arc-length
 # position that decision was protecting them from.
-_by_attr = {s.attr: s for s in TOPOLOGY_SPECS}
 bad = [segs for _g, segs in BINDING_ROWS
        if not _by_attr[segs].opts.get("readonly")]
 check("10. every captured binding row is declared read-only, so which edges bind "

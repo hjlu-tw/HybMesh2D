@@ -110,6 +110,11 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         # edge the template produced, and the parameters that produced it read above
         # it (#138).
         self._build_topology_repair()
+        # LAST of all, under the repair box: detaching is about the whole section
+        # rather than about one flagged edge, and when it has happened the repair
+        # box above is empty anyway — a detached model resolves no binding, so
+        # `topology_model.broken_bindings` reports nothing for it (#139).
+        self._build_topology_detach()
         self._refresh_topology_counts()
 
     def _capture_topology_binding(self, geom_attr: str, segs_attr: str):
@@ -246,6 +251,12 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         # still wrote the `ogrid_*` row. The family's own answer was already `()`; it
         # was simply never asked. Found by the Spec review, measured headlessly.
         self._refresh_topology_repair(model, ctx)
+        # And the detached state, from the same one place and for the same reason
+        # (#139). It takes `cfg` rather than `ctx`: what its summary names is the
+        # FILE the run now reads, which is a mesh-configuration field and not a
+        # binding context — and `None` there is honest, since a refresh with no
+        # config cannot know the path.
+        self._refresh_topology_detach(model, cfg)
 
     def _build_sizing_section(self):
         # ── 2. General Sizing ─────────────────────────────────────────────

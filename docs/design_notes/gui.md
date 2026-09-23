@@ -1245,7 +1245,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 274, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 276, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -2638,6 +2638,107 @@ is the one outcome a repair panel must not produce without a word; it logs at `w
 * **Nothing gates the FAMILY dispatch's empty half.** `Family.broken` is `None` for the H-grid and
   the gate asserts the O-grid's answer; a third family that forgot to declare one would report
   nothing broken and be invisible here, exactly as the H-grid correctly is.
+
+
+#### THE TOPOLOGY DETACHES INTO A FILE (#139, parent #133)
+
+Two modules, named here because the rule file's pointer resolves to this note for each:
+`services/topology_detach.py` (the transition, the suggested path, the provenance summary and the
+one wording of what re-attaching costs) and `views/panels/mesh_config_detach_mixin.py` (the box,
+the Save dialog, the consent and the greying). The state is one field on `TopologyModel`; the gate
+is `tests/test_topology_detach.py`; the enabled mirror of `set_spec_row_visible` is
+`views/panels/field_widgets.py::set_spec_row_enabled`.
+
+**What the escape hatch is for, in the ticket's own words.** Without it the first case outside the
+template library's coverage locks the user out of the very path the library exists to open. What
+it must NOT become is the other failure the ticket names in the same breath: an editable panel
+whose edits no longer take effect, which is a control that does nothing.
+
+**One flag, and it turns off the one predicate.** The whole feature is `detached: bool` making
+`names_a_family()` False while `family` stays named. That predicate already had three readers from
+#134/#135 — the funnel that projects, the case staging that generates, the canvas that draws a
+skeleton — and #139 adds a fourth by asking it inside `broken_bindings`. Nothing at any of the four
+was edited. The measurement is injection A: restoring `names_a_family` to `bool(self.family)`
+reddens checks 3, 3c, 5, 5b, 6c and 14, i.e. the projection, the staging, the re-attach and the
+real mesher all at once. That is the argument for stating it as ONE owner rather than as an
+`if` at each site, made in the form of a blast radius rather than as a preference.
+
+**Why the parameters are kept rather than cleared.** They are the provenance, which the ticket
+calls the only useful thing left three months later. Keeping them costs one thing — the panel now
+shows values that decide nothing — and that cost is paid by greying every row rather than by
+deleting them, so the section reads as a record. The summary is DERIVED from `TOPOLOGY_SPECS` by
+the family's declared prefix, which is the same bidirectional property the parameter gate holds
+for the panel: a parameter added to a family and its table appears in the summary with no edit
+here. Injection G (a hand-listed H-grid summary) leaves check 12 green and only 12b red, which is
+why 12b compares against the table rather than against a literal.
+
+**Why re-attach clears `mesh_topology_file`, which is the one decision that is not obvious.** With
+a family attached the funnel passes the projected path as an override, so a path left in that row
+changes nothing about the run — and yet it is on screen, in an editable row with a Browse button,
+and it becomes live the moment the family combo is set back to "(none)". Injection C restores the
+old behaviour and check 6 stays GREEN: every behavioural claim about the re-attached run still
+holds, and only 6b — which asks what the row now says — sees it. A defect that no behavioural
+check can reach is exactly the shape this repo keeps finding in "a control that does nothing".
+
+**Why the state is a field-spec row and not a flag the panel keeps.** `get_config()` builds a
+FRESH `TopologyModel` and fills it with `read_specs(self, TOPOLOGY_SPECS, topo)`, so a model field
+with no row is silently reset to its default on EVERY panel edit — the detached state would have
+survived exactly until the user touched a spin box. Making it a row buys the persistence, the
+sync, the projection and undo for nothing, and it is the shape #138 already used for the binding
+repair: the action writes into the row, and the row is what everything downstream reads. It costs
+a `readonly` option on the `bool` kind, spelled `setEnabled(False)` because `QCheckBox` has no
+`setReadOnly` — with the consequence the Edit-BL dialog's greyed-field rule already recorded, that
+Qt walks the mouse past a disabled widget, so the row's tip lives on its `?` helper.
+
+**The write order is load bearing and was nearly wrong.** `undo_ctrl._wire_widget_edits` connects
+`QLineEdit.textEdited` — user typing only — and `QAbstractButton.toggled`, which Qt emits for a
+programmatic `setChecked` too. So writing the path row reaches nothing and writing the checkbox
+reaches `on_panel_edited`, which reads the WHOLE panel back: the pair lands together, as one undo
+step, if and only if the path is written first. That is also why the detach box declares no
+`panel_edited` of its own, unlike `TopologyRepairBox` — its children are two plain `QPushButton`s,
+which never emit `toggled`, and the row they write into is already inside the funnel.
+
+**A defect this ticket found in #134/#135 and fixed.** `mesh_modes.missing_mesh_input` refused
+every ATTACHED template case: `mesh_topology_file` is an output while a family drives the run, so
+it is empty until `save_config_to_file` projects the document — which is AFTER the precondition
+runs. The GUI showed `MESH_TOPOLOGY_FILE names none` on a fully configured case, and
+`pipeline_runner` raised it as a `PipelineError` before writing anything, so no template case
+could run through the pipeline at all. #135's own gate could not see it: it drives the mesher
+binary directly on the projected config and never goes through either host's precondition. It is
+#139's business because "re-attach returns to generating" would otherwise hand the user back a
+case the pipeline refuses. Check 15 now asks all four multi-block cases — template, detached,
+hand-written, and neither — in one line.
+
+**What the gate measures rather than describes.** "Nothing overwrites it" is not a claim about a
+branch not taken: the detached document is edited to a node count no derivation would produce, the
+real funnel is run over it twice, and the real mesher is then asked to cut it — 117 nodes against
+the template's 275. The two-host half does the same on its own file (70 against 275), because a
+detached document that is byte-identical to the template's cannot tell a host that read the file
+from one that quietly re-projected.
+
+**Named blind spots.**
+
+* **The suggested path is a suggestion, and nothing checks where the user actually puts it.** A
+  detached document saved under `results/` is inside `clean_results.sh`'s reach; `default_path`
+  steers to `config/topology/` for exactly that reason, and the Save dialog is free to go
+  anywhere. Nothing warns.
+* **Detach writes a file that undo cannot take back.** Ctrl+Z walks back the STATE — the flag and
+  the path — and the document stays on disk, which is the right half to be irreversible (deleting
+  a file on undo would be worse) but means an undone detach leaves a stray document behind. The
+  same is true of re-attach, which by design never deletes.
+* **A detached case whose file is deleted is refused by the MESHER, not by the panel.** Nothing
+  here checks that the path still resolves; `missing_mesh_input` asks only whether one is named.
+  That is the same standing behaviour as a hand-written topology and is not made worse by
+  detaching, but a user who moves their file gets the mesher's message rather than the panel's.
+* **The greying is asserted over `TOPOLOGY_SPECS` only.** A control added to the template section
+  that is NOT a row of that table — the repair box's dropdowns, say — would stay live when
+  detached. The repair box is hidden in that state because `broken_bindings` returns nothing for a
+  detached model, so it is covered by consequence rather than by the loop; a third such widget
+  would need its own line.
+* **`is_detached` and `names_a_family` can be told apart only by reading both.** A future caller
+  that wants "a template is configured here" and reaches for `names_a_family()` gets False for a
+  detached case, which is right for every existing reader and would be wrong for a panel asking
+  whether to show the section at all. Nothing gates the distinction.
 
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)

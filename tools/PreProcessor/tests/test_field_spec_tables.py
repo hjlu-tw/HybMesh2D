@@ -968,6 +968,11 @@ MODE_SPECS_WITHOUT_KEY = {
     # entries point at, which is what keeps "no key" from meaning "unchecked".
     "topo_family": "the template family selector; compared against the FAMILIES "
                    "registry by test_topology_param_specs.py",
+    "topo_detached": "the template's STATE, not a parameter (#139): whether the "
+                     "document is still projected or has become a file the user "
+                     "maintains. Declared with topo_family in TOPOLOGY_STATE_ROWS "
+                     "and gated by test_topology_param_specs.py checks 3/3b and "
+                     "test_topology_detach.py",
     "topo_hgrid_x_min": "H-grid template parameter; gated against the family "
                         "function, not against a mesher key",
     "topo_hgrid_x_max": "as topo_hgrid_x_min",

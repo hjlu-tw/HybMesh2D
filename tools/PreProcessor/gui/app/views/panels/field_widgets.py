@@ -104,6 +104,15 @@ def make_widget(spec: FieldSpec) -> QWidget:
     elif kind == "bool":
         w = QCheckBox(o.get("text", spec.label))
         w.setStyleSheet("color:#a0a8c0;")
+        if o.get("readonly"):
+            # A STATE READ-OUT that is still the row authoring its model field, so
+            # it is written, read, persisted and undone exactly like every editable
+            # row (#139's `topo_detached`). `setEnabled(False)` rather than the
+            # line edit's `setReadOnly`, which QCheckBox does not have — with the
+            # consequence the Edit-BL dialog's greyed-field rule already records:
+            # Qt walks the mouse past a disabled widget, so the tip is unreachable
+            # on the box itself and lives on the row's own '?' helper instead.
+            w.setEnabled(False)
 
     elif kind == "bcname":
         from app.views.bc_widget import BCWidget
@@ -315,6 +324,28 @@ def set_spec_row_visible(host, attr: str, visible: bool) -> None:
         lbl = form.labelForField(cell if cell is not None else w)
         if lbl is not None:
             lbl.setVisible(visible)
+
+
+def set_spec_row_enabled(host, attr: str, enabled: bool) -> None:
+    """Grey out (or restore) one table-built row: its widget, its cell and its label.
+
+    The label as well, which is the half that makes the row READ as read-only rather
+    than as broken: a live label beside a dead field is what a user reports as a bug.
+    Mirrors :func:`set_spec_row_visible` — same lookup, same no-op for a row the host
+    never built — because "hidden" and "greyed" are the two states the mode rules and
+    the detached state (#139) respectively need, and one of them existing without the
+    other is how the second gets written inline at a call site.
+    """
+    w = getattr(host, attr, None)
+    form, cell = getattr(host, "_spec_cells", {}).get(attr, (None, None))
+    if w is not None:
+        w.setEnabled(enabled)
+    if cell is not None and cell is not w:
+        cell.setEnabled(enabled)
+    if form is not None:
+        lbl = form.labelForField(cell if cell is not None else w)
+        if lbl is not None:
+            lbl.setEnabled(enabled)
 
 
 def spec_widgets(host, specs: Iterable[FieldSpec]) -> list:

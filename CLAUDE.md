@@ -137,7 +137,7 @@ gate here; the full text of all four is `.claude/rules/gui-seams.md`.
   the four with none, and a human reading a diff was its whole enforcement. Measured 2026-09-09:
   **four** commits crossed it in the six days after #67 wrote it down — `98003f1` (#85),
   `306d6a1` (#91) and `8bdc36a` (#47's merge) TWICE — and 44 across 35 files over the whole
-  history. 5 of 274 files exceed it (worst 524); those five are PINNED at their measured sizes,
+  history. 5 of 276 files exceed it (worst 524); those five are PINNED at their measured sizes,
   and a pin fails both when the file grows further and when it drops back under the limit. That
   status is DERIVED, never remembered: `--sync` rewrites it from the same walk, in all three
   files that state it — here, `gui-seams.md` (which names each one) and the design note (#101).

@@ -48,6 +48,19 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               model="family", group=GROUP, modes=_MB,
               opts=dict(choices=list(FAMILY_CHOICES), fallback="")),
 
+    FieldSpec("topo_detached", "bool", "Detached",
+              "Whether the template still generates the document (#139). A row "
+              "rather than a flag the panel keeps for itself, because THIS is what "
+              "carries the state through the machinery every other template "
+              "parameter uses: the panel->model sync, the project file, undo and "
+              "the projection. It is READ-ONLY — detaching writes a file and "
+              "re-attaching discards one, and neither is something a checkbox "
+              "should be able to do by being clicked; the Detach / Re-attach "
+              "buttons at the foot of this section are the controls.",
+              model="detached", group=GROUP, modes=_MB,
+              opts=dict(text="detached — the Topology File above is maintained by "
+                             "hand", readonly=True)),
+
     # ── H-grid ───────────────────────────────────────────────────────────────
     FieldSpec("topo_hgrid_x_min", "sci", "X Min",
               "Left edge of the rectangular domain the blocks divide.",
@@ -176,6 +189,16 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
 #: segment row to be READ-ONLY.
 BINDING_ROWS = (("topo_ogrid_body_geom", "topo_ogrid_body_segs"),
                 ("topo_ogrid_far_geom", "topo_ogrid_far_segs"))
+
+#: Rows that author the model's STATE rather than a family's parameter: which family
+#: is selected, and whether it still generates the document (#139). Declared rather
+#: than special-cased in the gate, which requires every OTHER row to be read by some
+#: family — neither of these ever is, by construction: `family` SELECTS the function
+#: that does the reading, and `detached` decides whether it is called at all. A third
+#: entry here should be viewed with suspicion; a parameter that no family reads is
+#: the control-that-does-nothing this table's own gate exists to catch, and calling
+#: it "state" is the obvious way to smuggle one past.
+TOPOLOGY_STATE_ROWS = ("topo_family", "topo_detached")
 
 #: Rows that author no model field, declared rather than inferred: the derived-count
 #: read-out displays a number the family function computed and writes nothing back.
