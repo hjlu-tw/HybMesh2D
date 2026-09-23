@@ -51,7 +51,7 @@ from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError
 from app.services.topology_ogrid_binding import (
-    cover_problem, order_problem, parse_binding,
+    BINDING_LISTS, cover_problem, order_problem, parse_binding,
 )
 
 #: The template's own name for the family, as stored in the project file.
@@ -238,10 +238,15 @@ def plan(model, ctx) -> Plan:
                          f"and an O-grid is a ring around a closed body.")
             return p
 
-    p.body_segs, why = parse_binding(model.ogrid_body_segs, body.seg_ids, "body")
+    # `BINDING_LISTS` names each list's ROLE, and it is the only spelling: this
+    # function used to say "far-field" where that table says "far field", so one
+    # refusal hyphenated the far field and the next did not. Review found it under
+    # the comment claiming the pairing was "named once so a future third reader
+    # cannot spell it differently" — the third reader was this one.
+    _BODY_ROLE, _FAR_ROLE = (row[0] for row in BINDING_LISTS)
+    p.body_segs, why = parse_binding(model.ogrid_body_segs, body.seg_ids, _BODY_ROLE)
     if not why:
-        p.far_segs, why = parse_binding(model.ogrid_far_segs, far.seg_ids,
-                                        "far-field")
+        p.far_segs, why = parse_binding(model.ogrid_far_segs, far.seg_ids, _FAR_ROLE)
     if why:
         p.problem = why
         return p
@@ -262,8 +267,11 @@ def plan(model, ctx) -> Plan:
     # do not match" there names no edge and sends the user to look at the wrong
     # geometry. Each list is walked against its own ring, so neither depends on the
     # other's length.
-    for who, g, segs, prefix in (("body", body, p.body_segs, "w"),
-                                 ("far-field", far, p.far_segs, "o")):
+    # ONE list of the two lists, built from `BINDING_LISTS` so the role word and the
+    # edge prefix travel together rather than being retyped per loop.
+    lists = tuple((row[0], g, segs, row[3]) for row, g, segs in
+                  zip(BINDING_LISTS, (body, far), (p.body_segs, p.far_segs)))
+    for _who, g, segs, prefix in lists:
         try:
             for i, sid in enumerate(segs):
                 ctx.resolve(f"{prefix}{i * splits}", g.spelling, sid)
@@ -275,13 +283,15 @@ def plan(model, ctx) -> Plan:
     # ...in the ORDER the geometry runs them, which resolving each id one at a time
     # cannot see (every id in a swapped list still resolves), and COVERING it, which
     # the order check cannot see either (every id in a subset walks the right way).
-    for who, g, segs, prefix in (("body", body, p.body_segs, "w"),
-                                 ("far-field", far, p.far_segs, "o")):
-        why = (order_problem(who, g, segs, splits, prefix)
-               or cover_problem(who, g, segs, splits, prefix))
+    # Both ANSWER with the edge, rather than this loop recovering it from the
+    # sentence they wrote — the shape `BindingError` above already uses.
+    for who, g, segs, prefix in lists:
+        edge, why = order_problem(who, g, segs, splits, prefix)
+        if not why:
+            edge, why = cover_problem(who, g, segs, splits, prefix)
         if why:
             p.problem = why
-            p.broken_edge = why.split("edge '")[1].split("'")[0]
+            p.broken_edge = edge
             return p
 
     if len(p.body_segs) != len(p.far_segs):

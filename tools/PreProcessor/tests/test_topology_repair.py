@@ -66,6 +66,11 @@ platform` on stderr, GREEN runs included — the exit code is the signal, not st
   F. `_refresh_topology_repair` not called from `_refresh_topology_counts` -> 2 and 2b
      red and a crash at the row lookup. Nothing is ever flagged, because that call is
      the only route in.
+  H. the flag refresh put back behind `if model.family == topology_ogrid.FAMILY` — the
+     shape `_refresh_topology_counts` really had, found by the Spec review rather than
+     by anything here -> 2e red, alone. Checks 2e/2f were ADDED for it; before them
+     this file drove the family combo nowhere, so the one state in which a flag
+     outlives the template it names was untested.
   G. `cover_problem` dropped from `plan` -> 5d red, alone. Predicted to redden more and
      it does not: every repair this gate makes produces a full cover, so nothing else
      here ever reaches the refusal. 5d was ADDED after this run — the first version of
@@ -234,6 +239,32 @@ check("2c. ...and the read-out beside it still carries the family's own refusal 
       f"({panel.topo_ogrid_derived.text()[:80]!r})",
       "segment" in panel.topo_ogrid_derived.text())
 
+# ── 2e. ...and it clears when the FAMILY stops being the one that binds ────
+# Found by #138's Spec review, measured headlessly: `_refresh_topology_counts` used to
+# return early for a non-O-grid family BEFORE asking about broken bindings, so
+# switching the combo left both amber rows and their dropdowns on screen — flagging
+# edges of a template no longer selected, and still writing the `ogrid_*` row when one
+# was picked. The family's own answer was already `()`; nothing asked it.
+_flags_before = len(flagged(panel))
+# Through the real combo, at the row the REGISTRY puts the H-grid at rather than at a
+# literal index: `FAMILY_CHOICES` is what built this combo, so a family added later
+# moves both together. (The rows carry no `itemData` — `field_widgets` matches a choice
+# by value in Python against the spec's own list, never by `findData`.)
+_fam_values = [v for v, _label in tm.FAMILY_CHOICES]
+check(f"2e0. the family combo really is `FAMILY_CHOICES` ({_fam_values}), so the "
+      f"switch below is made at the row the registry declares",
+      panel.topo_family.count() == len(_fam_values) and "hgrid" in _fam_values)
+panel.topo_family.setCurrentIndex(_fam_values.index("hgrid"))
+check(f"2e. switching the family away from the O-grid clears the flags rather than "
+      f"leaving them naming edges of a template no longer selected "
+      f"(before={_flags_before}, after={len(flagged(panel))})",
+      _flags_before == 2 and not flagged(panel)
+      and not panel._topo_repair.isVisible())
+panel.set_config(_broken_cfg)
+check(f"2f. ...and they come back when the O-grid is selected again, so 2e is a "
+      f"refresh and not a one-way switch-off ({len(flagged(panel))})",
+      len(flagged(panel)) == 2)
+
 # ── 3. the dropdown offers that geometry's current segments ────────────────
 _body_row = next(i for i, t in flagged(panel) if "body.dat" in t)
 _combo = panel._topo_repair._rows[_body_row][1]
@@ -318,6 +349,45 @@ check(f"5d. a ring with a HOLE in it — which is exactly what replacing the bro
       f"at its position leaves once a split has made two segments out of one — is "
       f"refused with the edge that would have to span them named: {_gap_err!r}",
       "edge 'w2'" in _gap_err and "has segment 9 between them" in _gap_err)
+
+# ── 5e. the ASYMMETRIC CAD edit: every flag repaired, and still refused ────
+# #138's demo cuts ONE geometry ("split one of the bound segments … generate
+# successfully"), and under #137's one-to-one pairing that cannot end in a mesh: the
+# body then has five source segments and the far field four. This is NOT repairable
+# from the panel — no choice of segment makes four pair with five — so what is pinned
+# here is that the state is reached HONESTLY: nothing is left flagged (so the user is
+# not sent hunting for a flag that is not there), and the refusal names the CAD action
+# to take rather than an edge. Recorded as inherited from #137 in
+# `.claude/rules/gui-topology.md`, not silently tolerated.
+# Its OWN pair of outlines, because the fixture above cuts both: here only the body
+# is cut, which is the ticket's demo read literally.
+_AB = write_outline(os.path.join(_T, "abody"), 0.5, [0, 1, 2, 3], 12, "wall")
+_AF = write_outline(os.path.join(_T, "afar"), 4.0, [0, 1, 2, 3], 12, "farfield")
+split_segment_in_meta(_AB, 2, [8, 9])
+_asym = MeshConfig()
+_asym.mesh_mode = MESH_MODE_MULTIBLOCK
+_asym.bl_initial_thickness = 1e-3
+_asym.add_geom_file(_AB)
+_asym.add_geom_file(_AF)
+_asym.topology.family = og.FAMILY
+_asym.topology.ogrid_body_geom = _AB
+_asym.topology.ogrid_far_geom = _AF
+_asym.topology.ogrid_cell = 0.2
+# The body's own binding ALREADY REPAIRED, exactly as the dropdown would write it.
+_asym.topology.ogrid_body_segs = "0, 1, 8, 9, 3"
+_asym.topology.ogrid_far_segs = "0, 1, 2, 3"
+_asym_broken = tm.broken_bindings(_asym.topology, ctx_for(_asym))
+_asym_err = ""
+try:
+    tm.build_document(_asym.topology, ctx_for(_asym))
+except tb.BindingError as exc:
+    _asym_err = str(exc)
+check(f"5e. cutting ONE outline leaves NOTHING flagged once its own binding is "
+      f"repaired ({_asym_broken}) — and the run is still refused, by #137's one-to-one "
+      f"pairing rather than by a binding, with the CAD action named: {_asym_err!r}",
+      _asym_broken == ()
+      and "pairs them one to one" in _asym_err
+      and "segment the far field the same way you segmented the body" in _asym_err)
 
 # ── 6-7. persisted with the project, and undoable — through the REAL app ───
 # A panel cannot make either claim about itself: what persists is the project

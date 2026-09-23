@@ -2598,6 +2598,29 @@ rows prints ZERO — with no event loop the deleted widgets are not collected, s
 against stale rows and dies late. Both are exit 1, which is the only signal that means anything
 here.
 
+**The review found two things, and one of them is the ticket's own demo.** #138 says "split one of
+the bound segments ... generate successfully", and under #137's one-to-one pairing that cannot end
+in a mesh: cutting only the body gives it five source segments against the far field's four, so
+repairing the body's own binding leaves nothing flagged and the run still refused. No dropdown can
+fix it — no choice of segment makes four pair with five — so what the gate pins is that the state
+is reached honestly: no flag the user cannot act on, and a refusal naming the CAD action rather
+than an edge. It is a TICKET-level conflict with #137's pairing design, of the same kind as #137's
+own far-field-radius amendment, and it is recorded rather than papered over. The second finding was
+a plain defect: `_refresh_topology_counts` returned early for a family that is not the O-grid,
+BEFORE asking what was broken, so switching the family combo left the amber flags and their
+dropdowns on screen naming edges of a template no longer selected — and picking from one still
+wrote the `ogrid_*` row. The family's own answer was already empty; it was simply never asked.
+
+**And three smells worth the edit.** `plan` recovered the broken edge from the refusal it had just
+written (`why.split("edge '")[1]`), in the package whose own rule is that `BindingError` carries
+the edge as a FIELD precisely so nothing parses prose for it; both order and coverage refusals now
+answer `(edge, problem)`. The two-list pairing was retyped twice in `plan` and a third time as
+`BINDING_LISTS`, under a comment claiming it was named once so a third reader could not spell it
+differently — the third reader was `plan`, and it spelled "far-field" where the table says "far
+field", so two refusals about one list hyphenated it two ways; both loops now read the table. And
+the repair's write returned silently when no panel row authored the field the family named, which
+is the one outcome a repair panel must not produce without a word; it logs at `warning`.
+
 **Named blind spots.**
 
 * **A repair that names a segment far from where the broken one lay is legal and makes a bad

@@ -104,8 +104,8 @@ def repair_binding(order, pos: int, seg: int) -> str:
     return format_binding(order[k:] + order[:k])
 
 
-def cover_problem(who: str, g, segs, splits: int, prefix: str) -> str:
-    """The refusal when a binding does not COVER the outline it wraps.
+def cover_problem(who: str, g, segs, splits: int, prefix: str) -> tuple:
+    """``(edge, problem)`` when a binding does not COVER the outline it wraps.
 
     THE MESHER'S OWN RULE, MOVED FORWARD TO WHERE THE USER CAN ACT ON IT. A bound
     edge's two corners must both lie on the segment it binds, or on a joint that
@@ -134,13 +134,13 @@ def cover_problem(who: str, g, segs, splits: int, prefix: str) -> str:
             continue
         missing = g.seg_ids[(pos[k] + 1) % m]
         edge = f"{prefix}{k * splits + splits - 1}"
-        return (f"the {who} binding runs segment {segs[(k + 1) % n]} straight after "
+        return edge, (f"the {who} binding runs segment {segs[(k + 1) % n]} straight after "
                 f"segment {segs[k]}, but '{g.spelling}' has segment {missing} "
                 f"between them — so edge '{edge}' would have to span two source "
                 f"segments, and a bound edge declares ONE, which is how its boundary "
                 f"condition is read off the geometry. The ring covers the whole "
                 f"outline: bind every segment, in the geometry's order.")
-    return ""
+    return "", ""
 
 
 #: Which stored list is which, as ``(role, model field, geometry field, edge
@@ -194,8 +194,15 @@ def broken_bindings(model, ctx) -> tuple:
     return tuple(out)
 
 
-def order_problem(who: str, g, segs, splits: int, prefix: str) -> str:
-    """The refusal when a binding list does not WALK the geometry's own order.
+def order_problem(who: str, g, segs, splits: int, prefix: str) -> tuple:
+    """``(edge, problem)`` when a binding list does not WALK the geometry's own order.
+
+    THE EDGE IS RETURNED, NOT RECOVERED FROM THE SENTENCE. `plan` used to do
+    ``why.split("edge '")[1].split("'")[0]`` — structured data taken back out of prose,
+    in a package whose own rule is that `BindingError` carries the edge as a field so
+    the panel can flag it without parsing a message. A reworded sentence turned that
+    into an `IndexError`; review named it, and both refusals here now answer in the
+    same shape the exception does.
 
     #137's criterion is that deleting **or reordering** a bound segment is refused
     with the edge named. Deleting is `BindingContext.resolve`'s. Reordering is this:
@@ -223,11 +230,11 @@ def order_problem(who: str, g, segs, splits: int, prefix: str) -> str:
     n = len(pos)
     descents = [k for k in range(n) if pos[(k + 1) % n] <= pos[k]]
     if len(descents) <= 1:
-        return ""
+        return "", ""
     k = descents[0]
     a, b = segs[k], segs[(k + 1) % n]
     edge = f"{prefix}{((k + 1) * splits) % (n * splits)}"
-    return (f"the {who} binding walks segment {b} after segment {a}, but "
+    return edge, (f"the {who} binding walks segment {b} after segment {a}, but "
             f"'{g.spelling}' runs them the other way round — edge '{edge}' would "
             f"cross the ring. A binding must follow the geometry's own order; a "
             f"rotation of it is fine, a reordering is not.")

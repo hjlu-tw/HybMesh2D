@@ -247,7 +247,7 @@ def broken_bindings(model: TopologyModel, ctx=None) -> tuple:
     round trip #138 exists to remove.
     """
     fam = family_for(model.family)
-    fn = getattr(fam, "broken", None) if fam is not None else None
+    fn = fam.broken if fam is not None else None
     if fn is None or ctx is None:
         return ()
     return tuple(fn(model, ctx))

@@ -227,18 +227,24 @@ class MeshConfigBuildMixin(SpecRowsMixin):
                             f"Y: {', '.join(str(v) for v in yc)}"
                             f"    ({len(xc)}x{len(yc)} blocks)")
         lbl = getattr(self, "topo_ogrid_derived", None)
-        if lbl is None:
-            return
-        if model.family != topology_ogrid.FAMILY:
-            lbl.setText("—  (no template selected)")
-            return
-        from app.services import topology_binding
-        ctx = None if cfg is None else topology_binding.context_for_config(cfg)
-        lbl.setText("\n".join(topology_ogrid.plan(model, ctx).lines()))
+        ctx = None
+        if lbl is not None:
+            if model.family != topology_ogrid.FAMILY:
+                lbl.setText("—  (no template selected)")
+            else:
+                from app.services import topology_binding
+                ctx = None if cfg is None else topology_binding.context_for_config(cfg)
+                lbl.setText("\n".join(topology_ogrid.plan(model, ctx).lines()))
         # HERE rather than in its own traversal, because this is the one place that
         # already holds both the model read back from the widgets and the context for
         # this case — and it runs on every template keystroke and every set_config,
         # which is what makes the flag appear and clear without a second trigger.
+        #
+        # ON EVERY PATH, which the two `return`s this replaced were not. Switching the
+        # family combo away from the O-grid left the amber flags and their dropdowns on
+        # screen, naming edges of a template no longer selected — and picking from one
+        # still wrote the `ogrid_*` row. The family's own answer was already `()`; it
+        # was simply never asked. Found by the Spec review, measured headlessly.
         self._refresh_topology_repair(model, ctx)
 
     def _build_sizing_section(self):

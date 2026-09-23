@@ -457,8 +457,10 @@ check(f"11l2. ...and so is a gap in the MIDDLE of an otherwise ordered ring, whi
       and _gap.broken_edge == "w0")
 _far = order_plan("0,1,2,3", "0,2,1,3")
 check(f"11m. ...and the FAR field's own order is checked too, naming its own edge: "
-      f"{_far.problem!r}",
-      "far-field binding walks" in _far.problem and _far.broken_edge == "o2")
+      f"{_far.problem!r}. The role word is `BINDING_LISTS`'s since #138 — this check "
+      f"used to read 'far-field' because `plan` hyphenated where that table did not, "
+      f"so two refusals about the same list spelled it two ways",
+      "far field binding walks" in _far.problem and _far.broken_edge == "o2")
 
 # ── 12. the first-cell height keeps ONE home ────────────────────────────────
 _ds = [e for why, d in _DOCS for e in d["edges"] if "spacing" in e]

@@ -159,6 +159,7 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE O-GRID BINDS TO THE
   moved forward. **SUPERSEDES #137's "a subset is fine"**, which was true of `order_problem` (a
   subset walks the right way) and false of the document it let through; measured, `2, 40` of
   `[5, 11, 2, 40]` projected a four-block ring the mesher then refused.
+  Why: docs/design_notes/gui.md, "The subset half of that sentence was SUPERSEDED by #138"
 - **THE REPAIR IS THEREFORE A ROTATION, NOT A REPLACEMENT AT THE POSITION.** `repair_binding(order,
   pos, seg)` returns the geometry's CURRENT ids rotated so `seg` sits at `pos`, and does not read
   the broken text at all: the only information a valid list carries is where the ring starts, so
@@ -167,6 +168,12 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE O-GRID BINDS TO THE
   moment a CAD split has turned one bound segment into two. Repairing a split therefore makes the
   ring one block BIGGER, and the far field must be cut to match or #137's one-to-one pairing
   refuses; that refusal is not repairable by a dropdown and is left as it is.
+- **`order_problem` AND `cover_problem` RETURN `(edge, problem)`**, and `plan` takes the edge from
+  there. It used to recover it with `why.split("edge '")[1]` — structured data taken back out of
+  prose, in the package whose own rule is that `BindingError` carries the edge as a FIELD so the
+  panel need not parse a message. The role word and the edge prefix come from `BINDING_LISTS` in
+  both loops, which is also the ONE spelling of "far field": `plan` said "far-field" where that
+  table did not, so two refusals about the same list hyphenated it differently.
 - **`plan` RESOLVES EVERY BINDING BEFORE IT ASKS ANY QUESTION ABOUT COUNTS.** With one list
   repaired and the other still broken the two differ in length BECAUSE of the broken one, and
   "the body binds 5 and the far field 4" names no edge and points at the wrong geometry. Each
@@ -179,7 +186,10 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE O-GRID BINDS TO THE
   sentence as their only voice. `choices` is the geometry's whole current list, because every
   entry names a legal rotation.
 - **The flag REFRESHES from `_refresh_topology_counts`, the one place already holding both the
-  model and the context**, which runs on every template keystroke AND every `set_config`. That is
+  model and the context, ON EVERY PATH THROUGH IT** — including the early one for a family that is
+  not the O-grid, which used to `return` first and leave the amber flags on screen naming edges of
+  a template no longer selected, with a pick still writing the `ogrid_*` row. It runs on every
+  template keystroke AND every `set_config`. That is
   what clears the flag when the cause is removed by other means — undoing the CAD edit rewrites
   the sidecar, whose `(mtime, size)` is the binding cache's key. The rows are a POOL that is never
   destroyed and are repopulated inside `block_signals`: a repair arrives from inside a combo's own
@@ -332,6 +342,14 @@ against one list — the shape `gui-panels-config.md` uses, and these six came f
   would notice either. SUPERSEDES #136's own first draft: the weak half is check 12's
   declared/propagated SPLIT, not the cross-check.
   Why: docs/design_notes/gui.md, "This entry's first draft was wider"
+- **Cutting ONE outline cannot be finished from the panel at all, and that is #137's pairing rule
+  rather than this one.** The body then has five source segments and the far field four; repairing
+  the body's own binding leaves NOTHING flagged and the run still refused, because no choice of
+  segment makes four pair with five. What is held is that the state is reached honestly — no flag
+  the user cannot act on, and a refusal naming the CAD action ("segment the far field the same way
+  you segmented the body"). #138's demo reads literally as this case, so it is the one place the
+  ticket's own wording is not satisfiable; the Spec review measured it. Gate:
+  `tests/test_topology_repair.py` check 5e.
 - **A repair that names a segment far from where the broken one lay is LEGAL and meshes badly.**
   The choice decides the ring's rotation, so pairing a body corner with a far corner most of a
   turn away is a document nothing refuses — measured at exit 9 with 67 of 704 cells inverted.

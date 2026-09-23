@@ -32,7 +32,10 @@ from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QComboBox, QLabel, QVBoxLayout, QWidget
 
 from app.utils import COMBO_STYLE, block_signals
+from app.services.logging_setup import get_logger
 from app.services.topology_field_specs import TOPOLOGY_SPECS
+
+_log = get_logger(__name__)
 
 #: The flag's own styling. Amber rather than red: the run is refused, but the state is
 #: repairable in place and the panel is offering the repair in the next line down.
@@ -71,6 +74,11 @@ class TopologyRepairBox(QWidget):
         self._layout = lay
         self._rows: list[tuple[QLabel, QComboBox]] = []
         self._broken: tuple = ()
+        # A BARE BOOL rather than the depth counter `controller.populating()` is, and
+        # the difference is that this one cannot nest: `show_broken` writes only
+        # widgets whose signals it has blocked, so nothing it does can re-enter it.
+        # Set under try/finally for the reason the signal-guard standard gives — an
+        # exception in between must not leave the box permanently deaf.
         self._populating = False
         self.setVisible(False)
 
@@ -199,6 +207,11 @@ class MeshConfigRepairMixin:
         attr = self._topology_attr_for(b.field)
         w = getattr(self, attr, None) if attr else None
         if w is None:
+            # The user picked a segment and nothing happened, which is the one outcome
+            # a repair panel must not produce silently. Reachable only if the table
+            # stops declaring a row for the field the family named.
+            _log.warning("topology repair: no panel row authors %r, so the repair of "
+                         "%s was dropped", b.field, ", ".join(b.edges) or "(no edge)")
             return
         text = topology_ogrid_binding.repair_binding(b.choices, b.pos, seg)
         if text:
