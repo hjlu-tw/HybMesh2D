@@ -163,6 +163,29 @@ check("8. no template row carries a .dat/Config.hpp key — the mesher never see
       "compared against a C++ field that does not exist: "
       + (", ".join(keyed) if keyed else "none do"), not keyed)
 
+# ── 9. the binding pairing is DECLARED, and both halves are rows ───────────
+# It used to be spelled inside the panel, where a second binding family would need a
+# view edit and nothing could compare the pair against the table (#137 review).
+from app.services.topology_field_specs import BINDING_ROWS  # noqa: E402
+
+_attrs = {s.attr for s in TOPOLOGY_SPECS}
+bad = [a for pair in BINDING_ROWS for a in pair if a not in _attrs]
+check(f"9. every half of every geometry->binding pair is a row of this table "
+      f"({[list(p) for p in BINDING_ROWS]}): "
+      + (", ".join(bad) + " are not" if bad else "all present"),
+      bool(BINDING_ROWS) and not bad)
+
+# ── 10. ...and the binding half is READ-ONLY ──────────────────────────────
+# #133: "Which edges bind is the template's decision, not the user's". A row the
+# user can type a segment id into is a more internal control than the arc-length
+# position that decision was protecting them from.
+_by_attr = {s.attr: s for s in TOPOLOGY_SPECS}
+bad = [segs for _g, segs in BINDING_ROWS
+       if not _by_attr[segs].opts.get("readonly")]
+check("10. every captured binding row is declared read-only, so which edges bind "
+      "stays the template's decision: "
+      + (", ".join(bad) + " are editable" if bad else "all read-only"), not bad)
+
 print()
 if failures:
     print(f"FAILED {len(failures)} check(s)")

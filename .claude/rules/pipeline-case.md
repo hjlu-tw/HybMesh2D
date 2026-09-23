@@ -455,6 +455,14 @@ the schema and the stage logic.
   check stopped comparing the line against the name it came from. `config_to_text` stays PURE: it
   is given the name as an override, and no caller fires a projection. Gate:
   `tests/test_topology_persistence.py` checks 9-10b.
+- **ONE refusal, TWO dispositions, deliberately** (#137 review): a family that raises — a binding
+  whose segment the CAD no longer has — REFUSES the run in
+  `mesh_config_io.save_config_to_file`, so no mesher config is written at all, while here it costs
+  the case its DOCUMENT and not its parameter file. They differ because the jobs differ: the first
+  is about to mesh, and meshing on a stale topology is the defect; this is a RECORD written after a
+  run that already happened, and the pre-template parameter file with no `MESH_TOPOLOGY_FILE` line
+  is much better than the nothing the caller's own `except` would otherwise leave. The `warning`
+  names the family, per `gui-seams.md`'s tier for a failure that degrades what the user asked for.
 - **The mesh stage's precondition is per MODE, stated once in
   `services/mesh_modes.py::missing_mesh_input()`** (#56). `geom_files` empty is fatal on the hybrid
   path and NORMAL on the multi-block one, where a topology may declare every corner itself. Both

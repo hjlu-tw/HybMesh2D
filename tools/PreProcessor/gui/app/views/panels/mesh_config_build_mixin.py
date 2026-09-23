@@ -22,7 +22,8 @@ from app.models.mesh_config import MeshConfig
 from app.views.panels.field_widgets import SpecRowsMixin, edit_signal
 from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
 from app.views.panels.mesh_field_specs import MESH_SPECS
-from app.services.topology_field_specs import TOPOLOGY_SPECS
+from app.services.geom_path_identity import canonical_geom_path
+from app.services.topology_field_specs import BINDING_ROWS, TOPOLOGY_SPECS
 from app.services.topology_model import TopologyModel
 
 
@@ -73,6 +74,21 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         align_form_labels(topo_form, 130)
         self.sec_topology.add_layout(topo_form)
 
+        # THE CAPTURE IS WIRED FIRST, and the order is the rule rather than an
+        # accident: Qt calls slots in connection order, so with the read-out wired
+        # first, naming a geometry emitted once carrying the binding it was about to
+        # replace — a `topology_changed` describing a configuration that existed for
+        # no one. Wired here, the first emit already carries the captured binding.
+        _by_attr = {sp.attr: sp for sp in TOPOLOGY_SPECS}
+        for geom_attr, segs_attr in BINDING_ROWS:
+            w = getattr(self, geom_attr, None)
+            if w is None or getattr(self, segs_attr, None) is None:
+                continue
+            sig = edit_signal(w, _by_attr[geom_attr])
+            if sig is not None:
+                sig.connect(lambda *_a, g=geom_attr, t=segs_attr:
+                            self._capture_topology_binding(g, t))
+
         # The derived counts are a READ-OUT of the family's own derivation, so it
         # refreshes whenever any parameter that feeds it changes — including the
         # family itself, which decides whether there is a derivation at all.
@@ -90,22 +106,6 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         # Wired here rather than in `_build_mode_section` because it is the
         # TEMPLATE that cares; the mode row itself is unchanged.
         self.mesh_mode.currentIndexChanged.connect(self._on_topology_edited)
-        # Naming a geometry CAPTURES its segment ids as the binding of record
-        # (#137). Wired to those two rows alone rather than folded into the handler
-        # above, because it is not a read-out: it WRITES a parameter, and doing that
-        # on every template keystroke would re-adopt the segments the user is in the
-        # middle of editing — which is exactly the silent re-binding that storing
-        # ids instead of positions exists to prevent.
-        _by_attr = {sp.attr: sp for sp in TOPOLOGY_SPECS}
-        for geom_attr, segs_attr in (("topo_ogrid_body_geom", "topo_ogrid_body_segs"),
-                                     ("topo_ogrid_far_geom", "topo_ogrid_far_segs")):
-            w = getattr(self, geom_attr, None)
-            if w is None or getattr(self, segs_attr, None) is None:
-                continue
-            sig = edit_signal(w, _by_attr[geom_attr])
-            if sig is not None:
-                sig.connect(lambda *_a, g=geom_attr, t=segs_attr:
-                            self._capture_topology_binding(g, t))
         self._refresh_topology_counts()
 
     def _capture_topology_binding(self, geom_attr: str, segs_attr: str):
@@ -116,24 +116,27 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         removing a bound segment would quietly produce a different mesh; once these
         ids are stored, the same removal is refused with the edge named (#137).
         Capturing HERE — the moment the user names the geometry — is the one moment
-        they have said which shape they mean, and it is also the only one at which
-        overwriting the row cannot destroy an answer they typed.
+        they have said which shape they mean.
 
-        It leaves an EXISTING binding alone unless the geometry it named no longer
-        answers for it: re-picking the same file must not silently re-adopt segments
-        the user has since edited by hand, and the CAD edit that breaks a binding is
-        #138's to repair rather than this handler's to paper over.
+        KEYED BY THE FILE THE BINDING WAS CAPTURED FOR, not by whether the held ids
+        still happen to resolve. Review found the difference: both shipped circles
+        carry segments 0-3, so a user switching the body from one to the other kept a
+        binding chosen for the OTHER shape — the walls then bind segments never
+        picked for the geometry they lie on, which is this ticket's own failure class
+        reached by another route. A held binding therefore survives only a re-naming
+        of the SAME file (which is what #138's repair will write), and a different
+        file is always a fresh capture.
 
-        The cost of that rule, measured rather than assumed: swapping to a DIFFERENT
-        geometry whose ids the held binding happens to resolve on keeps that binding.
-        Both shipped circles carry segments 0-3, so it is reachable. It is the right
-        answer for the rule as written — a binding that still resolves is not broken
-        — and `tests/test_topology_panel.py` check 13d pins it as measured rather
-        than leaving it to be discovered.
+        The row itself is READ-ONLY (`topology_field_specs.BINDING_ROWS`), because
+        #133 decides that which edges bind is the template's decision and not the
+        user's. Parsing what is held still goes through the family's own
+        `parse_binding`, so "is the held binding good?" and "what does the projection
+        bind?" cannot answer about different readings of one string — they did, and
+        disagreed on a malformed token.
         """
         if getattr(self, "_loading", False):
             return
-        from app.services import topology_binding
+        from app.services import topology_binding, topology_ogrid
         w, sw = getattr(self, geom_attr, None), getattr(self, segs_attr, None)
         if w is None or sw is None:
             return
@@ -143,9 +146,15 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         g = topology_binding.geometry_binding(name)
         if not g.seg_ids:
             return
-        held = [t.strip() for t in sw.text().split(",") if t.strip()]
-        if held and all(t.lstrip("-").isdigit() and int(t) in g.spans for t in held):
+        captured_for = getattr(self, "_topo_captured_for", None)
+        if captured_for is None:
+            captured_for = self._topo_captured_for = {}
+        canon = canonical_geom_path(name) or name
+        held, why = topology_ogrid.parse_binding(sw.text(), (), "binding")
+        if (not why and held and captured_for.get(segs_attr) == canon
+                and all(s in g.spans for s in held)):
             return
+        captured_for[segs_attr] = canon
         sw.setText(", ".join(str(s) for s in g.seg_ids))
 
     def _on_topology_edited(self, *_args):

@@ -48,7 +48,7 @@ what is recorded.
      this injection ZERO. Read the exit code, not the FAIL count.
 
 INJECTIONS for the O-grid half (#137), run by hand 2026-09-23, each reverted. All
-four bit. (Every run of this file prints `QOpenGLWidget is not supported on this
+six bit. (Every run of this file prints `QOpenGLWidget is not supported on this
 platform` on stderr, GREEN runs included, so stderr is not the crash signal here —
 the exit code is.)
 
@@ -66,10 +66,17 @@ the exit code is.)
      the case's geometries -> the same three as G. The read-out then shows the
      family's "needs the geometry list" sentence, which is right for a panel that
      genuinely has no config and wrong for this one.
-  J. the capture refuses to overwrite ANY non-empty row, instead of only one whose
-     ids still resolve -> 13c red ALONE. A stale binding is then never refreshed,
-     and the only check that can see it is the one holding an id the named geometry
-     cannot answer for. That is why 13c uses "2, 9" rather than another valid subset.
+  J. the capture keyed on "do the held ids still resolve?" instead of on WHICH FILE
+     the binding was captured for -> 13d red alone. That was the shipped behaviour
+     until the Spec review measured it: both shipped circles carry segments 0-3, so
+     switching the body from one to the other kept a binding chosen for the other
+     shape, and no other check here can see it.
+  N. `BINDING_ROWS` naming a segment row that does not exist -> `test_topology_
+     param_specs.py` check 9 red AND 13, 13c, 13d, 13e red here. The pairing being
+     DECLARED rather than spelled in the view is what lets a gate see it at all.
+  O. the `readonly=True` dropped from the body binding row -> check 13f red here and
+     `test_topology_param_specs.py` check 10 red. Two gates on one rule because the
+     table is where it is declared and the widget is where it is felt.
 """
 from __future__ import annotations
 
@@ -336,13 +343,26 @@ check("13c. ...while a held binding the named geometry cannot answer for IS "
       == ["0", "1", "2", "3"])
 panel.topo_ogrid_body_segs.setText("2, 1")
 panel.topo_ogrid_body_geom.setText(_F)
-check("13d. RECORDED AS MEASURED, not as intended: swapping to a DIFFERENT geometry "
-      "whose ids the held binding happens to resolve on keeps that binding "
-      f"({panel.topo_ogrid_body_segs.text()!r}). Both shipped circles carry segments "
-      "0-3, so this is reachable. It is the right answer for the rule as written — "
-      "a binding that still resolves is not broken — and the cost is that a geometry "
-      "swap can silently inherit a subset the user chose for the other shape",
-      panel.topo_ogrid_body_segs.text() == "2, 1")
+check("13d. ...and swapping to a DIFFERENT geometry ALWAYS re-captures, even when "
+      "the held ids happen to resolve on the new one — both shipped circles carry "
+      "segments 0-3, so a rule keyed on 'does it still resolve' kept a binding "
+      "chosen for the other shape, which is this ticket's failure class by another "
+      f"route ({panel.topo_ogrid_body_segs.text()!r})",
+      [t.strip() for t in panel.topo_ogrid_body_segs.text().split(",")]
+      == ["0", "1", "2", "3"])
+panel.topo_ogrid_body_segs.setText("nonsense")
+panel.topo_ogrid_body_geom.setText(_B)
+check("13e. ...and a binding the family's OWN parser refuses is re-captured rather "
+      "than protected, which is what keeps the panel's reading of this string and "
+      f"the projection's the same one ({panel.topo_ogrid_body_segs.text()!r})",
+      [t.strip() for t in panel.topo_ogrid_body_segs.text().split(",")]
+      == ["0", "1", "2", "3"])
+check("13f. the two binding rows are READ-ONLY, because #133 decides which edges "
+      "bind is the template's decision and not the user's — a hand-typed id list is "
+      "a more internal control than the arc length the decision was protecting them "
+      "from",
+      panel.topo_ogrid_body_segs.isReadOnly()
+      and panel.topo_ogrid_far_segs.isReadOnly())
 
 # ── 14. the O-grid parameters round-trip too ───────────────────────────
 c14 = cfg_for(MESH_MODE_MULTIBLOCK, family="ogrid", ogrid_body_geom=_B,

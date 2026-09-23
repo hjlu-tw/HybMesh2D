@@ -2411,7 +2411,9 @@ geometry. Both cannot hold: a far field synthesised from a radius has no geometr
 its edges would be straight chords between block corners — a SQUARE far field on the four-block
 case, which is not a far field anyone wants, and no boundary conditions of its own. The ticket's
 own demo draws one ("draw a circle and a far-field circle"), so the drawn reading is the one that
-survives and the radius parameter does not exist. Stated here rather than silently dropped.
+survives and the radius parameter does not exist. Stated here rather than silently dropped — and
+it does cost #133's user story 2 its "far-field radius", which is a TICKET amendment rather than
+code, since no amount of code can both synthesise a far field and write no geometry.
 
 **The segments pair ONE TO ONE, and a mismatch is refused by name.** The alternative — a common
 refinement of both outlines' segment boundaries — is general but produces wildly uneven blocks,
@@ -2444,11 +2446,54 @@ messages in `test_topology_templates.py` are unchanged; what moved is where each
 down. A second copy is one that can come to disagree, and the family it disagreed about would be
 the one that shipped a refusal.
 
+**The review found that "reordering is unreachable" was FALSE, and it was this note that said it.**
+The first version argued that #137's "deleting **or reordering** a bound segment causes the
+projection to be refused" was half-satisfied by construction, "because there is no position
+anywhere in the chain". That is wrong, and measurably: the stored binding list is ORDERED, and
+`_ring` walks it in that order, so swapping two ids leaves every one of them resolvable while
+sending a wall edge backwards along the body. Measured on the gate's own fixtures before the fix:
+`0,2,1,3` PROJECTED a document, and the C++ mesher then refused it at exit 8 — the right outcome
+reached by the wrong owner, after the panel's read-out had said nothing; and `3,2,1,0` was refused
+with a FALSE diagnosis, "the body and the far field are wound in opposite directions", naming no
+edge. `order_problem` now refuses both, naming the edge, and the rule it enforces is that the
+positions of the bound ids in the geometry's own list must be CYCLICALLY INCREASING — so a
+rotation is fine (a ring has no first segment) and a subset is fine (a binding need not use every
+segment), while a walk that goes backwards at more than one joint is not. A two-entry list cannot
+tell a reversal from a rotation and is not refused; with two positions there is no third to break
+the tie. The wrong claim is kept above the checks rather than deleted, because an argument that an
+acceptance criterion is unreachable is exactly the kind that needs a measurement and did not get
+one.
+
+**Three more the review found, all in the parser and the panel.** `parse_binding` (then `_ids`)
+SKIPPED a token it could not read and fell all the way back to adopting the whole geometry when
+none of them parsed — so `"0,x,2"` bound two segments where three were written, which is the
+silently-shorter-ring this design exists to make unreachable, reintroduced inside the parser meant
+to prevent it. It now refuses, and refuses a duplicate id for the same reason (one segment at two
+ring positions is two walls on one stretch of geometry). The panel had its OWN reading of the same
+string and the two disagreed on exactly that input; it now asks `parse_binding`. And the capture
+was keyed on "do the held ids still resolve?" rather than on WHICH FILE they were captured for:
+both shipped circles carry segments 0-3, so switching the body from one to the other kept a
+binding chosen for the other shape — this ticket's failure class reached by another route.
+
+**Two smaller ones, recorded because both were invisible until named.** The far-field-inside-body
+refusal sat AFTER the radial derivation, which therefore answered on a negative span before the
+refusal fired; it is now before it. And `MAX_RADIAL` clamped a count the panel presents as the
+derivation's answer, silently; the read-out now says when it fires.
+
+**What the two binding rows are, after the review.** They are READ-ONLY, because #133 decides that
+which edges bind is the template's decision and not the user's, and a hand-typed segment id is a
+more internal control than the normalized arc-length position that decision was protecting users
+from. They exist as rows at all because a binding must be STORED to be a binding, and a field-spec
+row is how this package stores and gates a parameter. Re-pointing one is #138's dropdown. The
+pairing of geometry row to binding row is declared in `topology_field_specs.BINDING_ROWS` rather
+than spelled in the panel, so a second binding family needs no view edit and the bidirectional
+gate can see both halves.
+
 **Named blind spots.** The fixtures in `test_topology_ogrid.py` are written by the gate rather
 than by the real `surface_resampler`, so a change to the sidecar FORMAT is caught next door in
 `test_multiblock_binding_surface.py` and not here. Reordering segments without renumbering them is
-not a refusal and is not checked as one — with ids it is not a defect, and the index shift the
-criterion is about is unreachable because there is no position anywhere in the chain. The 1:1 law
+now refused by `order_problem` rather than argued away; what remains unreachable is a two-entry
+list, where a reversal and a rotation are the same sequence. The 1:1 law
 is an idealisation for a circle, so on a shape that is not one the equivalent radius is an
 approximation and nothing measures how good it is; the count it produces is a default the user may
 override, which is what makes that acceptable.

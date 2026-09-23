@@ -239,8 +239,14 @@ class BindingContext:
 
 # ── building one from a mesh configuration ──────────────────────────────────
 
-#: canonical path -> (mtime, size, meta mtime, meta size, GeomBinding)
+#: canonical path -> (stamp, GeomBinding). CAPPED, because the geometry rows are
+#: ``path`` widgets that emit on every keystroke, so a typed path leaves an entry per
+#: PREFIX — a module global that only ever grows is a leak however small each entry
+#: is. Dropped whole rather than by age: the working set is one or two geometries, so
+#: an LRU would be machinery for a case that does not arise, and re-reading two files
+#: once in a while is cheaper than keeping one.
 _CACHE: dict = {}
+_CACHE_CAP = 32
 
 
 def _stamp(path: str) -> tuple:
@@ -346,6 +352,8 @@ def geometry_binding(spelling: str) -> GeomBinding:
     seg_ids, spans = _spans(pts, ids, closed)
     g = GeomBinding(spelling=spelling, path=path, seg_ids=seg_ids, spans=spans,
                     closed=closed)
+    if len(_CACHE) >= _CACHE_CAP:
+        _CACHE.clear()
     _CACHE[path] = (stamp, g)
     return g
 

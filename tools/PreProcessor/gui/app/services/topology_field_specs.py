@@ -118,15 +118,15 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               opts=dict(caption="Select body geometry",
                         filter="Geometry (*.dat);;All files (*)")),
     FieldSpec("topo_ogrid_body_segs", "text", "Bound Body Segments",
-              "The source segments the wall edges bind to, as the CAD segment's "
-              "STABLE IDs — never as positions in a list, because inserting or "
-              "deleting a segment shifts every positional binding after it with no "
-              "error at all. Blank adopts whatever the geometry has now; once "
-              "filled it is the binding of record, and an id the geometry no "
-              "longer has REFUSES the run with the edge named rather than falling "
-              "back to the default boundary condition.",
+              "READ-ONLY: which edges bind is the template's decision, not yours. "
+              "Captured when you name the geometry above, as the CAD segment's "
+              "STABLE IDs — never as positions in a list, because inserting, "
+              "deleting or reordering a segment shifts every positional binding "
+              "after it with no error at all. An id the geometry no longer has, or "
+              "an order it does not run them in, REFUSES the run with the edge "
+              "named rather than falling back to the default boundary condition.",
               model="ogrid_body_segs", group=GROUP, modes=_MB,
-              opts=dict(placeholder="(all of the body's segments)")),
+              opts=dict(placeholder="(all of the body's segments)", readonly=True)),
     FieldSpec("topo_ogrid_far_geom", "path", "Far-Field Geometry",
               "The outer outline. Its segments pair ONE TO ONE with the body's, so "
               "segment it the same way you segmented the body; its own per-segment "
@@ -137,7 +137,7 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec("topo_ogrid_far_segs", "text", "Bound Far Segments",
               "The far field's bound segment ids. Same rule as the body's.",
               model="ogrid_far_segs", group=GROUP, modes=_MB,
-              opts=dict(placeholder="(all of the far field's segments)")),
+              opts=dict(placeholder="(all of the far field's segments)", readonly=True)),
     FieldSpec("topo_ogrid_splits", "int", "Splits Per Segment",
               "How many equal-arc blocks each source segment becomes. A bound edge "
               "declares ONE segment — that is how its boundary condition is read "
@@ -167,6 +167,15 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               "the gap between them.",
               model=None, group=GROUP, modes=_MB),
 )
+
+#: Which geometry row CAPTURES its binding into which segment row (#137). Declared
+#: HERE rather than spelled in the panel, for the reason every other pairing in this
+#: package is: a view holding it is a view a second binding family has to be edited
+#: to add, and nothing would gate the pair. `tests/test_topology_param_specs.py`
+#: check 9 requires both halves to be rows of this table, and check 10 requires each
+#: segment row to be READ-ONLY.
+BINDING_ROWS = (("topo_ogrid_body_geom", "topo_ogrid_body_segs"),
+                ("topo_ogrid_far_geom", "topo_ogrid_far_segs"))
 
 #: Rows that author no model field, declared rather than inferred: the derived-count
 #: read-out displays a number the family function computed and writes nothing back.

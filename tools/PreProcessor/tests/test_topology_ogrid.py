@@ -26,7 +26,8 @@ can compare two resamplings' projected documents byte for byte instead of allowi
 tolerance — the same argument ``test_multiblock_binding_surface.py`` already makes for
 its own corner positions. The curved half is measured where it can be stated exactly:
 check 8 runs the derivation against the SHIPPED circles, whose radii are 0.5 and 10,
-and check 17 runs the real mesher on them.
+and check 17 runs the real mesher on them — from the model's UNTOUCHED defaults,
+which is what "generating from defaults" means and what check 17pre proves it is.
 
 WHAT THIS FILE DOES NOT CHECK, because another gate owns it: the structural rules
 themselves (``topology_doc_invariants.py``, which checks 1-7 call and which the
@@ -42,23 +43,31 @@ THE EXIT CODE and not from a count of FAIL lines — two of the six CRASH this f
 rather than failing a check, and a crash prints no FAIL line at all. Where the result
 differed from the prediction written first, the correction is the record.
 
-  A. ``topology_binding.resolve`` stops testing ``seg not in g.spans`` -> exit 1, but
-     by CRASHING at check 11's projection with a ``KeyError`` on the missing span
-     rather than by failing a check. Predicted "11b, 11c and 11d red". The gate is
-     still red, and the shape is worth knowing: with the resolver disabled, the
+  A. ``topology_binding.resolve`` stops testing ``seg not in g.spans`` -> exit 1,
+     with 11c, 11d and 11f red and then a ``KeyError`` CRASH at the first thing that
+     indexes the missing span. The shape is the point: with the resolver disabled the
      missing segment is not detected at all until something indexes it, which is
      precisely the "no error at all" this rule exists to prevent — the crash is an
-     artefact of the fixture being the first thing to index, not a diagnostic a user
-     would get. Check 17's ``.bnd`` is UNCHANGED either way: downstream of a
-     wrong-but-valid binding there is nothing that can tell.
-  B. ``_ids`` ignores the stored text and always adopts ``g.seg_ids`` -> exit 1 with
-     SIX red: 9c, 11c, 11d, 11f, 11g and 14. Checks 9 and 9b STAYED GREEN, which was
-     half the prediction ("check 9 still green") and is the useful half: adoption
-     produces the right ids for a geometry that still has them, so the two directional
-     checks cannot see it and only 9c — which binds a SUBSET — and the refusal checks
-     can. A stored binding is observable through its failure, not through its success.
-  C. the clockwise mirror deleted from the block tuple (always the CCW one) -> exit 1,
-     check 13 alone. Check 2 STAYED GREEN, because the ring still closes as a
+     artefact of the fixture indexing first, not a diagnostic a user would get.
+     Check 17's ``.bnd`` is UNCHANGED either way: downstream of a wrong-but-valid
+     binding there is nothing that can tell.
+  B. ``parse_binding`` ignores the stored text and always adopts ``g.seg_ids`` ->
+     exit 1 with NINE red here (9c, 11c, 11d, 11f, 11g, 11i, 11j, 11m, 14) and 13b
+     red in ``test_topology_panel.py``. Checks 9 and 9b STAY GREEN, which was half
+     the prediction and is the useful half: adoption produces the right ids for a
+     geometry that still has them, so the two directional checks cannot see it. A
+     stored binding is observable through its FAILURE, not through its success.
+  K. the cyclic-order test disabled (``order_problem`` always returns "") -> 11i,
+     11j and 11m red, and 11i then reports "the corner ring has no area", which is
+     the FALSE diagnosis the Spec review found: with no order rule the swap survives
+     to the winding check, which blames the geometries. Exactly why the rule sits
+     where a wrong order is still nameable as an edge.
+  L. an unparseable token ``continue``d instead of refused -> check 14 red. This is
+     the shape the first version SHIPPED: ``"0,x,2"`` bound two segments where three
+     were written and ``"a,b"`` adopted the whole geometry.
+  M. a duplicate id accepted instead of refused -> check 14 red.
+  C. the clockwise mirror deleted from the block tuple (always the CCW one) -> exit
+     1, check 13 alone. Check 2 STAYED GREEN, because the ring still closes as a
      declaration and only closes the wrong way round in real coordinates. That is why
      13 places the corners instead of reading the declaration order.
   D. the radial seed written onto every radial edge instead of the first -> exit 1,
@@ -85,11 +94,16 @@ NAMED BLIND SPOTS:
     wind clockwise (signed area -0.000000)", topology exit code 8). Nothing in this
     file re-runs that measurement on every pass, so a mesher that later accepted two
     would leave the floor as a conservatism rather than as a rule.
-  * Reordering segments WITHOUT renumbering them is not a refusal and is not checked
-    as one: with ids, a reorder that keeps the ids keeps the bindings, which is the
-    point of storing ids. #137's criterion is about the INDEX SHIFT, and the shift is
-    unreachable here — there is no position anywhere in the chain. A reorder that
-    RENUMBERS is a delete plus a create, and that is check 11.
+  * A TWO-ENTRY binding list cannot tell a reversal from a rotation, so `11i`'s rule
+    does not fire on one. Inherent: with two positions there is no third to break the
+    tie. The ring still has at least three BLOCKS (`MIN_BLOCKS`), so this is only
+    reachable with two segments and `ogrid_splits` >= 2.
+  * WHAT THIS FILE SAID FIRST AND HAD TO WITHDRAW: that reordering was unreachable
+    "because there is no position anywhere in the chain". The Spec review measured
+    the opposite — the stored list is itself ordered, and `0,2,1,3` projected a
+    document. Checks 11h-11m are that correction, and the wrong claim is left here
+    rather than deleted, because an argument that a criterion is unreachable is
+    exactly the kind that needs a measurement and did not get one.
   * The 1:1 radial law is stated for a CIRCULAR O-grid, so on the square fixtures the
     radius it uses is the AREA-EQUIVALENT one and the derived count is an
     approximation. Check 8 therefore measures the derivation on circles, where that
@@ -433,6 +447,45 @@ check("11g. ...and the panel read-out carries that same sentence while the user 
       _plan_del.problem and _plan_del.problem in _err
       and _plan_del.broken_edge == "w2")
 
+# ── 11h-11m. REORDERING, which the first version argued was unreachable ────
+# It is not. The stored list is ORDERED and the ring walks it in that order, so a
+# swap leaves every id resolvable while sending a wall edge backwards along the body.
+# Measured before the fix: `0,2,1,3` PROJECTED a document (the C++ mesher then
+# refused it at exit 8), and the reversal `3,2,1,0` was refused with a FALSE
+# diagnosis — "the body and the far field are wound in opposite directions" — naming
+# no edge. Both are this ticket's own criterion, and both are now refused here.
+_b3, _f3, _ctx3 = context("4seg")
+
+
+def order_plan(body_segs, far_segs="0,1,2,3", splits=1):
+    return og.plan(model(_b3, _f3, ogrid_splits=splits, ogrid_body_segs=body_segs,
+                         ogrid_far_segs=far_segs), _ctx3)
+
+
+_ok = order_plan("0,1,2,3")
+check("11h. NEGATIVE CONTROL: the geometry's own order projects cleanly, so the "
+      f"refusals below are the reordering and not the checker ({_ok.problem!r})",
+      not _ok.problem)
+_sw = order_plan("0,2,1,3")
+check(f"11i. swapping two bound segments — every id still resolving — is REFUSED "
+      f"with the edge named: {_sw.problem!r}",
+      "walks segment 1 after segment 2" in _sw.problem and _sw.broken_edge == "w2")
+_rev = order_plan("3,2,1,0")
+check(f"11j. ...and so is a full reversal, which used to be refused with a FALSE "
+      f"diagnosis about the two geometries being wound apart: {_rev.problem!r}",
+      "runs them the other way round" in _rev.problem
+      and "wound in opposite" not in _rev.problem)
+_rot = order_plan("2,3,0,1")
+check(f"11k. ...while a ROTATION is not refused, because a ring has no first "
+      f"segment ({_rot.problem!r})", not _rot.problem)
+_sub = order_plan("1,2", "1,2", splits=2)
+check(f"11l. ...and neither is a SUBSET in order, because a binding need not use "
+      f"every segment ({_sub.problem!r})", not _sub.problem)
+_far = order_plan("0,1,2,3", "0,2,1,3")
+check(f"11m. ...and the FAR field's own order is checked too, naming its own edge: "
+      f"{_far.problem!r}",
+      "far-field binding walks" in _far.problem and _far.broken_edge == "o2")
+
 # ── 12. the first-cell height keeps ONE home ────────────────────────────────
 _ds = [e for why, d in _DOCS for e in d["edges"] if "spacing" in e]
 check(f"12. every radial edge marks its BODY end a wall end and declares NO "
@@ -487,7 +540,11 @@ cases = [
     ("a ring below the mesher's own orientation floor", dict(ogrid_splits=2),
      "at least 3"),
     ("a far field segmented differently from the body",
-     dict(ogrid_splits=1, ogrid_body_segs="7", ogrid_far_segs="9,9"), "one to one"),
+     dict(ogrid_splits=3, ogrid_body_segs="7", ogrid_far_segs="9,7"), "one to one"),
+    ("a binding list holding a token that is not a segment id",
+     dict(ogrid_splits=3, ogrid_body_segs="7,x"), "is not a segment id"),
+    ("a binding list naming one segment twice",
+     dict(ogrid_splits=3, ogrid_body_segs="7,7"), "twice"),
     ("a body geometry this mesh does not load", dict(ogrid_splits=2),
      "not one of this mesh's geometries"),
     ("no geometry named at all", dict(ogrid_splits=2), "name the body geometry"),
@@ -505,7 +562,7 @@ for why, kw, want in cases:
 check("14. each refusable configuration is refused with a sentence naming the fix "
       "rather than with a bare failure — including the three-block floor, which is "
       "the mesher's own refusal moved forward to where the user can act on it: "
-      + ("; ".join(bad) if bad else "all four named"), not bad)
+      + ("; ".join(bad) if bad else "all six named"), not bad)
 try:
     tm.build_document(model(_b1, _f1, ogrid_splits=2), _ctx1)
     _raised = False
@@ -545,7 +602,20 @@ if not os.path.exists(_BIN):
 else:
     with tempfile.TemporaryDirectory() as tmp:
         conf = os.path.join(tmp, "case.dat")
-        topo = tm.project(_ship_m, conf, _ship_ctx)
+        # THE MODEL'S OWN DEFAULTS, not check 8's tuned cell: the criterion is
+        # "generating from DEFAULTS on a shipped-style geometry", and a run with a
+        # hand-picked cell size measures the parameters rather than the defaults.
+        # Only the two geometries are named; everything else is what a fresh
+        # TopologyModel carries.
+        _def = tm.TopologyModel(family=og.FAMILY, ogrid_body_geom=_SHIP_B,
+                                ogrid_far_geom=_SHIP_F)
+        check(f"17pre. the run below really is on the untouched defaults "
+              f"(splits={_def.ogrid_splits}, cell={_def.ogrid_cell}, "
+              f"radial override={_def.ogrid_radial_count})",
+              (_def.ogrid_splits, _def.ogrid_cell, _def.ogrid_radial_count)
+              == (tm.TopologyModel().ogrid_splits, tm.TopologyModel().ogrid_cell,
+                  tm.TopologyModel().ogrid_radial_count))
+        topo = tm.project(_def, conf, _ship_ctx)
         stem = os.path.join(tmp, "mesh")
         with open(conf, "w", encoding="utf-8") as fh:
             fh.write("MESH_MODE 1\n"
@@ -563,7 +633,7 @@ else:
         r = subprocess.run([_BIN, "-conf", conf], cwd=tmp, env=env,
                            capture_output=True, text=True, timeout=900)
         out = (r.stdout or "") + (r.stderr or "")
-        check(f"17. the O-grid's projection on a shipped geometry runs the real "
+        check(f"17. the O-grid's DEFAULTS on a shipped geometry run the real "
               f"mesher to exit 0 (got {r.returncode})", r.returncode == 0)
         mm = re.search(r"Inverted cells\s*:\s*(\d+) of (\d+)", out)
         check("17b. ...with zero inverted cells, over a mesh that exists "

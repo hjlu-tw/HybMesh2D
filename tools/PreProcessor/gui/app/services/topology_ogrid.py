@@ -68,8 +68,8 @@ MIN_BLOCKS = 3
 MAX_RADIAL = 5000
 
 
-def _ids(text: str, fallback) -> tuple[int, ...]:
-    """A stored ``"0,1,2,3"`` binding list, or ``fallback`` when it is blank.
+def parse_binding(text: str, fallback, who: str = "binding") -> tuple:
+    """``(ids, problem)`` for a stored ``"0,1,2,3"`` binding list.
 
     BLANK MEANS "ADOPT WHAT THE GEOMETRY HAS NOW", and that is a state the read-out
     names out loud rather than a silent default. It exists because a model has to be
@@ -78,6 +78,19 @@ def _ids(text: str, fallback) -> tuple[int, ...]:
     binding OF RECORD: a segment that disappears from the geometry is then a refusal
     rather than a shorter ring, which is the difference between a refused projection
     and a mesh that quietly grew a different wall.
+
+    A TOKEN THAT IS NOT A SEGMENT ID IS A REFUSAL, NOT A SKIP. The first draft
+    dropped it and carried on, so ``"0,x,2"`` bound two segments where three were
+    written and ``"a,b"`` fell all the way back to adopting the whole geometry —
+    which is the silently-shorter-ring this whole design exists to make unreachable,
+    reintroduced inside the parser that is supposed to prevent it. Review found it;
+    it is the reason this returns a sentence rather than a best effort. A DUPLICATE
+    is refused for the same reason: one segment at two ring positions is two walls
+    on one stretch of geometry, and nothing downstream would say so.
+
+    The ONE parser of this format. The panel asks it too, so "is the held binding
+    still good?" and "what does the projection bind?" cannot answer about different
+    readings of the same text — they did, and disagreed on ``"0,x,2"``.
     """
     out = []
     for tok in str(text or "").split(","):
@@ -85,10 +98,50 @@ def _ids(text: str, fallback) -> tuple[int, ...]:
         if not tok:
             continue
         try:
-            out.append(int(tok))
+            v = int(tok)
         except ValueError:
-            continue
-    return tuple(out) if out else tuple(fallback)
+            return (), (f"the {who} list contains {tok!r}, which is not a segment "
+                        f"id. It is a comma-separated list of the CAD segment ids "
+                        f"the walls bind to; clear it to adopt the geometry's own.")
+        if v in out:
+            return (), (f"the {who} list names segment {v} twice. One segment "
+                        f"cannot be two sides of the ring.")
+        out.append(v)
+    return (tuple(out) if out else tuple(fallback)), ""
+
+
+def order_problem(who: str, g, segs, splits: int, prefix: str) -> str:
+    """The refusal when a binding list does not WALK the geometry's own order.
+
+    #137's criterion is that deleting **or reordering** a bound segment is refused
+    with the edge named. Deleting is `BindingContext.resolve`'s. Reordering is this:
+    the stored list is ORDERED and the ring walks it in that order, so swapping two
+    ids keeps every one of them resolvable while sending a wall edge backwards along
+    the body. This file's first version argued that a reorder was unreachable
+    "because there is no position anywhere in the chain"; the Spec review measured
+    otherwise — ``0,2,1,3`` projected a document, and the C++ mesher then refused it
+    at exit 8, or worse, the winding check refused it with a FALSE diagnosis about
+    the two geometries being wound apart. The argument was wrong: the ORDER of the
+    stored list is itself positional information.
+
+    A ROTATION IS FINE and a subset is fine — the ring has no first segment, and a
+    binding need not use every segment. What is refused is a walk that goes backwards
+    at more than one joint, which is exactly "the positions are not cyclically
+    increasing". A two-entry list cannot distinguish a reversal from a rotation and
+    is not refused; stated rather than papered over.
+    """
+    pos = [g.seg_ids.index(s) for s in segs]
+    n = len(pos)
+    descents = [k for k in range(n) if pos[(k + 1) % n] <= pos[k]]
+    if len(descents) <= 1:
+        return ""
+    k = descents[0]
+    a, b = segs[k], segs[(k + 1) % n]
+    edge = f"{prefix}{((k + 1) * splits) % (n * splits)}"
+    return (f"the {who} binding walks segment {b} after segment {a}, but "
+            f"'{g.spelling}' runs them the other way round — edge '{edge}' would "
+            f"cross the ring. A binding must follow the geometry's own order; a "
+            f"rotation of it is fine, a reordering is not.")
 
 
 @dataclass
@@ -120,6 +173,10 @@ class Plan:
     radial_derived: int = 0
     radial: int = 0
     overridden: bool = False
+    #: True when the derivation hit ``MAX_RADIAL``. A silent clamp on a DISPLAYED
+    #: derived count is a number the panel presents as the derivation's answer and
+    #: is not; review named it, and the read-out now says so.
+    clamped: bool = False
     body_segs: tuple[int, ...] = ()
     far_segs: tuple[int, ...] = ()
     ccw: bool = True
@@ -156,7 +213,9 @@ class Plan:
             f"radial: {self.radial} nodes"
             + (" (overridden)" if self.overridden
                else f" (derived: q from {self.first_cell:.3e} spans "
-                    f"{self.far_radius - self.radius:.4g})"),
+                    f"{self.far_radius - self.radius:.4g})")
+            + (f" — CLAMPED at {MAX_RADIAL}, so the first cell you asked for is "
+               f"not reachable at this ratio" if self.clamped else ""),
         ]
 
 
@@ -252,8 +311,13 @@ def plan(model, ctx) -> Plan:
                          f"and an O-grid is a ring around a closed body.")
             return p
 
-    p.body_segs = _ids(model.ogrid_body_segs, body.seg_ids)
-    p.far_segs = _ids(model.ogrid_far_segs, far.seg_ids)
+    p.body_segs, why = parse_binding(model.ogrid_body_segs, body.seg_ids, "body")
+    if not why:
+        p.far_segs, why = parse_binding(model.ogrid_far_segs, far.seg_ids,
+                                        "far-field")
+    if why:
+        p.problem = why
+        return p
     splits = max(1, int(model.ogrid_splits))
 
     if len(p.body_segs) != len(p.far_segs):
@@ -288,6 +352,16 @@ def plan(model, ctx) -> Plan:
         p.broken_edge = exc.edge
         return p
 
+    # ...and in the ORDER the geometry runs them, which resolving each id one at a
+    # time cannot see: every id in a swapped list still resolves.
+    for who, g, segs, prefix in (("body", body, p.body_segs, "w"),
+                                 ("far-field", far, p.far_segs, "o")):
+        why = order_problem(who, g, segs, splits, prefix)
+        if why:
+            p.problem = why
+            p.broken_edge = why.split("edge '")[1].split("'")[0]
+            return p
+
     cell = float(model.ogrid_cell)
     if cell <= 0.0:
         p.problem = "the target cell edge length must be greater than zero."
@@ -301,19 +375,21 @@ def plan(model, ctx) -> Plan:
 
     p.radius = body.equivalent_radius()
     p.far_radius = far.equivalent_radius()
+    # BEFORE the derivation, not after it: a far field inside the body gives a
+    # negative span, and `radial_count` would then answer on it rather than refuse.
+    if p.far_radius <= p.radius:
+        p.problem = (f"the far-field geometry's equivalent radius "
+                     f"({p.far_radius:.4g}) is not outside the body's "
+                     f"({p.radius:.4g}), so there is no ring between them.")
+        return p
     p.ratio = radial_law(p.n_theta)
     p.first_cell_11 = p.radius * (p.ratio - 1.0)
     p.first_cell = ctx.first_cell if ctx.first_cell > 0.0 else p.first_cell_11
     p.radial_derived = radial_count(p.n_theta, p.far_radius - p.radius, p.first_cell)
+    p.clamped = p.radial_derived >= MAX_RADIAL
     want = int(model.ogrid_radial_count)
     p.overridden = want >= 2
     p.radial = want if p.overridden else p.radial_derived
-
-    if p.far_radius <= p.radius:
-        p.problem = (f"the far-field geometry's mean radius ({p.far_radius:.4g}) is "
-                     f"not outside the body's ({p.radius:.4g}), so there is no ring "
-                     f"between them.")
-        return p
 
     # The RING's own winding, not the outline's: a binding list given in reverse
     # order walks the outline backwards, and only the ring can see that. Reachable

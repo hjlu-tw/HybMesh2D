@@ -460,30 +460,32 @@ holds `GEOM_FILE` tokens a `.dat` read could not resolve at all.
 Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE LIBRARY".
 
 **THE O-GRID BINDS TO THE CAD, AND A BROKEN BINDING REFUSES** (#137, parent #133;
-`services/topology_ogrid.py`, `services/topology_binding.py`). Rules only, tersely — this block
-is the one whose rationale is longest, and it is ALL in the design note.
+`services/topology_ogrid.py`, `services/topology_binding.py`)
 
 - **A binding is the CAD segment's STABLE ID, never a position** — the sidecar's `segId` column
   already IS that id, so resolving is a LOOKUP proving it is still on disk. A missing id raises
-  `BindingError` naming the EDGE, writes nothing, and NEVER falls back to `BC_GEOM`. Blank adopts
-  the geometry's segments; the panel CAPTURES them when the user names the geometry, which is what
-  makes a later deletion a refusal rather than a silently shorter ring. Gate:
-  `tests/test_topology_ogrid.py` 9-11, whose 11 is the negative control.
+  `BindingError` naming the EDGE, writes nothing, and NEVER falls back to `BC_GEOM`; so does a list
+  that walks the geometry's order BACKWARDS (a rotation is fine, a reorder is not — every id in a
+  swapped list still resolves), one holding a token that is not an id, and one naming a segment
+  twice. Blank adopts the geometry's segments; the panel CAPTURES them when the user names a
+  geometry, keyed by WHICH FILE, and the rows are **read-only** with their pairing declared in
+  `BINDING_ROWS` — which edges bind is the template's decision (#133). `parse_binding` is the one
+  parser of that format, asked by the panel too. Gate: `tests/test_topology_ogrid.py` 9-11m, whose
+  11 and 11h are the negative controls.
 - **A family is pure over `(model, ctx)`**; the context is built from `MeshConfig` at projection
-  time, cached by `(mtime, size)`, and NEVER persisted. The H-grid ignores it, so `fam.build` stays
-  a call, not a dispatch.
+  time and NEVER persisted. The H-grid ignores it, so `fam.build` stays a call, not a dispatch.
 - **The far field is DRAWN, never generated**, and its segments pair ONE TO ONE with the body's. A
-  wall edge lies within ONE source segment — a `binding` declares one `seg` — so the ring REFINES
-  the segment partition and `ogrid_splits` is per segment.
+  wall edge lies within ONE source segment, so the ring REFINES the segment partition and
+  `ogrid_splits` is per segment.
 - **The winding is MEASURED**: a clockwise body gets the mirrored tuple `[w, r_next, o, r]`, which
   pairs the same edges as opposite sides, so classes and seeding are unchanged. **`MIN_BLOCKS` is
   3, measured**, the mesher refusing a two-block ring on collinear corners. Gate: check 13.
 - **The radial count is DERIVED AND ITS DERIVATION DISPLAYED**: `q = 1 + 2π/N_theta`, the default
   being where a law starting at the run's `BL_INITIAL_THICKNESS` and growing at `q` reaches the far
-  field. No `ds_start` is declared, so the first cell keeps its one home under the existing name.
-  `topology_ogrid.plan` is the ONE owner, read by the panel. Gate: check 8.
+  field, and the clamp saying so when it fires. No `ds_start` is declared, so the first cell keeps
+  its one home under the existing name. `topology_ogrid.plan` is the ONE owner. Gate: check 8.
 - **A radius is AREA-EQUIVALENT and a wall count rounds half UP with a tolerance**, or re-sampling
-  a geometry moves a derived count and so becomes a topology edit. Gate: check 10, byte for byte.
+  a geometry moves a derived count and so becomes a topology edit. Gate: check 10.
 - **The invariants every family's document must satisfy live in ONE checker**,
   `tests/topology_doc_invariants.py`, called by both family gates.
 
