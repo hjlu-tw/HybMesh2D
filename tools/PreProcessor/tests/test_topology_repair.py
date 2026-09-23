@@ -27,38 +27,51 @@ the run PROCEEDS and with one still broken it is still REFUSED with the edge nam
 (5, 5b, 5c); the flag CLEARS when the cause is removed by other means (8); and the panel
 files stay under the file-length standard (9).
 
-INJECTIONS: run by hand, 2026-09-23, each reverted and the file restored from git
-afterwards. (Every run of this file prints `QOpenGLWidget is not supported on this
+INJECTIONS: run by hand, 2026-09-23, each applied to a real source file, the gate run
+in a subprocess, and the file restored from its pre-injection text with the checksum
+compared afterwards. All seven bit. What is recorded below is what each run PRINTED,
+not what was predicted — three of the seven bit differently, and two of those changed
+the gate. (Every run of this file prints `QOpenGLWidget is not supported on this
 platform` on stderr, GREEN runs included — the exit code is the signal, not stderr.)
 
-  A. `broken_bindings` returns `()` unconditionally -> 1, 1b, 2, 2b, 2c, 3, 4, 5b,
-     6, 7 and 8b red; 1c, 2d, 5, 5c and 8 stayed GREEN, because all five assert that
-     NOTHING is flagged or that a repaired topology projects, which a family reporting
-     nothing satisfies perfectly. The negative controls in this file are only
-     meaningful beside the positive ones, and that is why both are stated.
-  B. `repair_binding` appends the new id instead of replacing at `pos` -> 4 red and,
-     one step later, 5 red: the ring then walks five segments where the far field has
-     four, so the projection refuses for a different reason than the one it started
-     with. The positional rule is not a nicety.
-  C. `repair_binding` re-captures the geometry's current ids (the "just refresh it"
-     fix) -> 4 red alone: every id resolves, so the run proceeds — with the wall that
-     was at ring position 2 now on a segment the user never picked. The check that
-     catches it compares the WHOLE list, not whether the projection succeeds, which is
-     why 5 is not enough on its own.
-  D. `TopologyRepairBox.panel_edited` never emitted -> 6 and 7 red, 4 GREEN. The
-     write lands in the widget either way; what is lost is the funnel, i.e. the model
-     and the undo stack. Exactly the defect `undo_ctrl._wire_widget_edits` documents
-     for a composite that builds its own children.
-  E. `show_broken` DESTROYS and recreates its rows (`deleteLater` + rebuild) instead
-     of reusing the pool -> the gate CRASHES at check 4 with the combo deleted inside
-     its own signal. Scored zero by a reader counting FAIL lines; read the exit code.
-  F. `_refresh_topology_repair` wired only to `set_config`, not into
-     `_refresh_topology_counts` -> 8b red: the flag never clears while the panel is
-     open, so the user fixes the CAD, comes back, and is still told the binding is
-     broken.
-  G. `choices` offering every segment id rather than excluding the ones already
-     bound -> 3b red. Choosing one of those swaps "segment 2 is gone" for "segment 1
-     is named twice", which is a repair that repairs nothing.
+  A. `broken_bindings` returns `()` unconditionally -> exit 1 with ONE FAIL line and a
+     CRASH: check 1 goes red and the next line, which picks the body's row out of the
+     answer, raises `StopIteration`. A reader scoring this file by counting FAIL lines
+     would score the injection that removes the whole feature at 1. Read the exit code.
+  B. the panel doing the OBVIOUS repair — parse the stored text, replace the id at the
+     broken position — which is what shipped first -> 4 and 5c red, then a CRASH at
+     check 5's projection: `the body binding runs segment 3 straight after segment 8`,
+     the mesher's own exit-8 refusal reached from the panel. This injection had to be
+     written against the PANEL rather than against `repair_binding`: mutating the
+     service to replace at a position leaves the answer unchanged on this fixture,
+     because the list it is handed is the geometry's own and segment 8 already sits at
+     position 2 there. Check 5d exists because of that near-miss.
+  C. `repair_binding` adopting the geometry's list outright, ignoring `pos` (the "just
+     refresh it" fix) -> 4a2, 6 and 7b red. Check 4 stayed GREEN, and that is the
+     finding: 8 at position 2 IS the identity rotation of this geometry's list, so the
+     first repair the gate makes cannot tell the two apart. Check 6 now drives the real
+     controller with segment 9 — a rotation that is not the identity — for exactly this
+     reason, and 4a2 asks the service both ways.
+  D. `TopologyRepairBox.panel_edited` never emitted -> 7pre and 7 red; 4 and 6 GREEN.
+     The second half was not predicted and is worth more than the first: check 6 passes
+     because `_collect_project_state` REFRESHES each model from its panel before
+     serialising it (`controllers/project_state_ctrl.py` says why), so persistence
+     survives a repair that never reached the funnel and only the UNDO half notices.
+  E. `show_broken` destroying and recreating its rows (`removeWidget` + `deleteLater`)
+     instead of reusing the pool -> exit 1 with ZERO FAIL lines and a crash,
+     `ValueError: 10 is not in list`, at the second repair of section 10. With no event
+     loop running the deleted widgets are not collected, so the earlier checks limp on
+     against stale rows and the failure surfaces late and unrecognisably. The bite is
+     real and its FAIL count is zero.
+  F. `_refresh_topology_repair` not called from `_refresh_topology_counts` -> 2 and 2b
+     red and a crash at the row lookup. Nothing is ever flagged, because that call is
+     the only route in.
+  G. `cover_problem` dropped from `plan` -> 5d red, alone. Predicted to redden more and
+     it does not: every repair this gate makes produces a full cover, so nothing else
+     here ever reaches the refusal. 5d was ADDED after this run — the first version of
+     this file passed the injection outright, with the coverage rule gated only next
+     door in `test_topology_ogrid.py` (11l, 11l2), which is not where #138's reason for
+     it lives.
 
 Run:  python3 tools/PreProcessor/tests/test_topology_repair.py
 """
@@ -291,6 +304,21 @@ check(f"5. with every binding repaired the projection PROCEEDS — on a ring tha
               in ctx_for(_fixed).geometry(e["binding"]["geom"]).spans
               for e in _doc["edges"] if "binding" in e))
 
+# ...and the state the OBVIOUS repair would have left is refused, by name. This is
+# the string a dropdown that replaced the broken id at its position writes, and it is
+# why the repair is a rotation instead: every id in it resolves, `order_problem` sees
+# nothing wrong with it, and the real mesher refuses the document at exit 8.
+_naive = cfg_for("0, 1, 8, 3", "0, 1, 10, 11, 3")
+_gap_err = ""
+try:
+    tm.build_document(_naive.topology, ctx_for(_naive))
+except tb.BindingError as exc:
+    _gap_err = str(exc)
+check(f"5d. a ring with a HOLE in it — which is exactly what replacing the broken id "
+      f"at its position leaves once a split has made two segments out of one — is "
+      f"refused with the edge that would have to span them named: {_gap_err!r}",
+      "edge 'w2'" in _gap_err and "has segment 9 between them" in _gap_err)
+
 # ── 6-7. persisted with the project, and undoable — through the REAL app ───
 # A panel cannot make either claim about itself: what persists is the project
 # snapshot (`_collect_project_state`), and what undoes is the recorder that snapshot
@@ -306,13 +334,18 @@ _held = _ctl._collect_project_state()["mesh_config"]["topology"]["ogrid_body_seg
 _row = flagged(_p)[0][0]
 _c2 = _p._topo_repair._rows[_row][1]
 _off2 = [_c2.itemData(i) for i in range(_c2.count())]
-_c2.setCurrentIndex(1 + _off2[1:].index(8))
+# Segment 9, NOT 8: 8 at position 2 is the identity rotation of this geometry's list,
+# so a repair that ignored the position and adopted the list outright would write the
+# same string and every panel check would stay green. Measured — injection C reddens
+# only the service-level 4a2 while 4 passes — so the one check that drives the REAL
+# controller asks for a rotation that is not the identity.
+_c2.setCurrentIndex(1 + _off2[1:].index(9))
 _snap = _ctl._collect_project_state()["mesh_config"]["topology"]["ogrid_body_segs"]
 check(f"6. a repair made in the panel reaches the GLOBAL model and the project "
       f"snapshot — which is what the project file is written from — through the same "
       f"funnel as every other panel edit ({_held!r} -> {_snap!r}, model: "
       f"{_ctl.global_mesh_config.topology.ogrid_body_segs!r})",
-      [t.strip() for t in _snap.split(",")] == ["0", "1", "8", "9", "3"]
+      [t.strip() for t in _snap.split(",")] == ["1", "8", "9", "3", "0"]
       and _ctl.global_mesh_config.topology.ogrid_body_segs == _snap)
 check("7pre. ...and it was RECORDED as an undo step rather than merely applied",
       _ctl.flush_project_snapshot())
@@ -327,7 +360,7 @@ check(f"7b. ...and redo re-applies it "
       f"({_ctl.global_mesh_config.topology.ogrid_body_segs!r})",
       [t.strip() for t in
        _ctl.global_mesh_config.topology.ogrid_body_segs.split(",")]
-      == ["0", "1", "8", "9", "3"])
+      == ["1", "8", "9", "3", "0"])
 
 # ── 8. the flag clears when the CAUSE is removed by other means ────────────
 # Undoing the CAD edit puts the segment back. Nothing in the panel knows that

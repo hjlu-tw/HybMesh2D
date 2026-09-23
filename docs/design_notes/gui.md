@@ -2582,6 +2582,22 @@ holds it; a binding gate failing for it would be failing for a reason that has n
 a binding. The control run — the same fixture, no CAD edit — is what makes the repaired run's exit
 code a claim about the repair.
 
+**Three of the seven injections bit differently from the prediction, and two of them changed the
+gate.** Removing `cover_problem` reddened ONE check and would have reddened NONE as the file was
+first written: every repair this gate makes produces a full cover, so nothing reached the refusal,
+and the rule #138 discovered was gated only next door in `test_topology_ogrid.py`. Check 5d was
+added for it, and it asserts exactly the string the naive repair writes. Making `repair_binding`
+adopt the geometry's list outright left check 4 GREEN, because segment 8 at position 2 IS the
+identity rotation of this fixture's list — so the one check that drives the real controller now
+asks for segment 9 instead. And deleting the `panel_edited` emit left the PERSISTENCE check green
+while the undo checks went red: `_collect_project_state` refreshes each model from its panel before
+serialising, so a repair that never reached the funnel is still saved, and only Ctrl+Z can tell.
+Two more are recorded for their shape rather than their content: the injection that removes the
+whole feature prints ONE `FAIL` line and then crashes, and the one that destroys and recreates the
+rows prints ZERO — with no event loop the deleted widgets are not collected, so the gate limps on
+against stale rows and dies late. Both are exit 1, which is the only signal that means anything
+here.
+
 **Named blind spots.**
 
 * **A repair that names a segment far from where the broken one lay is legal and makes a bad

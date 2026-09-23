@@ -109,9 +109,15 @@ class TopologyRepairBox(QWidget):
         lbl.setStyleSheet(_FLAG_QSS)
         combo = QComboBox()
         combo.setStyleSheet(COMBO_STYLE)
-        combo.setToolTip("The segments this geometry carries now. Choosing one "
-                         "re-points the flagged edges at it; the binding is still "
-                         "stored as that segment's stable id.")
+        # The tooltip says what the choice DOES, not just what it names: a ring
+        # covers the whole outline, so picking a segment for the flagged edge decides
+        # where the ring starts and the rest follows. A user who expected only this
+        # one edge to move would otherwise read the new list as a bug.
+        combo.setToolTip(
+            "The segments this geometry carries now. Choosing one puts the flagged "
+            "edge on it and walks the ring on from there, so the binding becomes "
+            "this geometry's own segments in its own order, started where you say. "
+            "They are still stored as stable ids, never as positions.")
         idx = len(self._rows)
         combo.currentIndexChanged.connect(lambda i, r=idx: self._on_pick(r, i))
         self._layout.addWidget(lbl)
