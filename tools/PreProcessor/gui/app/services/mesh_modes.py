@@ -35,7 +35,14 @@ def topology_file(mesh_config) -> str:
     The one place that asks both halves of that question — is the mode
     multi-block, and is a path declared — so `missing_mesh_input` below and
     `case_sources.mesh_input_paths` cannot come to different answers about
-    whether the run read a topology at all.
+    whether the run read a topology FILE.
+
+    A FILE, and the word is load bearing since #139: a template case declares its
+    topology without naming one, so `missing_mesh_input` asks a question of its own
+    ABOVE this one. This function is still the only spelling of "which file did the
+    run read", which is what the staging needs — a template's document is generated
+    into the case rather than copied into it, so there is nothing here for it to
+    name.
 
     Blank for the hybrid path even when the field holds a path: the mesher WARNS
     about a key the active mode never reads, and treating such a file as an input

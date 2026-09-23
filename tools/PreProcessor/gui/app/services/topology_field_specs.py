@@ -49,14 +49,13 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               opts=dict(choices=list(FAMILY_CHOICES), fallback="")),
 
     FieldSpec("topo_detached", "bool", "Detached",
-              "Whether the template still generates the document (#139). A row "
-              "rather than a flag the panel keeps for itself, because THIS is what "
-              "carries the state through the machinery every other template "
-              "parameter uses: the panel->model sync, the project file, undo and "
-              "the projection. It is READ-ONLY — detaching writes a file and "
-              "re-attaching discards one, and neither is something a checkbox "
-              "should be able to do by being clicked; the Detach / Re-attach "
-              "buttons at the foot of this section are the controls.",
+              "Ticked once you have detached this topology: the document is no "
+              "longer generated from the parameters below, and the run reads the "
+              "Topology File above exactly as you maintain it. The parameters stay "
+              "on screen as a record of where that file came from. Read-only on "
+              "purpose — detaching writes a file and re-attaching discards your "
+              "edits to it, so both go through the buttons at the foot of this "
+              "section rather than through a tick box.",
               model="detached", group=GROUP, modes=_MB,
               opts=dict(text="detached — the Topology File above is maintained by "
                              "hand", readonly=True)),
@@ -171,7 +170,11 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               "starting from your BL_INITIAL_THICKNESS reaches the far field "
               "without ever growing faster than the 1:1 criterion allows.",
               model="ogrid_radial_count", group=GROUP, modes=_MB,
-              opts=dict(lo=0, hi=20000)),
+              # `special` is what 0 MEANS, declared where the row is rather than
+              # only in the prose above: the spin box shows it instead of a bare 0,
+              # and the detached provenance summary reads it from here so it cannot
+              # print a sentinel as a count the user chose (#139).
+              opts=dict(lo=0, hi=20000, special="(derived)")),
     FieldSpec("topo_ogrid_derived", "label", "Derivation",
               "What the parameters above imply, with the working shown: the ring's "
               "blocks and circumferential cells, the 1:1 growth ratio those imply, "

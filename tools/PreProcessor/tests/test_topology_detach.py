@@ -38,8 +38,8 @@ rather than tidied away. What is written below is what each run PRINTED, not wha
 predicted. (Every run prints `QOpenGLWidget is not supported on this platform` on
 stderr, green runs included — the exit code is the signal.)
 
-  A. `names_a_family` back to `bool(self.family)`, so the flag stops turning the
-     projection off -> EIGHT red: 2, 3, 3c, 5, 8b, 11pre, 14 and 16c. The blast
+  A. `names_a_family` back to `has_family()`, so the flag stops turning the
+     projection off -> NINE red: 2, 3, 3c, 4e, 5, 8b, 11pre, 14 and 16c. The blast
      radius is the point, and it is wider than the three reads that were predicted:
      one predicate carries detaching through the funnel, the staging, the panel, the
      round trip and both mesher runs, which is the argument for stating it as ONE
@@ -84,7 +84,27 @@ stderr, green runs included — the exit code is the signal.)
      a DETACHED model reports as broken, and the amber flag would have come back
      naming edges of a document no run reads.
 
-  Negative control: the unmutated tree passes all 45 checks, so the reds above are
+  Four more from the review round, against checks the review itself asked for:
+
+  J. `summary` dropping the family's `reads_context` rows -> 12d red, alone. That is
+     the state that SHIPPED in the first draft, and every other check was green on
+     it: the prefix derivation cannot see a parameter #133 deliberately gave no
+     alias, so the O-grid summary omitted the BL_INITIAL_THICKNESS that set its
+     radial count while looking complete.
+  K. `_shown` printing the raw value where a row declares what 0 MEANS -> 12e red,
+     alone.
+  L. re-attach mutating the config and never writing the rows -> 7b and 13e red.
+     13e was ADDED for it: the criterion says detach AND re-attach are persisted,
+     and only detach was gated through the project snapshot.
+  M. the greying loop re-enabling the state row it must not touch -> 10b and 7b red,
+     via the row states rather than via the flag.
+
+  One more thing this round measured rather than argued: 16b originally compared the
+  two hosts' VTK text byte for byte and FLAKED on its second run. This mesher wobbles
+  at ~1e-13 and its node numbering varies (`tools/scripts/golden_mesh.py`), so the
+  comparison snaps to 1e-10 and sorts, snapping BEFORE sorting.
+
+  Negative control: the unmutated tree passes all 49 checks, so the reds above are
   the mutations and not the checker.
 
 Run:  python3 tools/PreProcessor/tests/test_topology_detach.py
@@ -174,21 +194,21 @@ def topo_line(path: str) -> str:
 _m = configured().topology
 check("1. an attached template drives the configuration: the family is named and "
       f"`names_a_family()` is True (family={_m.family!r})",
-      _m.names_a_family() and not topology_detach.is_detached(_m))
+      _m.names_a_family() and not _m.is_detached())
 
 _m.detached = True
 check("2. detaching turns exactly that predicate off while LEAVING THE FAMILY "
       f"NAMED (family={_m.family!r}, names_a_family={_m.names_a_family()}, "
-      f"is_detached={topology_detach.is_detached(_m)}) — the difference between "
+      f"is_detached={_m.is_detached()}) — the difference between "
       "'no template' and 'a template that has been detached' is the whole "
       "provenance this ticket is about",
       _m.family == "hgrid" and not _m.names_a_family()
-      and topology_detach.is_detached(_m))
+      and _m.is_detached())
 
 _none = MeshConfig().topology
 check("2b. ...and a configuration that never had a template is NOT detached, so the "
       "panel's summary branch cannot fire for one",
-      not topology_detach.is_detached(_none) and not _none.names_a_family())
+      not _none.is_detached() and not _none.names_a_family())
 
 check("2c. the flag makes the model CONFIGURED, so the optional project-file "
       "section carries it — a detached case whose section was omitted would reopen "
@@ -409,6 +429,40 @@ check("12c. ...and the values shown are the model's, not a re-derivation: the "
       "Blocks in X: 3" in _summary and "Blocks in Y: 2" in _summary
       and "Target Cell Size: 0.125" in _summary)
 
+# 12d: THE PREFIX IS NOT THE WHOLE PARAMETER SET, which is what the Spec review
+# measured. #133 decided a template uses the run's existing name for a physical
+# quantity rather than an alias, so the O-grid's first cell is BL_INITIAL_THICKNESS
+# and carries no `ogrid_` prefix — and the summary omitted the one number that set
+# the radial count while looking complete. Asked of EVERY family off its own
+# `reads_context`, so it cannot be satisfied by the one family whose prefix happens
+# to cover everything it reads.
+_ctx_bad = []
+for _fam in tm.FAMILIES:
+    _cm = configured()
+    _cm.topology.family = _fam.name
+    _cm.topology.detached = True
+    _cm.bl_initial_thickness = 0.00042
+    _txt = topology_detach.summary(_cm.topology, _cm)
+    for _cf, _label, _attr in _fam.reads_context:
+        if f"{_label}: " not in _txt:
+            _ctx_bad.append(f"{_fam.name} omits {_label}")
+        elif f"{_label}: {getattr(_cm, _attr):g}" not in _txt:
+            _ctx_bad.append(f"{_fam.name} shows no value for {_label}")
+check(f"12d. ...and every quantity a family reads from the RUN rather than from the "
+      f"model is named too, with its value "
+      f"({ {f.name: [lb for _c, lb, _a in f.reads_context] for f in tm.FAMILIES} }): "
+      + ("; ".join(_ctx_bad) if _ctx_bad else "all present"),
+      not _ctx_bad)
+
+_sent = configured()
+_sent.topology.family = og.FAMILY
+_sent.topology.detached = True
+_sent_txt = topology_detach.summary(_sent.topology, _sent)
+check(f"12e. ...and a row whose 0 MEANS 'derived' prints what it means rather than "
+      f"the sentinel — a summary showing `0` states a count the user never chose "
+      f"({[ln.strip() for ln in _sent_txt.splitlines() if 'Radial' in ln]})",
+      "Override Radial Nodes: (derived)" in _sent_txt)
+
 # Re-attach, DECLINED. The PROMPT is stubbed, not the panel's `_confirm_reattach`:
 # patching the method made injection F (a `_confirm_reattach` that asks nothing and
 # returns True) completely INERT, because the instance attribute shadowed the very
@@ -489,6 +543,30 @@ check(f"13d. ...so Ctrl+Z walks the detach back — the one panel action that wr
       not _ctl.global_mesh_config.topology.detached
       and _ctl.global_mesh_config.mesh_topology_file == "")
 
+# 13e: and RE-ATTACH reaches the same snapshot. Both directions are persisted, not
+# only the one the state ends in — the criterion's words are "detach AND re-attach
+# are persisted with the project", and the review found this half gated only at the
+# panel. Detach again first, since undo has just put the controller back.
+_ctl.redo()
+check("13e-pre. ...and redo re-applies it, so the re-attach below starts from a "
+      f"DETACHED case rather than passing on one that was already attached "
+      f"(detached={_ctl.global_mesh_config.topology.detached})",
+      _ctl.global_mesh_config.topology.detached
+      and _ctl.global_mesh_config.mesh_topology_file != "")
+_dm.confirm_destructive = _stub_confirm(False)
+_p._on_topology_reattach()
+_dm.confirm_destructive = _real_confirm
+_snap_re = _ctl._collect_project_state()["mesh_config"]
+check(f"13e. ...and re-attaching in the panel reaches the global model and the "
+      f"project snapshot too, so BOTH directions are what the project file records "
+      f"(detached={_snap_re['topology']['detached']}, "
+      f"file={_snap_re['mesh_topology_file']!r}, family still "
+      f"{_snap_re['topology']['family']!r})",
+      _snap_re["topology"]["detached"] is False
+      and _snap_re["mesh_topology_file"] == ""
+      and _snap_re["topology"]["family"] == "hgrid"
+      and not _ctl.global_mesh_config.topology.detached)
+
 # ══ F. the round trip, through a real project file ════════════════════════
 
 _rt = configured()
@@ -562,6 +640,28 @@ def _nodes(vtk: str) -> int:
     return -1
 
 
+def _points(path: str) -> list:
+    """The POINTS block, SNAPPED to 1e-10 and then canonically sorted.
+
+    Never a byte comparison of the block, which is what check 16b did first and
+    which FLAKED on its second run: this mesher wobbles at ~1e-13 run to run
+    (`tools/scripts/golden_mesh.py` records it, and node NUMBERING varies too), so
+    raw text equality reports a permutation as a difference. Snapped BEFORE sorting,
+    which is that comparator's own lesson — sorting raw coordinates lets a last-bit
+    difference reshuffle the ranking.
+    """
+    lines = open(path, encoding="utf-8").read().splitlines()
+    i = next(k for k, ln in enumerate(lines) if ln.startswith("POINTS"))
+    n = int(lines[i].split()[1])
+    vals = []
+    for ln in lines[i + 1:]:
+        vals.extend(float(v) for v in ln.split())
+        if len(vals) >= 3 * n:
+            break
+    return sorted(tuple(round(v / 1e-10) for v in vals[3 * k:3 * k + 3])
+                  for k in range(n))
+
+
 if not os.path.exists(_BIN):
     print("SKIP  build/HybMesh2D not built; the real-mesh half is not measured.")
 else:
@@ -629,11 +729,11 @@ else:
           f"({[m.group(0) if m else 'no row' for m in _mm]})",
           _pg.returncode == 0 and _pl.returncode == 0 and all(_mm)
           and all(m.group(1) == "0" for m in _mm))
-    check(f"16b. ...and they produce the same mesh, node for node "
-          f"({_nodes(_vg)} vs {_nodes(_vl)})",
-          _nodes(_vg) > 0 and _nodes(_vg) == _nodes(_vl)
-          and open(_vg, encoding="utf-8").read().split("CELLS")[0]
-          == open(_vl, encoding="utf-8").read().split("CELLS")[0])
+    _gui_pts, _hl_pts = _points(_vg), _points(_vl)
+    check(f"16b. ...and they produce the same mesh, node for node — snapped to 1e-10 "
+          f"and canonically ordered, because this mesher is not byte-reproducible "
+          f"({len(_gui_pts)} vs {len(_hl_pts)} nodes)",
+          _gui_pts == _hl_pts and len(_gui_pts) > 0)
     check(f"16c. ...and BOTH read the hand-edited file rather than re-projecting: "
           f"the node count is the edit's and not the template's "
           f"({_nodes(_vg)} vs the control's {_nodes(_vt)})",

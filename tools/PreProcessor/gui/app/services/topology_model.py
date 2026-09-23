@@ -130,6 +130,27 @@ class TopologyModel:
         """
         return self != TopologyModel()
 
+    def has_family(self) -> bool:
+        """True when a family is NAMED here, whether or not it still drives the run.
+
+        The one spelling of ``bool(self.family)``, which the two predicates below are
+        both built on and which the panel asks to decide whether there is any
+        provenance to show. It was inline at three sites and named in #139's own
+        blind-spot list before review took the list at its word.
+        """
+        return bool(self.family)
+
+    def is_detached(self) -> bool:
+        """True for a family that has been DETACHED from its document (#139).
+
+        Not the inverse of :meth:`names_a_family`, which is also True for a
+        configuration that never had a template: this is what makes the panel show a
+        provenance summary rather than an empty template section, and the three
+        states (no family / attached / detached) need all three predicates to be
+        told apart.
+        """
+        return self.has_family() and self.detached
+
     def names_a_family(self) -> bool:
         """True when a TEMPLATE drives this configuration.
 
@@ -149,12 +170,12 @@ class TopologyModel:
         every place at once (#139): the funnel stops projecting, the case staging
         stops generating, the canvas overlay stops drawing a model the run no
         longer reads, and `mesh_topology_file` goes back to being an INPUT. The
-        family is still named — `names_a_family` is not `bool(self.family)` and
+        family is still named — `names_a_family` is not :meth:`has_family` and
         must not be re-spelled as one — because the panel still shows where the
         file came from. That is the whole difference between "no template" and
         "a template that has been detached".
         """
-        return bool(self.family) and not self.detached
+        return self.has_family() and not self.detached
 
     def copy(self) -> "TopologyModel":
         """A detached copy — what the undo snapshot and the panel round-trip need."""
@@ -224,6 +245,23 @@ class Family:
     #: family by name. A family with no bindings reports none rather than being
     #: special-cased at the call site.
     broken: object = None
+    #: ``((BindingContext field, label, MeshConfig attribute), ...)`` — the
+    #: quantities this family reads
+    #: from the binding CONTEXT rather than from the model, declared so the
+    #: provenance summary can name them (#139). Empty for a family that reads none.
+    #:
+    #: WHY IT EXISTS. #133 decided that where a template needs a physical quantity
+    #: the run already carries, it uses THAT name rather than an alias — so the
+    #: O-grid's first cell is `BL_INITIAL_THICKNESS` and not an `ogrid_*` parameter.
+    #: The summary derives its rows from the field-spec table by the family's
+    #: PREFIX, so without this declaration it silently omitted the one number that
+    #: set the radial count. Measured in #139's review, on a summary that looked
+    #: complete. Declared rather than inferred, and held in BOTH directions by
+    #: `tests/test_topology_param_specs.py` check 11: the set of context fields
+    #: named here must EQUAL the set the family's module reads, minus the one
+    #: exemption that file states. The context field is carried so that pairing can
+    #: be exact rather than a count.
+    reads_context: tuple = ()
 
 
 #: The registry. Adding a family is adding a function and a row here — and a
@@ -233,7 +271,9 @@ FAMILIES: tuple[Family, ...] = (
            topology_hgrid.build, "hgrid_"),
     Family(topology_ogrid.FAMILY, "O-grid (ring around a drawn body)",
            topology_ogrid.build, "ogrid_",
-           broken=topology_ogrid_binding.broken_bindings),
+           broken=topology_ogrid_binding.broken_bindings,
+           reads_context=(("first_cell", "First Cell Height "
+                           "(BL_INITIAL_THICKNESS)", "bl_initial_thickness"),)),
 )
 
 #: ``(value, label)`` pairs for the family combo, with "no template" first because it

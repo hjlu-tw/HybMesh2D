@@ -59,6 +59,7 @@ _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _GUI = os.path.join(_REPO, "tools", "PreProcessor", "gui")
 sys.path.insert(0, _GUI)
 
+from app.models.mesh_config import MeshConfig  # noqa: E402
 from app.services import topology_model as tm  # noqa: E402
 from app.services.topology_field_specs import (  # noqa: E402
     TOPOLOGY_READONLY, TOPOLOGY_SPECS, TOPOLOGY_STATE_ROWS,
@@ -206,6 +207,62 @@ bad = [segs for _g, segs in BINDING_ROWS
 check("10. every captured binding row is declared read-only, so which edges bind "
       "stays the template's decision: "
       + (", ".join(bad) + " are editable" if bad else "all read-only"), not bad)
+
+# ── 11. what a family reads from the CONTEXT is declared too ───────────────
+# The mirror of check 2, one layer out, added by #139's review. A family may read a
+# physical quantity from the RUN rather than from the model — #133's decision that a
+# template uses the existing name rather than an alias, which is why the O-grid's
+# first cell is BL_INITIAL_THICKNESS and carries no `ogrid_` prefix. Nothing derived
+# from the prefix can see one, so the detached provenance summary dropped it while
+# looking complete. `Family.reads_context` declares them, and this holds that
+# declaration against the same `ast` walk checks 1-3 use.
+#
+# `geoms` is EXEMPT and named rather than filtered silently: the geometries a family
+# binds to are already rows of the table (`ogrid_body_geom`, `ogrid_far_geom`), so
+# declaring them again would print a geometry twice in the summary.
+from app.services.topology_binding import BindingContext  # noqa: E402
+
+_CTX_EXEMPT = {"geoms": "already a field-spec row per bound geometry"}
+_CTX_FIELDS = {f.name for f in dc_fields(BindingContext)}
+
+
+def ctx_reads_of(module_file: str) -> set:
+    tree = ast.parse(open(module_file, encoding="utf-8").read())
+    return {n.attr for n in ast.walk(tree)
+            if isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Load)
+            and n.attr in _CTX_FIELDS}
+
+
+# PAIRED EXACTLY, not counted: the first draft failed only when a family declared
+# NOTHING, so one declaration would have covered two reads. Each entry names the
+# context field it explains, so the two sets can be compared in both directions.
+_ctx_bad = []
+for _f in tm.FAMILIES:
+    _declared = {c for c, _lbl, _a in _f.reads_context}
+    _read = ctx_reads_of(module_path(sys.modules[_f.build.__module__]))
+    _read -= set(_CTX_EXEMPT)
+    for _attr in sorted(_read - _declared):
+        _ctx_bad.append(f"{_f.name} reads ctx.{_attr} and declares it nowhere")
+    for _attr in sorted(_declared - _read):
+        _ctx_bad.append(f"{_f.name} declares ctx.{_attr} and reads it nowhere")
+check(f"11. every BindingContext field a family reads is declared in its "
+      f"`reads_context`, so the provenance summary can name it "
+      f"({ {f.name: sorted(ctx_reads_of(module_path(sys.modules[f.build.__module__])) - set(_CTX_EXEMPT)) for f in tm.FAMILIES} }, "
+      f"exempt: {_CTX_EXEMPT}): "
+      + ("; ".join(_ctx_bad) if _ctx_bad else "all declared"), not _ctx_bad)
+
+# ── 11b. ...and no declaration is stale ────────────────────────────────────
+_stale = []
+for _f in tm.FAMILIES:
+    for _cf, _lbl, _attr in _f.reads_context:
+        if _cf not in _CTX_FIELDS:
+            _stale.append(f"{_f.name}'s {_lbl!r} names no BindingContext field "
+                          f"({_cf})")
+        if not hasattr(MeshConfig(), _attr):
+            _stale.append(f"{_f.name}'s {_lbl!r} names no MeshConfig field ({_attr})")
+check("11b. ...and every declaration resolves at BOTH ends: the BindingContext "
+      "field it explains and the MeshConfig attribute the summary reads it from: "
+      + ("; ".join(_stale) if _stale else "all resolve"), not _stale)
 
 print()
 if failures:

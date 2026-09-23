@@ -45,7 +45,8 @@ from app.views.clean_double_spin_box import (
 __all__ = [
     "make_widget", "read_widget", "write_widget", "edit_signal",
     "build_spec_widgets", "add_spec_rows", "read_specs", "write_specs",
-    "wire_specs", "spec_widgets", "set_spec_row_visible", "browse_row",
+    "wire_specs", "spec_widgets", "set_spec_row_visible",
+    "set_spec_row_enabled", "browse_row",
     "SpecRowsMixin",
 ]
 
@@ -308,8 +309,13 @@ def add_spec_rows(host, form, specs: Iterable[FieldSpec], defaults=None,
     return built
 
 
-def set_spec_row_visible(host, attr: str, visible: bool) -> None:
-    """Show/hide one table-built row: its widget, its field cell and its label.
+def _apply_to_spec_row(host, attr: str, setter: str, value: bool) -> None:
+    """Call ``setter(value)`` on one table-built row: widget, field cell and label.
+
+    The three parts move together for every property a row has — a cell hidden with
+    a live label orphans the label, and a field greyed beside a live label reads as
+    broken rather than as read-only. Written once because the two callers below
+    differed in nothing but the setter's name.
 
     A no-op for an attr the host never built through :func:`add_spec_rows` (the BL
     tables are also built without rows, and a caller should not have to know which).
@@ -317,35 +323,29 @@ def set_spec_row_visible(host, attr: str, visible: bool) -> None:
     w = getattr(host, attr, None)
     form, cell = getattr(host, "_spec_cells", {}).get(attr, (None, None))
     if w is not None:
-        w.setVisible(visible)
+        getattr(w, setter)(value)
     if cell is not None and cell is not w:
-        cell.setVisible(visible)
+        getattr(cell, setter)(value)
     if form is not None:
         lbl = form.labelForField(cell if cell is not None else w)
         if lbl is not None:
-            lbl.setVisible(visible)
+            getattr(lbl, setter)(value)
+
+
+def set_spec_row_visible(host, attr: str, visible: bool) -> None:
+    """Show/hide one table-built row: its widget, its field cell and its label."""
+    _apply_to_spec_row(host, attr, "setVisible", visible)
 
 
 def set_spec_row_enabled(host, attr: str, enabled: bool) -> None:
-    """Grey out (or restore) one table-built row: its widget, its cell and its label.
+    """Grey out (or restore) one table-built row: widget, cell and label.
 
     The label as well, which is the half that makes the row READ as read-only rather
-    than as broken: a live label beside a dead field is what a user reports as a bug.
-    Mirrors :func:`set_spec_row_visible` — same lookup, same no-op for a row the host
-    never built — because "hidden" and "greyed" are the two states the mode rules and
-    the detached state (#139) respectively need, and one of them existing without the
-    other is how the second gets written inline at a call site.
+    than as broken. "Hidden" and "greyed" are the two states the mode rules and the
+    detached state (#139) respectively need; the second existing beside the first is
+    what stops it being written inline at a call site.
     """
-    w = getattr(host, attr, None)
-    form, cell = getattr(host, "_spec_cells", {}).get(attr, (None, None))
-    if w is not None:
-        w.setEnabled(enabled)
-    if cell is not None and cell is not w:
-        cell.setEnabled(enabled)
-    if form is not None:
-        lbl = form.labelForField(cell if cell is not None else w)
-        if lbl is not None:
-            lbl.setEnabled(enabled)
+    _apply_to_spec_row(host, attr, "setEnabled", enabled)
 
 
 def spec_widgets(host, specs: Iterable[FieldSpec]) -> list:

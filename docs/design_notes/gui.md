@@ -2716,6 +2716,40 @@ the template's 275. The two-host half does the same on its own file (70 against 
 detached document that is byte-identical to the template's cannot tell a host that read the file
 from one that quietly re-projected.
 
+**What the review round changed, and the one finding that mattered.** The Spec axis measured the
+provenance summary against the criterion's own words — *"still naming the originating family and
+its parameters"* — and found it PARTIAL for the O-grid. The summary derives its rows from the
+field-spec table by the family's prefix, and #133 deliberately gives a template no alias for a
+physical quantity the run already carries, so `BL_INITIAL_THICKNESS` — the number that sets the
+radial count — has no `ogrid_` prefix and was silently absent. Every check was green on it,
+including the one that walks the table, because the H-grid's prefix happens to cover everything it
+reads. `Family.reads_context` now declares `(BindingContext field, label, MeshConfig attribute)`
+per such quantity and `test_topology_param_specs.py` checks 11/11b pair it against an `ast` walk
+in both directions; check 12d asks it of EVERY family rather than of the one in front of it.
+
+The same axis found the re-attach direction gated only at the panel, where the criterion says
+*"detach and re-attach are persisted with the project"* — check 13e drives it through the real
+controller's snapshot, with 13e-pre making it non-vacuous. Two cosmetics went with them: a
+`default_path` that produced `topology_topology.json`, and a summary printing `Override Radial
+Nodes: 0` where 0 MEANS "derived" (the row now declares `special`, which the spin box shows too).
+
+The Standards axis found the new row's tooltip written as developer rationale with a ticket number
+in it, in a table whose every other row speaks to the user; `set_spec_row_enabled` duplicating
+`set_spec_row_visible` verbatim (one `_apply_to_spec_row` now); `detach` returning a second
+spelling of the path its caller reads off the config; the clearing rule spelled in both `reattach`
+and its caller; a `makedirs` in the Save dialog that created `config/topology/` even when the user
+cancelled, contradicting `default_path`'s own docstring; a `_log_detach` that only forwarded; and
+`mesh_modes.topology_file`'s docstring still claiming to be the one place that asks both halves of
+a question `missing_mesh_input` now asks differently. All fixed. The three-state predicate set
+(`has_family` / `names_a_family` / `is_detached`) came out of that axis too, and it closed the
+blind spot this note had listed one paragraph later — the list was written before the fix existed,
+and review took it at its word.
+
+One thing the injection round measured about the GATE rather than the code: check 16b compared the
+two hosts' VTK text byte for byte and FLAKED on its second run. This mesher wobbles at ~1e-13 and
+its node numbering varies run to run, which `tools/scripts/golden_mesh.py` exists to say; the
+check snaps to 1e-10 and sorts, snapping BEFORE sorting.
+
 **Named blind spots.**
 
 * **The suggested path is a suggestion, and nothing checks where the user actually puts it.** A
@@ -2735,10 +2769,17 @@ from one that quietly re-projected.
   detached. The repair box is hidden in that state because `broken_bindings` returns nothing for a
   detached model, so it is covered by consequence rather than by the loop; a third such widget
   would need its own line.
-* **`is_detached` and `names_a_family` can be told apart only by reading both.** A future caller
-  that wants "a template is configured here" and reaches for `names_a_family()` gets False for a
-  detached case, which is right for every existing reader and would be wrong for a panel asking
-  whether to show the section at all. Nothing gates the distinction.
+* **CLOSED in review, kept as the shape:** the three states were told apart by two predicates plus
+  an inline `bool(model.family)` at three sites, so a caller wanting "a template is configured
+  here" and reaching for `names_a_family()` would have got False for a detached case. All three
+  now live on the model (`has_family` / `names_a_family` / `is_detached`) and the summary's own
+  "is there provenance to show" question asks the first. What is still ungated is the CHOICE
+  between them: nothing notices a new caller picking the wrong one of the three.
+* **`Family.reads_context` is declared, so a family that forgets one is caught only where the
+  `ast` walk can see it.** Checks 11/11b compare the declaration against `<name>.<attr>` reads
+  whose attr is a `BindingContext` field — the same scoping blind spot the parameter walk already
+  records. A family reading a run quantity through a helper that takes it as a plain float, rather
+  than off the context, is invisible to both.
 
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)

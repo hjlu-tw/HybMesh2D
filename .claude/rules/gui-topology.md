@@ -219,10 +219,11 @@ PANEL".
 - **DETACHING IS ONE FLAG, AND IT TURNS OFF THE ONE PREDICATE.** `TopologyModel.detached` makes
   `names_a_family()` False while `family` STAYS NAMED, so the funnel stops projecting, the case
   staging stops generating, the canvas draws no skeleton and `mesh_topology_file` is an INPUT
-  again — four places, no edit in any of them. `names_a_family` is therefore NOT `bool(family)`
-  and must never be re-spelled as one; `topology_detach.is_detached` is the other question (a
-  family that HAS been detached, as against a config that never had one), and the two are not
-  interchangeable. `broken_bindings` asks the same predicate: a detached model resolves no
+  again — four places, no edit in any of them. **THREE STATES NEED THREE PREDICATES, and all
+  three live on the model**: `has_family()` (the one spelling of `bool(self.family)`),
+  `names_a_family()` (= has_family and NOT detached) and `is_detached()` (= has_family AND
+  detached). `names_a_family` is therefore NOT `has_family` and must never be re-spelled as one.
+  `broken_bindings` asks the same predicate: a detached model resolves no
   binding, so flagging one would name an edge of a document no run reads — #138's review measured
   that state once already, for a family switched away from. Gate: `tests/test_topology_detach.py`
   checks 1-3c, whose injection A shows one predicate carrying six of them.
@@ -241,13 +242,24 @@ PANEL".
   default, and NO `headless_default`, because there is no safe default for discarding work. The
   file stays on disk; only the reading of it stops.
 - **WHAT SURVIVES IS PROVENANCE, AND THE PANEL SHOWS IT READ-ONLY.** Every template row is
-  greyed (`field_widgets.set_spec_row_enabled`, the enabled mirror of `set_spec_row_visible`) and
-  the summary names the family and every parameter — DERIVED from `TOPOLOGY_SPECS` by the
-  family's own prefix, never hand-listed, so a new parameter appears with no edit. An editable
-  panel whose edits no longer take effect is what the ticket refuses; a panel that vanished would
-  throw away the only thing worth having three months later. Gate: checks 10-12c, where 11 is the
-  only check that sees injection E (rows left editable) and 12b the only one that sees G (a
-  hand-listed summary).
+  greyed (`field_widgets.set_spec_row_enabled`, the enabled mirror of `set_spec_row_visible`;
+  both call one `_apply_to_spec_row`, since a row's widget, cell and label move together for
+  every property a row has) and the summary names the family and every parameter — DERIVED from
+  `TOPOLOGY_SPECS` by the family's own prefix, never hand-listed, so a new parameter appears with
+  no edit. An editable panel whose edits no longer take effect is what the ticket refuses; a
+  panel that vanished would throw away the only thing worth having three months later. Gate:
+  checks 10-12e, where 11 is the only check that sees injection E (rows left editable) and 12b
+  the only one that sees G (a hand-listed summary).
+- **THE PREFIX IS NOT THE WHOLE PARAMETER SET, AND `Family.reads_context` IS THE REST.** #133
+  gives a template no alias for a physical quantity the run already carries, so the O-grid's
+  first cell is `BL_INITIAL_THICKNESS` and carries no `ogrid_` prefix — and the summary dropped
+  the one number that set the radial count while looking complete (measured in review, on a
+  green gate). A family declares `(BindingContext field, label, MeshConfig attribute)` per such
+  quantity; `tests/test_topology_param_specs.py` checks 11 and 11b pair that declaration against
+  an `ast` walk of the family's module in BOTH directions, with `geoms` the one exemption
+  (already a row per bound geometry) and each entry's two ends resolved. **A row that declares
+  what its sentinel MEANS is asked for it** — the radial override's `special="(derived)"` — so a
+  provenance summary never prints a `0` as a count the user chose.
 - **THE STATE IS A FIELD-SPEC ROW, AND THE BUTTONS WRITE INTO IT** — the shape #138's repair
   combo already uses. `topo_detached` is a READ-ONLY `bool` row (`opts=dict(readonly=True)`, which
   `field_widgets` spells `setEnabled(False)` since `QCheckBox` has no `setReadOnly`), so the state
@@ -263,7 +275,10 @@ PANEL".
   is called. Declared in the table rather than special-cased in the gate, and held honest from the
   other side by `tests/test_topology_param_specs.py` check 3b: an entry must be a real row AND
   must be read by no family, so the list cannot become a parking space for a parameter the
-  templates forgot.
+  templates forgot. The GREYING loop does not read that list — it skips a row whose read-only-ness
+  IS its enabled state (`kind == "bool"` with `readonly`), because that is the property it would
+  otherwise undo; keying it on the row's NAME was the first spelling and said "skip
+  `topo_detached`" the long way round.
 - **A TEMPLATE CASE IS NOT MISSING ITS TOPOLOGY** (`services/mesh_modes.py::missing_mesh_input`).
   `mesh_topology_file` is empty while a family drives the run, and that precondition runs BEFORE
   the projection — so until #139 every attached template case was refused by both hosts, the GUI

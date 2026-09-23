@@ -69,8 +69,11 @@ def default_path(mesh_config) -> str:
     # so stripping the prefix recovers the case label the user actually recognises.
     if stem.startswith("mesh_"):
         stem = stem[len("mesh_"):]
-    return os.path.join(paths.repo_root(), DEFAULT_DIR,
-                        f"{stem or 'topology'}_topology.json")
+    # `<stem>_topology.json`, or plain `topology.json` when there is no stem to
+    # qualify it — `topology_topology.json` is what naming the fallback "topology"
+    # produced, and it reads as a bug rather than as a default.
+    name = f"{stem}_topology.json" if stem else "topology.json"
+    return os.path.join(paths.repo_root(), DEFAULT_DIR, name)
 
 
 def detach(model, mesh_config, path: str, ctx=None) -> str:
@@ -81,6 +84,11 @@ def detach(model, mesh_config, path: str, ctx=None) -> str:
     :class:`~app.services.topology_binding.BindingError` — leaves the configuration
     exactly as it was. A half-detached case (the projection off and no file to read)
     would be the one state neither panel nor mesher has a message for.
+
+    RETURNS THE STORED SPELLING, not the absolute path it wrote: that is the value
+    the caller goes on to show, log and put in the row, and handing back a second
+    spelling of one path is how a panel comes to display something the model does
+    not hold.
 
     ``mesh_config.mesh_topology_file`` is written with the path AS GIVEN once it is
     inside the repo, matching what every other stored path in this app does
@@ -96,7 +104,7 @@ def detach(model, mesh_config, path: str, ctx=None) -> str:
         f.write(text)
     mesh_config.mesh_topology_file = _stored(out)
     model.detached = True
-    return out
+    return mesh_config.mesh_topology_file
 
 
 def reattach(model, mesh_config) -> None:
@@ -120,17 +128,7 @@ def _stored(abs_path: str) -> str:
     return rel if not rel.startswith(os.pardir) else abs_path
 
 
-def is_detached(model) -> bool:
-    """True when ``model`` carries a family that has been detached from its file.
-
-    Not the same question as ``not names_a_family()``, which is also true for a
-    configuration that never had a template at all: this one is what makes the panel
-    show a PROVENANCE summary rather than an empty template section.
-    """
-    return bool(getattr(model, "family", "")) and bool(getattr(model, "detached", False))
-
-
-def provenance(model) -> list:
+def provenance(model, mesh_config=None) -> list:
     """``(label, value)`` rows describing the template this document came from.
 
     DERIVED FROM THE FIELD-SPEC TABLE by the family's own declared prefix, never
@@ -151,18 +149,36 @@ def provenance(model) -> list:
             continue
         if not spec.model_name.startswith(fam.prefix):
             continue
-        rows.append((spec.label, _shown(getattr(model, spec.model_name, ""))))
+        rows.append((spec.label, _shown(getattr(model, spec.model_name, ""), spec)))
+    # ...and the quantities the family reads from the RUN rather than from the
+    # model, which the prefix cannot find because #133 deliberately gave them no
+    # alias. `mesh_config` is optional, so a caller with only a model gets the
+    # parameters it can actually vouch for rather than a row reading "(none)".
+    if mesh_config is not None:
+        for _ctx_field, label, attr in getattr(fam, "reads_context", ()):
+            rows.append((label, _shown(getattr(mesh_config, attr, ""), None)))
     return rows
 
 
-def _shown(value) -> str:
-    """One value, as the summary prints it."""
+def _shown(value, spec=None) -> str:
+    """One value, as the summary prints it.
+
+    A row that declares its own text for "no value chosen" is asked for it rather
+    than having one invented here: the O-grid's radial override is an int spin box
+    whose 0 MEANS "take the derived count" (`special`), and printing a bare `0` in a
+    provenance summary shows a sentinel as a number the user picked.
+    """
+    opts = getattr(spec, "opts", None) or {}
     if isinstance(value, bool):
         return "yes" if value else "no"
+    if isinstance(value, (int, float)) and not value and opts.get("special"):
+        return str(opts["special"])
     if isinstance(value, float):
         return f"{value:g}"
     text = str(value)
-    return text if text.strip() else "(none)"
+    if text.strip():
+        return text
+    return str(opts.get("placeholder") or "(none)")
 
 
 def summary(model, mesh_config=None) -> str:
@@ -171,7 +187,7 @@ def summary(model, mesh_config=None) -> str:
     ONE builder, so the panel and the gate read the same sentence and a change to
     the wording cannot make a green gate describe a screen nobody sees.
     """
-    rows = provenance(model)
+    rows = provenance(model, mesh_config)
     if not rows:
         return ""
     head = ("This topology is DETACHED: the file below is yours to maintain, and "

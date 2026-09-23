@@ -26,14 +26,13 @@ pressing one is not an edit until the row it writes says so.
 """
 from __future__ import annotations
 
-import os
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from app.services import topology_detach
+from app.services import topology_detach, user_log
 from app.services.logging_setup import get_logger
-from app.services.topology_field_specs import TOPOLOGY_SPECS, TOPOLOGY_STATE_ROWS
+from app.services.topology_field_specs import TOPOLOGY_SPECS
 from app.utils import confirm_destructive, make_button, report_error
 from app.views.panels.field_widgets import set_spec_row_enabled
 
@@ -138,15 +137,17 @@ class MeshConfigDetachMixin:
         box = getattr(self, "_topo_detach", None)
         if box is None:
             return
-        detached = topology_detach.is_detached(model)
+        detached = model.is_detached()
         for spec in TOPOLOGY_SPECS:
-            # The state row itself is never re-enabled: it is a read-out, and
-            # `set_spec_row_enabled` would happily undo what the builder declared.
-            if spec.attr in TOPOLOGY_STATE_ROWS and spec.attr != "topo_family":
+            # A row whose read-only-ness IS its enabled state is never re-enabled:
+            # that is the `bool` kind, which has no `setReadOnly`, so enabling it
+            # would undo what the builder declared rather than reveal a control.
+            # Asked of the DECLARATION rather than of the row's name, which was the
+            # first spelling and read as "skip topo_detached" the long way round.
+            if spec.kind == "bool" and spec.opts.get("readonly"):
                 continue
             set_spec_row_enabled(self, spec.attr, not detached)
-        box.show_state(has_family=bool(getattr(model, "family", "")),
-                       detached=detached,
+        box.show_state(has_family=model.has_family(), detached=detached,
                        summary=topology_detach.summary(model, cfg))
 
     # ── the two transitions ────────────────────────────────────────────────
@@ -172,25 +173,30 @@ class MeshConfigDetachMixin:
             # topology was not detached and the configuration is untouched, which is
             # what `detach` guarantees by building before it writes.
             _log.warning("detach refused: %s", exc, exc_info=True)
-            report_error(self, "Could not detach the topology",
-                         f"{exc}\n\nThe topology is still generated from the "
-                         f"template, and nothing was written.")
+            report_error(self, "Could not detach the topology", str(exc),
+                         detail="The topology is still generated from the template, "
+                                "and nothing was written.")
             return
-        self._write_detached_state(cfg.mesh_topology_file, True)
-        self._log_detach(f"[INFO] topology detached to {written} — it is no longer "
-                         f"generated from the template.")
+        # `written` and not `cfg.mesh_topology_file`: the service decides how the
+        # path is written down, and reading it back off a throwaway config object
+        # would be a second route to the same answer.
+        self._write_detached_state(written, True)
+        user_log.log(f"[INFO] topology detached to {written} — it is no longer "
+                     f"generated from the template.")
 
     def _on_topology_reattach(self):
         """Discard the file's edits and go back to generating, having said so."""
         cfg = self.get_config()
-        if not topology_detach.is_detached(cfg.topology):
+        if not cfg.topology.is_detached():
             return
         if not self._confirm_reattach():
             return
         topology_detach.reattach(cfg.topology, cfg)
-        self._write_detached_state("", False)
-        self._log_detach("[INFO] topology re-attached to its template — the "
-                         "document is generated again on every run.")
+        # What the row becomes is `reattach`'s answer, not a second spelling of its
+        # rule: the panel mirrors the config the service just wrote.
+        self._write_detached_state(cfg.mesh_topology_file, False)
+        user_log.log("[INFO] topology re-attached to its template — the document is "
+                     "generated again on every run.")
 
     def _write_detached_state(self, topology_file: str, detached: bool):
         """Push the two changed values into the rows that author them.
@@ -216,8 +222,11 @@ class MeshConfigDetachMixin:
 
     def _ask_detach_path(self, default: str) -> str:
         """Where the detached document goes. Overridden headlessly by the gate."""
+        # No `makedirs` here: `default_path` is a SUGGESTION and cancelling must not
+        # leave an empty `config/topology/` behind. Qt opens at the nearest existing
+        # ancestor with the name pre-filled, and `detach` creates the directory the
+        # user actually chose.
         from PyQt6.QtWidgets import QFileDialog
-        os.makedirs(os.path.dirname(default), exist_ok=True)
         path, _ = QFileDialog.getSaveFileName(
             self, "Detach topology to a file", default,
             "Topology (*.json);;All Files (*)")
@@ -235,7 +244,3 @@ class MeshConfigDetachMixin:
             action_label="Re-attach and regenerate",
             informative=topology_detach.REATTACH_WARNING) is not None
 
-    def _log_detach(self, message: str):
-        """Say what happened, through the user-log service if this panel has one."""
-        from app.services import user_log
-        user_log.log(message)
