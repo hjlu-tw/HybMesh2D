@@ -23,8 +23,40 @@ makes that affordable rather than a drift waiting to happen:
 The GUI half is headless against panel and canvas state, in the style of
 `test_topology_panel.py` next door.
 
-INJECTIONS: run by hand, 2026-09-23; each reverted afterwards and the file compared
-against its pre-injection copy. Recorded below as MEASURED, not as predicted.
+INJECTIONS: twelve, run 2026-09-23 over a mutated copy of the shipped sources, each
+restored BY CONTENT from a snapshot rather than by `git checkout` (#131's lesson, and
+two of the three files were new). All twelve bit. Recorded as MEASURED:
+
+  A. `resolve_counts` unions ADJACENT sides ((0,1),(2,3)) instead of opposite ones
+     -> 8 red: 2b, 3, 3c, 4b, 4c, 4d and 12c on BOTH documents. 12b stayed GREEN,
+     which is the measurement worth keeping: mis-partitioning the classes does not
+     change HOW MANY counts were declared, so the split half of the mesher
+     cross-check cannot see it and only the edge-by-edge half can.
+  B. no propagation at all — each edge keeps its own declaration -> 6 red: 3, 3c, 4,
+     4b, 12c twice. 12b green again, for the same reason.
+  C. a conflicting class picks one of its two seeds instead of resolving to None ->
+     4b alone. Exactly one check for exactly one behaviour, which is what 4b's
+     negative control next door is there to make trustworthy.
+  D. the canvas never rebuilds the skeleton -> 13 red (7 through 7g, 10, 10b, 10c,
+     11c). **Its first run CRASHED instead**, with `AttributeError: 'NoneType' has
+     no attribute 'edges'` at check 7 and TWO FAIL lines printed — a mutation that
+     removes the whole feature, scoring almost nothing to a reader counting FAIL
+     lines. The exit code was right and the report was not, so the three places this
+     file dereferenced `topology_skeleton` were changed to TEST it; the 13 above are
+     the re-run. This file is not the first in the repo to hit that shape.
+  E. the rebuild moves INSIDE `update_mesh_config`'s `if self.mesh_config:` branch
+     -> 7e alone, and only its third instance (`there is no config at all`). The
+     mode and family clears still work, which is why 7e is three cases and not one.
+  F. the mode combo is not wired to `_on_topology_edited` -> 10d alone.
+  G. `_on_topology_edited` refreshes the read-out and emits nothing -> 10b, 10c,
+     10d. Check 10 stays GREEN: a programmatic push goes through `set_config`, which
+     ends with its own emit, so "the overlay appears" cannot see this at all.
+  H. bound and free corners drawn with the same symbol -> 8 alone.
+  I. an unplaceable bound corner placed at the origin -> 5b alone.
+  J. an unresolved count labelled blank instead of `?` -> 4d alone.
+  K. declared and propagated counts share one colour -> 7f alone.
+  L. `auto_range` loses the skeleton as a source -> 11c alone. 11b stays green, as
+     it must: it is the negative control for exactly this source.
 """
 from __future__ import annotations
 
@@ -259,19 +291,24 @@ canvas.update_mesh_config(cfg_for(hgrid_nx=3, hgrid_ny=2, hgrid_cell=0.3,
                                   hgrid_counts_x="4,9,6"))
 labels = [t.toPlainText() for t in canvas.skeleton_label_items]
 drawn = canvas.topology_skeleton
+# `drawn` is tested rather than dereferenced: injection D (the canvas never
+# rebuilding) left it None and this file CRASHED at the next line, scoring zero
+# FAIL lines for a mutation that removes the whole feature. The bite was real and
+# the exit code said so, but a gate that crashes is a gate that stops reporting.
+_n_drawn = len(drawn.edges) if drawn is not None else -1
 check(f"7. the overlay draws one label per declared edge ({len(labels)} labels "
-      f"for {len(drawn.edges)} edges): {sorted(set(labels))}",
-      len(labels) == len(drawn.edges) and len(labels) > 0)
+      f"for {_n_drawn} edges): {sorted(set(labels))}",
+      len(labels) == _n_drawn and len(labels) > 0)
 _xc, _yc = topology_hgrid.hgrid_counts(
     model(hgrid_nx=3, hgrid_ny=2, hgrid_cell=0.3, hgrid_counts_x="4,9,6"))
 check(f"7b. ...and every count the FAMILY derives is on the canvas, including the "
       f"ones the user overrode per column (family x={_xc} y={_yc})",
       all(str(v) in labels for v in _xc + _yc))
-_propagated_on_canvas = [e.id for e in drawn.edges if not e.declared]
+_propagated_on_canvas = [e.id for e in (drawn.edges if drawn else ()) if not e.declared]
 check(f"7c. ...and most of those labels are on edges nobody declared a count "
       f"for — the whole point of showing them ({len(_propagated_on_canvas)} of "
-      f"{len(drawn.edges)})",
-      len(_propagated_on_canvas) == len(drawn.edges) - (len(_xc) + len(_yc)))
+      f"{_n_drawn})",
+      len(_propagated_on_canvas) == _n_drawn - (len(_xc) + len(_yc)))
 check("7d. ...drawn as line items with the corner marks beside them",
       len(canvas.skeleton_edge_items) >= 1 and "free" in canvas.skeleton_corner_marks)
 _styles = {it.opts["pen"].style() for it in canvas.skeleton_edge_items}
@@ -298,7 +335,8 @@ for label, cfg in (("the mode goes back to hybrid", cfg_for(mode=MESH_MODE_HYBRI
 canvas.update_mesh_config(cfg_for(hgrid_nx=2, hgrid_ny=2))
 # Zipped over the edges that GOT a label (one is created per placed midpoint), so
 # the pairing is the drawing order and not an assumption that every edge got one.
-_labelled = [e for e in canvas.topology_skeleton.edges if e.midpoint is not None]
+_drawn = canvas.topology_skeleton
+_labelled = [e for e in (_drawn.edges if _drawn else ()) if e.midpoint is not None]
 _cols = {}
 for _e, _t in zip(_labelled, canvas.skeleton_label_items):
     _cols.setdefault(_e.declared, set()).add(_t.color.name().lower())
@@ -350,15 +388,22 @@ _panel = _c.main_window.mesh_config_panel
 _canvas = _c.main_window.mesh_canvas_view
 _c.push_panel_config(_panel, cfg_for(hgrid_nx=2, hgrid_ny=2, hgrid_cell=0.5))
 _before = [t.toPlainText() for t in _canvas.skeleton_label_items]
-_n_before = len(_canvas.topology_skeleton.edges)
+
+
+def n_edges(c):
+    """Edges on `c`'s skeleton, or -1 when there is none — see check 7."""
+    return len(c.topology_skeleton.edges) if c.topology_skeleton is not None else -1
+
+
+_n_before = n_edges(_canvas)
 check(f"10. a programmatic push paints the skeleton on the app's own canvas "
       f"({_n_before} edges, labels {sorted(set(_before))})", _n_before == 12)
 _panel.topo_hgrid_nx.setValue(4)
 _after = [t.toPlainText() for t in _canvas.skeleton_label_items]
 check(f"10b. ...and TYPING a block count redraws it, which no other mesh panel "
       f"field does today ({_n_before} edges -> "
-      f"{len(_canvas.topology_skeleton.edges)})",
-      len(_canvas.topology_skeleton.edges) == 22)
+      f"{n_edges(_canvas)})",
+      n_edges(_canvas) == 22)
 _panel.topo_hgrid_counts_x.setText("3,,9,")
 _after_ov = [t.toPlainText() for t in _canvas.skeleton_label_items]
 check(f"10c. ...and so does an override typed into a text row, at the position it "

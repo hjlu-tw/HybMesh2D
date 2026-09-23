@@ -491,8 +491,8 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Ten rule files now — 58,537 / 54,451 / 50,084 / 45,018 / 35,517 / 25,369 / 22,516 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, gui-panels-config, pipeline-case, mesher-smoothing, mesher, gui-seams, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 1,463 / 5,549 of
+    Ten rule files now — 58,537 / 54,772 / 50,084 / 45,018 / 35,517 / 25,369 / 22,516 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, gui-panels-config, pipeline-case, mesher-smoothing, mesher, gui-seams, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 1,463 / 5,228 of
     headroom the two large ones have left, and not at all for a move into any of the other
     eight, which have 9,916 / 14,982 / 24,483 / 34,631 / 37,484 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this

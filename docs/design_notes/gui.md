@@ -2288,11 +2288,20 @@ by handing `update_topology_skeleton` a skeleton built in the gate, not by any s
 #137's.
 
 **Named blind spot: the mesher can only be compared on a document it ACCEPTS.** The banner check 12
-reads is never printed by a refused run, so the two refusal cases are compared at the two ends and
-never in the middle — `test_multiblock_weld_surface.py` check 6 proves the mesher refuses them,
-check 4 here proves this module resolves them to `?`, and nothing asserts the two agree about WHICH
-class was the unresolved one. A defect that mis-partitions the classes while still finding one seed
-per partition is invisible to both.
+reads is never printed by a refused run, so the two refusals are held at opposite ends and never
+compared — `test_multiblock_weld_surface.py` check 6 proves the mesher refuses them, check 4 here
+proves this module answers `?`, and nothing asserts the two refuse the SAME documents. A module
+that saw a conflict where the mesher sees none would draw `?` over a mesh that runs; the reverse
+would draw a number over a run that is refused. Only a human would notice either.
+
+**This entry's first draft was wider, and one injection refuted it.** It claimed that a defect
+mis-partitioning the count classes was invisible to the cross-check as well. Injection A — unioning
+each block's ADJACENT sides instead of its opposite ones — reddened `12c` on BOTH documents, so the
+cross-check sees a mis-partition perfectly well. What it also showed is a real weakness one level
+down, which the entry now carries instead: `12b`, the declared/propagated SPLIT, stayed GREEN
+through injections A and B both, because mis-partitioning the classes does not change how many
+counts the document declares. The edge-by-edge half is what earns check 12 its place; the split
+half would have passed two mutations that destroy the feature.
 
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)

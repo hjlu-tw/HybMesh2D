@@ -560,11 +560,15 @@ against one list; #71 moved the first two here.
   shipped path, until #137 ships a family that declares one. Drawing a named file needs binding
   resolution, which is #137's.
 - **The mesher can only be compared on a document it ACCEPTS.** Check 12's cross-check reads the
-  `Point counts` banner, which a refused run never prints — so the two refusal cases are compared
-  at the two ends and never in the middle: `test_multiblock_weld_surface.py` check 6 proves the
-  MESHER refuses them, check 4 here proves this module resolves them to `?`, and nothing asserts
-  the two agree about WHICH class was the unresolved one. A propagation defect that mis-partitions
-  the classes while still finding one seed per partition is invisible to both.
+  `Point counts` banner, which a refused run never prints — so the two refusals are held at
+  opposite ends and never compared: `test_multiblock_weld_surface.py` check 6 proves the MESHER
+  refuses them, check 4 here proves this module answers `?`, and nothing asserts the two refuse the
+  SAME documents. A module that saw a conflict where the mesher sees none would draw `?` over a
+  mesh that runs, and the reverse would draw a number over a run that is refused; only a human
+  would notice either. **Narrower than this entry's first draft, which claimed a mis-partition was
+  invisible to the cross-check — injection A refuted that in one run: `12c` went red on both
+  documents while `12b` stayed green**, so what is actually weak is the SPLIT half of check 12, not
+  the cross-check.
 - **Nothing gates that a family's document MESHES except for the DEFAULTS.** The spread of eight
   parameter sets is checked structurally; only `TopologyModel()`'s defaults are run through the
   real binary, because eight mesher runs in a gate is a cost nobody asked for. A parameter set that
