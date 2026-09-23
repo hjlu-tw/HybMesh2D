@@ -26,6 +26,13 @@ the family reads are the ones the panel offers (``test_topology_param_specs.py``
 in both directions), and that the arithmetic of the shape metric it is measured by
 is right (``tests/cpp/test_cell_shape.cpp``).
 
+CHECKS 1-7 MOVED INTO ``topology_doc_invariants.py`` WITH #137, when a second family
+arrived that has to satisfy the same rules. The check numbers, the messages and the
+injections recorded below are unchanged — what moved is where each rule is WRITTEN
+DOWN, so the H-grid gate and the O-grid gate cannot come to disagree about what the
+mesher refuses. A rule that is stated twice is a rule that can drift, and the family
+it drifted about would be the one that shipped a refusal.
+
 INJECTIONS: run by hand, 2026-09-22, each reverted and the file's checksum
 compared against its pre-injection copy afterwards. Recorded here rather than
 automated because the harness lived in a scratchpad. Six, all of which bit — and
@@ -78,6 +85,7 @@ _GUI = os.path.join(_REPO, "tools", "PreProcessor", "gui")
 sys.path.insert(0, _GUI)
 sys.path.insert(0, _HERE)
 
+import topology_doc_invariants as inv  # noqa: E402
 from app.services import topology_hgrid, topology_model as tm  # noqa: E402
 
 failures = []
@@ -119,167 +127,50 @@ def docs():
     return [(why, tm.build_document(model(**kw))) for why, kw in SPREAD]
 
 
-class _UF:
-    """Union-find, for deriving the count equivalence classes independently."""
-
-    def __init__(self):
-        self.p = {}
-
-    def find(self, a):
-        self.p.setdefault(a, a)
-        while self.p[a] != a:
-            self.p[a] = self.p[self.p[a]]
-            a = self.p[a]
-        return a
-
-    def union(self, a, b):
-        ra, rb = self.find(a), self.find(b)
-        if ra != rb:
-            self.p[ra] = rb
-
-
-# ── 1. every id is unique ────────────────────────────────────────────────────
-bad = []
-for why, d in docs():
-    for kind in ("corners", "edges", "blocks"):
-        ids = [x["id"] for x in d[kind]]
-        if len(ids) != len(set(ids)):
-            bad.append(f"{why}: duplicate {kind} id")
+# ── 1-7. the structural rules, from the ONE checker both family gates call ──
+# The invariants themselves live in ``topology_doc_invariants.py`` (#137) so that
+# "what must every family's output satisfy" is one statement rather than one copy
+# per family: a second copy is a copy that can come to disagree, and the family it
+# disagreed about would be the one that shipped a refusal. The check NUMBERS, the
+# messages and the injections recorded above are unchanged — what moved is where
+# the rule is written down.
+bad = [c for why, d in docs() for c in inv.unique_ids(why, d)]
 check("1. every corner, edge and block id is unique, across the spread: "
       + (", ".join(bad) if bad else "none duplicated"), not bad)
 
-# ── 2. the ring closes, counter-clockwise, in [south, east, north, west] ─────
-# Walked by DIRECTION, not as a set: a block whose east and west are swapped
-# still names the same four edges, so a set comparison would pass it (injection A).
-bad = []
-for why, d in docs():
-    by_id = {e["id"]: e for e in d["edges"]}
-    for b in d["blocks"]:
-        s, e, n, w = (by_id[i]["corners"] for i in b["edges"])
-        # south i-min->i-max, east j-min->j-max, north i-min->i-max,
-        # west j-min->j-max. So the ring is south -> east -> reversed north ->
-        # reversed west, and it must return to where it started.
-        if not (s[1] == e[0] and e[1] == n[1] and n[0] == w[1] and w[0] == s[0]):
-            bad.append(f"{why}/{b['id']}")
+bad = [c for why, d in docs() for c in inv.ring_closes(why, d)]
 check("2. every block's four edges close a ring in [south, east, north, west] "
       "with south/north running i-min->i-max and west/east j-min->j-max: "
       + (", ".join(bad) if bad else "all closed"), not bad)
 
-# ── 3. every declared count is a legal node count ───────────────────────────
-bad = [f"{why}/{e['id']}={e['count']}"
-       for why, d in docs() for e in d["edges"]
-       if "count" in e and (not isinstance(e["count"], int) or e["count"] < 2)]
+bad = [c for why, d in docs() for c in inv.legal_counts(why, d)]
 check("3. every declared count is an integer >= 2 (the mesher's floor, its two "
       "end corners): " + (", ".join(bad) if bad else "all legal"), not bad)
 
-# ── 4. exactly one count seed per equivalence class ─────────────────────────
-bad = []
-for why, d in docs():
-    by_id = {e["id"]: e for e in d["edges"]}
-    uf = _UF()
-    for e in d["edges"]:
-        uf.find(e["id"])
-    for b in d["blocks"]:
-        s, e, n, w = b["edges"]
-        uf.union(s, n)   # opposite sides of a block carry equal counts
-        uf.union(e, w)
-    cls = {}
-    for eid in by_id:
-        cls.setdefault(uf.find(eid), []).append(eid)
-    for root, members in cls.items():
-        seeds = [m for m in members if "count" in by_id[m]]
-        if len(seeds) != 1:
-            bad.append(f"{why}: class {sorted(members)} has {len(seeds)} seed(s)")
-check("4. exactly one count seed per equivalence class, classes derived here "
+bad = [c for why, d in docs() for c in inv.one_seed_per_class(why, d)]
+check("4. exactly one count seed per equivalence class, classes derived there "
       "from the mesher's two propagation rules rather than from the builder: "
       + ("; ".join(bad) if bad else "one seed in every class"), not bad)
 
-# ── 5. a wall bounds one block side, an interface exactly two ───────────────
-bad = []
-for why, d in docs():
-    uses = {e["id"]: 0 for e in d["edges"]}
-    for b in d["blocks"]:
-        for eid in b["edges"]:
-            uses[eid] += 1
-    for e in d["edges"]:
-        want = 1 if e["kind"] == "wall" else 2
-        if uses[e["id"]] != want:
-            bad.append(f"{why}/{e['id']} kind={e['kind']} used {uses[e['id']]}x")
+bad = [c for why, d in docs() for c in inv.kind_usage(why, d)]
 check("5. every 'wall' bounds exactly one block side and every 'interface' "
       "exactly two: " + (", ".join(bad) if bad else "all as declared"), not bad)
 
-# ── 6. no key outside the mesher's schema ───────────────────────────────────
-# The accepted sets are READ OUT OF THE C++, not restated here: a schema that gains
-# a key must not silently make this check weaker, and one that loses a key must
-# fail here rather than at the user's first run. A derivation that answers on bad
-# input is worse than none (#116), so a set that does not parse fails the check.
-_mb = open(os.path.join(_REPO, "src", "MultiBlock.cpp"), encoding="utf-8").read()
-
-
-def _key_sets():
-    """Every ``rejectUnknownKeys`` key set in the parser, as a list of sets."""
-    out = []
-    for m in re.finditer(r"rejectUnknownKeys\(([^;]*?)\{([^}]*)\}", _mb, re.S):
-        ks = set(re.findall(r'"([^"]+)"', m.group(2)))
-        if ks:
-            out.append(ks)
-    return out
-
-
-_SETS = _key_sets()
-
-
-def schema_keys(marker: str):
-    """The key set containing ``marker``, or None if it is not EXACTLY one.
-
-    Selected by a marker key rather than by the call's ``where`` argument, which is
-    a runtime-built variable at three of the four call sites and so is not in the
-    source to match on. Each marker below appears in exactly one set; requiring
-    exactly one match is what makes this a derivation rather than a guess, and
-    returning None on an ambiguous or absent marker is what stops it answering on
-    input it did not understand (#116).
-    """
-    hits = [s for s in _SETS if marker in s]
-    return hits[0] if len(hits) == 1 else None
-
-
-_corner_keys = schema_keys("xy")
-_edge_keys = schema_keys("binding")
-_block_keys = schema_keys("orientation")
-_doc_keys = schema_keys("format_version")
-_spacing_keys = schema_keys("law")
+# The accepted key sets are READ OUT OF THE C++, not restated: a schema that gains a
+# key must not silently make this check weaker, and one that loses a key must fail
+# here rather than at the user's first run. A derivation that answers on bad input is
+# worse than none (#116), so 6a fails when a set does not resolve and 6b would then
+# report that rather than passing vacuously.
 check("6a. all FIVE schema key sets were READ from src/MultiBlock.cpp by a "
-      f"marker key, not assumed: corner={_corner_keys}, edge={_edge_keys}, "
-      f"block={_block_keys}, doc={_doc_keys}, spacing={_spacing_keys}",
-      all(x for x in (_corner_keys, _edge_keys, _block_keys, _doc_keys,
-                      _spacing_keys)))
-bad = []
-if all(x for x in (_corner_keys, _edge_keys, _block_keys, _doc_keys,
-                   _spacing_keys)):
-    for why, d in docs():
-        for k in d:
-            if k not in _doc_keys:
-                bad.append(f"{why}: document key '{k}'")
-        for c in d["corners"]:
-            bad += [f"{why}: corner key '{k}'" for k in c if k not in _corner_keys]
-        for e in d["edges"]:
-            bad += [f"{why}: edge key '{k}'" for k in e if k not in _edge_keys]
-            bad += [f"{why}: spacing key '{k}'"
-                    for k in e.get("spacing", {}) if k not in _spacing_keys]
-        for b in d["blocks"]:
-            bad += [f"{why}: block key '{k}'" for k in b if k not in _block_keys]
+      f"marker key, not assumed: corner={inv.SCHEMA['corner']}, "
+      f"edge={inv.SCHEMA['edge']}, block={inv.SCHEMA['block']}, "
+      f"doc={inv.SCHEMA['doc']}, spacing={inv.SCHEMA['spacing']}",
+      inv.schema_readable())
+bad = [c for why, d in docs() for c in inv.no_unknown_keys(why, d)]
 check("6b. every emitted key is one the mesher's schema accepts: "
       + (", ".join(sorted(set(bad))) if bad else "no unknown key"), not bad)
 
-# ── 7. nothing is declared that reaches nothing ─────────────────────────────
-bad = []
-for why, d in docs():
-    on_edge = {c for e in d["edges"] for c in e["corners"]}
-    in_block = {eid for b in d["blocks"] for eid in b["edges"]}
-    orphan_c = [c["id"] for c in d["corners"] if c["id"] not in on_edge]
-    orphan_e = [e["id"] for e in d["edges"] if e["id"] not in in_block]
-    if orphan_c or orphan_e:
-        bad.append(f"{why}: corners {orphan_c}, edges {orphan_e}")
+bad = [c for why, d in docs() for c in inv.nothing_orphaned(why, d)]
 check("7. no corner lies on no edge and no edge lies in no block: "
       + ("; ".join(bad) if bad else "everything reaches something"), not bad)
 

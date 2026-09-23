@@ -159,7 +159,7 @@ def mesh_config_generated(mesh_config, case_name: str) -> list:
     never names a document that was not written.
     """
     from app.models.mesh_config_io import config_to_text
-    from app.services import topology_model
+    from app.services import topology_binding, topology_model
 
     stem = f"Background_para_{case_name}"
     model = getattr(mesh_config, "topology", None)
@@ -167,7 +167,8 @@ def mesh_config_generated(mesh_config, case_name: str) -> list:
         return [(f"{stem}.dat", config_to_text(mesh_config))]
     doc_name = os.path.basename(topology_model.projection_path(f"{stem}.dat"))
     try:
-        doc = topology_model.document_for(model)
+        doc = topology_model.document_for(
+            model, topology_binding.context_for_config(mesh_config))
     except Exception:
         _log.warning("the %r template could not build its document, so the case "
                      "records its mesh parameters without one", model.family,

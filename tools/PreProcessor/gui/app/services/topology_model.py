@@ -27,7 +27,7 @@ import json
 import os
 from dataclasses import dataclass, fields
 
-from app.services import topology_hgrid
+from app.services import topology_hgrid, topology_ogrid
 
 #: ``family`` value meaning "no template" — the user names a topology file by hand,
 #: which is the path that existed before this ticket and still works unchanged.
@@ -56,6 +56,25 @@ class TopologyModel:
     hgrid_wall_bottom: bool = True
     hgrid_counts_x: str = ""
     hgrid_counts_y: str = ""
+
+    # ── O-grid (#137) ────────────────────────────────────────────────────────
+    # The two geometries are named rather than positional, and the BOUND SEGMENTS
+    # are stored as the CAD segment's stable ids rather than as positions in a
+    # list: inserting, deleting or reordering a segment shifts every positional
+    # binding after it with no error at all, which is the same failure class that
+    # once exported an entire mesh as `wall`. Blank adopts what the geometry has
+    # now; once captured the list is the binding of record and a missing id is a
+    # refusal. See services/topology_binding.py.
+    ogrid_body_geom: str = ""
+    ogrid_body_segs: str = ""
+    ogrid_far_geom: str = ""
+    ogrid_far_segs: str = ""
+    ogrid_splits: int = 1
+    ogrid_cell: float = 0.05
+    # 0 = take the derived count. Not a magic blank: the row is an int spin box, so
+    # "no override" has to be a value, and any count below the mesher's own floor of
+    # 2 cannot be one the user means.
+    ogrid_radial_count: int = 0
 
     def to_dict(self) -> dict:
         """Every parameter, as plain JSON-able values.
@@ -162,11 +181,19 @@ _COERCE = _coercers()
 
 @dataclass(frozen=True)
 class Family:
-    """One entry of the registry: a name, a label, and the pure function."""
+    """One entry of the registry: a name, a label, and the pure function.
+
+    ``build`` takes ``(TopologyModel, BindingContext | None)``. The context is the
+    second argument rather than a field of the model because it is not the user's
+    configuration — it is what their CAD looks like right now, re-read per run — and
+    a family that binds to nothing (the H-grid) ignores it. Keeping it out of the
+    model is also what keeps the project file a record of DECISIONS: a context baked
+    into it would be a stale copy of the geometry list.
+    """
 
     name: str
     label: str
-    build: object          # (TopologyModel) -> dict
+    build: object          # (TopologyModel, BindingContext | None) -> dict
     #: The parameter attribute prefix this family owns, which is how the
     #: parameters-to-families gate attributes a field-spec row to a family.
     prefix: str
@@ -177,6 +204,8 @@ class Family:
 FAMILIES: tuple[Family, ...] = (
     Family(topology_hgrid.FAMILY, "H-grid (rectangular blocks)",
            topology_hgrid.build, "hgrid_"),
+    Family(topology_ogrid.FAMILY, "O-grid (ring around a drawn body)",
+           topology_ogrid.build, "ogrid_"),
 )
 
 #: ``(value, label)`` pairs for the family combo, with "no template" first because it
@@ -194,23 +223,30 @@ def family_for(name: str) -> Family | None:
     return None
 
 
-def build_document(model: TopologyModel) -> dict:
-    """The topology document ``model`` describes.
+def build_document(model: TopologyModel, ctx=None) -> dict:
+    """The topology document ``model`` describes, bound against ``ctx``.
 
     Raises ``ValueError`` when the model names no family: a caller asking for the
     document of a model that has none has asked a question with no answer, and
     returning an empty document would put that answer in a file the mesher then
     refuses with a message about the document rather than about the request.
+
+    A family that BINDS raises
+    :class:`~app.services.topology_binding.BindingError` (a ``ValueError``) when a
+    stored segment id is no longer on the geometry, naming the edge. It never falls
+    back to the configured default boundary condition: a mesh that runs, exports and
+    looks right while carrying the wrong conditions is the one outcome worse than a
+    refusal (#137).
     """
     fam = family_for(model.family)
     if fam is None:
         raise ValueError(
             "this configuration names no topology family, so there is no document "
             "to build. Pick a family, or name a topology file by hand.")
-    return fam.build(model)
+    return fam.build(model, ctx)
 
 
-def document_for(model: TopologyModel) -> str:
+def document_for(model: TopologyModel, ctx=None) -> str:
     """``model``'s document, as the JSON text to write.
 
     The two-step walk (:func:`build_document` then :func:`document_text`) behind one
@@ -218,7 +254,7 @@ def document_for(model: TopologyModel) -> str:
     the folder itself rather than to a path — does not have to know there are two
     steps, in the same way :func:`projection_path` already hides the naming rule.
     """
-    return document_text(build_document(model))
+    return document_text(build_document(model, ctx))
 
 
 def document_text(doc: dict) -> str:
@@ -241,10 +277,16 @@ def projection_path(config_path: str) -> str:
     return os.path.join(os.path.dirname(p), f"{stem}_topology.json")
 
 
-def project(model: TopologyModel, config_path: str) -> str:
-    """Write ``model``'s document beside ``config_path``; return its absolute path."""
+def project(model: TopologyModel, config_path: str, ctx=None) -> str:
+    """Write ``model``'s document beside ``config_path``; return its absolute path.
+
+    Nothing is written when the document cannot be built: the refusal propagates and
+    the caller is left with no file rather than with a stale one from the last run,
+    which would be a mesh cut from a topology the configuration no longer describes.
+    """
+    text = document_for(model, ctx)
     out = projection_path(config_path)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
-        f.write(document_for(model))
+        f.write(text)
     return out

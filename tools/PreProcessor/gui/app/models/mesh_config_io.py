@@ -10,7 +10,7 @@ from app.services.geom_path_identity import canonical_geom_path, dedupe_geom_pat
 # Module level for the reason stated just above: Qt-free, no cycle to defer
 # around (nothing in the topology modules imports this one), and a deferred
 # import would hide that the writer now has a second producer behind it.
-from app.services import topology_model
+from app.services import topology_binding, topology_model
 
 
 def load_config_from_file(cfg, path: str):
@@ -197,7 +197,15 @@ def save_config_to_file(cfg, path: str):
     topo = ""
     model = getattr(cfg, "topology", None)
     if model is not None and model.names_a_family():
-        topo = topology_model.project(model, path)
+        # The BINDING CONTEXT is built from `cfg` here rather than carried on the
+        # topology model, because it is not configuration: it is what the user's CAD
+        # looks like RIGHT NOW, and a copy of it inside the project file would be a
+        # stale geometry list that the next run believed (#137). A family that binds
+        # to a segment the geometry no longer has raises from inside this call, so
+        # the run is refused with the edge named and NO config file is written —
+        # rather than one pointing at last run's document.
+        topo = topology_model.project(
+            model, path, topology_binding.context_for_config(cfg))
     with open(path, "w", encoding="utf-8") as f:
         f.write(config_to_text(cfg, path, topology_path=topo))
 

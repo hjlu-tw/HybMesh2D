@@ -107,10 +107,69 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               "overrides.",
               model="hgrid_counts_y", group=GROUP, modes=_MB,
               opts=dict(placeholder="(derived)")),
+
+    # ── O-grid (#137) ────────────────────────────────────────────────────────
+    FieldSpec("topo_ogrid_body_geom", "path", "Body Geometry",
+              "The closed body the ring wraps. One of the geometries this mesh "
+              "loads — the template writes none of its own, so the walls follow "
+              "the shape you drew and their boundary conditions are read off its "
+              "own segments.",
+              model="ogrid_body_geom", group=GROUP, modes=_MB,
+              opts=dict(caption="Select body geometry",
+                        filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_ogrid_body_segs", "text", "Bound Body Segments",
+              "The source segments the wall edges bind to, as the CAD segment's "
+              "STABLE IDs — never as positions in a list, because inserting or "
+              "deleting a segment shifts every positional binding after it with no "
+              "error at all. Blank adopts whatever the geometry has now; once "
+              "filled it is the binding of record, and an id the geometry no "
+              "longer has REFUSES the run with the edge named rather than falling "
+              "back to the default boundary condition.",
+              model="ogrid_body_segs", group=GROUP, modes=_MB,
+              opts=dict(placeholder="(all of the body's segments)")),
+    FieldSpec("topo_ogrid_far_geom", "path", "Far-Field Geometry",
+              "The outer outline. Its segments pair ONE TO ONE with the body's, so "
+              "segment it the same way you segmented the body; its own per-segment "
+              "conditions reach the export the same way the body's do.",
+              model="ogrid_far_geom", group=GROUP, modes=_MB,
+              opts=dict(caption="Select far-field geometry",
+                        filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_ogrid_far_segs", "text", "Bound Far Segments",
+              "The far field's bound segment ids. Same rule as the body's.",
+              model="ogrid_far_segs", group=GROUP, modes=_MB,
+              opts=dict(placeholder="(all of the far field's segments)")),
+    FieldSpec("topo_ogrid_splits", "int", "Splits Per Segment",
+              "How many equal-arc blocks each source segment becomes. A bound edge "
+              "declares ONE segment — that is how its boundary condition is read "
+              "off the geometry — so the block ring refines your segments and never "
+              "cuts across them. A body drawn as a single segment needs at least 2 "
+              "here.",
+              model="ogrid_splits", group=GROUP, modes=_MB,
+              opts=dict(lo=1, hi=64)),
+    FieldSpec("topo_ogrid_cell", "sci", "Target Cell Edge",
+              "The circumferential cell edge length to aim for along the wall. The "
+              "node count each wall edge gets is derived from it and from that "
+              "segment's own arc length, and shown below.",
+              model="ogrid_cell", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-12, hi=1e9)),
+    FieldSpec("topo_ogrid_radial_count", "int", "Override Radial Nodes",
+              "0 takes the derived count. The derivation is a default, not a cage — "
+              "but it is worth reading first: it is the count at which a law "
+              "starting from your BL_INITIAL_THICKNESS reaches the far field "
+              "without ever growing faster than the 1:1 criterion allows.",
+              model="ogrid_radial_count", group=GROUP, modes=_MB,
+              opts=dict(lo=0, hi=20000)),
+    FieldSpec("topo_ogrid_derived", "label", "Derivation",
+              "What the parameters above imply, with the working shown: the ring's "
+              "blocks and circumferential cells, the 1:1 growth ratio those imply, "
+              "the wall first cell that ratio would give against the one your "
+              "BL_INITIAL_THICKNESS asks for, and the radial node count that closes "
+              "the gap between them.",
+              model=None, group=GROUP, modes=_MB),
 )
 
 #: Rows that author no model field, declared rather than inferred: the derived-count
 #: read-out displays a number the family function computed and writes nothing back.
 #: Named here so the bidirectional gate can hold "every OTHER row is read by a
 #: family" without a read-out counting as an unread parameter.
-TOPOLOGY_READONLY = ("topo_hgrid_counts_derived",)
+TOPOLOGY_READONLY = ("topo_hgrid_counts_derived", "topo_ogrid_derived")

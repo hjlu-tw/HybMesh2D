@@ -129,8 +129,16 @@ def hgrid_counts(model) -> tuple[list[int], list[int]]:
             _override(ys, model.hgrid_counts_y))
 
 
-def build(model) -> dict:
-    """The H-grid topology document for ``model``, as a plain dict."""
+def build(model, ctx=None) -> dict:
+    """The H-grid topology document for ``model``, as a plain dict.
+
+    ``ctx`` is the binding context every family function is handed (#137) and this
+    one ignores: the H-grid declares only FREE corners — the shipped hand-written
+    H-grid case has no geometry file at all — so there is nothing here to resolve
+    against the user's CAD. Accepted rather than omitted so the registry has ONE
+    call shape; a family whose signature differed would make ``fam.build`` a
+    dispatch rather than a call.
+    """
     nx, ny = int(model.hgrid_nx), int(model.hgrid_ny)
     x0, x1 = float(model.hgrid_x_min), float(model.hgrid_x_max)
     y0, y1 = float(model.hgrid_y_min), float(model.hgrid_y_max)

@@ -33,8 +33,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services import topology_model
+from app.services import topology_binding, topology_model
+from app.services.logging_setup import get_logger
 from app.services.mesh_modes import MESH_MODE_MULTIBLOCK
+
+_log = get_logger(__name__)
 
 #: The corner kind that attaches to a geometry by normalized arc length. The other
 #: kind, ``free``, carries its own ``xy``. Spelled once here because two questions
@@ -198,11 +201,12 @@ def skeleton(doc: dict, locate=None) -> Skeleton:
     """The drawable skeleton of ``doc``.
 
     ``locate`` places a corner of kind ``on_geometry``: it is called with that
-    corner's own dict and returns ``(x, y)`` or ``None``. Optional, and ``None`` in
-    every shipped path today — no family generates a bound corner until the O-grid
-    (#137) — so a bound corner is reported as bound-but-unplaced rather than placed
-    somewhere convenient. The parameter exists so that arrives as a caller passing a
-    resolver, not as a second walk over the document.
+    corner's own dict and returns ``(x, y)`` or ``None``. FILLED IN BY #137, which
+    is when the first family that generates a bound corner arrived: the resolver is
+    ``topology_binding.locator(ctx)``, and it stays a parameter rather than a call
+    from in here because where a corner IS is a question about the user's CAD, which
+    this module does not read. A corner the resolver cannot place is still reported
+    as bound-but-unplaced rather than placed somewhere convenient.
     """
     corners: list[SkeletonCorner] = []
     at: dict[str, tuple[float, float]] = {}
@@ -268,4 +272,16 @@ def skeleton_for_config(cfg) -> Skeleton | None:
     model = getattr(cfg, "topology", None)
     if model is None or not model.names_a_family():
         return None
-    return skeleton(topology_model.build_document(model))
+    # The same context the projection uses, so the overlay draws the document the
+    # run would produce rather than a second answer to the same question — and
+    # ``None`` when the family REFUSES, because an overlay of a topology the run
+    # will not produce is worse than no overlay (the rule this function already
+    # applies to an unresolved count). The refusal itself is the run's to report.
+    ctx = topology_binding.context_for_config(cfg)
+    try:
+        doc = topology_model.build_document(model, ctx)
+    except ValueError:
+        _log.debug("no skeleton: the %r template refuses this configuration",
+                   model.family, exc_info=True)
+        return None
+    return skeleton(doc, locate=topology_binding.locator(ctx))

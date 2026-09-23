@@ -90,7 +90,56 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         # Wired here rather than in `_build_mode_section` because it is the
         # TEMPLATE that cares; the mode row itself is unchanged.
         self.mesh_mode.currentIndexChanged.connect(self._on_topology_edited)
+        # Naming a geometry CAPTURES its segment ids as the binding of record
+        # (#137). Wired to those two rows alone rather than folded into the handler
+        # above, because it is not a read-out: it WRITES a parameter, and doing that
+        # on every template keystroke would re-adopt the segments the user is in the
+        # middle of editing — which is exactly the silent re-binding that storing
+        # ids instead of positions exists to prevent.
+        _by_attr = {sp.attr: sp for sp in TOPOLOGY_SPECS}
+        for geom_attr, segs_attr in (("topo_ogrid_body_geom", "topo_ogrid_body_segs"),
+                                     ("topo_ogrid_far_geom", "topo_ogrid_far_segs")):
+            w = getattr(self, geom_attr, None)
+            if w is None or getattr(self, segs_attr, None) is None:
+                continue
+            sig = edit_signal(w, _by_attr[geom_attr])
+            if sig is not None:
+                sig.connect(lambda *_a, g=geom_attr, t=segs_attr:
+                            self._capture_topology_binding(g, t))
         self._refresh_topology_counts()
+
+    def _capture_topology_binding(self, geom_attr: str, segs_attr: str):
+        """Write the named geometry's CURRENT segment ids into its binding row.
+
+        WHAT MAKES A LATER DELETION A REFUSAL RATHER THAN A SHORTER RING. With the
+        row blank the family adopts whatever the geometry has at projection time, so
+        removing a bound segment would quietly produce a different mesh; once these
+        ids are stored, the same removal is refused with the edge named (#137).
+        Capturing HERE — the moment the user names the geometry — is the one moment
+        they have said which shape they mean, and it is also the only one at which
+        overwriting the row cannot destroy an answer they typed.
+
+        It leaves an EXISTING binding alone unless the geometry it named no longer
+        answers for it: re-picking the same file must not silently re-adopt segments
+        the user has since edited by hand, and the CAD edit that breaks a binding is
+        #138's to repair rather than this handler's to paper over.
+        """
+        if getattr(self, "_loading", False):
+            return
+        from app.services import topology_binding
+        w, sw = getattr(self, geom_attr, None), getattr(self, segs_attr, None)
+        if w is None or sw is None:
+            return
+        name = w.text().strip()
+        if not name:
+            return
+        g = topology_binding.geometry_binding(name)
+        if not g.seg_ids:
+            return
+        held = [t.strip() for t in sw.text().split(",") if t.strip()]
+        if held and all(t.lstrip("-").isdigit() and int(t) in g.spans for t in held):
+            return
+        sw.setText(", ".join(str(s) for s in g.seg_ids))
 
     def _on_topology_edited(self, *_args):
         """A template parameter changed: refresh the read-out AND tell the canvas.
@@ -118,34 +167,54 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         ``mesh_config_changed``, so the canvas still learns about a programmatic
         push; it simply learns once, through the wide route that a push deserves.
         """
-        self._refresh_topology_counts()
         if getattr(self, "_loading", False):
+            # No `get_config()` from inside a population: the widgets are half
+            # written, and the read-out that needs a config is the one that would
+            # then describe a configuration that never existed. `set_config` calls
+            # the read-out itself, with the config it is writing.
+            self._refresh_topology_counts()
             return
-        self.topology_changed.emit(self.get_config())
+        cfg = self.get_config()
+        self._refresh_topology_counts(cfg)
+        self.topology_changed.emit(cfg)
 
-    def _refresh_topology_counts(self, *_args):
-        """Show what the family function derives from the parameters as typed.
+    def _refresh_topology_counts(self, cfg=None):
+        """Show what the family functions derive from the parameters as typed.
 
-        Reads the ONE owner of the derivation rather than repeating it
-        (``topology_hgrid.hgrid_counts``, which is also what the document seeds), so
-        the panel cannot display a count the generated mesh does not use.
+        Reads the ONE owner of each derivation rather than repeating it
+        (``topology_hgrid.hgrid_counts`` and ``topology_ogrid.plan``, which are also
+        what the documents seed), so the panel cannot display a figure the generated
+        mesh does not use.
+
+        ``cfg`` is the mesh configuration the O-grid's derivation resolves its
+        geometries against; ``None`` means "not available here", which is the state
+        during a population and at construction. The H-grid half needs none — it
+        binds to nothing.
         """
-        lbl = getattr(self, "topo_hgrid_counts_derived", None)
-        if lbl is None:
-            return
-        from app.services import topology_hgrid
+        from app.services import topology_hgrid, topology_ogrid
         from app.views.panels.field_widgets import read_specs
         model = TopologyModel()
         read_specs(self, TOPOLOGY_SPECS, model)
-        if model.family != topology_hgrid.FAMILY:
-            # No family, or a family this read-out is not about. Said rather than
-            # left blank: a blank cell in a row of numbers reads as a zero.
+        lbl = getattr(self, "topo_hgrid_counts_derived", None)
+        if lbl is not None:
+            if model.family != topology_hgrid.FAMILY:
+                # No family, or a family this read-out is not about. Said rather
+                # than left blank: a blank cell in a row of numbers reads as a zero.
+                lbl.setText("—  (no template selected)")
+            else:
+                xc, yc = topology_hgrid.hgrid_counts(model)
+                lbl.setText(f"X: {', '.join(str(v) for v in xc)}    "
+                            f"Y: {', '.join(str(v) for v in yc)}"
+                            f"    ({len(xc)}x{len(yc)} blocks)")
+        lbl = getattr(self, "topo_ogrid_derived", None)
+        if lbl is None:
+            return
+        if model.family != topology_ogrid.FAMILY:
             lbl.setText("—  (no template selected)")
             return
-        xc, yc = topology_hgrid.hgrid_counts(model)
-        lbl.setText(f"X: {', '.join(str(v) for v in xc)}    "
-                    f"Y: {', '.join(str(v) for v in yc)}"
-                    f"    ({len(xc)}x{len(yc)} blocks)")
+        from app.services import topology_binding
+        ctx = None if cfg is None else topology_binding.context_for_config(cfg)
+        lbl.setText("\n".join(topology_ogrid.plan(model, ctx).lines()))
 
     def _build_sizing_section(self):
         # ── 2. General Sizing ─────────────────────────────────────────────

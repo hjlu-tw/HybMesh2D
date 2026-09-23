@@ -202,7 +202,9 @@ class MeshConfigConfigMixin:
         # something other than MeshConfig (#134). `cfg.topology` is always present
         # (a dataclass default_factory), so there is no None branch to get wrong.
         write_specs(self, TOPOLOGY_SPECS, cfg.topology)
-        self._refresh_topology_counts()
+        # With `cfg`, so the O-grid's derivation resolves against THIS case's
+        # geometries rather than against nothing on the way in (#137).
+        self._refresh_topology_counts(cfg)
 
         # Domain source: a geometry acting as the outer domain → Custom; an
         # external-flow config with geometries but no domain outline → Rectangle
