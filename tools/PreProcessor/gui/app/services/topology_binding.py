@@ -23,6 +23,13 @@ exports and looks right while carrying the wrong conditions — the one outcome 
 a refusal. :class:`BindingError` carries the edge id so the panel (#138) can flag it
 without parsing a message.
 
+AND THE REPAIR IS MADE IN THE PANEL, NOT IN THE FILE (#138). A refusal alone hands the
+user an error message and a JSON document they were never meant to open, at the one
+moment they already know the answer — they just made the CAD edit that broke it. So a
+family also reports :class:`BrokenBinding` rows, which are what the panel flags and
+what its dropdown repairs; the refusal is unchanged and is still what an unrepaired
+binding gets.
+
 READS ARE CACHED BY (path, mtime, size). The skeleton overlay and the derived read-out
 both ask for a context on every keystroke; without the cache that is a ``.dat`` and a
 ``.meta`` parse per character typed. The key is the file's own stamp rather than a
@@ -65,6 +72,55 @@ class BindingError(ValueError):
         self.edge = edge
         self.geom = geom
         self.seg = seg
+
+
+@dataclass(frozen=True)
+class BrokenBinding:
+    """One stored binding that no longer names a segment its geometry carries.
+
+    THE REPAIR IS MADE IN THE PANEL, NOT IN THE FILE (#138). :class:`BindingError`
+    is the refusal, and the refusal alone leaves the user holding an error message
+    and a JSON document they were never meant to open — while the moment a binding
+    breaks is precisely the moment they know the answer, because they are the one
+    who just cut the segment. So a family reports its broken bindings as these
+    rows, each carrying everything the panel needs to flag one and to offer the
+    repair: which stored list holds it (``field``, a :class:`TopologyModel` field
+    name rather than a widget, so this stays Qt-free), WHERE in that list
+    (``pos``), which EDGES go dark because of it, what it was bound to, and the
+    segments that geometry has right now.
+
+    ``choices`` is the geometry's CURRENT segment list, whole and in its own order.
+    Every one of them is a legal answer, because a valid binding is a rotation of
+    that list (``topology_ogrid_binding.cover_problem``) and naming the segment one
+    flagged edge should lie on picks the rotation.
+
+    ``edges`` is a tuple rather than one id because a source segment becomes
+    ``ogrid_splits`` block edges: one broken id darkens all of them, and naming
+    only the first would under-report what the user is looking at.
+    """
+
+    #: The ``TopologyModel`` field holding the list this row is a position in.
+    field: str
+    #: The role the family gives this list, for the sentence ("body", "far field").
+    who: str
+    #: The geometry spelling the binding is against.
+    geom: str
+    #: The stored id the geometry no longer carries.
+    seg: int
+    #: Its index in the stored list — what a repair replaces.
+    pos: int
+    #: Every edge id that binds through this position.
+    edges: tuple[str, ...] = ()
+    #: The geometry's current segment ids, in its own order.
+    choices: tuple[int, ...] = ()
+
+    def label(self) -> str:
+        """The flag, naming the edges, the geometry and what they were bound to."""
+        word = "edge" if len(self.edges) == 1 else "edges"
+        named = ", ".join(self.edges) or "(none)"
+        return (f"{word} {named}: the {self.who} binds segment {self.seg} of "
+                f"'{os.path.basename(self.geom) or self.geom}', which it no longer "
+                f"carries")
 
 
 @dataclass(frozen=True)

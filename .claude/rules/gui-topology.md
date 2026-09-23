@@ -12,8 +12,8 @@ Loaded on demand when a topology service, the mesh canvas or its two mixins, a m
 mixin, or the mesher-config writer is read. Rules only — the rationale (the measurements, the
 injections, the reversals and the named blind spots) is `docs/design_notes/gui.md`, sections "THE
 TOPOLOGY TEMPLATE LIBRARY", "THE TOPOLOGY MODEL SURVIVES THE SESSION", "THE BLOCK SKELETON ON THE
-CANVAS" and "THE O-GRID BINDS TO THE CAD". Read the matching section before overruling a rule here;
-when a rule changes, update BOTH.
+CANVAS", "THE O-GRID BINDS TO THE CAD" and "THE BROKEN BINDING IS REPAIRED FROM THE PANEL". Read
+the matching section before overruling a rule here; when a rule changes, update BOTH.
 
 **THE ELEVENTH RULE FILE, AND THE SECOND TAKEN BECAUSE ONE WAS FULL.** These four blocks (#134,
 #135, #136, #137) lived in `.claude/rules/gui-panels-config.md` until #137's review, which left
@@ -21,8 +21,9 @@ that file at **59,927 of its 60,000 characters — 73 of slack**, so #138 could 
 sentence there. #85's precedent is the one followed: when a rule file is full the answer is a new
 file, not a squeeze, because compressing rules to fit a budget is how a rule quietly loses the
 clause that made it a rule. The area is coherent on its own terms as well as by size — a family
-registry, a projection, a binding, and the overlay that draws what they produce — and it has two
-tickets still to land (#138's binding repair, #139's detach).
+registry, a projection, a binding, and the overlay that draws what they produce — and it had two
+tickets still to land when it was taken, of which #138's binding repair has since landed here and
+#139's detach has not.
 
 **THIS FILE OVERLAPS `gui-panels-config.md` RATHER THAN PARTITIONING IT**, the same shape #89 and
 #85 took, and the overlap is the intended one: the template's parameters are field-spec rows and
@@ -146,6 +147,57 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE L
   `tests/topology_doc_invariants.py`, called by both family gates.
 
 Why, and every measurement: `docs/design_notes/gui.md`, "THE O-GRID BINDS TO THE CAD".
+
+**A BROKEN BINDING IS REPAIRED FROM THE PANEL, AND A RING MUST COVER ITS OUTLINE** (#138, parent
+#133; `services/topology_ogrid_binding.py`, `views/panels/mesh_config_repair_mixin.py`)
+
+- **A VALID O-GRID BINDING IS A ROTATION OF THE GEOMETRY'S WHOLE SEGMENT LIST, and nothing else.**
+  Each wall edge runs from its own segment's start to the NEXT bound segment's start, so the
+  mesher's rule that a bound edge's corners lie on the segment it binds forces the next bound
+  segment to be the geometry's next segment, all the way round. `cover_problem` refuses a gap
+  NAMING THE EDGE that would have to span two source segments — the mesher's own exit-8 refusal
+  moved forward. **SUPERSEDES #137's "a subset is fine"**, which was true of `order_problem` (a
+  subset walks the right way) and false of the document it let through; measured, `2, 40` of
+  `[5, 11, 2, 40]` projected a four-block ring the mesher then refused.
+- **THE REPAIR IS THEREFORE A ROTATION, NOT A REPLACEMENT AT THE POSITION.** `repair_binding(order,
+  pos, seg)` returns the geometry's CURRENT ids rotated so `seg` sits at `pos`, and does not read
+  the broken text at all: the only information a valid list carries is where the ring starts, so
+  naming the segment one flagged edge should lie on picks the whole list. A replacement at the
+  position — the obvious reading of the ticket, and what shipped first — leaves the hole above the
+  moment a CAD split has turned one bound segment into two. Repairing a split therefore makes the
+  ring one block BIGGER, and the far field must be cut to match or #137's one-to-one pairing
+  refuses; that refusal is not repairable by a dropdown and is left as it is.
+- **`plan` RESOLVES EVERY BINDING BEFORE IT ASKS ANY QUESTION ABOUT COUNTS.** With one list
+  repaired and the other still broken the two differ in length BECAUSE of the broken one, and
+  "the body binds 5 and the far field 4" names no edge and points at the wrong geometry. Each
+  list is walked against its own ring, so neither depends on the other's length.
+- **WHAT IS BROKEN IS THE FAMILY'S ANSWER, ASKED THROUGH THE REGISTRY** (`Family.broken`,
+  `topology_model.broken_bindings`). It reports EVERY broken position at once where `plan` stops
+  at the first — one answers "can this run?", the other "what must the user fix?" — and it is
+  SCOPED to what a dropdown can repair: a geometry the mesh does not load, an unparseable list, an
+  unclosed body and a far field inside the body are not wrong SEGMENTS and keep the read-out's
+  sentence as their only voice. `choices` is the geometry's whole current list, because every
+  entry names a legal rotation.
+- **The flag REFRESHES from `_refresh_topology_counts`, the one place already holding both the
+  model and the context**, which runs on every template keystroke AND every `set_config`. That is
+  what clears the flag when the cause is removed by other means — undoing the CAD edit rewrites
+  the sidecar, whose `(mtime, size)` is the binding cache's key. The rows are a POOL that is never
+  destroyed and are repopulated inside `block_signals`: a repair arrives from inside a combo's own
+  signal, so deleting and recreating them deletes the widget mid-emit. `TopologyRepairBox` declares
+  `panel_edited`, the convention `undo_ctrl._wire_widget_edits` documents for a composite that
+  builds its own children — without it the write lands in the widget and reaches neither the
+  global model nor the undo stack.
+- **The write goes into the binding ROW, which stays READ-ONLY.** That row is the field-spec row
+  the panel->model sync already reads, so a repair is persisted, undone and projected by the
+  machinery every other template parameter uses; the panel supplies only the position and the
+  chosen segment, and what the rest of the list becomes is the family's answer. Gate:
+  `tests/test_topology_repair.py`, whose fixture and the sidecar-only CAD split live in
+  `tests/topology_outline_fixture.py` (shared with `test_topology_ogrid.py`, so one `.meta` writer
+  serves both), and whose real-mesher half runs with `MB_SMOOTH_ITERS 0` beside a no-CAD-edit
+  CONTROL.
+
+Why, and every measurement: `docs/design_notes/gui.md`, "THE BROKEN BINDING IS REPAIRED FROM THE
+PANEL".
 
 
 **THE SKELETON IS THE TOPOLOGY MODEL DRAWN, AND THE NODE COUNT IS THE POINT** (#136, parent #133;
@@ -280,6 +332,15 @@ against one list — the shape `gui-panels-config.md` uses, and these six came f
   would notice either. SUPERSEDES #136's own first draft: the weak half is check 12's
   declared/propagated SPLIT, not the cross-check.
   Why: docs/design_notes/gui.md, "This entry's first draft was wider"
+- **A repair that names a segment far from where the broken one lay is LEGAL and meshes badly.**
+  The choice decides the ring's rotation, so pairing a body corner with a far corner most of a
+  turn away is a document nothing refuses — measured at exit 9 with 67 of 704 cells inverted.
+  Nothing can do better from the panel: the deleted segment is gone from the sidecar, so there is
+  no record of where it lay. Cutting the two outlines at DIFFERENT arc positions has the same
+  effect by another route and is #137's pairing design rather than #138's.
+- **`Family.broken` being unset is indistinguishable from "nothing is broken".** It is `None` for
+  the H-grid, correctly; a third family that forgot to declare one would report nothing and no
+  gate would notice.
 - **Nothing gates that a family's document MESHES except for the DEFAULTS.** The spread of eight
   parameter sets is checked structurally; only `TopologyModel()`'s defaults are run through the
   real binary, because eight mesher runs in a gate is a cost nobody asked for. A parameter set that

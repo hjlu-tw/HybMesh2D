@@ -1245,7 +1245,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 272, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 274, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -2458,7 +2458,14 @@ with a FALSE diagnosis, "the body and the far field are wound in opposite direct
 edge. `order_problem` now refuses both, naming the edge, and the rule it enforces is that the
 positions of the bound ids in the geometry's own list must be CYCLICALLY INCREASING — so a
 rotation is fine (a ring has no first segment) and a subset is fine (a binding need not use every
-segment), while a walk that goes backwards at more than one joint is not. A two-entry list cannot
+segment), while a walk that goes backwards at more than one joint is not. **The subset half of
+that sentence was SUPERSEDED by #138** and is kept as written because the shape is the same one
+this paragraph is about: a subset really does walk the geometry's order, so `order_problem` really
+does not fire — and the four-block ring it projected was then refused by the C++ mesher at exit 8,
+for the edge that would have to span two source segments. The claim was true of the FUNCTION and
+false of the DOCUMENT, and nothing was asking the second question until a dropdown repair produced
+exactly that state. `cover_problem` asks it now; see "THE BROKEN BINDING IS REPAIRED FROM THE
+PANEL" below. A two-entry list cannot
 tell a reversal from a rotation and is not refused; with two positions there is no third to break
 the tie. The wrong claim is kept above the checks rather than deleted, because an argument that an
 acceptance criterion is unreachable is exactly the kind that needs a measurement and did not get
@@ -2497,6 +2504,101 @@ list, where a reversal and a rotation are the same sequence. The 1:1 law
 is an idealisation for a circle, so on a shape that is not one the equivalent radius is an
 approximation and nothing measures how good it is; the count it produces is a default the user may
 override, which is what makes that acceptable.
+
+
+#### THE BROKEN BINDING IS REPAIRED FROM THE PANEL (#138, parent #133)
+
+Three modules, named here because the rule file's pointer resolves to this note for each:
+`services/topology_ogrid_binding.py` (the stored list's one reader, one writer, order rule,
+coverage rule and repair — split out of `topology_ogrid.py`, which this ticket took past the
+repo's ~500-line standard), `views/panels/mesh_config_repair_mixin.py` (the flag, the dropdown and
+the write) and the `BrokenBinding` row in `services/topology_binding.py`. The registry's dispatch
+is `topology_model.broken_bindings`; the gate is `tests/test_topology_repair.py`, with the fixture
+writer and the CAD edit that breaks a binding in `tests/topology_outline_fixture.py`.
+
+**Why the refusal alone was not enough, in the ticket's own words.** #137's refusal is correct and
+leaves the user holding an error message and a JSON document they were never meant to open — at
+the one moment they already know the answer, because they are the one who just went back to the
+CAD stage and cut the segment. So the repair belongs where the knowledge is.
+
+**The thing the ticket asks for could not be built as asked, and the measurement is why.** A
+dropdown that REPLACES the broken id at its ring position is the obvious reading of "choosing one
+repairs the binding", and it was the first version. It produces a document the mesher refuses at
+exit 8: `edge 'w2' binds to segment 8 ... so both of its corners must lie on that segment — but
+corner 'b3' is attached to segment 3`. The reason is structural rather than incidental. Each wall
+edge runs from its own segment's start to the NEXT bound segment's start, so the next bound segment
+has to be the geometry's next segment — all the way round. **A valid O-grid binding is therefore a
+ROTATION of the geometry's whole segment list and nothing else**, and the only information a stored
+list carries is where the ring starts. Once that is seen, the repair writes itself: naming the
+segment one flagged edge should lie on picks the rotation, so `repair_binding(order, pos, seg)`
+returns the geometry's current ids rotated to honour that choice and does not read the broken text
+at all. It is also why the dropdown offers the geometry's WHOLE current list rather than a filtered
+one — every entry names a legal ring.
+
+**Two consequences, both deliberate.** Repairing a binding a SPLIT broke makes the ring one block
+BIGGER, because the user really did cut one more segment into the outline; and the far field then
+has to be cut too, or the one-to-one pairing refuses by name. That second refusal is #137's and is
+not repairable by a dropdown — no choice of segment can make four pair with five — so it is left
+saying what it says.
+
+**The resolve moved in FRONT of the pairing check.** With one list repaired and the other still
+broken, the two lists differ in length BECAUSE of the binding still broken in the other, and
+answering "the body binds 5 source segment(s) and the far field 4" there names no edge and sends
+the user to look at the wrong geometry. `plan` now resolves each list against its own ring first,
+so a broken binding is reported as one. That change cost `test_topology_ogrid.py` check 14 its
+fixture — the case had bound a far field `"9,7"` on a geometry carrying only segment 9, which is a
+missing segment rather than a count mismatch — and it now reaches the pairing refusal the only way
+that remains: two geometries cut into different numbers of segments.
+
+**The flag is a POOL of rows that is never destroyed.** A repair is made from inside a combo's own
+`currentIndexChanged`, and the refresh it triggers arrives while that signal is still on the stack,
+so rebuilding by deleting and recreating the rows deletes the widget mid-emit — the gate CRASHES
+rather than failing a check. Reusing a pool (grown as needed, the surplus hidden, every repopulate
+inside `block_signals`) keeps the whole path synchronous, which is also what lets a headless gate
+drive it with no event loop. The alternative, deferring the rebuild with a zero-timer, would have
+made every gate that touches this section pump events.
+
+**`panel_edited` is what puts the repair inside the funnel.** `undo_ctrl._wire_widget_edits`
+traverses the panel's widgets ONCE, when it is constructed, so a combo created or re-purposed later
+is invisible to it — the same gap the restart chooser (#31) declared that signal for. Without it
+the write still lands in the widget and reaches neither the global model nor the undo stack, which
+is the injection that reddens the persistence and undo checks while the repair check stays green.
+
+**The refresh hangs off `_refresh_topology_counts`.** That is the one place already holding both a
+template model read back from the widgets and the binding context for this case, and it runs on
+every template keystroke AND on every `set_config`. So the flag clears when the cause is removed by
+other means with nothing in the panel knowing why: undoing the CAD edit rewrites the sidecar, the
+binding cache is keyed by its `(mtime, size)`, and the ids resolve again on the next refresh. A
+second traversal for the flag would have been a second chance to cover a different trigger set.
+
+**What the gate measures, and one thing it had to stop measuring.** The break is the real one — the
+fixture cuts a bound segment in the SIDECAR ONLY, which is what a CAD split does: the `.dat` is
+untouched and every coordinate the binding was chosen against is still where it was. The run-
+proceeds half runs the real mesher with `MB_SMOOTH_ITERS 0`, and the reason is measured rather than
+stylistic: this fixture's own UNBROKEN four-block ring comes back at exit 9 with 32 of 704 cells
+inverted AFTER the smoother and 0 before it, on a 0.5 body inside a 4.0 far field at a 0.2
+circumferential cell. That is the smoother's business and `test_multiblock_smooth_surface.py`
+holds it; a binding gate failing for it would be failing for a reason that has nothing to do with
+a binding. The control run — the same fixture, no CAD edit — is what makes the repaired run's exit
+code a claim about the repair.
+
+**Named blind spots.**
+
+* **A repair that names a segment far from where the broken one lay is legal and makes a bad
+  mesh.** The choice decides the ring's rotation, so pairing body corner k with a far corner most
+  of a turn away is a document nothing refuses — measured at exit 9 with 67 of 704 cells inverted
+  when the gate first picked "whatever is offered first". Nothing can do better from inside the
+  panel: the deleted segment is gone from the sidecar, so there is no record of where it lay, and
+  the stored list's neighbours are the only hint. Cutting the two outlines at DIFFERENT arc
+  positions has the same effect through a different route (22 of 704 on the gate's first aligned
+  attempt) and is #137's pairing design rather than this ticket's.
+* **`broken_bindings` reports only what a dropdown can repair.** A geometry the mesh does not
+  load, an unparseable list, a body that is not closed, a far field inside the body — none is a
+  wrong SEGMENT, so none is flagged, and all of them keep the read-out's sentence as their only
+  voice. A user whose read-out says something the flag area does not is looking at one of those.
+* **Nothing gates the FAMILY dispatch's empty half.** `Family.broken` is `None` for the H-grid and
+  the gate asserts the O-grid's answer; a third family that forgot to declare one would report
+  nothing broken and be invisible here, exactly as the H-grid correctly is.
 
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)

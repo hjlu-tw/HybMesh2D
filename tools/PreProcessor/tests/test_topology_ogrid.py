@@ -149,50 +149,11 @@ def check(msg, cond):
 
 
 # ── fixtures: a closed outline whose segment ids are ours to choose ─────────
-
-def write_outline(stem, r, seg_ids, per_seg, bc, cw=False, square=False):
-    """A closed outline as a ``.dat`` plus its ``.meta`` sidecar.
-
-    ``seg_ids`` are written into BOTH the sidecar's ``NSEGMENTS`` rows and its
-    per-point ``POINTS`` column, which is where the PreProcessor puts a
-    ``SegmentModel.id`` and where the mesher reads one. They are deliberately free to
-    be anything, because a binding that is an id must not care what they are.
-
-    ``square=True`` walks the perimeter of a square rather than a circle, so a
-    segment's arc length is EXACT under resampling — which is what lets check 10
-    compare byte for byte rather than within a tolerance.
-    """
-    n_seg = len(seg_ids)
-    pts, ids = [], []
-    for i in range(n_seg):
-        for j in range(per_seg):
-            f = (i * per_seg + j) / float(n_seg * per_seg)
-            if square:
-                u = ((4.0 - f * 4.0) if cw else (f * 4.0)) % 4.0
-                side, t = int(u), u - int(u)
-                x, y = [(r, -r + 2 * r * t), (r - 2 * r * t, r),
-                        (-r, r - 2 * r * t), (-r + 2 * r * t, -r)][side]
-            else:
-                a = 2.0 * math.pi * (-f if cw else f)
-                x, y = r * math.cos(a), r * math.sin(a)
-            pts.append((x, y))
-            ids.append(seg_ids[i])
-    pts.append(pts[0])           # the trailing duplicate a closed loop carries
-    ids.append(seg_ids[0])
-    with open(stem + ".dat", "w", encoding="utf-8") as f:
-        for x, y in pts:
-            f.write(f"{x:.12f} {y:.12f}\n")
-    with open(stem + ".dat.meta", "w", encoding="utf-8") as f:
-        f.write("HYBMESH_META 2\n")
-        f.write(f"COUNT {len(pts)}\n")
-        f.write("NPIECES 0\n")
-        f.write(f"NSEGMENTS {n_seg}\n")
-        for s in seg_ids:
-            f.write(f"{s} {bc} line\n")
-        f.write(f"POINTS {len(pts)}\n")
-        for k, s in enumerate(ids):
-            f.write(f"{s} {1 if k % per_seg == 0 else 0}\n")
-    return stem + ".dat"
+# The writer itself lives in `topology_outline_fixture.py` since #138, which needed
+# the same outlines PLUS the CAD edit that breaks a binding to one. A second copy of
+# it would be a second `.meta` format, and the format is what the binding rule rests
+# on.
+from topology_outline_fixture import write_outline  # noqa: E402
 
 
 class Cfg:
@@ -372,12 +333,14 @@ check(f"9. every wall edge binds to the geometry's OWN segment ids, in ring orde
 check(f"9b. ...and so does the far field, whose ids differ from the body's "
       f"({far_segs}), so the two cannot be one coincidence", far_segs == [3, 1, 8, 0])
 check("9c. ...and the STORED binding is what is used, not the geometry's current "
-      "list: binding only segments 2 and 40, split twice, builds a four-block ring "
-      "on those two alone while the geometry still carries four",
+      "list: a ring ROTATED to start at segment 2, split twice, walks the body from "
+      "there, where a builder adopting the geometry's own list would start at 5. "
+      "#138 REPLACED a subset here with this rotation — a subset is no longer legal "
+      "(11l), and it was never a document the mesher accepted",
       [e["binding"]["seg"] for e in
-       tm.build_document(model(_b, _f, ogrid_splits=2, ogrid_body_segs="2, 40",
-                               ogrid_far_segs="8,0"), _ctx)["edges"]
-       if e["id"].startswith("w")] == [2, 2, 40, 40])
+       tm.build_document(model(_b, _f, ogrid_splits=2, ogrid_body_segs="2,40,5,11",
+                               ogrid_far_segs="8,0,3,1"), _ctx)["edges"]
+       if e["id"].startswith("w")] == [2, 2, 40, 40, 5, 5, 11, 11])
 
 # ── 10. re-sampling to a different point count changes nothing ─────────────
 b1 = write_outline(os.path.join(_T, "r_b"), 0.5, [2, 4, 6, 8], 12, "wall",
@@ -479,8 +442,19 @@ _rot = order_plan("2,3,0,1")
 check(f"11k. ...while a ROTATION is not refused, because a ring has no first "
       f"segment ({_rot.problem!r})", not _rot.problem)
 _sub = order_plan("1,2", "1,2", splits=2)
-check(f"11l. ...and neither is a SUBSET in order, because a binding need not use "
-      f"every segment ({_sub.problem!r})", not _sub.problem)
+check(f"11l. ...while a SUBSET in order IS refused, naming the edge that would have "
+      f"to span two source segments ({_sub.problem!r}). SUPERSEDES this check's own "
+      f"first version, which asserted the opposite: a subset walks the geometry's "
+      f"order, so `order_problem` never fired, and the four-block ring it projected "
+      f"was then refused by the C++ mesher at exit 8 — the same shape as the reorder "
+      f"defect above, found by #138 when a dropdown repair that replaced ONE position "
+      f"produced exactly it",
+      "between them" in (_sub.problem or "") and _sub.broken_edge == "w3")
+_gap = order_plan("0,2,3", "0,2,3")
+check(f"11l2. ...and so is a gap in the MIDDLE of an otherwise ordered ring, which "
+      f"is where a repair that re-points one edge leaves it ({_gap.problem!r})",
+      "has segment 1 between them" in (_gap.problem or "")
+      and _gap.broken_edge == "w0")
 _far = order_plan("0,1,2,3", "0,2,1,3")
 check(f"11m. ...and the FAR field's own order is checked too, naming its own edge: "
       f"{_far.problem!r}",
@@ -539,8 +513,14 @@ _b1, _f1, _ctx1 = context("1seg")
 cases = [
     ("a ring below the mesher's own orientation floor", dict(ogrid_splits=2),
      "at least 3"),
+    # #138 REPLACED this case's fixture. It used to bind the far field "9,7" on a
+    # geometry carrying only segment 9, so since the resolve moved in FRONT of the
+    # pairing check — deliberately, so a broken binding is named as one rather than
+    # as a count mismatch it caused — it was refused as a missing segment instead.
+    # The pairing refusal is now reached the only way it can be once a binding must
+    # COVER its outline: two geometries cut into different numbers of segments.
     ("a far field segmented differently from the body",
-     dict(ogrid_splits=3, ogrid_body_segs="7", ogrid_far_segs="9,7"), "one to one"),
+     dict(ogrid_splits=3), "one to one"),
     ("a binding list holding a token that is not a segment id",
      dict(ogrid_splits=3, ogrid_body_segs="7,x"), "is not a segment id"),
     ("a binding list naming one segment twice",
@@ -549,14 +529,20 @@ cases = [
      "not one of this mesh's geometries"),
     ("no geometry named at all", dict(ogrid_splits=2), "name the body geometry"),
 ]
+_f4 = FIX["4seg"][1]
+_ctx_mix = tb.context_for_config(Cfg([_b1, _f4]))
 bad = []
 for why, kw, want in cases:
     mm = model(_b1, _f1, **kw)
+    cc = _ctx1
     if want.startswith("not one"):
         mm.ogrid_body_geom = os.path.join(_T, "never_drawn.dat")
     elif want.startswith("name the"):
         mm.ogrid_body_geom = ""
-    got = og.plan(mm, _ctx1).problem or ""
+    elif want.startswith("one to one"):
+        mm.ogrid_far_geom = _f4          # one body segment against four far ones
+        cc = _ctx_mix
+    got = og.plan(mm, cc).problem or ""
     if want not in got:
         bad.append(f"{why}: got {got!r}")
 check("14. each refusable configuration is refused with a sentence naming the fix "

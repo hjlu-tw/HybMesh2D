@@ -27,7 +27,7 @@ import json
 import os
 from dataclasses import dataclass, fields
 
-from app.services import topology_hgrid, topology_ogrid
+from app.services import topology_hgrid, topology_ogrid, topology_ogrid_binding
 
 #: ``family`` value meaning "no template" — the user names a topology file by hand,
 #: which is the path that existed before this ticket and still works unchanged.
@@ -197,6 +197,14 @@ class Family:
     #: The parameter attribute prefix this family owns, which is how the
     #: parameters-to-families gate attributes a field-spec row to a family.
     prefix: str
+    #: ``(TopologyModel, BindingContext) -> tuple[BrokenBinding, ...]``, or None
+    #: for a family that binds to nothing (#138). Declared here for the reason
+    #: ``build`` is: WHICH edges bind is the family's decision, so which of them
+    #: are broken — and which segments a dropdown may offer instead — is the
+    #: family's answer too, and the panel asks the registry rather than asking a
+    #: family by name. A family with no bindings reports none rather than being
+    #: special-cased at the call site.
+    broken: object = None
 
 
 #: The registry. Adding a family is adding a function and a row here — and a
@@ -205,7 +213,8 @@ FAMILIES: tuple[Family, ...] = (
     Family(topology_hgrid.FAMILY, "H-grid (rectangular blocks)",
            topology_hgrid.build, "hgrid_"),
     Family(topology_ogrid.FAMILY, "O-grid (ring around a drawn body)",
-           topology_ogrid.build, "ogrid_"),
+           topology_ogrid.build, "ogrid_",
+           broken=topology_ogrid_binding.broken_bindings),
 )
 
 #: ``(value, label)`` pairs for the family combo, with "no template" first because it
@@ -221,6 +230,27 @@ def family_for(name: str) -> Family | None:
         if f.name == name:
             return f
     return None
+
+
+def broken_bindings(model: TopologyModel, ctx=None) -> tuple:
+    """Every binding ``model`` holds that ``ctx`` can no longer resolve (#138).
+
+    The registry's own dispatch, so the panel that flags a broken binding asks the
+    same object the projection asks and cannot come to a different answer about
+    which family is in force. Empty for a family that binds to nothing, for a model
+    naming no family, and with no context — none of the three is a broken binding,
+    and a caller distinguishing them would be re-deciding what a family is.
+
+    NOT a second reading of :func:`build_document`'s refusal. That one stops at the
+    first problem because it answers "can this run?"; this lists every position the
+    user would have to repair, because repairing them one refusal at a time is the
+    round trip #138 exists to remove.
+    """
+    fam = family_for(model.family)
+    fn = getattr(fam, "broken", None) if fam is not None else None
+    if fn is None or ctx is None:
+        return ()
+    return tuple(fn(model, ctx))
 
 
 def build_document(model: TopologyModel, ctx=None) -> dict:

@@ -106,6 +106,10 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         # Wired here rather than in `_build_mode_section` because it is the
         # TEMPLATE that cares; the mode row itself is unchanged.
         self.mesh_mode.currentIndexChanged.connect(self._on_topology_edited)
+        # LAST in the section, under the rows it is about: a flagged binding names an
+        # edge the template produced, and the parameters that produced it read above
+        # it (#138).
+        self._build_topology_repair()
         self._refresh_topology_counts()
 
     def _capture_topology_binding(self, geom_attr: str, segs_attr: str):
@@ -136,7 +140,7 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         """
         if getattr(self, "_loading", False):
             return
-        from app.services import topology_binding, topology_ogrid
+        from app.services import topology_binding, topology_ogrid_binding
         w, sw = getattr(self, geom_attr, None), getattr(self, segs_attr, None)
         if w is None or sw is None:
             return
@@ -150,12 +154,12 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         if captured_for is None:
             captured_for = self._topo_captured_for = {}
         canon = canonical_geom_path(name) or name
-        held, why = topology_ogrid.parse_binding(sw.text(), (), "binding")
+        held, why = topology_ogrid_binding.parse_binding(sw.text(), (), "binding")
         if (not why and held and captured_for.get(segs_attr) == canon
                 and all(s in g.spans for s in held)):
             return
         captured_for[segs_attr] = canon
-        sw.setText(", ".join(str(s) for s in g.seg_ids))
+        sw.setText(topology_ogrid_binding.format_binding(g.seg_ids))
 
     def _on_topology_edited(self, *_args):
         """A template parameter changed: refresh the read-out AND tell the canvas.
@@ -231,6 +235,11 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         from app.services import topology_binding
         ctx = None if cfg is None else topology_binding.context_for_config(cfg)
         lbl.setText("\n".join(topology_ogrid.plan(model, ctx).lines()))
+        # HERE rather than in its own traversal, because this is the one place that
+        # already holds both the model read back from the widgets and the context for
+        # this case — and it runs on every template keystroke and every set_config,
+        # which is what makes the flag appear and clear without a second trigger.
+        self._refresh_topology_repair(model, ctx)
 
     def _build_sizing_section(self):
         # ── 2. General Sizing ─────────────────────────────────────────────

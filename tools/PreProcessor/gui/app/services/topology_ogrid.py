@@ -50,6 +50,9 @@ import math
 from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError
+from app.services.topology_ogrid_binding import (
+    cover_problem, order_problem, parse_binding,
+)
 
 #: The template's own name for the family, as stored in the project file.
 FAMILY = "ogrid"
@@ -66,82 +69,6 @@ MIN_BLOCKS = 3
 #: asked for. A refusal would be worse — the number is a DEFAULT and overridable — but
 #: so would silently seeding a count that allocates gigabytes.
 MAX_RADIAL = 5000
-
-
-def parse_binding(text: str, fallback, who: str = "binding") -> tuple:
-    """``(ids, problem)`` for a stored ``"0,1,2,3"`` binding list.
-
-    BLANK MEANS "ADOPT WHAT THE GEOMETRY HAS NOW", and that is a state the read-out
-    names out loud rather than a silent default. It exists because a model has to be
-    usable before anything has captured a binding — a hand-written project file, and
-    the moment just after the user picks a geometry. Once captured, the list is the
-    binding OF RECORD: a segment that disappears from the geometry is then a refusal
-    rather than a shorter ring, which is the difference between a refused projection
-    and a mesh that quietly grew a different wall.
-
-    A TOKEN THAT IS NOT A SEGMENT ID IS A REFUSAL, NOT A SKIP. The first draft
-    dropped it and carried on, so ``"0,x,2"`` bound two segments where three were
-    written and ``"a,b"`` fell all the way back to adopting the whole geometry —
-    which is the silently-shorter-ring this whole design exists to make unreachable,
-    reintroduced inside the parser that is supposed to prevent it. Review found it;
-    it is the reason this returns a sentence rather than a best effort. A DUPLICATE
-    is refused for the same reason: one segment at two ring positions is two walls
-    on one stretch of geometry, and nothing downstream would say so.
-
-    The ONE parser of this format. The panel asks it too, so "is the held binding
-    still good?" and "what does the projection bind?" cannot answer about different
-    readings of the same text — they did, and disagreed on ``"0,x,2"``.
-    """
-    out = []
-    for tok in str(text or "").split(","):
-        tok = tok.strip()
-        if not tok:
-            continue
-        try:
-            v = int(tok)
-        except ValueError:
-            return (), (f"the {who} list contains {tok!r}, which is not a segment "
-                        f"id. It is a comma-separated list of the CAD segment ids "
-                        f"the walls bind to; clear it to adopt the geometry's own.")
-        if v in out:
-            return (), (f"the {who} list names segment {v} twice. One segment "
-                        f"cannot be two sides of the ring.")
-        out.append(v)
-    return (tuple(out) if out else tuple(fallback)), ""
-
-
-def order_problem(who: str, g, segs, splits: int, prefix: str) -> str:
-    """The refusal when a binding list does not WALK the geometry's own order.
-
-    #137's criterion is that deleting **or reordering** a bound segment is refused
-    with the edge named. Deleting is `BindingContext.resolve`'s. Reordering is this:
-    the stored list is ORDERED and the ring walks it in that order, so swapping two
-    ids keeps every one of them resolvable while sending a wall edge backwards along
-    the body. This file's first version argued that a reorder was unreachable
-    "because there is no position anywhere in the chain"; the Spec review measured
-    otherwise — ``0,2,1,3`` projected a document, and the C++ mesher then refused it
-    at exit 8, or worse, the winding check refused it with a FALSE diagnosis about
-    the two geometries being wound apart. The argument was wrong: the ORDER of the
-    stored list is itself positional information.
-
-    A ROTATION IS FINE and a subset is fine — the ring has no first segment, and a
-    binding need not use every segment. What is refused is a walk that goes backwards
-    at more than one joint, which is exactly "the positions are not cyclically
-    increasing". A two-entry list cannot distinguish a reversal from a rotation and
-    is not refused; stated rather than papered over.
-    """
-    pos = [g.seg_ids.index(s) for s in segs]
-    n = len(pos)
-    descents = [k for k in range(n) if pos[(k + 1) % n] <= pos[k]]
-    if len(descents) <= 1:
-        return ""
-    k = descents[0]
-    a, b = segs[k], segs[(k + 1) % n]
-    edge = f"{prefix}{((k + 1) * splits) % (n * splits)}"
-    return (f"the {who} binding walks segment {b} after segment {a}, but "
-            f"'{g.spelling}' runs them the other way round — edge '{edge}' would "
-            f"cross the ring. A binding must follow the geometry's own order; a "
-            f"rotation of it is fine, a reordering is not.")
 
 
 @dataclass
@@ -320,6 +247,43 @@ def plan(model, ctx) -> Plan:
         return p
     splits = max(1, int(model.ogrid_splits))
 
+    # EVERY BINDING RESOLVED, AND NAMED BY ITS EDGE — BEFORE any question about
+    # counts. Through `ctx.resolve` rather than through a second `s in g.spans` test
+    # here, so the refusal has ONE author: the sentence the panel shows while the
+    # user types, the message `build` raises and the `edge` the repair panel (#138)
+    # flags are all that one call's. The edge id is spelled the same way `build`
+    # spells it below — the wall of ring position k is `w{k}`, and the stored
+    # position i is ring position i*splits — which is what makes "the broken edge is
+    # named" name something the user can find.
+    #
+    # BEFORE the one-to-one pairing check, which #138 moved it in front of: after
+    # repairing one list a CAD split had lengthened, the two lists differ in length
+    # BECAUSE of the binding still broken in the other, and answering "these counts
+    # do not match" there names no edge and sends the user to look at the wrong
+    # geometry. Each list is walked against its own ring, so neither depends on the
+    # other's length.
+    for who, g, segs, prefix in (("body", body, p.body_segs, "w"),
+                                 ("far-field", far, p.far_segs, "o")):
+        try:
+            for i, sid in enumerate(segs):
+                ctx.resolve(f"{prefix}{i * splits}", g.spelling, sid)
+        except BindingError as exc:
+            p.problem = str(exc)
+            p.broken_edge = exc.edge
+            return p
+
+    # ...in the ORDER the geometry runs them, which resolving each id one at a time
+    # cannot see (every id in a swapped list still resolves), and COVERING it, which
+    # the order check cannot see either (every id in a subset walks the right way).
+    for who, g, segs, prefix in (("body", body, p.body_segs, "w"),
+                                 ("far-field", far, p.far_segs, "o")):
+        why = (order_problem(who, g, segs, splits, prefix)
+               or cover_problem(who, g, segs, splits, prefix))
+        if why:
+            p.problem = why
+            p.broken_edge = why.split("edge '")[1].split("'")[0]
+            return p
+
     if len(p.body_segs) != len(p.far_segs):
         p.problem = (f"the body binds {len(p.body_segs)} source segment(s) and the "
                      f"far field {len(p.far_segs)}. An O-grid pairs them one to one, "
@@ -334,33 +298,8 @@ def plan(model, ctx) -> Plan:
                      f"segments in the CAD stage.")
         return p
 
-    # EVERY BINDING RESOLVED, AND NAMED BY ITS EDGE. Through `ctx.resolve` rather
-    # than through a second `s in g.spans` test here, so the refusal has ONE author:
-    # the sentence the panel shows while the user types, the message `build` raises
-    # and the `edge` the repair UI (#138) flags are all that one call's. The edge id
-    # is spelled the same way `build` spells it below — the wall of ring position k
-    # is `w{k}` — which is what makes "the broken edge is named" name something the
-    # user can find.
     body_ring = _ring(p.body_segs, splits)
     far_ring = _ring(p.far_segs, splits)
-    try:
-        for k in range(len(body_ring)):
-            ctx.resolve(f"w{k}", body.spelling, body_ring[k][0])
-            ctx.resolve(f"o{k}", far.spelling, far_ring[k][0])
-    except BindingError as exc:
-        p.problem = str(exc)
-        p.broken_edge = exc.edge
-        return p
-
-    # ...and in the ORDER the geometry runs them, which resolving each id one at a
-    # time cannot see: every id in a swapped list still resolves.
-    for who, g, segs, prefix in (("body", body, p.body_segs, "w"),
-                                 ("far-field", far, p.far_segs, "o")):
-        why = order_problem(who, g, segs, splits, prefix)
-        if why:
-            p.problem = why
-            p.broken_edge = why.split("edge '")[1].split("'")[0]
-            return p
 
     cell = float(model.ogrid_cell)
     if cell <= 0.0:
