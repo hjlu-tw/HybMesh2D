@@ -960,12 +960,12 @@ MODE_SPECS_WITHOUT_KEY = {
     "seed_radius": "as seed_size, following SEED_RADIUS",
     "auto_farfield_hint": "a derived read-out beside auto_farfield_size; hidden with "
                           "the field it describes",
-    # The topology template's eleven rows (#134). These follow no mesher key and
-    # never will: a template parameter has NO C++ counterpart — the mesher sees the
-    # document the family produced, not the block count that shaped it — so "no key"
-    # here means "compared against the family functions instead", in both directions,
-    # by tests/test_topology_param_specs.py. That is the gate this entry points at,
-    # which is what keeps "no key" from meaning "unchecked".
+    # The topology template's rows (#134's eleven, #137's eight). These follow no
+    # mesher key and never will: a template parameter has NO C++ counterpart — the
+    # mesher sees the document the family produced, not the block count that shaped
+    # it — so "no key" here means "compared against the family functions instead", in
+    # both directions, by tests/test_topology_param_specs.py. That is the gate these
+    # entries point at, which is what keeps "no key" from meaning "unchecked".
     "topo_family": "the template family selector; compared against the FAMILIES "
                    "registry by test_topology_param_specs.py",
     "topo_hgrid_x_min": "H-grid template parameter; gated against the family "
@@ -981,6 +981,16 @@ MODE_SPECS_WITHOUT_KEY = {
                                  "own count derivation; authors nothing",
     "topo_hgrid_counts_x": "as topo_hgrid_x_min",
     "topo_hgrid_counts_y": "as topo_hgrid_x_min",
+    "topo_ogrid_body_geom": "O-grid template parameter; gated against the family "
+                            "function, not against a mesher key",
+    "topo_ogrid_body_segs": "as topo_ogrid_body_geom",
+    "topo_ogrid_far_geom": "as topo_ogrid_body_geom",
+    "topo_ogrid_far_segs": "as topo_ogrid_body_geom",
+    "topo_ogrid_splits": "as topo_ogrid_body_geom",
+    "topo_ogrid_cell": "as topo_ogrid_body_geom",
+    "topo_ogrid_radial_count": "as topo_ogrid_body_geom",
+    "topo_ogrid_derived": "a derived read-out (model=None) of the family's own "
+                          "radial derivation; authors nothing",
 }
 
 from app.services.mesh_modes import (  # noqa: E402

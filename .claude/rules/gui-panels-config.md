@@ -459,6 +459,37 @@ holds `GEOM_FILE` tokens a `.dat` read could not resolve at all.
 
 Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE LIBRARY".
 
+**THE O-GRID BINDS TO THE CAD, AND A BROKEN BINDING REFUSES** (#137, parent #133;
+`services/topology_ogrid.py`, `services/topology_binding.py`). Rules only, tersely — this block
+is the one whose rationale is longest, and it is ALL in the design note.
+
+- **A binding is the CAD segment's STABLE ID, never a position** — the sidecar's `segId` column
+  already IS that id, so resolving is a LOOKUP proving it is still on disk. A missing id raises
+  `BindingError` naming the EDGE, writes nothing, and NEVER falls back to `BC_GEOM`. Blank adopts
+  the geometry's segments; the panel CAPTURES them when the user names the geometry, which is what
+  makes a later deletion a refusal rather than a silently shorter ring. Gate:
+  `tests/test_topology_ogrid.py` 9-11, whose 11 is the negative control.
+- **A family is pure over `(model, ctx)`**; the context is built from `MeshConfig` at projection
+  time, cached by `(mtime, size)`, and NEVER persisted. The H-grid ignores it, so `fam.build` stays
+  a call, not a dispatch.
+- **The far field is DRAWN, never generated**, and its segments pair ONE TO ONE with the body's. A
+  wall edge lies within ONE source segment — a `binding` declares one `seg` — so the ring REFINES
+  the segment partition and `ogrid_splits` is per segment.
+- **The winding is MEASURED**: a clockwise body gets the mirrored tuple `[w, r_next, o, r]`, which
+  pairs the same edges as opposite sides, so classes and seeding are unchanged. **`MIN_BLOCKS` is
+  3, measured**, the mesher refusing a two-block ring on collinear corners. Gate: check 13.
+- **The radial count is DERIVED AND ITS DERIVATION DISPLAYED**: `q = 1 + 2π/N_theta`, the default
+  being where a law starting at the run's `BL_INITIAL_THICKNESS` and growing at `q` reaches the far
+  field. No `ds_start` is declared, so the first cell keeps its one home under the existing name.
+  `topology_ogrid.plan` is the ONE owner, read by the panel. Gate: check 8.
+- **A radius is AREA-EQUIVALENT and a wall count rounds half UP with a tolerance**, or re-sampling
+  a geometry moves a derived count and so becomes a topology edit. Gate: check 10, byte for byte.
+- **The invariants every family's document must satisfy live in ONE checker**,
+  `tests/topology_doc_invariants.py`, called by both family gates.
+
+Why, and every measurement: `docs/design_notes/gui.md`, "THE O-GRID BINDS TO THE CAD".
+
+
 **THE SKELETON IS THE TOPOLOGY MODEL DRAWN, AND THE NODE COUNT IS THE POINT** (#136, parent #133;
 `services/topology_skeleton.py`, `views/mesh_canvas_skeleton_mixin.py`, `views/mesh_canvas.py`)
 
@@ -492,9 +523,9 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE L
   text, because the file's own header names `movable=True` to explain the rule and the first draft's
   substring scan read that prose as the defect it rules out.
 - **A bound corner differs by SYMBOL as well as colour, and one nothing can place is drawn nowhere.**
-  Two dots that differ only in hue are two dots. No shipped family declares a bound corner until the
-  O-grid (#137), so `skeleton()` takes an optional `locate` callback and reports an unplaced corner
-  as bound-with-no-position — an invented coordinate would draw a topology the user did not declare.
+  Two dots that differ only in hue are two dots. `skeleton()` takes a `locate` callback —
+  `topology_binding.locator` since #137, nothing before it — and reports an unplaced corner as
+  bound-with-no-position, an invented coordinate being a topology the user did not declare.
 - **The hook is `update_mesh_config`, OUTSIDE its `if self.mesh_config:` branch.** That is the one
   place this canvas learns the configuration changed, so a parameter edit and a case switch reach the
   overlay by the same route and neither is the one that forgets; outside the branch because `cfg is
@@ -539,11 +570,10 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE L
   the class is seedless and both readings answer `None`, which is how its first version made the
   injection inert — and 4e2, the negative control.
 - **The overlay draws the MODEL and never a hand-named topology FILE**, which is #136's own
-  criterion ("does not survive switching to a case with no topology model") read literally. Drawing
-  a named file needs binding resolution, which is #137's. Its consequence is stated with it rather
-  than left to be discovered: every shipped document that declares an `on_geometry` corner
-  (`cavity_block.json`, the O-grid, the C-grid) is a hand-named file, so no shipped path produces a
-  bound corner until #137.
+  criterion ("does not survive switching to a case with no topology model") read literally. Since
+  #137 the O-grid's bound corners ARE placed, from the same context the projection uses — and
+  `skeleton_for_config` returns `None` when that family refuses, because an overlay of a topology
+  the run will not produce is worse than no overlay. A hand-named file still draws nothing.
 - **An edge with an unplaceable end is drawn NOWHERE, and carries no `?`.** The asymmetry against
   the unresolved-count rule above is deliberate and is a consequence rather than a choice: `?` is a
   label, and a label needs a midpoint. Stated because the two unresolvable cases otherwise look like
@@ -586,10 +616,9 @@ against one list; #71 moved the first two here.
   rewritten in full. Nothing gates it. The earlier blind spot this replaces — a template case
   that could not build its document losing its PARAMETER FILE too — was CLOSED in review: the
   fallback is the pre-template parameter file with no `MESH_TOPOLOGY_FILE` line.
-- **NOTHING SHIPPED produces a bound corner, so its marker is gated only on a fixture.** The rule
-  above says why (no family declares one until #137); what is not checked is the drawing of one on
-  any real path — check 8 hands `update_topology_skeleton` a skeleton the gate built. The first
-  family that declares a bound corner is the first run that exercises the marker.
+- **The bound-corner MARKER is gated on a fixture, not on a real path.** #137 made the O-grid
+  produce bound corners, but check 8 still hands `update_topology_skeleton` a skeleton the gate
+  built; nothing drives the canvas from a template that binds.
 - **The mesher can only be compared on a document it ACCEPTS.** Check 12's cross-check reads the
   `Point counts` banner, which a refused run never prints — so the two refusals are held at
   opposite ends and never compared: `test_multiblock_weld_surface.py` check 6 proves the MESHER

@@ -1245,7 +1245,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 270, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 272, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -2348,6 +2348,110 @@ down, which the entry now carries instead: `12b`, the declared/propagated SPLIT,
 through injections A and B both, because mis-partitioning the classes does not change how many
 counts the document declares. The edge-by-edge half is what earns check 12 its place; the split
 half would have passed two mutations that destroy the feature.
+
+
+#### THE O-GRID BINDS TO THE CAD, AND A BROKEN BINDING REFUSES (#137, parent #133)
+
+Two modules, named here because the rule file's pointer resolves to this note for each:
+`services/topology_ogrid.py` (the family, and `plan()` — the ONE owner of every number the
+read-out displays) and `services/topology_binding.py` (what a binding resolves against, and the
+refusal when it cannot). The panel half is the two rows wired in
+`views/panels/mesh_config_build_mixin.py`; the projection and the case staging pass the context
+from `models/mesh_config_io.py` and `services/case_sources.py`.
+
+**Why a positional binding is the thing being designed out.** A segment index is positional, so
+inserting, deleting or reordering a segment shifts every binding after it and each then names a
+DIFFERENT segment, with no error at all: the mesh runs, exports and looks right while carrying the
+wrong conditions. That is the same failure class that once exported an entire mesh as `wall`
+(`docs/design_notes/` on the orphaned `GROUP_BC`). The refusal is not defensive programming; it is
+the only signal available, because nothing downstream of a wrong-but-valid binding can tell.
+
+**The id is already there — this ticket did not invent one.** `SegmentModel.id` is stamped into
+the `.meta` sidecar by the resampler (`tools/PreProcessor/src/main.cpp`,
+`const int segId = sj.value("id", segIndex)`) into both the `NSEGMENTS` rows and the per-point
+`POINTS` column, and the mesher matches on that number (`src/MultiBlock.cpp`,
+`if (g.segId[k] != seg) continue`). So the sidecar's column IS the stable id and "resolving a
+binding to a sidecar segment" is a LOOKUP that proves the id is still on disk, not index
+arithmetic. Recorded because the ticket's wording implies a conversion that does not exist, and a
+reader looking for one would go and build it.
+
+**Blank adopts; captured binds.** A stored list of ids is what makes a later deletion a refusal
+rather than a shorter ring — a family that re-derived the list at projection time would simply
+mesh three blocks where it used to mesh four. So `ogrid_body_segs` is blank only until something
+captures it, and the panel captures it the moment the user names the geometry, which is both the
+one moment they have said which shape they mean and the only one at which overwriting the row
+cannot destroy an answer they typed. It leaves an existing binding alone unless the geometry it
+names no longer answers for it: re-picking the same file must not silently re-adopt segments the
+user has edited, and repairing a binding a CAD edit broke is #138's, not this handler's.
+
+**Two things the gate found that the design did not.**
+
+* **A two-block ring is not meshable at all.** The family's first floor was two — the smallest
+  ring that closes. Measured 2026-09-23 on a real run: the mesher refuses it with
+  `block 'q1': its corners 'b1', 'f1', 'f0', 'b0' wind clockwise (signed area -0.000000)` and the
+  topology exit code 8. Its block-orientation test takes the signed area of the corner CHORD ring,
+  and with two corners on each outline all four corners of every block are collinear. `MIN_BLOCKS`
+  is 3, and the family refuses below it with a sentence naming the fix — the mesher's own refusal
+  moved forward to where the user can act on it. The winding check that caught it places the
+  corners rather than reading the declaration order, which is also why injection C (deleting the
+  clockwise mirror) reddens it while the ring-closure check stays green: the ring still closes as
+  a declaration, it just closes the wrong way round on the page.
+* **A derived count moved when the geometry was re-sampled.** Two separate causes, both found by
+  the same byte-for-byte check. The radius was a mean over the sampled points, which falls as a
+  square outline gains points; it is now AREA-EQUIVALENT (`sqrt(|A| / 2π)`), exact at any sampling
+  of a straight-sided outline and 0.4999971 against a true 0.5 on the shipped 160-point circle.
+  And a wall count derived from a polyline's SUMMED arc length sat on an exact tie —
+  2.4999999999999996 against 2.5000000000000004 for one fixture — where Python's half-to-EVEN
+  `round` lands on different integers. It now rounds half up with a 1e-9 tolerance. Either alone
+  made changing point density a topology edit, which is precisely the acceptance criterion.
+
+**The far field is DRAWN, never generated, and that is a narrowing of the ticket's own wording.**
+#137 says the user "fills in the far-field size"; #133 decides that the template writes no
+geometry. Both cannot hold: a far field synthesised from a radius has no geometry to bind to, so
+its edges would be straight chords between block corners — a SQUARE far field on the four-block
+case, which is not a far field anyone wants, and no boundary conditions of its own. The ticket's
+own demo draws one ("draw a circle and a far-field circle"), so the drawn reading is the one that
+survives and the radius parameter does not exist. Stated here rather than silently dropped.
+
+**The segments pair ONE TO ONE, and a mismatch is refused by name.** The alternative — a common
+refinement of both outlines' segment boundaries — is general but produces wildly uneven blocks,
+and every block boundary it invents is one the user never asked for. Pairing is what the shipped
+hand-written `examples/topology/ogrid_circle.json` does, and "segment the far field the same way
+you segmented the body" is an instruction a user can follow. A wall edge must lie within ONE
+source segment because a `binding` declares one `seg`; that is why the block ring REFINES the
+segment partition rather than cutting across it, and why `ogrid_splits` is per segment.
+
+**The derivation is the panel's most useful output, so it shows the working.** `q = 1 + 2π/N_theta`
+is the radial law that gives unit aspect ratio on a circular O-grid, because a circumferential cell
+at radius r is `2πr/N_theta` long and a radial step equal to it is `dr = r · 2π/N_theta`. The
+default radial count is where a geometric law STARTING at the run's `BL_INITIAL_THICKNESS` and
+growing at `q` reaches the far field, which is the ticket's "how many radial points would close the
+gap". On the shipped circles at a 0.0327 target cell that is 96 circumferential cells, q = 1.06545,
+a 1:1 first cell of 3.27e-02 against the 1e-3 asked for — 32.7x flatter — and 103 radial nodes,
+against the 49 the hand-written document declares. Every one of those numbers is in the read-out,
+not just the 103. No `ds_start` is declared anywhere: the first cell keeps its one home under the
+name it already has, and `plan()` READS it so the read-out can say what the choice costs.
+
+**The context is not configuration and is never persisted.** It is what the user's CAD looks like
+right now, rebuilt from `MeshConfig` at projection time and cached by each file's `(mtime, size)`
+so the overlay and the read-out can ask on every keystroke without re-parsing a `.dat` per
+character. A copy inside the project file would be a stale geometry list that the next run
+believed. The H-grid accepts and ignores it, so `fam.build` stays a call rather than a dispatch.
+
+**The structural invariants moved into one checker.** `tests/topology_doc_invariants.py` holds
+what the mesher refuses a document for, and BOTH family gates call it. The check numbers and
+messages in `test_topology_templates.py` are unchanged; what moved is where each rule is written
+down. A second copy is one that can come to disagree, and the family it disagreed about would be
+the one that shipped a refusal.
+
+**Named blind spots.** The fixtures in `test_topology_ogrid.py` are written by the gate rather
+than by the real `surface_resampler`, so a change to the sidecar FORMAT is caught next door in
+`test_multiblock_binding_surface.py` and not here. Reordering segments without renumbering them is
+not a refusal and is not checked as one — with ids it is not a defect, and the index shift the
+criterion is about is unreachable because there is no position anywhere in the chain. The 1:1 law
+is an idealisation for a circle, so on a shape that is not one the equivalent radius is an
+approximation and nothing measures how good it is; the count it produces is a default the user may
+override, which is what makes that acceptable.
 
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
