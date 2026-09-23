@@ -123,6 +123,13 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         answers for it: re-picking the same file must not silently re-adopt segments
         the user has since edited by hand, and the CAD edit that breaks a binding is
         #138's to repair rather than this handler's to paper over.
+
+        The cost of that rule, measured rather than assumed: swapping to a DIFFERENT
+        geometry whose ids the held binding happens to resolve on keeps that binding.
+        Both shipped circles carry segments 0-3, so it is reachable. It is the right
+        answer for the rule as written — a binding that still resolves is not broken
+        — and `tests/test_topology_panel.py` check 13d pins it as measured rather
+        than leaving it to be discovered.
         """
         if getattr(self, "_loading", False):
             return

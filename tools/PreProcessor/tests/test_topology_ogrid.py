@@ -37,34 +37,43 @@ H-grid gate calls too), the parameters-to-families comparison
 
 INJECTIONS: run by hand, 2026-09-23, each reverted and the tree compared against its
 pre-injection state afterwards. Recorded here rather than automated because the
-harness lived in a scratchpad. Each line is what the mutation ACTUALLY did, and the
-places where that differed from the prediction written first are kept rather than
-tidied away.
+harness lived in a scratchpad. Each line is what the mutation ACTUALLY did, READ FROM
+THE EXIT CODE and not from a count of FAIL lines — two of the six CRASH this file
+rather than failing a check, and a crash prints no FAIL line at all. Where the result
+differed from the prediction written first, the correction is the record.
 
-  A. ``topology_binding.resolve`` returns ``seg`` without checking ``g.spans`` ->
-     check 11b red (the removed segment projects instead of refusing), 11c and 11d
-     red with it. Check 17's ``.bnd`` is UNCHANGED, which is the point being made:
-     downstream of the missing check there is nothing that can tell.
-  B. ``_ids`` ignores the stored text and always adopts ``g.seg_ids`` -> check 11b
-     red, check 9 STILL GREEN. Predicted "both red"; it is not, because adoption
-     produces the right ids for a geometry that still has them. A stored binding is
-     only observable through its FAILURE, which is why check 11 is load-bearing and
-     check 9 alone would not be.
-  C. the clockwise mirror deleted from the block tuple (always the CCW one) -> check
-     13 red on the `cw` spread entries only, and check 2 STAYED GREEN, because the
-     ring still closes as a declaration — it just closes the wrong way round in real
-     coordinates. That is exactly why check 13 places the corners rather than reading
-     the declaration order.
-  D. the radial seed written onto every radial edge instead of the first -> check 4
-     red on every spread entry: the radials are ONE class that wraps around and
-     closes, so seeding four of them is four seeds in one class.
-  E. ``radial_count`` returns ``ceil(n)`` instead of ``ceil(n) + 1`` -> check 8c red
-     (103 became 102) and nothing else. A one-node error is what a stated count has
-     to be able to see and what a spread of invariants cannot.
-  F. ``_close_loop`` stops dropping the trailing duplicate -> check 15b red AND
-     check 9 red, because segment 0 of a closed loop then looks non-contiguous and is
-     dropped entirely: the body comes back with three segments where the mesher sees
-     four. Predicted 15b alone.
+  A. ``topology_binding.resolve`` stops testing ``seg not in g.spans`` -> exit 1, but
+     by CRASHING at check 11's projection with a ``KeyError`` on the missing span
+     rather than by failing a check. Predicted "11b, 11c and 11d red". The gate is
+     still red, and the shape is worth knowing: with the resolver disabled, the
+     missing segment is not detected at all until something indexes it, which is
+     precisely the "no error at all" this rule exists to prevent — the crash is an
+     artefact of the fixture being the first thing to index, not a diagnostic a user
+     would get. Check 17's ``.bnd`` is UNCHANGED either way: downstream of a
+     wrong-but-valid binding there is nothing that can tell.
+  B. ``_ids`` ignores the stored text and always adopts ``g.seg_ids`` -> exit 1 with
+     SIX red: 9c, 11c, 11d, 11f, 11g and 14. Checks 9 and 9b STAYED GREEN, which was
+     half the prediction ("check 9 still green") and is the useful half: adoption
+     produces the right ids for a geometry that still has them, so the two directional
+     checks cannot see it and only 9c — which binds a SUBSET — and the refusal checks
+     can. A stored binding is observable through its failure, not through its success.
+  C. the clockwise mirror deleted from the block tuple (always the CCW one) -> exit 1,
+     check 13 alone. Check 2 STAYED GREEN, because the ring still closes as a
+     declaration and only closes the wrong way round in real coordinates. That is why
+     13 places the corners instead of reading the declaration order.
+  D. the radial seed written onto every radial edge instead of the first -> exit 1,
+     check 4 alone: the radials are ONE class that wraps around and closes, so seeding
+     four of them is four seeds in one class.
+  E. ``radial_count`` returns ``ceil(n)`` instead of ``ceil(n) + 1`` -> exit 1, checks
+     8c AND 8e red (103 became 102). Predicted "8c and nothing else"; 8e reddens too
+     because it states the derived count beside the override, which is what makes an
+     override check also a derivation check.
+  F. ``_close_loop`` stops dropping the trailing duplicate -> exit 1, reddening 8,
+     8b, 8c, 8d, 8e, 9 and 9b and then CRASHING at check 10. Predicted "15b and 9".
+     15b never runs — the crash comes first — so the mutation is caught by the
+     derivation and the ids rather than by the check written for it. Segment 0 of a
+     closed loop looks non-contiguous with the duplicate left in and is dropped
+     entirely, so the body comes back with THREE segments where the mesher sees four.
 
 NAMED BLIND SPOTS:
 

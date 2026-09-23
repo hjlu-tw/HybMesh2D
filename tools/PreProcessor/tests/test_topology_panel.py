@@ -46,6 +46,30 @@ what is recorded.
      one check 7 is for (a project file written before templates must load exactly
      as it did), but a reader scoring this file by counting FAIL lines would score
      this injection ZERO. Read the exit code, not the FAIL count.
+
+INJECTIONS for the O-grid half (#137), run by hand 2026-09-23, each reverted. All
+four bit. (Every run of this file prints `QOpenGLWidget is not supported on this
+platform` on stderr, GREEN runs included, so stderr is not the crash signal here —
+the exit code is.)
+
+  G. `_refresh_topology_counts` returns before setting `topo_ogrid_derived` -> 11,
+     11c and 12a red. **11b stayed GREEN**, and that is the finding: it asserts the
+     ABSENCE of the O-grid's numbers when another family is selected, which an empty
+     read-out satisfies just as well. A negative check cannot notice a missing
+     read-out, which is why 11 and 12a are stated positively beside it.
+  H. `_capture_topology_binding` returns immediately -> 13 and 13c red; 13b and 13d
+     GREEN, because both assert that a binding is LEFT ALONE and a handler that does
+     nothing leaves everything alone. The same asymmetry as G, recorded rather than
+     tidied: the two "leave it alone" checks are only meaningful beside the two that
+     require a capture to have happened.
+  I. the read-out's context forced to `None`, so the panel stops resolving against
+     the case's geometries -> the same three as G. The read-out then shows the
+     family's "needs the geometry list" sentence, which is right for a panel that
+     genuinely has no config and wrong for this one.
+  J. the capture refuses to overwrite ANY non-empty row, instead of only one whose
+     ids still resolve -> 13c red ALONE. A stale binding is then never refreshed,
+     and the only check that can see it is the one holding an id the named geometry
+     cannot answer for. That is why 13c uses "2, 9" rather than another valid subset.
 """
 from __future__ import annotations
 
@@ -232,6 +256,102 @@ check(f"10b. ...and a WIDGET edit reaches the global model through "
       f"(model nx={_c.global_mesh_config.topology.hgrid_nx}, "
       f"snapshot nx={_after['hgrid_nx']})",
       _c.global_mesh_config.topology.hgrid_nx == 6 and _after["hgrid_nx"] == 6)
+
+# ── 11. the O-grid read-out shows the DERIVATION, not just its result ───
+# #137's claim is that displaying the derivation is the single most useful thing the
+# panel does, so this checks the WORKING is on screen — the ratio's own expression
+# and both first cells — and not only the count it ends at.
+_B = os.path.join(_REPO, "examples", "geometries", "circle_body.dat")
+_F = os.path.join(_REPO, "examples", "geometries", "circle_farfield.dat")
+og_cfg = cfg_for(MESH_MODE_MULTIBLOCK, family="ogrid", ogrid_body_geom=_B,
+                 ogrid_far_geom=_F, ogrid_splits=1, ogrid_cell=0.0327)
+og_cfg.bl_initial_thickness = 1e-3
+og_cfg.add_geom_file(_B)
+og_cfg.add_geom_file(_F)
+panel.set_config(og_cfg)
+og_shown = panel.topo_ogrid_derived.text()
+check(f"11. the O-grid read-out shows its derivation with the working — the ratio's "
+      f"own expression, the 1:1 first cell, the one asked for and the factor between "
+      f"them — and not only the radial count it ends at: {og_shown!r}",
+      "2\u03c0/96" in og_shown and "BL_INITIAL_THICKNESS" in og_shown
+      and "32.7" in og_shown and "103" in og_shown)
+panel.set_config(cfg_for(MESH_MODE_MULTIBLOCK))
+check("11b. ...and with the H-grid selected it says so rather than showing the "
+      f"O-grid's numbers ({panel.topo_ogrid_derived.text()!r})",
+      "2\u03c0" not in panel.topo_ogrid_derived.text())
+panel.set_config(og_cfg)
+panel.topo_ogrid_cell.setValue(0.0654)
+og_after = panel.topo_ogrid_derived.text()
+check(f"11c. ...and it follows the parameters as they are typed, through a signal "
+      f"that reaches a context the panel read back for itself ({og_after!r})",
+      og_after != og_shown and "2\u03c0/48" in og_after)
+
+# ── 12. that number is the FAMILY's, and the panel holds no second copy ──
+_og_model = panel.get_config().topology
+from app.services import topology_binding as _tb  # noqa: E402
+from app.services import topology_ogrid as _og  # noqa: E402
+
+_plan = _og.plan(_og_model, _tb.context_for_config(panel.get_config()))
+check(f"12a. every line the panel shows is a line topology_ogrid.plan produced "
+      f"({_plan.lines()!r})",
+      og_after == "\n".join(_plan.lines()))
+check("12b. ...and the panel's own sources call plan() rather than deriving a "
+      "radial count themselves — an inline copy that agrees today is still a second "
+      "home for the derivation, and 12a cannot see one",
+      "topology_ogrid.plan" in _src.replace("\n", " ")
+      or ".plan(model, ctx)" in _src, )
+check("12c. ...checked against sources that really were read, so 12b cannot pass "
+      f"on an empty string ({len(_src)} chars)", len(_src) > 5000)
+
+# ── 13. naming a geometry CAPTURES its segment ids as the binding ───────
+# What makes a later deletion a refusal rather than a silently shorter ring: with the
+# row blank the family adopts whatever the geometry has at projection time.
+# EVERY setText BELOW REALLY CHANGES THE TEXT. Qt emits no `textChanged` for a write
+# of the value already held, so re-setting the same absolute path would leave the
+# handler unwired and the check would pass on a capture that never ran — which is how
+# 13b first passed vacuously. The "same file again" case is therefore spelled
+# REPO-RELATIVE, which is a real text change naming the same file and exercises the
+# identity match at the same time.
+_B_REL = os.path.relpath(_B, _REPO)
+panel.set_config(cfg_for(MESH_MODE_MULTIBLOCK, family="ogrid"))
+panel.topo_ogrid_body_geom.setText(_B)
+captured = panel.topo_ogrid_body_segs.text()
+check(f"13. naming the body geometry captures its CURRENT segment ids into the "
+      f"binding row ({captured!r}), so the stored binding is an id list rather than "
+      f"a blank that re-adopts whatever is there at run time",
+      [t.strip() for t in captured.split(",")] == ["0", "1", "2", "3"])
+panel.topo_ogrid_body_segs.setText("2, 1")
+panel.topo_ogrid_body_geom.setText(_B_REL)
+check("13b. ...and re-naming the SAME geometry (here by its repo-relative spelling, "
+      "so the widget really emits) leaves a hand-edited binding alone, "
+      "because re-picking a file must not silently re-adopt segments the user has "
+      f"since chosen ({panel.topo_ogrid_body_segs.text()!r})",
+      panel.topo_ogrid_body_segs.text() == "2, 1")
+panel.topo_ogrid_body_segs.setText("2, 9")
+panel.topo_ogrid_body_geom.setText(_B)
+check("13c. ...while a held binding the named geometry cannot answer for IS "
+      "re-captured, because a binding that resolves to nothing is not an answer to "
+      f"protect ({panel.topo_ogrid_body_segs.text()!r})",
+      [t.strip() for t in panel.topo_ogrid_body_segs.text().split(",")]
+      == ["0", "1", "2", "3"])
+panel.topo_ogrid_body_segs.setText("2, 1")
+panel.topo_ogrid_body_geom.setText(_F)
+check("13d. RECORDED AS MEASURED, not as intended: swapping to a DIFFERENT geometry "
+      "whose ids the held binding happens to resolve on keeps that binding "
+      f"({panel.topo_ogrid_body_segs.text()!r}). Both shipped circles carry segments "
+      "0-3, so this is reachable. It is the right answer for the rule as written — "
+      "a binding that still resolves is not broken — and the cost is that a geometry "
+      "swap can silently inherit a subset the user chose for the other shape",
+      panel.topo_ogrid_body_segs.text() == "2, 1")
+
+# ── 14. the O-grid parameters round-trip too ───────────────────────────
+c14 = cfg_for(MESH_MODE_MULTIBLOCK, family="ogrid", ogrid_body_geom=_B,
+              ogrid_far_geom=_F, ogrid_body_segs="5, 11", ogrid_far_segs="3,1",
+              ogrid_splits=3, ogrid_cell=0.031, ogrid_radial_count=42)
+panel.set_config(c14)
+check(f"14. set_config -> get_config round-trips every O-grid parameter exactly, "
+      f"including the two binding lists ({panel.get_config().topology})",
+      panel.get_config().topology == c14.topology)
 
 print()
 if failures:
