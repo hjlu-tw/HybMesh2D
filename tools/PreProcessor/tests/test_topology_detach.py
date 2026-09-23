@@ -31,15 +31,22 @@ because "re-attach returns to generating" would otherwise return the user to a c
 the pipeline refuses.
 
 INJECTIONS: run by hand, 2026-09-23, each applied to a real source file, this gate
-run in a subprocess, and the file restored from its pre-injection text with the
-checksum compared afterwards. What is recorded is what each run PRINTED. (Every run
-prints `QOpenGLWidget is not supported on this platform` on stderr, green runs
-included — the exit code is the signal.)
+run in a subprocess, the mutation proved to PARSE and to have really changed the file,
+and the file restored from its pre-injection text byte for byte afterwards. Nine, all
+of which bit in the end — and THREE of them changed this file, which is recorded
+rather than tidied away. What is written below is what each run PRINTED, not what was
+predicted. (Every run prints `QOpenGLWidget is not supported on this platform` on
+stderr, green runs included — the exit code is the signal.)
 
   A. `names_a_family` back to `bool(self.family)`, so the flag stops turning the
-     projection off -> 3, 3c, 5, 5b, 6c and 14 red. The blast radius is the point:
-     one predicate carries detaching everywhere, which is why it is stated as the
-     ONE owner rather than re-spelled at the funnel and the staging.
+     projection off -> EIGHT red: 2, 3, 3c, 5, 8b, 11pre, 14 and 16c. The blast
+     radius is the point, and it is wider than the three reads that were predicted:
+     one predicate carries detaching through the funnel, the staging, the panel, the
+     round trip and both mesher runs, which is the argument for stating it as ONE
+     owner rather than re-spelling it at each site. What stayed GREEN is worth as
+     much: 5b, because the detached file is still staged as an input — `mesh_topology_file`
+     still names it — and 6, 6b and 6c, because re-attaching a model that was never
+     really detached looks exactly like re-attaching one that was.
   B. `detach` sets the flag BEFORE writing the document -> 4d red, alone: a family
      that refuses leaves the configuration half detached, the projection off and no
      file for the run to read. Nothing else here reaches that state, which is why
@@ -49,20 +56,36 @@ included — the exit code is the signal.)
      OVERRIDES the line, so the run is correct and the panel still shows a path that
      decides nothing — the control that does nothing this ticket exists to remove,
      invisible to every behavioural check.
-  D. `_refresh_topology_detach` not called from `_refresh_topology_counts` -> 10, 11,
-     11b, 12 and 13b red. The one route in, the same shape #138's injection F found.
+  D. `_refresh_topology_detach` not called from `_refresh_topology_counts` -> on the
+     FIRST run, three reds (10, 11, 11b) and then a CRASH at check 12, whose message
+     indexed `summary.splitlines()[0]` on an empty summary. A reader scoring by FAIL
+     count would have scored the injection that removes the panel's whole route in at
+     THREE. Check 12 is indexed defensively now; the re-run prints six (10, 11, 11b,
+     12, 12b, 12c). The one route in, the same shape #138's injection F found.
   E. the rows left ENABLED when detached (the `set_spec_row_enabled` loop dropped)
      -> 11 red alone; 12 stays green, because the summary is built from the model
      rather than from the widgets. An editable panel whose edits no longer take
      effect is precisely the state the ticket names, and only one check sees it.
-  F. `_confirm_reattach` returning True unconditionally -> 7 red alone. The gate
-     declines through the panel's own hook, so an implementation that asks nothing
-     cannot be distinguished from one that asks and is refused by any other check.
+  F. `_confirm_reattach` returning True unconditionally -> INERT on the first run,
+     ALL CHECKS PASSED. The gate stubbed the consent by assigning
+     `panel._confirm_reattach`, and that instance attribute shadowed the very body
+     the injection mutated — a check that can never see the shipped code. It stubs
+     the module's `confirm_destructive` instead now, which the real method then
+     calls, and that is also the only way to reach the ACCEPTED branch at all:
+     `confirm_destructive` declines unconditionally on a headless platform, by
+     design. Re-run: 7 and 7a red.
   G. `provenance` hand-listing the H-grid's rows instead of deriving them from the
-     table by prefix -> 12b red. 12 stays green on the hand-list, which is why 12b
-     compares the summary against the TABLE rather than against a literal.
+     table by prefix -> 12b red, alone. 12 stays green on the hand-list, which is
+     why 12b compares the summary against the TABLE rather than against a literal.
+  H. the template branch removed from `mesh_modes.missing_mesh_input`, i.e. the
+     pre-#139 tree -> 15 red, alone.
+  I. `broken_bindings` without its `names_a_family()` guard -> 4e red, alone. Check
+     4e was ADDED for this run: before it, nothing here or anywhere else asked what
+     a DETACHED model reports as broken, and the amber flag would have come back
+     naming edges of a document no run reads.
 
-  Negative control: the unmutated tree passes every check below.
+  Negative control: the unmutated tree passes all 45 checks, so the reds above are
+  the mutations and not the checker.
 
 Run:  python3 tools/PreProcessor/tests/test_topology_detach.py
 """
@@ -250,6 +273,23 @@ check(f"4d. a family that REFUSES leaves the configuration exactly as it was —
       and not _og.topology.detached and _og.mesh_topology_file == ""
       and _og.topology.names_a_family())
 
+# 4e: and nothing about that broken binding is FLAGGED once the case is detached.
+# The amber flag and its dropdown would name an edge of a document no run reads, and
+# a pick would rewrite a parameter nothing projects — the state #138's review already
+# measured once, for a family switched away from rather than detached.
+from app.services import topology_model as tm  # noqa: E402
+
+_og_ctx = tb.context_for_config(_og)
+_broken_attached = tm.broken_bindings(_og.topology, _og_ctx)
+_og.topology.detached = True
+_broken_detached = tm.broken_bindings(_og.topology, _og_ctx)
+check(f"4e. a DETACHED model reports no broken binding, asked through the same "
+      f"predicate the projection asks — with the attached case as the control that "
+      f"the fixture really is broken ({[b.label()[:28] for b in _broken_attached]} "
+      f"-> {list(_broken_detached)})",
+      len(_broken_attached) >= 1 and _broken_detached == ())
+_og.topology.detached = False
+
 # ══ C. the case a detached run stages ═════════════════════════════════════
 
 _gen = case_sources.mesh_config_generated(_detached, "detach_rt")
@@ -341,9 +381,13 @@ check("11b. ...and the box now offers RE-ATTACH and not detach",
       and panel._topo_detach.detach_btn.isHidden())
 
 _summary = panel._topo_detach.summary_text()
+# Indexed defensively, the lesson `test_topology_persistence.py` records twice: an
+# injection that empties the summary made this line raise `IndexError` and end the
+# file, which a reader counting FAIL lines scores as a WEAKER bite than one that
+# merely mis-words it. Measured — injection D did exactly that.
+_head = (_summary.splitlines() or [""])[0]
 check(f"12. ...and it still names the originating FAMILY and the file, which is the "
-      f"only useful thing left three months later "
-      f"({_summary.splitlines()[0][:52]!r}...)",
+      f"only useful thing left three months later ({_head[:52]!r}...)",
       "DETACHED" in _summary
       and "H-grid (rectangular blocks)" in _summary
       and os.path.basename(_panel_file) in _summary)
@@ -365,16 +409,42 @@ check("12c. ...and the values shown are the model's, not a re-derivation: the "
       "Blocks in X: 3" in _summary and "Blocks in Y: 2" in _summary
       and "Target Cell Size: 0.125" in _summary)
 
-# Re-attach, DECLINED, through the panel's own consent hook.
-panel._confirm_reattach = lambda: False
+# Re-attach, DECLINED. The PROMPT is stubbed, not the panel's `_confirm_reattach`:
+# patching the method made injection F (a `_confirm_reattach` that asks nothing and
+# returns True) completely INERT, because the instance attribute shadowed the very
+# body the injection mutated. It also has to be stubbed at all — `confirm_destructive`
+# declines unconditionally on a headless platform by design, so the accepted branch
+# is unreachable from a gate otherwise.
+import app.views.panels.mesh_config_detach_mixin as _dm  # noqa: E402
+
+_asked = []
+_real_confirm = _dm.confirm_destructive
+
+
+def _stub_confirm(answer):
+    def fn(parent, title, question, **kw):
+        _asked.append((title, question, kw.get("action_label", ""),
+                       kw.get("informative", "")))
+        return answer
+    return fn
+
+
+_dm.confirm_destructive = _stub_confirm(None)      # declined
 panel._on_topology_reattach()
 check("7. re-attach DECLINED changes nothing — the state, the row and the file are "
       f"all as they were (detached={panel.topo_detached.isChecked()}, "
       f"file={bool(panel.mesh_topology_file.text())})",
       panel.topo_detached.isChecked() and bool(panel.mesh_topology_file.text()))
+check(f"7a. ...and it was ASKED before anything ran, with a NAMED action and the one "
+      f"wording of what is lost handed to the prompt "
+      f"({[(a[0], a[2]) for a in _asked]})",
+      len(_asked) == 1 and _asked[0][1] == topology_detach.REATTACH_QUESTION
+      and "Re-attach" in _asked[0][2]
+      and _asked[0][3] == topology_detach.REATTACH_WARNING)
 
-panel._confirm_reattach = lambda: True
+_dm.confirm_destructive = _stub_confirm(False)     # accepted (no extra tick)
 panel._on_topology_reattach()
+_dm.confirm_destructive = _real_confirm
 check(f"7b. ...and accepted, it puts the panel back to generating: the rows are "
       f"editable again, the file row is empty and the box offers Detach "
       f"(file={panel.mesh_topology_file.text()!r})",
