@@ -77,6 +77,27 @@ the exit code is.)
   O. the `readonly=True` dropped from the body binding row -> check 13f red here and
      `test_topology_param_specs.py` check 10 red. Two gates on one rule because the
      table is where it is declared and the widget is where it is felt.
+
+CHECKS 15-15d, and the audit that added them (2026-09-23, closing #133). #133's user
+story 22 — "parameter edits are undoable like every other panel's, so that the
+topology panel is not the one place Ctrl+Z does nothing" — was the one story of the
+twenty-eight that no sub-ticket's gate carried, found by auditing the parent
+literally at the end of the batch rather than by anything going red. It WORKS; what
+was missing was anything that would notice if it stopped. The two undo checks that
+existed are about ACTIONS reaching a widget through a handler (`test_topology_repair`
+7, `test_topology_detach` 13d); this is the ordinary route, a user typing into a spin
+box, which reaches the recorder through `undo_ctrl._wire_widget_edits`' traversal.
+
+  P. `MeshConfig.to_dict` dropping the topology key -> FIVE red (6, 10, 10b, 15b,
+     15c), and TWO things had to be fixed before it could say so. The first run
+     printed ONE red and a `KeyError: 'topology'` at check 10's setup, ending the
+     file — checks 10 to 15d never ran, so the injection that removes undo entirely
+     scored a one. Section 10's snapshot reads are `.get(...)` now, in the f-strings
+     as well as in the conditions, which is where the second crash hid. The second
+     was in check 15 itself: its fixture started `hgrid_nx` at the model's DEFAULT,
+     and an absent section RESTORES THE DEFAULT MODEL (#135's rule), so "undo put my
+     value back" and "undo reset everything" were the same number and 15c passed on
+     the injection. It starts at 3 now and says why.
 """
 from __future__ import annotations
 
@@ -93,6 +114,7 @@ from PyQt6.QtWidgets import QApplication  # noqa: E402
 
 from app.models.mesh_config import MeshConfig  # noqa: E402
 from app.services import topology_hgrid  # noqa: E402
+from app.services.topology_model import TopologyModel  # noqa: E402
 from app.services.mesh_modes import MESH_MODE_HYBRID, MESH_MODE_MULTIBLOCK  # noqa: E402
 from app.views.panels.mesh_config_panel import MeshConfigPanel  # noqa: E402
 
@@ -251,18 +273,24 @@ _cfg.mesh_mode = MESH_MODE_MULTIBLOCK
 _cfg.topology.family = "hgrid"
 _cfg.topology.hgrid_nx = 3
 _c.push_panel_config(_panel, _cfg)
-_snap = _c._collect_project_state()["mesh_config"]["topology"]
+# `.get(..., {})`, not `[...]`: an injection that drops the topology key from
+# `to_dict` (the defect check 6 above is FOR) made this line raise `KeyError` and end
+# the file, so checks 10 to 15 never ran and the injection scored one red instead of
+# several. Read the exit code, not the FAIL count — and index defensively so the
+# count means something.
+_snap = _c._collect_project_state()["mesh_config"].get("topology", {})
 check(f"10. a programmatic push through push_panel_config reaches the project "
-      f"snapshot ({_snap['family']!r}, nx={_snap['hgrid_nx']})",
-      _snap["family"] == "hgrid" and _snap["hgrid_nx"] == 3)
+      f"snapshot ({_snap.get('family')!r}, nx={_snap.get('hgrid_nx')})",
+      _snap.get("family") == "hgrid" and _snap.get("hgrid_nx") == 3)
 _panel.topo_hgrid_nx.setValue(6)
 _c.sync_panel_to_model("mesh_config_panel")
-_after = _c._collect_project_state()["mesh_config"]["topology"]
+_after = _c._collect_project_state()["mesh_config"].get("topology", {})
 check(f"10b. ...and a WIDGET edit reaches the global model through "
       f"sync_panel_to_model, and the snapshot with it "
       f"(model nx={_c.global_mesh_config.topology.hgrid_nx}, "
-      f"snapshot nx={_after['hgrid_nx']})",
-      _c.global_mesh_config.topology.hgrid_nx == 6 and _after["hgrid_nx"] == 6)
+      f"snapshot nx={_after.get('hgrid_nx')})",
+      _c.global_mesh_config.topology.hgrid_nx == 6
+      and _after.get("hgrid_nx") == 6)
 
 # ── 11. the O-grid read-out shows the DERIVATION, not just its result ───
 # #137's claim is that displaying the derivation is the single most useful thing the
@@ -372,6 +400,52 @@ panel.set_config(c14)
 check(f"14. set_config -> get_config round-trips every O-grid parameter exactly, "
       f"including the two binding lists ({panel.get_config().topology})",
       panel.get_config().topology == c14.topology)
+
+# ── 15. a plain PARAMETER edit is undoable, through the REAL controller ────
+# #133's user story 22 — "parameter edits are undoable like every other panel's, so
+# that the topology panel is not the one place Ctrl+Z does nothing" — was the one
+# story of the twenty-eight that no sub-ticket's gate carried, found by auditing the
+# parent literally at the end of the batch (#139). It WORKS; what was missing was
+# anything that would notice if it stopped.
+#
+# The two undo checks that already existed are about actions, not parameters:
+# `test_topology_repair.py` check 7 undoes a binding REPAIR and
+# `test_topology_detach.py` check 13d undoes a DETACH. Both go through a widget
+# written programmatically by a handler. This one is the ordinary case — a user
+# typing into a spin box — which reaches the recorder by a different route
+# (`undo_ctrl._wire_widget_edits`' traversal of QAbstractSpinBox) and is the route
+# every other template parameter uses.
+from app.controller import AppController  # noqa: E402
+
+_ctl = AppController()
+_up = _ctl.main_window.mesh_config_panel
+# nx=3, deliberately NOT the model's default of 2. Injection N — `to_dict` dropping
+# the topology key — left check 15c GREEN with a fixture that started at the
+# default: an absent section RESTORES THE DEFAULT MODEL (#135's rule), so "undo put
+# my value back" and "undo reset everything" were the same number. A fixture that
+# cannot tell the two apart is not measuring undo.
+_ctl.push_panel_config(_up, cfg_for(MESH_MODE_MULTIBLOCK, hgrid_nx=3))
+_before_nx = _ctl.global_mesh_config.topology.hgrid_nx
+_up.topo_hgrid_nx.setValue(5)
+_after_nx = _ctl.global_mesh_config.topology.hgrid_nx
+check(f"15. typing a template parameter reaches the GLOBAL model through the panel "
+      f"-> model sync, like every other panel field ({_before_nx} -> {_after_nx})",
+      _before_nx == 3 and _after_nx == 5)
+check("15b. ...and it was RECORDED as an undo step rather than merely applied",
+      _ctl.flush_project_snapshot())
+_ctl.undo()
+check(f"15c. ...so Ctrl+Z walks it back TO THE VALUE THAT WAS THERE, which is a "
+      f"different claim from resetting to the default "
+      f"(nx={_ctl.global_mesh_config.topology.hgrid_nx}, want 3, default "
+      f"{TopologyModel().hgrid_nx})",
+      _ctl.global_mesh_config.topology.hgrid_nx == 3
+      and TopologyModel().hgrid_nx != 3)
+_ctl.redo()
+check(f"15d. ...and redo re-applies it, in the model AND in the widget the user is "
+      f"looking at (model={_ctl.global_mesh_config.topology.hgrid_nx}, "
+      f"widget={_up.topo_hgrid_nx.value()})",
+      _ctl.global_mesh_config.topology.hgrid_nx == 5
+      and _up.topo_hgrid_nx.value() == 5)
 
 print()
 if failures:

@@ -298,6 +298,39 @@ else:
               f"second quality path added here: {rep!r}",
               "quad_midline_ratio" in rep and "median" in rep)
 
+# ── 16. THE TEMPLATE WRITES NO GEOMETRY ────────────────────────────────────
+# #133's user story 24 — "I do not want the template to write geometry files, so
+# that my .dat and its .meta sidecar keep exactly one producer" — and its
+# Implementation Decision: "Geometry comes from the CAD stage only. A .dat whose
+# .meta sidecar still describes an older point set puts corners on the wrong
+# segments with no error." It holds by construction (a family returns a dict), and
+# until this check nothing would have noticed a family that started helping.
+#
+# Measured on the WHOLE write path, not on the family alone: `save_config_to_file`
+# is where a template case's files are actually produced, so it is the funnel that
+# must leave a geometry untouched. The `.meta` half is the dangerous one — this repo
+# has already shipped an all-`wall` grid from a sidecar rewritten behind the model's
+# back.
+import tempfile  # noqa: E402
+
+sys.path.insert(0, _GUI)
+from app.models.mesh_config import MeshConfig as _MC  # noqa: E402
+from app.models.mesh_config_io import save_config_to_file as _save  # noqa: E402
+from app.services.mesh_modes import MESH_MODE_MULTIBLOCK as _MB  # noqa: E402
+
+with tempfile.TemporaryDirectory() as _gd:
+    _c = _MC()
+    _c.mesh_mode = _MB
+    _c.topology.family = topology_hgrid.FAMILY
+    _save(_c, os.path.join(_gd, "case.dat"))
+    _wrote = sorted(os.listdir(_gd))
+    _geom = [n for n in _wrote
+             if n.endswith(".meta") or (n.endswith(".dat") and n != "case.dat")]
+    check(f"16. generating a template case writes the mesher parameters and the "
+          f"topology document and NOTHING ELSE — no geometry, no .meta sidecar, so "
+          f"the CAD stage keeps exactly one producer of both ({_wrote})",
+          _wrote == ["case.dat", "case_topology.json"] and not _geom)
+
 print()
 if failures:
     print(f"FAILED {len(failures)} check(s)")
