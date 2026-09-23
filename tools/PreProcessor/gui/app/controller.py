@@ -343,6 +343,24 @@ class AppController(
         mw.mesh_canvas_view.update_geometry_previews(boundaries)
         mw.mesh_canvas_view.update_seed_previews(seeds)
 
+    def handle_topology_changed(self, cfg):
+        """A TEMPLATE parameter was edited: redraw the block skeleton, nothing else.
+
+        The narrow half of :meth:`handle_mesh_config_changed`, and narrow on
+        purpose (#136). It fires per keystroke, so it must not do what that one
+        does: reload every geometry preview, re-read every `.meta`, and — the part
+        that is visible rather than merely wasteful — clear the selection highlight
+        over the geometry chosen in the config list.
+
+        The model is NOT synced here: `undo_ctrl._wire_widget_edits` already routes
+        every widget edit in this panel through `on_panel_edited`, which syncs and
+        schedules the undo snapshot. Doing it again would be a second traversal
+        free to cover a different widget set, which is the defect that traversal
+        exists instead of.
+        """
+        self.main_window.mesh_canvas_view.update_mesh_config(
+            cfg, reload_geometry=False)
+
     def handle_mesh_config_changed(self, cfg):
         """Callback when mesh config is modified or set in the config panel."""
         mw = self.main_window

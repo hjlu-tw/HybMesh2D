@@ -15,7 +15,7 @@ makes that affordable rather than a drift waiting to happen:
     `services/topology_skeleton.py`, and compares them. It FAILS rather than skips
     when it cannot find either — a check that cannot see its subject must not report
     success about it.
-  * check 8 runs the REAL mesher and compares its own `Point counts` banner row —
+  * check 12 runs the REAL mesher and compares its own `Point counts` banner row —
     how many it declared, how many it propagated, and every propagated edge by name
     and value — against what this module resolved from the same document. That is
     the authority, not a restatement of it.
@@ -57,6 +57,26 @@ two of the three files were new). All twelve bit. Recorded as MEASURED:
   K. declared and propagated counts share one colour -> 7f alone.
   L. `auto_range` loses the skeleton as a source -> 11c alone. 11b stays green, as
      it must: it is the negative control for exactly this source.
+
+FIVE MORE, run 2026-09-23 against the checks the two review axes bought. Two of them
+found a fixture that could not discriminate, which is the point of running them:
+
+  M. the skeleton fits UNCONDITIONALLY again, spending the one-shot token the
+     asynchronous geometry-preview load needs -> 11d and 11e. **Its first run
+     reddened 11d ALONE**: 11e put the geometry INSIDE the skeleton's extent, so a
+     skeleton-only fit covered both and the check could not tell a union from a fit
+     that never saw the geometry. The fixture now puts the naca around y 0 and the
+     skeleton at y 5..6, neither containing the other.
+  N. a template keystroke emits the WIDE `mesh_config_changed` again -> 13 and 13b.
+  O. the narrow handler passes `reload_geometry=True` after all -> 13 and 13b. The
+     same pair as N, from the other end of the route, which is why 13c exists as the
+     negative control that the wide handler still reloads.
+  P. an invalid `count` reads as no declaration instead of a refusal -> 4e. **Its
+     first run was INERT, exit 0, nothing red**: the fixture declared the invalid
+     count on the class's only seed, so removing the fix left a SEEDLESS class and
+     both readings answered `None`. 4e carries a valid sibling seed now, and 4e2 is
+     the negative control that the class resolves without the invalid one.
+  Q. `SkeletonEdge.is_boundary` returns True for every edge -> 7g.
 """
 from __future__ import annotations
 
@@ -66,12 +86,14 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _GUI = os.path.join(_REPO, "tools", "PreProcessor", "gui")
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
 _SHIPPED = os.path.join(_REPO, "examples", "topology", "hgrid_blocks.json")
+_GEOM = os.path.join(_REPO, "examples", "geometries", "naca0012.dat")
 _MULTIBLOCK_CPP = os.path.join(_REPO, "src", "MultiBlock.cpp")
 _SKEL_PY = os.path.join(_GUI, "app", "services", "topology_skeleton.py")
 _MIXIN_PY = os.path.join(_GUI, "app", "views", "mesh_canvas_skeleton_mixin.py")
@@ -224,6 +246,24 @@ check(f"4c. ...and so does a class with no seed at all, the other refusal "
       f"({noseed['w']}, {noseed['m']})",
       noseed["w"][0] is None and noseed["m"][0] is None
       and noseed["s0"][0] == 3)
+# `w` seeds this class validly; `ee` is in the SAME class and declares a count the
+# mesher refuses. The valid sibling is the whole point — without it the class is
+# seedless and "invalid" and "absent" give the same answer, which is how the first
+# version of this fixture made injection P inert.
+_bad = two_blocks(w_count=3)
+_bad["edges"][4]["count"] = 1        # present, and below the mesher's floor of 2
+_badres = topology_skeleton.resolve_counts(_bad)
+check(f"4e. a `count` that is PRESENT but not an integer >= 2 unresolves its whole "
+      f"class rather than reading as no declaration, EVEN with a valid sibling seed "
+      f"beside it — the mesher refuses such a document by name, so resolving to the "
+      f"sibling would label a run that never happens ({_badres['w']}, "
+      f"{_badres['m']}, {_badres['ee']})",
+      _badres["w"][0] is None and _badres["m"][0] is None
+      and _badres["ee"][0] is None and _badres["s0"][0] == 3)
+check("4e2. NEGATIVE CONTROL: the same class with the invalid count removed "
+      "resolves to its valid sibling, so 4e is measuring the refusal and not a "
+      "seedless class",
+      topology_skeleton.resolve_counts(two_blocks(w_count=3))["ee"][0] == 3)
 _unresolved = topology_skeleton.skeleton(two_blocks(w_count=None))
 check("4d. ...and the overlay SAYS so rather than going blank: an unresolved "
       "count labels '?', which is the one state that stops the run",
@@ -445,6 +485,37 @@ check(f"11c. a template case with NO geometry at all still fits the view to its 
       _far._did_initial_fit and _y0 < 5.0 and _y1 > 6.0 and _y1 < 6.5
       and abs(0.5 * (_x0 + _x1) - 6.0) < 0.1)
 
+# ...and it does NOT spend that fit on a case whose geometry has yet to load. The
+# skeleton is built at the top of `update_mesh_config`, before the previews are even
+# requested, so fitting there unconditionally spent `_did_initial_fit` on content
+# that had not arrived and the geometry was never fitted at all — measured in review
+# at x 0.026..0.174 for a naca0012 spanning 0..1.
+_both = MeshCanvasView()
+# The domain box off for 11c's reason: its default -10..10 brackets everything and
+# would satisfy the range assertion below without the skeleton or the geometry.
+_both.show_domain_box = False
+# The skeleton sits well AWAY from the geometry on purpose: if it enclosed the
+# naca, a skeleton-only fit would cover both and this check could not tell a union
+# from a fit that never saw the geometry. Injection M is what measured that.
+_cboth = cfg_for(hgrid_nx=2, hgrid_ny=2, hgrid_x_min=5.0, hgrid_x_max=7.0,
+                 hgrid_y_min=5.0, hgrid_y_max=6.0)
+_cboth.add_geom_file(_GEOM)
+_both.update_mesh_config(_cboth)
+check("11d. a template case that ALSO names a geometry leaves the one-shot fit "
+      "unspent, because the geometry it must be fitted to has not loaded yet",
+      _both._did_initial_fit is False and _both.topology_skeleton is not None)
+_deadline = time.time() + 30
+while not _both.geom_preview_items and time.time() < _deadline:
+    _app.processEvents()
+    time.sleep(0.02)
+(_bx0, _bx1), (_by0, _by1) = _both.plot_widget.getViewBox().viewRange()
+check(f"11e. ...and when they do arrive the fit covers BOTH, which is what "
+      f"`auto_range` unioning the skeleton is for — a naca0012 around y 0 and a "
+      f"skeleton at y 5..6, neither of which contains the other (view y "
+      f"{_by0:.2f}..{_by1:.2f})",
+      bool(_both.geom_preview_items) and _both._did_initial_fit
+      and _by0 <= 0.0 and _by1 >= 6.0)
+
 # ── 12. the MESHER agrees, on its own report ──────────────────────────────
 # The authority, not a restatement of it. Self-skips without a build tree, the
 # convention every binary-dependent gate here uses.
@@ -498,6 +569,38 @@ else:
                   (got[0], got[1]) == (n_decl, n_prop))
             check(f"12c. ...and every count it PROPAGATED matches, edge by edge "
                   f"({len(got[2])} named)", got[2] == prop)
+
+# ── 13. a keystroke does not reach the geometry on disk ───────────────────
+# `topology_changed` rather than `mesh_config_changed`: the wide signal's listener
+# reloads every preview and re-reads every `.meta`, and `update_geometry_previews`
+# opens by CLEARING the selection highlight — so typing in a template row dropped
+# the outline of the geometry picked in the config list, and nothing put it back.
+_cg = cfg_for(hgrid_nx=2, hgrid_ny=2)
+_cg.add_geom_file(_GEOM)
+_c.push_panel_config(_panel, _cg)
+_app.processEvents()
+_canvas.highlight_geometry_file(_GEOM)
+_gen_before = getattr(_canvas, "_geom_loader_gen", 0)
+_hl_before = _canvas._sel_highlight_item
+_edges_before = n_edges(_canvas)
+_panel.topo_hgrid_ny.setValue(5)
+_app.processEvents()
+# 2 columns x 5 rows: 6 horizontal lines of 2 edges plus 5 rows of 3 verticals.
+_want = len(build_document(model(hgrid_nx=2, hgrid_ny=5))["edges"])
+check(f"13. a template keystroke redraws the skeleton ({_edges_before} edges -> "
+      f"{n_edges(_canvas)}, want {_want}) without reloading a single geometry "
+      f"preview (loader generation {_gen_before} -> "
+      f"{getattr(_canvas, '_geom_loader_gen', 0)})",
+      getattr(_canvas, "_geom_loader_gen", 0) == _gen_before
+      and n_edges(_canvas) == _want and _want != _edges_before)
+check("13b. ...and the selection highlight over the geometry picked in the config "
+      "list survives it",
+      _hl_before is not None and _canvas._sel_highlight_item is _hl_before)
+_c.handle_mesh_config_changed(_cg)
+check(f"13c. NEGATIVE CONTROL: the WIDE signal's handler still reloads them, so "
+      f"13 is measuring the route and not a dead loader "
+      f"({_gen_before} -> {getattr(_canvas, '_geom_loader_gen', 0)})",
+      getattr(_canvas, "_geom_loader_gen", 0) > _gen_before)
 
 print()
 if failures:

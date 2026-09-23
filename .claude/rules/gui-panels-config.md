@@ -12,13 +12,14 @@ paths:
   - tools/PreProcessor/gui/app/models/mesh_config*
   - tools/PreProcessor/gui/app/views/mesh_canvas.py
   - tools/PreProcessor/gui/app/views/mesh_canvas_skeleton_mixin.py
+  - tools/PreProcessor/gui/app/views/mesh_canvas_geom_mixin.py
 ---
 
 # GUI panel-configuration rules
 
 Loaded on demand when a panel view, the physical-length spin box, a field-spec service, the unit
-service, a mesh-config model, or the mesh canvas / its topology-skeleton overlay is read. The last
-two globs are #136's and are the first here to name a CANVAS: the skeleton overlay is the TOPOLOGY
+service, a mesh-config model, or the mesh canvas / its skeleton or geometry-preview mixin is read.
+The last three globs are #136's and are the first here to name a CANVAS: the skeleton overlay is the TOPOLOGY
 MODEL drawn, so its rules are the template library's rather than a canvas area's. It is not the CAD
 canvas, whose edit-ownership rules are `.claude/rules/gui-canvas-edit.md` (`views/canvas*`, which
 does not match `mesh_canvas*`) and which this file says nothing about. Rules only — the rationale (the counted attributes, the
@@ -507,11 +508,46 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE L
   it. SCOPED to this table rather than fixed for every mesh field, which is not this ticket's to
   change, and suppressed while `_loading` — the `text` rows report `textChanged`, which Qt emits for a
   programmatic write too, and `set_config` ends with its own emit.
-- **`auto_range` gained a THIRD source and UNIONS it.** An empty `cads` is legal in `MESH_MODE 1`,
-  where a topology declaring its own corners is the whole input, so a template case can have no mesh
-  and no geometry preview and still have something to look at. Unioned rather than preferred, so a
-  bound topology still fits its geometry as well. Gate: check 11b — with no skeleton, `auto_range`
-  on an empty canvas still moves nothing.
+- **`auto_range` gained a THIRD source and UNIONS it — but the skeleton FITS only when nothing
+  else will.** An empty `cads` is legal in `MESH_MODE 1`, where a topology declaring its own corners
+  is the whole input, so a template case can have no mesh and no geometry preview and still need
+  fitting. The union is what makes a case that HAS geometry fit both. The guard on the fit is the
+  half that is easy to get wrong and was: `auto_range` spends `_did_initial_fit`, the ONE-SHOT token
+  `mesh_canvas_geom_mixin._on_geometry_previews_loaded` needs, and the skeleton is built at the TOP
+  of `update_mesh_config`, before those previews are even requested — so fitting unconditionally
+  spent the token on content that had not arrived and the geometry was never fitted at all (a
+  `MESH_MODE 1` config naming `naca0012.dat`, x 0..1, came out at x 0.026..0.174). So the skeleton
+  fits only with no mesh and no `geom_files`. Gate: check 11b (no skeleton, nothing moves), 11c (no
+  geometry, the skeleton is fitted), 11d/11e (with geometry, the token is left for the preview load,
+  which then covers BOTH — the fixture puts the two apart on purpose, because one enclosing the
+  other cannot tell a union from a fit that never saw the geometry).
+- **A template keystroke emits `topology_changed`, NOT `mesh_config_changed`, and reaches
+  `update_mesh_config(cfg, reload_geometry=False)`.** The wide signal's handler
+  (`controller.handle_mesh_config_changed`) reloads every geometry preview and re-reads every
+  `.meta` — 12 preview reloads for five characters typed — and `update_geometry_previews` OPENS by
+  clearing the selection highlight, so typing in a template row dropped the outline of the geometry
+  picked in the config list and nothing put it back. A flag on the one function rather than a second
+  entry point, so the skeleton, the domain box and the BC preview cannot drift out of step. The
+  narrow handler syncs no model: `undo_ctrl._wire_widget_edits` already routes every widget edit
+  through `on_panel_edited`, and a second traversal is free to cover a different widget set. Gate:
+  check 13, with 13c as the negative control that the wide handler still reloads.
+- **A `count` that is PRESENT but not an integer >= 2 unresolves its whole CLASS.** The mesher
+  refuses such a document by name (`src/MultiBlock.cpp`, `count >= 2`), so reading it as "no
+  declaration here" would let a valid sibling seed label a number for a run that never happens.
+  Narrower than the mesher, which refuses the whole document: here the `?` lands on the edges the
+  user has to go and fix. Gate: check 4e, whose fixture carries a VALID sibling seed — without one
+  the class is seedless and both readings answer `None`, which is how its first version made the
+  injection inert — and 4e2, the negative control.
+- **The overlay draws the MODEL and never a hand-named topology FILE**, which is #136's own
+  criterion ("does not survive switching to a case with no topology model") read literally. Drawing
+  a named file needs binding resolution, which is #137's. Its consequence is stated with it rather
+  than left to be discovered: every shipped document that declares an `on_geometry` corner
+  (`cavity_block.json`, the O-grid, the C-grid) is a hand-named file, so no shipped path produces a
+  bound corner until #137.
+- **An edge with an unplaceable end is drawn NOWHERE, and carries no `?`.** The asymmetry against
+  the unresolved-count rule above is deliberate and is a consequence rather than a choice: `?` is a
+  label, and a label needs a midpoint. Stated because the two unresolvable cases otherwise look like
+  they should behave the same.
 
 Why, and every measurement: `docs/design_notes/gui.md`, "THE BLOCK SKELETON ON THE CANVAS".
 
@@ -550,25 +586,19 @@ against one list; #71 moved the first two here.
   rewritten in full. Nothing gates it. The earlier blind spot this replaces — a template case
   that could not build its document losing its PARAMETER FILE too — was CLOSED in review: the
   fallback is the pre-template parameter file with no `MESH_TOPOLOGY_FILE` line.
-- **The overlay draws the MODEL and never a hand-named topology FILE.** A case whose
-  `mesh_topology_file` was typed by hand — the path that existed before #134, and the only path a
-  multi-body case has — gets no skeleton at all. That is #136's own criterion ("does not survive
-  switching to a case with no topology model") read literally, and it costs the thing the BOUND
-  corner marker was written for: every shipped document that declares an `on_geometry` corner
-  (`cavity_block.json`, the O-grid, the C-grid) is a hand-named file. So that marker is exercised
-  only by handing `update_topology_skeleton` a skeleton built in the gate (check 8), not by any
-  shipped path, until #137 ships a family that declares one. Drawing a named file needs binding
-  resolution, which is #137's.
+- **NOTHING SHIPPED produces a bound corner, so its marker is gated only on a fixture.** The rule
+  above says why (no family declares one until #137); what is not checked is the drawing of one on
+  any real path — check 8 hands `update_topology_skeleton` a skeleton the gate built. The first
+  family that declares a bound corner is the first run that exercises the marker.
 - **The mesher can only be compared on a document it ACCEPTS.** Check 12's cross-check reads the
   `Point counts` banner, which a refused run never prints — so the two refusals are held at
   opposite ends and never compared: `test_multiblock_weld_surface.py` check 6 proves the MESHER
   refuses them, check 4 here proves this module answers `?`, and nothing asserts the two refuse the
   SAME documents. A module that saw a conflict where the mesher sees none would draw `?` over a
   mesh that runs, and the reverse would draw a number over a run that is refused; only a human
-  would notice either. **Narrower than this entry's first draft, which claimed a mis-partition was
-  invisible to the cross-check — injection A refuted that in one run: `12c` went red on both
-  documents while `12b` stayed green**, so what is actually weak is the SPLIT half of check 12, not
-  the cross-check.
+  would notice either. SUPERSEDES #136's own first draft: the weak half is check 12's
+  declared/propagated SPLIT, not the cross-check.
+  Why: docs/design_notes/gui.md, "This entry's first draft was wider"
 - **Nothing gates that a family's document MESHES except for the DEFAULTS.** The spread of eight
   parameter sets is checked structurally; only `TopologyModel()`'s defaults are run through the
   real binary, because eight mesher runs in a gate is a cost nobody asked for. A parameter set that

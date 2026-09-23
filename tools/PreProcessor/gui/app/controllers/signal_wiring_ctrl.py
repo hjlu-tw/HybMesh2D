@@ -218,6 +218,7 @@ class SignalWiringMixin:
         mw.mesh_config_panel.cancel_mesh_btn.clicked.connect(self.cancel_mesh_generator)
         mw.mesh_config_panel.geom_files_changed.connect(self.handle_mesh_geom_files_changed)
         mw.mesh_config_panel.mesh_config_changed.connect(self.handle_mesh_config_changed)
+        mw.mesh_config_panel.topology_changed.connect(self.handle_topology_changed)
         mw.mesh_config_panel.add_all_sessions_btn.clicked.connect(self.add_all_sessions_to_mesh)
         mw.mesh_config_panel.export_mesh_requested.connect(self.export_mesh_files)  # #5
         # Domain Source = Custom geometry hides the rectangle box + its BC colours;

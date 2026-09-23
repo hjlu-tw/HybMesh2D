@@ -234,8 +234,24 @@ class MeshCanvasView(MeshCanvasFillsMixin, MeshCanvasBCMixin, MeshCanvasGeomMixi
         # newly-turned-on colouring picks up the current .meta labels.
         self._rebuild_geom_bc_preview()
 
-    def update_mesh_config(self, cfg: MeshConfig | None, fit_view: bool = False):
-        """Sync MeshConfig mapping for domain box and boundary conditions rendering."""
+    def update_mesh_config(self, cfg: MeshConfig | None, fit_view: bool = False,
+                           reload_geometry: bool = True):
+        """Sync MeshConfig mapping for domain box and boundary conditions rendering.
+
+        ``reload_geometry=False`` skips the two things here that go to DISK — the
+        geometry-preview load and the per-segment `.meta` read behind the outline
+        colouring — for a caller that knows the geometry cannot have changed. One
+        function with a flag rather than a second entry point, so the skeleton, the
+        domain box and the BC preview keep ONE route and cannot drift out of step
+        with each other (#136).
+
+        Its caller is the template-parameter edit, which fires per KEYSTROKE.
+        Reloading there is not merely wasted work: `update_geometry_previews` opens
+        by clearing the selection highlight, so typing in a template row dropped the
+        yellow outline of whatever geometry was selected in the config list, and
+        nothing put it back — measured in review, 12 preview reloads for five
+        characters typed.
+        """
         self.mesh_config = cfg
         # (#136) The block skeleton the template describes, or a clear. Here
         # rather than at a caller, so a parameter edit and a case switch reach it
@@ -252,10 +268,11 @@ class MeshCanvasView(MeshCanvasFillsMixin, MeshCanvasBCMixin, MeshCanvasGeomMixi
             )
             # Always draw BC-colored segments on domain edges (preview, even without mesh)
             self._rebuild_bc_preview_from_config()
-            # Update geometry previews from config
-            self.update_geometry_previews(self.mesh_config.geom_files)
-            # (#9) Colour the geometry outlines by their per-segment patch/group.
-            self._rebuild_geom_bc_preview()
+            if reload_geometry:
+                # Update geometry previews from config
+                self.update_geometry_previews(self.mesh_config.geom_files)
+                # (#9) Colour the geometry outlines by their per-segment patch/group.
+                self._rebuild_geom_bc_preview()
             if self.mesh:
                 self._rebuild_mesh_items()
             elif fit_view:

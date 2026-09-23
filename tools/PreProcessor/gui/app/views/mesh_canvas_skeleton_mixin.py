@@ -96,7 +96,7 @@ class MeshCanvasSkeletonMixin:
             # over as endpoint pairs: a four-by-four H-grid is 40 edges, and 40
             # plot items is 40 of everything pyqtgraph does per item.
             pts = [e.xy for e in skel.edges
-                   if e.xy is not None and (e.kind == "wall") == kind_is_wall]
+                   if e.xy is not None and e.is_boundary == kind_is_wall]
             if not pts:
                 continue
             flat = np.asarray([p for seg in pts for p in seg], dtype=float)
@@ -137,7 +137,18 @@ class MeshCanvasSkeletonMixin:
         # A template case's `cads` may be empty — legal in MESH_MODE 1, where a
         # topology that declares its own corners is the whole input — and then
         # nothing else on this canvas has an extent to fit to.
-        if not self._did_initial_fit:
+        #
+        # ONLY THEN. `auto_range` sets `_did_initial_fit`, which is the ONE-SHOT
+        # token the asynchronous geometry-preview load spends
+        # (`mesh_canvas_geom_mixin._on_geometry_previews_loaded`); the skeleton is
+        # built at the TOP of `update_mesh_config`, before those previews are even
+        # requested, so fitting here unconditionally spent a token on content that
+        # had not arrived and the geometry was then never fitted at all. Measured
+        # in review on a MESH_MODE 1 config naming `naca0012.dat` (x 0..1): the
+        # view came out at x 0.026..0.174. A case that HAS geometry needs nothing
+        # here — `auto_range` unions the skeleton in, so that load fits both.
+        if (not self._did_initial_fit and self.mesh is None
+                and not (self.mesh_config and self.mesh_config.geom_files)):
             self.auto_range()
 
     def clear_topology_skeleton(self):

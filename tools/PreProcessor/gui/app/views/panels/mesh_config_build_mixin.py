@@ -102,20 +102,26 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         cover for the undo recorder; the canvas has no such generic traversal, and
         the overlay is the first thing on it that has to track a typed number.
 
-        Scoped to this table rather than fixed for every mesh field: widening it
-        would change what the canvas does on every other panel edit as well, which
-        is not this ticket's to change.
+        ``topology_changed`` and NOT ``mesh_config_changed``, which is the review
+        finding both axes reported. This fires per KEYSTROKE, and that signal's
+        listener reloads every geometry preview and re-reads every `.meta` —
+        measured at 12 preview reloads for five characters typed — and worse,
+        `update_geometry_previews` opens by clearing the selection highlight, so
+        typing here dropped the outline of the geometry selected in the config list
+        and nothing put it back. The narrow signal reaches the same
+        `update_mesh_config`, with `reload_geometry=False`.
 
         Suppressed while ``set_config`` populates — the `text` rows report
         ``textChanged``, which Qt also emits for a programmatic write — because an
         emit from inside a population re-enters the panel->model sync with the
-        widgets half-written. ``set_config`` ends with its own emit, so the canvas
-        still learns about a programmatic push; it simply learns once.
+        widgets half-written. ``set_config`` ends with its own
+        ``mesh_config_changed``, so the canvas still learns about a programmatic
+        push; it simply learns once, through the wide route that a push deserves.
         """
         self._refresh_topology_counts()
         if getattr(self, "_loading", False):
             return
-        self.mesh_config_changed.emit(self.get_config())
+        self.topology_changed.emit(self.get_config())
 
     def _refresh_topology_counts(self, *_args):
         """Show what the family function derives from the parameters as typed.

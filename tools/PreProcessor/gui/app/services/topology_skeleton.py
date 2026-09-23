@@ -18,7 +18,7 @@ mesher, which means writing a document to disk, launching a process and parsing 
 report for every keystroke in a parameter box; a live overlay cannot pay that. What
 keeps the two from drifting is not discipline but a gate: `tests/test_topology_skeleton.py`
 check 2 reads the pairing out of `src/MultiBlock.cpp` itself and FAILS rather than
-answering when it cannot find it, and check 8 runs the REAL mesher on a shipped topology
+answering when it cannot find it, and check 12 runs the REAL mesher on a shipped topology
 and compares its per-edge report against what this module resolved. A divergence is a red
 gate, not a wrong number on a canvas.
 
@@ -40,6 +40,12 @@ from app.services.mesh_modes import MESH_MODE_MULTIBLOCK
 #: kind, ``free``, carries its own ``xy``. Spelled once here because two questions
 #: below ask it — how to place the corner, and how to DRAW it.
 KIND_ON_GEOMETRY = "on_geometry"
+
+#: The edge kind that bounds exactly one block. The other two (``interface`` and
+#: ``cut``) bound two and are interior lines. Spelled here rather than at the canvas
+#: because which edges are a BOUNDARY is a fact about the topology, and the overlay
+#: decides nothing about the topology.
+KIND_WALL = "wall"
 
 
 @dataclass(frozen=True)
@@ -66,6 +72,11 @@ class SkeletonEdge:
     #: True when THIS edge is where the count was declared; False when it arrived
     #: by propagation. The mesher reports the same two states per edge.
     declared: bool
+
+    @property
+    def is_boundary(self) -> bool:
+        """True for an edge that bounds exactly one block — a ``wall``."""
+        return self.kind == KIND_WALL
 
     @property
     def label(self) -> str:
@@ -154,12 +165,20 @@ def resolve_counts(doc: dict) -> dict[str, tuple[int | None, bool]]:
             parent[root(ia)] = root(ib)
 
     #: The declarations, kept apart from the resolved counts so each edge can report
-    #: which of the two it got — the same split the mesher's report carries.
+    #: which of the two it got — the same split the mesher's report carries. A `count`
+    #: that is PRESENT but not an integer >= 2 is recorded as an INVALID seed, not as
+    #: an absent one: the mesher refuses such a document by name (`src/MultiBlock.cpp`,
+    #: "count >= 2"), so treating it as "no declaration here" would let a sibling seed
+    #: label a number for a run that never happens. Narrower than the mesher, which
+    #: refuses the whole document — here it is the CLASS that goes unresolved, so the
+    #: `?` lands on the edges the user has to go and fix.
     seeded: list[int | None] = []
+    invalid: list[bool] = []
     for e in edges:
         v = e.get("count")
-        seeded.append(int(v) if isinstance(v, int) and not isinstance(v, bool)
-                      and v >= 2 else None)
+        ok = isinstance(v, int) and not isinstance(v, bool) and v >= 2
+        seeded.append(int(v) if ok else None)
+        invalid.append(v is not None and not ok)
 
     classes: dict[int, list[int]] = {}
     for k in range(len(edges)):
@@ -168,7 +187,8 @@ def resolve_counts(doc: dict) -> dict[str, tuple[int | None, bool]]:
     out: dict[str, tuple[int | None, bool]] = {}
     for members in classes.values():
         found = {seeded[k] for k in members if seeded[k] is not None}
-        resolved = found.pop() if len(found) == 1 else None
+        resolved = (None if any(invalid[k] for k in members)
+                    else (found.pop() if len(found) == 1 else None))
         for k in members:
             out[ids[k]] = (resolved, seeded[k] is not None)
     return out

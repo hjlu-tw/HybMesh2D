@@ -23,6 +23,12 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
     """Scrollable panel containing editor widgets for all Background_para.dat options."""
     geom_files_changed = pyqtSignal(list)
     mesh_config_changed = pyqtSignal(object)
+    # A TEMPLATE-parameter edit, which fires per keystroke. Separate from
+    # `mesh_config_changed` because that one's listener goes to DISK — the geometry
+    # previews and the `.meta` outline colouring — and a template row cannot have
+    # changed a geometry file. Carries the same payload; what differs is only what
+    # the controller does with it (#136).
+    topology_changed = pyqtSignal(object)
     # Emitted when Domain Source flips (True = custom geometry outline) so the
     # canvas can hide the rectangular domain box + its per-edge BC colours.
     domain_source_changed = pyqtSignal(bool)

@@ -2225,9 +2225,11 @@ Two modules, named here because the rule file's pointer resolves to this note fo
 `services/topology_skeleton.py` (Qt-free — the count propagation, the corner placement and the ONE
 owner of "is there a skeleton to draw") and `views/mesh_canvas_skeleton_mixin.py` (pens, symbols and
 z-order, and nothing else). The hook and the third `auto_range` source are in
-`views/mesh_canvas.py`; the emit that makes a typed parameter reach the canvas is
-`_on_topology_edited` in `views/panels/mesh_config_build_mixin.py`. Gate:
-`tests/test_topology_skeleton.py`.
+`views/mesh_canvas.py`, whose one-shot fit token is shared with
+`views/mesh_canvas_geom_mixin.py` — the other half of the fit rule, and named here because that
+file is otherwise reached by no area glob. The emit that makes a typed parameter reach the canvas
+is `_on_topology_edited` in `views/panels/mesh_config_build_mixin.py`, routed through
+`controller.handle_topology_changed`. Gate: `tests/test_topology_skeleton.py`.
 
 **What the ticket is actually about is the NUMBER, not the outline.** A `count` in a topology
 document is a SEED. Opposite sides of a block carry equal counts and a shared edge is ONE edge two
@@ -2278,6 +2280,50 @@ the section that owns it, which is how check 10d found it.
 `cads` is legal in `MESH_MODE 1`, so a skeleton is sometimes the only thing on the canvas with an
 extent; it is UNIONED with the mesh and geometry-preview bounds rather than preferred, so a bound
 topology still fits its geometry too.
+
+**The FIT, as opposed to the union, shipped wrong, and both review axes found it independently.**
+`auto_range` sets `_did_initial_fit`, the one-shot token the ASYNCHRONOUS geometry-preview load
+spends (`mesh_canvas_geom_mixin._on_geometry_previews_loaded` fits only `if not
+self._did_initial_fit`). The skeleton is built at the TOP of `update_mesh_config`, before those
+previews are even requested — so fitting there unconditionally spent the token on content that had
+not arrived, and the geometry was then never fitted at all. Measured by the Spec axis on a
+`MESH_MODE 1` config naming `naca0012.dat` (x 0..1): the view came out at **x 0.026..0.174**, most
+of the aerofoil off screen, while the same config in hybrid mode fitted it correctly. The rule text
+shipped in the same commit — "unioned rather than preferred, so a bound topology still fits its
+geometry as well" — was refuted by the code beside it, because the union branch ran before the
+geometry existed. The skeleton now fits only when there is no mesh AND no `geom_files`; with
+geometry, the preview load spends the token and `auto_range` unions the skeleton in.
+
+**Its first gate check could not see the defect either, and an injection is what said so.** Check
+11e put the geometry INSIDE the skeleton's extent, so a skeleton-only fit covered both and the
+check passed; injection M (fitting unconditionally again) reddened 11d alone. The fixture now puts
+the naca around y 0 and the skeleton at y 5..6, neither containing the other, and M reddens both.
+
+**A keystroke reached the disk, and dropped something visible on the way.** The first version
+emitted `mesh_config_changed`, whose handler reloads every geometry preview and re-reads every
+`.meta` — the Spec axis measured **12 preview reloads for five characters typed**. The cost itself
+is small (0.27 s for 40 keystroke-equivalents with three geometries loaded, measured here), and it
+is not why this changed. `update_geometry_previews` OPENS by calling `highlight_geometry_file(None)`
+to drop a stale selection highlight, so typing in a template row cleared the yellow outline of the
+geometry selected in the config list, and nothing put it back until the user clicked again. A
+template row cannot have changed a geometry file, so the panel now emits a narrow
+`topology_changed` and the controller calls `update_mesh_config(cfg, reload_geometry=False)`. A
+FLAG on the one function rather than a second entry point: the skeleton, the domain box and the BC
+preview keep one route and cannot drift apart. The narrow handler deliberately syncs no model —
+`undo_ctrl._wire_widget_edits` already routes every widget edit through `on_panel_edited`, and a
+second traversal would be free to cover a different widget set, which is the defect that traversal
+exists instead of.
+
+**An invalid `count` read as an absent one, which is a number over a refused run.** The mesher
+refuses a `count` that is present and not an integer >= 2 (`src/MultiBlock.cpp`, `count >= 2`);
+`resolve_counts` treated it as "no declaration here", so a VALID sibling seed in the same class
+resolved every edge to a number for a document that never meshes. It now unresolves the class.
+Narrower than the mesher, which refuses the whole document — here the `?` lands on the edges the
+user has to fix. Unreachable from the shipped family (`topology_hgrid._override` clamps to >= 2),
+and `resolve_counts` is public and #138 will feed it hand-authored documents. **Its first fixture
+made the injection INERT**: with only the invalid seed in the class, removing the fix left a
+seedless class and both readings answered `None`. The fixture carries a valid sibling now, and
+injection P reddens 4e.
 
 **Named blind spot: the overlay draws the MODEL and never a hand-named topology FILE.** #136's own
 criterion — "does not survive switching to a case with no topology model" — read literally. The cost
