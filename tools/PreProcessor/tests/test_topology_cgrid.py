@@ -425,6 +425,15 @@ check(f"11c. the derivation is a DEFAULT and not a cage: overrides of 30 and 25 
       _ov.wake_nodes == 30 and _ov.radial_nodes == 25 and _ov.wake_overridden
       and _ov.radial_overridden and _ov.wake_derived == _p.wake_derived
       and _ov.radial_derived == _p.radial_derived)
+_no_run = cg.plan(model(_up), tb.context_for_config(Cfg([_up], first_cell=0.0)))
+check(f"11e. a run that declares no BL_INITIAL_THICKNESS still derives a radial "
+      f"count, from the trailing-edge cell — and the read-out NAMES that source "
+      f"rather than printing one parameter under another's name "
+      f"({_no_run.lines()[3]!r})",
+      not _no_run.problem and not _no_run.first_cell_from_run
+      and "BL_INITIAL_THICKNESS" not in _no_run.lines()[3].split("—")[0]
+      and "trailing-edge cell" in _no_run.lines()[3]
+      and _p.first_cell_from_run)
 _lines = _p.lines()
 check(f"11d. ...and the read-out shows the WORKING rather than only the result — the "
       f"section as it was read, the spacing and the growth each count came from, and "
@@ -568,17 +577,45 @@ else:
         # THE SHIPPED HAND-WRITTEN DOCUMENT, through the same binary, so the
         # comparison is measured rather than asserted.
         srcs = os.path.join(_REPO, "examples", "topology", "cgrid_naca0012.json")
-        rc2, q2, names2, _ = run_mesher(tmp, srcs, [_SHIP_AF, _SHIP_FF], "ship")
+        rc2, q2, names2, _ship_out = run_mesher(tmp, srcs, [_SHIP_AF, _SHIP_FF],
+                                                "ship")
         ratio = (float(q["nonortho_max_deg"]) / float(q2["nonortho_max_deg"])
                  if q.get("nonortho_max_deg") and q2.get("nonortho_max_deg") else 0.0)
+        cells = (int(q["cells"]) / int(q2["cells"])
+                 if q.get("cells") and q2.get("cells") else 0.0)
         check(f"14c. the mesh the template produces is COMPARED with the shipped "
               f"hand-written C-grid's, not merely declared to reproduce it: template "
               f"{q.get('cells')} cells / {q.get('nonortho_max_deg')} deg peak "
               f"non-orthogonality against shipped {q2.get('cells')} / "
-              f"{q2.get('nonortho_max_deg')}, i.e. {ratio:.2f}x. The difference is "
-              f"the far field: a generated hexagon where the drawn one curves, which "
-              f"costs at that one corner and nothing at the wall",
-              rc2 == 0 and q2.get("inverted") == "0" and 0.0 < ratio < 2.0)
+              f"{q2.get('nonortho_max_deg')}, i.e. {cells:.2f}x the cells at "
+              f"{ratio:.2f}x the peak. The difference is the far field: a generated "
+              f"hexagon where the drawn one curves, which costs at that one corner "
+              f"and nothing at the wall",
+              rc2 == 0 and q2.get("inverted") == "0" and 0.0 < ratio < 2.0
+              and 0.5 < cells < 2.0)
+
+        # THE COMPARISON WHERE IT MATTERS. Peak non-orthogonality and a cell count
+        # are whole-mesh figures, and both are dominated by the far field — which is
+        # the half these two documents deliberately disagree about. What "reproduces
+        # the target" has to mean is the grid AROUND THE SECTION, so this compares the
+        # two runs' per-block cell-shape medians for the two body blocks, which the
+        # mesher reports itself. Added by #148's Spec review, which read 14c's assert
+        # against its own label and found the discretisation ungated.
+        def by_block(text):
+            tail = text.partition("HYBMESH_MB_QUALITY_BEFORE")[2] or text
+            return {m[0]: float(m[1]) for m in re.findall(
+                r"block '(\w+)'\s*:\s*median ([0-9.]+)", tail)}
+
+        _t, _s2 = by_block(out), by_block(_ship_out)
+        _body = {b: (_t.get(b), _s2.get(b)) for b in ("b_upper", "b_lower")}
+        _worst = max((max(a, b) / min(a, b)) for a, b in _body.values()
+                     if a and b) if all(all(v) for v in _body.values()) else 0.0
+        check(f"14c2. ...and AT THE SECTION the two grids are the same grid: the "
+              f"mesher's own per-block cell-shape medians for the two body blocks "
+              f"agree to {_worst:.3f}x ({_body}). The whole-mesh figures above are "
+              f"dominated by the far field, which is the half the two documents "
+              f"deliberately disagree about",
+              bool(_worst) and _worst < 1.2)
         check(f"14d. ...and the shipped document's own far field is what carries the "
               f"second boundary name the template cannot ({names2} against {names})",
               names2 == ["farfield", "outlet", "wall"])

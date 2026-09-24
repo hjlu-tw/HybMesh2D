@@ -137,7 +137,10 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY TEMPLATE L
   time and NEVER persisted. The H-grid ignores it, so `fam.build` stays a call, not a dispatch.
 - **The far field is DRAWN, never generated**, and its segments pair ONE TO ONE with the body's. A
   wall edge lies within ONE source segment, so the ring REFINES the segment partition and
-  `ogrid_splits` is per segment.
+  `ogrid_splits` is per segment. **THE C-GRID REVERSES THIS FOR ITSELF (#148) — see its own block
+  below**, on its ticket's own wording, and pays for it in one boundary name. What this rule is
+  still unqualified about is the O-GRID, where a generated far field really would be a polygon with
+  one side per block.
 - **The winding is MEASURED**: a clockwise body gets the mirrored tuple `[w, r_next, o, r]`, which
   pairs the same edges as opposite sides, so classes and seeding are unchanged. **`MIN_BLOCKS` is
   3, measured**, the mesher refusing a two-block ring on collinear corners. Gate: check 13.
@@ -318,8 +321,11 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
   cost is stated, not discovered**: those six sides carry the run's `BC_GEOM` and cannot carry an
   `outlet` of their own, which the read-out's last line says. Gate: checks 13 (the six generated
   corners land on the shipped document's own, to 0.0, on the untouched defaults), 14c (what the
-  hexagon costs — 1.63x peak non-orthogonality at the one corner where the drawn D curves, and
-  nothing at the wall) and 14d (one boundary name where the shipped document has two).
+  hexagon costs — 1.28x the cells at 1.63x the peak non-orthogonality, at the one corner where the
+  drawn D curves), 14c2 (**where it matters the two grids ARE the same grid**: the mesher's own
+  per-block cell-shape medians for the two body blocks agree to 1.014x) and 14d (one boundary name
+  where the shipped document has two). 14c2 is #148's Spec review's, which read 14c's assert
+  against its own label and found the DISCRETISATION ungated where the geometry was not.
 - **THE SECTION IS READ, NEVER ASSUMED**, and that is what lets ONE document shape serve a section
   drawn either way round. The trailing edge is the joint further DOWNSTREAM; the upper surface is
   the one on the +y side of the chord, by a cross product. A CLOCKWISE section changes exactly one
@@ -333,6 +339,14 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
   the count, what a blunt section is, and the fix. Not a geometric gap test: on a closed two-segment
   loop the surfaces meet BY CONSTRUCTION, so there is no gap to measure. Gate: check 12, with the
   sharp section of the same designation as 12b's negative control.
+- **THE FAMILY DECLARES A FOURTH PHYSICAL PARAMETER WHERE #146 NAMED THREE**, and that is stated
+  rather than quietly taken. #146's decision reads "wake length, far-field radius, target cell edge,
+  first cell from the run's `BL_INITIAL_THICKNESS`"; `cgrid_te_cell` is the fifth quantity and the
+  one the whole document clusters to. It is not an alias for anything the run carries — the wall
+  spacing is `BL_INITIAL_THICKNESS` and this is the SURFACE spacing along the wall — and leaving it
+  uniform is a recorded failure rather than a hypothetical: the shipped hand-written case meshes to
+  zero inverted cells and then drives the solver to NaN in 40 iterations. It is defaulted, so
+  "accept the defaults and generate" still holds.
 - **`GROWTH = 1.2` IS THIS REPO'S OWN RED LINE FOR CELL EXPANSION** (`visualize_dat.py --quality`),
   not a tuned constant; the wake and radial counts are both "the fewest nodes that cross the span
   from a declared first cell without exceeding it", both DISPLAYED with their working and both
@@ -345,6 +359,16 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
   the panel so a third binding family needs no edit there and the H-grid still pays nothing — a
   context is a `.dat` and a `.meta` parse per geometry, paid per keystroke. It IS `broken is not
   None`, because #138 gives that to "a family that binds to nothing".
+- **THE ROLE WORD AND THE TWO SURFACE EDGE IDS ARE SPELLED ONCE**, in
+  `topology_cgrid_section.SECTION_ROLE` and `SURFACE_EDGES` — the rule #138 bought when the
+  O-grid's `plan` said "far-field" where `BINDING_LISTS` said "far field" and two refusals about
+  one list hyphenated it differently. Every refusal, the repair rows the family reports and the ids
+  `build` emits read them from there.
+- **THE ARITHMETIC THAT TURNS A LENGTH INTO A COUNT HAS ONE OWNER**, `services/topology_counts.py`
+  (`wall_count`, `nodes_for_growth`, `MAX_COUNT`), shared by both binding families since #148's
+  review found it written twice with the cap spelled twice as well. What stays with each family is
+  the LAW its ratio comes from — the O-grid's `1 + 2π/N_theta`, the C-grid's fixed `GROWTH` — and
+  `nodes_for_growth` takes the ratio with NO DEFAULT, so neither family can inherit the other's.
 - **The aerofoil FIXTURE is built through the CAD stage's own law and segmentation**
   (`tests/topology_outline_fixture.py::write_airfoil`), so a blunt section arrives with three
   segments because the CAD draws one that way. A fixture that hand-wrote the split would test the

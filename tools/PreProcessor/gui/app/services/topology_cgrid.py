@@ -51,14 +51,14 @@ it (#139).
 """
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.services.topology_binding import BindingError, BrokenBinding
 from app.services.topology_cgrid_section import (
-    far_corners, outside_point, resolve_section,
+    SECTION_ROLE, SURFACE_EDGES, Section, far_corners, outside_point,
+    resolve_section,
 )
-from app.services.topology_ogrid import wall_count
+from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid_binding import parse_binding
 
 #: The template's own name for the family, as stored in the project file.
@@ -72,30 +72,6 @@ FAMILY = "cgrid"
 #: own radial count, 41, comes out of it at 43 — which is the closest thing to a
 #: check on the number that exists.
 GROWTH = 1.2
-
-#: The node count a derivation will not exceed however small a first cell is asked
-#: for. A refusal would be worse — the number is a DEFAULT and overridable — but so
-#: would silently seeding a count that allocates gigabytes. The O-grid's own floor,
-#: for the same reason.
-MAX_NODES = 5000
-
-
-def nodes_for_growth(span: float, first_cell: float, ratio: float = GROWTH) -> int:
-    """Nodes to cross ``span`` starting at ``first_cell`` and growing at ``ratio``.
-
-    A geometric series of ``n`` intervals covers ``ds * (q**n - 1) / (q - 1)``; the
-    count is the ``n`` at which that reaches ``span``, plus one for the node the
-    intervals end on. The same shape as the O-grid's ``radial_count`` and a different
-    question: there the ratio is DERIVED from the circumferential cell count (the 1:1
-    criterion on a ring), here it is the fixed expansion above, because a wake and a
-    C-grid's outward direction have no ring to take a ratio from.
-    """
-    q = float(ratio)
-    if span <= 0.0 or first_cell <= 0.0 or q <= 1.0:
-        return 2
-    n = math.log1p(span * (q - 1.0) / first_cell) / math.log(q)
-    return max(2, min(MAX_NODES, int(math.ceil(n)) + 1))
-
 
 @dataclass
 class Plan:
@@ -114,12 +90,17 @@ class Plan:
     #: The resolved aerofoil, or ``None`` when one of the refusals above fired.
     #: Held whole rather than copied field by field, so "what did we read off the
     #: section" has one owner and the read-out cannot describe a different one.
-    section: object = None
+    section: Section | None = None
     up_nodes: int = 0
     lo_nodes: int = 0
     wake_span: float = 0.0
     radial_span: float = 0.0
     first_cell: float = 0.0
+    #: True when ``first_cell`` came from the RUN's ``BL_INITIAL_THICKNESS``. The
+    #: read-out asks, because on the fallback path below it would otherwise print
+    #: the trailing-edge cell under another parameter's name — which is the
+    #: derivation-with-its-working rule broken in the one line that states it.
+    first_cell_from_run: bool = False
     te_cell: float = 0.0
     wake_derived: int = 0
     wake_nodes: int = 0
@@ -127,12 +108,15 @@ class Plan:
     radial_derived: int = 0
     radial_nodes: int = 0
     radial_overridden: bool = False
-    #: True when a derivation hit :data:`MAX_NODES`. A silent clamp on a DISPLAYED
+    #: True when a derivation hit :data:`~app.services.topology_counts.MAX_COUNT`.
+    #: A silent clamp on a DISPLAYED
     #: derived count is a number the panel presents as the derivation's answer and is
     #: not; the O-grid's review named it, and this read-out says so too.
     clamped: bool = False
-    #: The six generated far-field corners, ``{id: (x, y)}``.
-    far: dict = None
+    #: The six generated far-field corners, ``{id: (x, y)}``. Empty until the
+    #: parameters are good enough to place them, never ``None``, so a caller that
+    #: asks a refused plan for them gets nothing rather than an AttributeError.
+    far: dict = field(default_factory=dict)
 
     def lines(self) -> list:
         """The derivation, as the read-out shows it — RESULT AND WORKING, not result.
@@ -156,9 +140,13 @@ class Plan:
                     f"{self.wake_span:.4g})"),
             f"radial: {self.radial_nodes} nodes"
             + (" (overridden)" if self.radial_overridden
-               else f" (derived: BL_INITIAL_THICKNESS {self.first_cell:.3e} growing "
-                    f"at {GROWTH:g} spans {self.radial_span:.4g})")
-            + (f" — CLAMPED at {MAX_NODES}, so the first cell you asked for is not "
+               else (f" (derived: "
+                     f"{'BL_INITIAL_THICKNESS' if self.first_cell_from_run else 'the trailing-edge cell'}"
+                     f" {self.first_cell:.3e} growing at {GROWTH:g} spans "
+                     f"{self.radial_span:.4g}"
+                     + ("" if self.first_cell_from_run
+                        else " — this run declares no BL_INITIAL_THICKNESS") + ")"))
+            + (f" — CLAMPED at {MAX_COUNT}, so the first cell you asked for is not "
                f"reachable at this growth" if self.clamped else ""),
             "far field: GENERATED from the two lengths, so its six sides carry the "
             "run's BC_GEOM; the section's two carry the conditions on its own CAD "
@@ -174,7 +162,6 @@ def plan(model, ctx) -> Plan:
     yet. :func:`build` asks the same question and turns a problem into the refusal.
     """
     p = Plan()
-    p.far = {}
     if ctx is None:
         p.problem = ("this family binds to the section you drew, so it needs the "
                      "mesh's geometry list; none was supplied.")
@@ -208,10 +195,13 @@ def plan(model, ctx) -> Plan:
 
     p.up_nodes = wall_count(p.section.up_len, cell)
     p.lo_nodes = wall_count(p.section.lo_len, cell)
-    p.first_cell = ctx.first_cell if ctx.first_cell > 0.0 else p.te_cell
-    p.wake_derived = nodes_for_growth(p.wake_span, p.te_cell)
-    p.radial_derived = nodes_for_growth(p.radial_span, p.first_cell)
-    p.clamped = (p.wake_derived >= MAX_NODES or p.radial_derived >= MAX_NODES)
+    # THE RUN'S OWN NUMBER, under the name it already has (#133) — and the fallback
+    # is RECORDED rather than silent, because the read-out names the source.
+    p.first_cell_from_run = ctx.first_cell > 0.0
+    p.first_cell = ctx.first_cell if p.first_cell_from_run else p.te_cell
+    p.wake_derived = nodes_for_growth(p.wake_span, p.te_cell, GROWTH)
+    p.radial_derived = nodes_for_growth(p.radial_span, p.first_cell, GROWTH)
+    p.clamped = (p.wake_derived >= MAX_COUNT or p.radial_derived >= MAX_COUNT)
     want = int(model.cgrid_wake_count)
     p.wake_overridden = want >= 2
     p.wake_nodes = want if p.wake_overridden else p.wake_derived
@@ -273,15 +263,19 @@ def build(model, ctx=None) -> dict:
          "spacing": {"wall_ends": "start"}},
         {"id": "r_te_lo", "corners": ["te", "f3"], "kind": "interface",
          "spacing": {"wall_ends": "start"}},
-        {"id": "af_up", "corners": ["te", "le"] if up_first else ["le", "te"],
+        {"id": SURFACE_EDGES[0],
+         "corners": ["te", "le"] if up_first else ["le", "te"],
          "kind": "wall", "count": p.up_nodes,
          "binding": {"geom": g.spelling,
-                     "seg": ctx.resolve("af_up", g.spelling, p.section.up_seg)},
+                     "seg": ctx.resolve(SURFACE_EDGES[0], g.spelling,
+                                        p.section.up_seg)},
          "spacing": {"ds_start": ds, "ds_end": ds}},
-        {"id": "af_lo", "corners": ["le", "te"] if up_first else ["te", "le"],
+        {"id": SURFACE_EDGES[1],
+         "corners": ["le", "te"] if up_first else ["te", "le"],
          "kind": "wall", "count": p.lo_nodes,
          "binding": {"geom": g.spelling,
-                     "seg": ctx.resolve("af_lo", g.spelling, p.section.lo_seg)},
+                     "seg": ctx.resolve(SURFACE_EDGES[1], g.spelling,
+                                        p.section.lo_seg)},
          "spacing": {"ds_start": ds, "ds_end": ds}},
         {"id": "e_out_up", "corners": ["wk", "fu"], "kind": "wall",
          "spacing": {"wall_ends": "start"}},
@@ -310,8 +304,10 @@ def build(model, ctx=None) -> dict:
     # side]. The wake cut is the WEST of both wake blocks.
     blocks = [
         {"id": "b_wake_up", "edges": ["e_out_up", "e_ff_up", "r_te_up", "wake"]},
-        {"id": "b_upper", "edges": ["r_te_up", "e_ff_nose_up", "r_le", "af_up"]},
-        {"id": "b_lower", "edges": ["r_le", "e_ff_nose_lo", "r_te_lo", "af_lo"]},
+        {"id": "b_upper",
+         "edges": ["r_te_up", "e_ff_nose_up", "r_le", SURFACE_EDGES[0]]},
+        {"id": "b_lower",
+         "edges": ["r_le", "e_ff_nose_lo", "r_te_lo", SURFACE_EDGES[1]]},
         {"id": "b_wake_lo", "edges": ["r_te_lo", "e_ff_lo", "e_out_lo", "wake"]},
     ]
     return {"format_version": 1, "corners": corners, "edges": edges,
@@ -334,14 +330,15 @@ def broken_bindings(model, ctx) -> tuple:
     g = ctx.geometry(getattr(model, "cgrid_body_geom", ""))
     if g is None or not g.seg_ids:
         return ()
-    held, why = parse_binding(getattr(model, "cgrid_body_segs", ""), (), "aerofoil")
+    held, why = parse_binding(getattr(model, "cgrid_body_segs", ""), (),
+                              SECTION_ROLE)
     if why or not held:
         # A blank list adopts the section's own segments and so cannot be broken; a
         # malformed one is refused as a whole string and is not a position a dropdown
         # could re-point.
         return ()
-    return tuple(BrokenBinding(field="cgrid_body_segs", who="aerofoil",
+    return tuple(BrokenBinding(field="cgrid_body_segs", who=SECTION_ROLE,
                                geom=g.spelling, seg=s, pos=pos,
-                               edges=("af_up", "af_lo"),
+                               edges=SURFACE_EDGES,
                                choices=tuple(g.seg_ids))
                  for pos, s in enumerate(held) if s not in g.spans)

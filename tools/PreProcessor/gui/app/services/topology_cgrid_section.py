@@ -32,6 +32,14 @@ from app.services.topology_ogrid_binding import parse_binding
 SHARP_SEGMENTS = 2
 BLUNT_SEGMENTS = 3
 
+#: The role word this family gives its one binding list, and the two edge ids its two
+#: stored positions become. Spelled ONCE, because #138 bought that rule the hard way:
+#: the O-grid's ``plan`` said "far-field" where ``BINDING_LISTS`` said "far field", so
+#: two refusals about one list hyphenated it differently. Every refusal here, the
+#: repair rows the family reports and the ids ``build`` emits all read them from here.
+SECTION_ROLE = "aerofoil"
+SURFACE_EDGES = ("af_up", "af_lo")
+
 
 @dataclass(frozen=True)
 class Section:
@@ -103,7 +111,7 @@ def resolve_section(ctx, geom_name: str, segs_text: str) -> tuple:
             f"{len(g.seg_ids)} "
             f"({', '.join(str(s) for s in g.seg_ids) or 'none'})."), ""
 
-    held, why = parse_binding(segs_text, g.seg_ids, "aerofoil")
+    held, why = parse_binding(segs_text, g.seg_ids, SECTION_ROLE)
     if why:
         return None, None, why, ""
     # The edge a resolve refusal names is the one the stored POSITION would become on
@@ -114,7 +122,8 @@ def resolve_section(ctx, geom_name: str, segs_text: str) -> tuple:
     # reason.
     for pos, sid in enumerate(held):
         try:
-            ctx.resolve("af_up" if pos == 0 else "af_lo", g.spelling, sid)
+            ctx.resolve(SURFACE_EDGES[min(pos, len(SURFACE_EDGES) - 1)],
+                        g.spelling, sid)
         except BindingError as exc:
             return None, None, str(exc), exc.edge
     if set(held) != set(g.seg_ids) or len(held) != SHARP_SEGMENTS:

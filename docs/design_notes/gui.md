@@ -1421,7 +1421,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 280, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 281, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -3063,6 +3063,52 @@ point — so there is no gap to measure; what a blunt section actually has is a 
 base, which `naca_airfoil.segment_parts` is the one owner of. The refusal names the count, names
 what a blunt section is, and names the fix ("redraw the section with 'Sharp trailing edge' on"),
 with the sharp section of the same designation as check 12b's negative control.
+
+**What the review changed, and the one module it created.** The two blind axes ran against
+`561206e...HEAD` and between them found five things worth acting on; four are corrections and one is
+a module.
+
+* **`services/topology_counts.py` is that module.** `nodes_for_growth` was written twice — the
+  O-grid's `radial_count` and the C-grid's own copy were the same five lines with the growth ratio
+  arriving from different places — and the cap was the same 5000 under two names (`MAX_RADIAL`,
+  `MAX_NODES`). `wall_count` had already been imported across from `topology_ogrid`, which is the
+  shape that made the duplication easy to miss: one helper was shared by reaching into the
+  neighbouring family, so the second looked like it belonged where it was. All three now live in a
+  module that is neither family's, and `nodes_for_growth` takes its ratio with **no default**, so
+  neither family can silently inherit the other's. What deliberately did NOT move is the LAW each
+  ratio comes from: the O-grid's `1 + 2π/N_theta` is the whole of #137's derivation and is not a
+  C-grid fact, so `radial_count` survives as the function that supplies it and delegates the
+  arithmetic. `broken_bindings` is duplicated between the two families in SHAPE and was left:
+  the O-grid's walks two lists with `ogrid_splits` positions each and names an edge per position,
+  the C-grid's walks one and names both surface edges for any of them, and the genuinely shared
+  part is about six lines.
+* **The role word and the two surface edge ids were spelled at five sites**, which is exactly the
+  shape #138 bought its `BINDING_LISTS` rule with — the O-grid's `plan` said "far-field" where that
+  table said "far field", so two refusals about one list hyphenated it differently. They are now
+  `topology_cgrid_section.SECTION_ROLE` and `SURFACE_EDGES`.
+* **The read-out named the wrong parameter on one path.** `p.first_cell` falls back to the
+  trailing-edge cell when the run declares no `BL_INITIAL_THICKNESS` (a half-typed configuration is
+  not an error yet), and the line printed it as `BL_INITIAL_THICKNESS <value>` regardless — a
+  derivation displaying its working under another quantity's name, which is the one rule that line
+  exists for. `Plan.first_cell_from_run` records which it was and the line says so; check 11e is
+  the gate.
+* **Check 14c's label was wider than its assert**, which is this repo's own recurring finding. It
+  said the mesh was COMPARED with the shipped one and asserted only a factor on peak
+  non-orthogonality; the cell counts it printed were asserted nowhere. Both whole-mesh figures are
+  dominated by the far field, which is the half the two documents deliberately disagree about — so
+  the comparison that means anything is the grid AROUND THE SECTION. Check 14c2 compares the
+  mesher's own per-block cell-shape medians for the two body blocks: **3.745 against 3.692, 1.014x**.
+  That, and not the corner coincidence of check 13, is what "it reproduces the target" is worth.
+* **`gui-topology.md` still stated "The far field is DRAWN, never generated" unqualified**, 150
+  lines above the block that reverses it for this family. A rule and its exception in one file with
+  no pointer between them is a rule that will be read alone; the O-grid's bullet now names the
+  reversal and says what is still unqualified about the O-GRID itself, where a generated far field
+  really would be a polygon with one side per block.
+
+The Spec axis also recorded that the fourth physical parameter, `cgrid_te_cell`, is a departure
+from #146's own list of three — correct, and it is now stated as one in the rule file rather than
+left to be noticed. Both departures (that one and the generated far field) were raised on the
+ticket, which is what #148's "should be raised rather than worked around" asks for.
 
 **The injections, and the two things the HARNESS got wrong before the gate did.** Seven mutations,
 2026-09-24, each reverted and the tree compared afterwards; the record is in

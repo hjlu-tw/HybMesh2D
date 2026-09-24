@@ -206,15 +206,15 @@ class MeshConfigBuildMixin(SpecRowsMixin):
     def _refresh_topology_counts(self, cfg=None):
         """Show what the family functions derive from the parameters as typed.
 
-        Reads the ONE owner of each derivation rather than repeating it
-        (``topology_hgrid.hgrid_counts`` and ``topology_ogrid.plan``, which are also
-        what the documents seed), so the panel cannot display a figure the generated
-        mesh does not use.
+        Reads the ONE owner of each derivation rather than repeating it — the
+        H-grid's ``hgrid_counts`` and, in the loop below, every BINDING family's own
+        ``plan`` (the O-grid's and the C-grid's), which are also what the documents
+        seed — so the panel cannot display a figure the generated mesh does not use.
 
-        ``cfg`` is the mesh configuration the O-grid's derivation resolves its
+        ``cfg`` is the mesh configuration a binding family's derivation resolves its
         geometries against; ``None`` means "not available here", which is the state
-        during a population and at construction. The H-grid half needs none — it
-        binds to nothing, which is what `Family.binds` answers below.
+        during a population and at construction. The H-grid needs none — it binds to
+        nothing, which is what `Family.binds` answers below.
         """
         from app.services import (
             topology_binding, topology_cgrid, topology_hgrid, topology_model,

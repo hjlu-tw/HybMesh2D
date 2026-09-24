@@ -50,6 +50,7 @@ import math
 from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError
+from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid_binding import (
     BINDING_LISTS, cover_problem, order_problem, parse_binding,
 )
@@ -64,11 +65,6 @@ FAMILY = "ogrid"
 #: -0.000000)" and the run is refused with the topology exit code. Two was this
 #: family's first floor; the gate's winding check caught it.
 MIN_BLOCKS = 3
-
-#: The node count the radial derivation will not exceed however small a first cell is
-#: asked for. A refusal would be worse — the number is a DEFAULT and overridable — but
-#: so would silently seeding a count that allocates gigabytes.
-MAX_RADIAL = 5000
 
 
 @dataclass
@@ -100,7 +96,7 @@ class Plan:
     radial_derived: int = 0
     radial: int = 0
     overridden: bool = False
-    #: True when the derivation hit ``MAX_RADIAL``. A silent clamp on a DISPLAYED
+    #: True when the derivation hit ``MAX_COUNT``. A silent clamp on a DISPLAYED
     #: derived count is a number the panel presents as the derivation's answer and
     #: is not; review named it, and the read-out now says so.
     clamped: bool = False
@@ -141,7 +137,7 @@ class Plan:
             + (" (overridden)" if self.overridden
                else f" (derived: q from {self.first_cell:.3e} spans "
                     f"{self.far_radius - self.radius:.4g})")
-            + (f" — CLAMPED at {MAX_RADIAL}, so the first cell you asked for is "
+            + (f" — CLAMPED at {MAX_COUNT}, so the first cell you asked for is "
                f"not reachable at this ratio" if self.clamped else ""),
         ]
 
@@ -167,33 +163,12 @@ def radial_count(n_theta: int, span: float, first_cell: float) -> int:
     half of #137's "how many radial points would close the gap": the first half says
     the wall cells are N times flatter than 1:1, and this says what it costs to grow
     from there without ever exceeding the 1:1 ratio.
+
+    THE ARITHMETIC IS `topology_counts.nodes_for_growth`'s since #148, which found it
+    written twice. What is this function's own is the LAW — that the ratio comes from
+    N_theta, which is the whole of #137's derivation and is not the C-grid's.
     """
-    q = radial_law(n_theta)
-    if span <= 0.0 or first_cell <= 0.0 or q <= 1.0:
-        return 2
-    n = math.log1p(span * (q - 1.0) / first_cell) / math.log(q)
-    return max(2, min(MAX_RADIAL, int(math.ceil(n)) + 1))
-
-
-def wall_count(edge_len: float, cell: float) -> int:
-    """The node count for a wall edge of ``edge_len`` at a target ``cell``.
-
-    Intervals + 1, because the mesher's ``count`` includes both end corners, and its
-    floor is 2. Nearest rather than ceiling keeps the delivered cell size closest to
-    the one asked for.
-
-    ROUNDED HALF UP WITH A TOLERANCE, and both halves are load-bearing. The length is
-    a SUM OVER A POLYLINE, so re-sampling the same geometry to a different point
-    count moves its last bits — 2.4999999999999996 against 2.5000000000000004 for one
-    of this repo's own fixtures. Python's ``round`` is half-to-EVEN, so those two land
-    on 2 and 3, and the count of a wall edge changed because the user re-sampled a
-    geometry they had not otherwise touched. The tolerance snaps a tie back together
-    and the half-up floor then resolves it the same way every time. Measured, not
-    guessed: it is what ``test_topology_ogrid.py`` check 10 fails on without it.
-    """
-    if cell <= 0.0 or edge_len <= 0.0:
-        return 2
-    return max(2, int(math.floor(edge_len / cell + 0.5 + 1e-9)) + 1)
+    return nodes_for_growth(span, first_cell, radial_law(n_theta))
 
 
 def _ring(segs, splits: int) -> list:
@@ -335,7 +310,7 @@ def plan(model, ctx) -> Plan:
     p.first_cell_11 = p.radius * (p.ratio - 1.0)
     p.first_cell = ctx.first_cell if ctx.first_cell > 0.0 else p.first_cell_11
     p.radial_derived = radial_count(p.n_theta, p.far_radius - p.radius, p.first_cell)
-    p.clamped = p.radial_derived >= MAX_RADIAL
+    p.clamped = p.radial_derived >= MAX_COUNT
     want = int(model.ogrid_radial_count)
     p.overridden = want >= 2
     p.radial = want if p.overridden else p.radial_derived
