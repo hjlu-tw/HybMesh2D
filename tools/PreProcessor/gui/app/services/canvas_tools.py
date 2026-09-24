@@ -16,6 +16,51 @@ import math
 #: bounded so a long session cannot grow it without limit.
 MAX_VIEW_HISTORY = 50
 
+#: How many points each shape tool collects before the shape is complete.
+#: ``None`` means variable, finished by a double-click (the free polygon and
+#: polyline tools).
+DRAW_NPTS = {'line': 2, 'circle': 2, 'arc': 3, 'rectangle': 2, 'triangle': 3,
+             'polygon': None, 'polyline': None, 'naca': 2}
+
+#: What to ask for NEXT, given how many points are already placed: a tuple
+#: indexed by that count (its last entry repeating), or a callable handed the
+#: count for the tools whose prompt counts as it goes. A table beside
+#: ``DRAW_NPTS`` rather than an if-chain in the canvas, so a tool declares both
+#: facts in one place, neither can be the half that was forgotten, and both are
+#: readable without a display.
+DRAW_HINTS = {
+    'line': ("Click start point", "Click end point"),
+    'circle': ("Click centre", "Click to set the radius"),
+    'arc': ("Click the arc centre", "Click to set the radius (and start angle)",
+            "Click to set the end angle"),
+    'rectangle': ("Click a corner", "Click the opposite corner"),
+    'naca': ("Click the LEADING edge",
+             "Click the TRAILING edge (sets chord and angle of attack)"),
+    'triangle': lambda n: "Click point %d of 3" % (n + 1),
+    'polygon': lambda n: ("Click to add vertices — double-click to finish"
+                          if n < 3 else
+                          "%d vertices — double-click to finish" % n),
+    'polyline': lambda n: ("Click to add points — double-click to finish"
+                           if n < 2 else
+                           "%d points — double-click to finish (open polyline)"
+                           % n),
+}
+
+
+def draw_hint(tool, n_placed: int) -> str:
+    """The prompt for the next click of ``tool`` with ``n_placed`` down.
+
+    An unknown tool gets the generic first prompt rather than an exception: the
+    canvas asks on every mouse move, and a tool with no entry should read as
+    under-declared, not crash the pointer.
+    """
+    spec = DRAW_HINTS.get(tool)
+    if spec is None:
+        return "Click to place the start point"
+    if callable(spec):
+        return spec(int(n_placed))
+    return spec[min(int(n_placed), len(spec) - 1)]
+
 
 def snap_to_grid(x: float, y: float, step: float) -> tuple:
     """Round (x, y) to the nearest multiple of ``step``.

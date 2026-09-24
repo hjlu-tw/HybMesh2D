@@ -15,6 +15,7 @@
 #include "json.hpp"
 #include "PointTolerance.hpp"
 #include "GeomUtils.hpp"
+#include "NacaAirfoil.hpp"
 #include "Spline.hpp"
 #include "Spacing.hpp"
 #include "Quality.hpp"
@@ -377,6 +378,21 @@ std::vector<Point2D> generateCurvePoints(const json& seg, const std::vector<Poin
             double t = th0 + (th1 - th0) * i / (n - 1);
             pts.push_back({cx + r_val * std::cos(t), cy + r_val * std::sin(t)});
         }
+    } else if (curve_type == "naca4") {
+        // Parametric NACA 4-digit aerofoil. The law is NacaAirfoil.hpp's, which
+        // mirrors app/services/naca_airfoil.py line for line; the two are held
+        // together by tests/test_naca_airfoil_parity.py, which drives BOTH.
+        // A refusal (bad designation, a `te` part on a sharp section) is NAMED
+        // and leaves the segment with no points rather than substituting a shape
+        // the user did not draw.
+        std::string why;
+        pts = NacaAirfoil::points(p.value("designation", std::string("0012")), n,
+                                  p.value("part", std::string("full")),
+                                  p.value("chord", 1.0), p.value("x_le", 0.0),
+                                  p.value("y_le", 0.0), p.value("alpha_deg", 0.0),
+                                  p.value("sharp_te", true), why);
+        if (pts.empty())
+            std::cerr << "Warning: aerofoil segment skipped -- " << why << std::endl;
     } else if (curve_type == "triangle" || curve_type == "quadrilateral" || curve_type == "polygon") {
         std::vector<Point2D> vertices;
         if (curve_type == "triangle") {
@@ -1199,6 +1215,19 @@ bool processElement(const json& config) {
             p.x = cx + xN + tr[0];
             p.y = cy + yN + tr[1];
         }
+    }
+
+    // An element whose segments all refused (a NACA `te` part on a sharp
+    // section, a designation that is not four digits) leaves NO points. Saying
+    // "successfully processed ... (0 points)" one line under the refusal's own
+    // reason is the contradiction that makes a named refusal read as noise, so
+    // the empty case is reported as the failure it is -- and reported by this
+    // one writer, so it cannot be true of one shape and not another.
+    if (resPts.empty()) {
+        std::cerr << "Failed: element '" << config.value("name", std::string("?"))
+                  << "' produced NO points; nothing was written. See the "
+                     "warning(s) above for the reason." << std::endl;
+        return false;
     }
 
     std::string outPath = config.value("output_file", "Results/output.dat");

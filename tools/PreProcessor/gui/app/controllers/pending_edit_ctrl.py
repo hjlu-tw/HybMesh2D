@@ -1,6 +1,6 @@
 from __future__ import annotations
 from app.commands.segment_cmds import (
-    AddCurveSegmentCmd, UpdateSegmentStateCmd)
+    AddAirfoilSegmentsCmd, AddCurveSegmentCmd, UpdateSegmentStateCmd)
 from app.services.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -182,7 +182,26 @@ class PendingEditControllerMixin:
         if not session:
             return
         seg, is_new, orig_state = done.seg, done.is_new, done.orig_state
-        if is_new:
+        if is_new and getattr(seg, "curve_type", "") == "naca4":
+            # An aerofoil is drawn as ONE shape and lands as the SEGMENTS it is
+            # split at its trailing and leading edges into (#147), so a topology
+            # template has an upper surface, a lower surface — and on a blunt
+            # section a trailing-edge base — to bind to by stable id. One
+            # command, so one Undo takes the whole aerofoil back.
+            cmd = AddAirfoilSegmentsCmd(
+                session, seg,
+                refresh_cb=self._refresh_segment_list,
+                select_cb=self._select_segment_by_index,
+            )
+            session.command_history.execute(cmd)
+            from app.services.naca_airfoil import part_label
+            self.log("Added aerofoil NACA %s as %d edges: %s."
+                     % (seg.parameters.get("designation", "?"),
+                        len(cmd.added_segs),
+                        ", ".join("%d (%s)" % (s.id, part_label(
+                            s.parameters.get("part", "full")))
+                            for s in cmd.added_segs)))
+        elif is_new:
             cmd = AddCurveSegmentCmd(
                 session,
                 refresh_cb=self._refresh_segment_list,

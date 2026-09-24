@@ -38,6 +38,13 @@ DEFAULTS: dict[str, dict] = {
     "quadrilateral": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 0.0,
                       "x2": 1.0, "y2": 1.0, "x3": 0.0, "y3": 1.0},
     "polygon": {"vertices_str": "0,0; 1,0; 1,1; 0,1"},
+    # The aerofoil's own defaults live in services/naca_airfoil.py (the
+    # generator both hosts read) and are mirrored here because this table
+    # is what a type switch applies; test_naca_airfoil_parity.py holds the
+    # two together.
+    "naca4": {"designation": "0012", "chord": 1.0, "x_le": 0.0,
+              "y_le": 0.0, "alpha_deg": 0.0, "sharp_te": True,
+              "part": "full"},
 }
 
 # Numeric-field layout (param_key, label) for the modal dialog / sidebar.
@@ -55,6 +62,11 @@ FIELDS: dict[str, list[tuple[str, str]]] = {
     "quadrilateral": [("x0", "P0 X"), ("y0", "P0 Y"), ("x1", "P1 X"),
                       ("y1", "P1 Y"), ("x2", "P2 X"), ("y2", "P2 Y"),
                       ("x3", "P3 X"), ("y3", "P3 Y")],
+    # The aerofoil's designation and its sharp-TE flag are NOT here: this table
+    # is the numeric-spin-box layout, and those two are a text field and a
+    # checkbox (TEXT_ATTRS / BOOL_ATTRS below).
+    "naca4": [("chord", "Chord"), ("x_le", "LE X"), ("y_le", "LE Y"),
+              ("alpha_deg", "Angle of attack")],
 }
 
 # Sidebar (edge-props panel) widget attribute name per parameter key.
@@ -71,6 +83,23 @@ SIDEBAR_ATTRS: dict[str, dict[str, str]] = {
     "quadrilateral": {"x0": "quad_x0", "y0": "quad_y0", "x1": "quad_x1",
                       "y1": "quad_y1", "x2": "quad_x2", "y2": "quad_y2",
                       "x3": "quad_x3", "y3": "quad_y3"},
+    "naca4": {"chord": "naca_chord", "x_le": "naca_x_le", "y_le": "naca_y_le",
+              "alpha_deg": "naca_alpha"},
+}
+
+# Shape parameters held in a TEXT widget (read/written with .text()) and in a
+# CHECKBOX (.isChecked()/.setChecked()). The polygon's vertex string was the
+# first of these and was a hand-written special case in both widget helpers;
+# the aerofoil's designation is the second, so it is a table like every other
+# parameter kind rather than a second special case. Behaviour for polygon is
+# unchanged: it has no SIDEBAR_ATTRS row, so it still reads back exactly
+# ``{"vertices_str": ...}``.
+TEXT_ATTRS: dict[str, dict[str, str]] = {
+    "polygon": {"vertices_str": "poly_vertices"},
+    "naca4": {"designation": "naca_designation"},
+}
+BOOL_ATTRS: dict[str, dict[str, str]] = {
+    "naca4": {"sharp_te": "naca_sharp_te"},
 }
 
 POLYGON_VERTICES_ATTR = "poly_vertices"
@@ -134,7 +163,28 @@ def control_points(curve_type: str, params: dict) -> list:
     if curve_type == "polygon":
         return [(f"v{i}", (float(vx), float(vy)))
                 for i, (vx, vy) in enumerate(_verts(p))]
+    if curve_type == "naca4":
+        # The chord IS the shape's frame: leading edge and trailing edge give
+        # position, length and incidence between them, so two handles cover
+        # every parameter the canvas can express. The designation and the
+        # sharp-TE flag are not geometry a drag could mean.
+        return [("le", naca_chord_ends(p)[0]), ("te", naca_chord_ends(p)[1])]
     return []
+
+
+def naca_chord_ends(params: dict) -> tuple:
+    """An aerofoil's ``((x_le, y_le), (x_te, y_te))`` from its parameters.
+
+    The trailing edge is the leading edge plus the chord rotated by MINUS the
+    angle of attack — the same convention ``services/naca_airfoil.py`` places
+    every point with, stated in one place here so the handles cannot drift from
+    the curve they sit on.
+    """
+    x0 = float(params.get("x_le", 0.0))
+    y0 = float(params.get("y_le", 0.0))
+    c = float(params.get("chord", 1.0))
+    a = -math.radians(float(params.get("alpha_deg", 0.0)))
+    return ((x0, y0), (x0 + c * math.cos(a), y0 + c * math.sin(a)))
 
 
 def boundary_endpoints(curve_type: str, params: dict) -> list:
@@ -149,6 +199,11 @@ def boundary_endpoints(curve_type: str, params: dict) -> list:
     if curve_type == "polygon":
         cps = control_points("polygon", params)
         return [cps[0], cps[-1]] if len(cps) >= 2 else []
+    # An aerofoil part is NOT weldable, deliberately: its two ends are the
+    # leading and trailing edges, which the generator already places exactly,
+    # and its handles mean "move the whole section" / "set chord and incidence"
+    # rather than "move this point" — welding one onto a neighbour would drag
+    # the entire aerofoil there.
     return []
 
 
@@ -197,6 +252,17 @@ def apply_drag(curve_type: str, params: dict, handle_id: str, x: float, y: float
     elif curve_type in ("triangle", "quadrilateral"):
         i = int(handle_id[1])
         p[f"x{i}"], p[f"y{i}"] = x, y
+    elif curve_type == "naca4":
+        if handle_id == "le":
+            # Moving the leading edge MOVES the section; chord and incidence
+            # are the trailing edge's handle, so the shape does not change size
+            # while it is being positioned.
+            p["x_le"], p["y_le"] = x, y
+        else:
+            x0 = p.get("x_le", 0.0)
+            y0 = p.get("y_le", 0.0)
+            p["chord"] = max(1e-6, math.hypot(x - x0, y - y0))
+            p["alpha_deg"] = -math.degrees(math.atan2(y - y0, x - x0))
     elif curve_type == "polygon":
         i = int(handle_id[1:])
         verts = [list(v) for v in _verts(p)]
@@ -264,6 +330,18 @@ def params_from_points(tool: str, pts: list):
     if tool == "polygon" and len(p) >= 3:
         from app.services.geometry_service import format_vertices_str
         return ({"vertices_str": format_vertices_str(p)}, "polygon")
+    if tool == "naca" and len(p) >= 2:
+        # Two clicks: the leading edge, then the trailing edge. Chord and angle
+        # of attack come out of the span between them; the designation is the
+        # dialog's, since no click can say 0012.
+        (x0, y0), (x1, y1) = p[0], p[1]
+        c = math.hypot(x1 - x0, y1 - y0)
+        d = dict(DEFAULTS["naca4"])
+        d.update({"x_le": x0, "y_le": y0,
+                  "chord": (c if c > 1e-9 else 1.0),
+                  "alpha_deg": (-math.degrees(math.atan2(y1 - y0, x1 - x0))
+                                if c > 1e-9 else 0.0)})
+        return (d, "naca4")
     if tool == "polyline" and len(p) >= 2:
         # An open polyline is a polygon with closed=False (set by the caller);
         # only two points are needed. The renderer skips the closing seam.
@@ -275,12 +353,13 @@ def params_from_points(tool: str, pts: list):
 def read_widget_params(owner, curve_type: str) -> dict:
     """Read the sidebar shape widgets for ``curve_type`` into a params dict.
     ``owner`` is the object exposing the widgets. Unknown types → ``{}``."""
-    if curve_type == "polygon":
-        return {"vertices_str": getattr(owner, POLYGON_VERTICES_ATTR).text()}
-    attrs = SIDEBAR_ATTRS.get(curve_type, {})
     angle_keys = ANGLE_KEYS.get(curve_type, ())
     out: dict = {}
-    for key, attr in attrs.items():
+    for key, attr in TEXT_ATTRS.get(curve_type, {}).items():
+        out[key] = getattr(owner, attr).text()
+    for key, attr in BOOL_ATTRS.get(curve_type, {}).items():
+        out[key] = bool(getattr(owner, attr).isChecked())
+    for key, attr in SIDEBAR_ATTRS.get(curve_type, {}).items():
         v = getattr(owner, attr).value()
         out[key] = math.radians(v) if key in angle_keys else v   # widget °→rad
     return out
@@ -297,13 +376,16 @@ def write_widget_params(owner, curve_type: str, params: dict, silent: bool = Fal
     def _hush(widget):
         return block_signals(widget) if silent else nullcontext()
 
-    if curve_type == "polygon":
-        w = getattr(owner, POLYGON_VERTICES_ATTR)
-        with _hush(w):
-            w.setText(params.get("vertices_str", POLYGON_DEFAULT))
-        return
     defaults = DEFAULTS.get(curve_type, {})
     angle_keys = ANGLE_KEYS.get(curve_type, ())
+    for key, attr in TEXT_ATTRS.get(curve_type, {}).items():
+        w = getattr(owner, attr)
+        with _hush(w):
+            w.setText(str(params.get(key, defaults.get(key, ""))))
+    for key, attr in BOOL_ATTRS.get(curve_type, {}).items():
+        w = getattr(owner, attr)
+        with _hush(w):
+            w.setChecked(bool(params.get(key, defaults.get(key, False))))
     for key, attr in SIDEBAR_ATTRS.get(curve_type, {}).items():
         w = getattr(owner, attr)
         with _hush(w):

@@ -90,6 +90,60 @@ class AddCurveSegmentCmd(BaseCommand):
             self.select_cb(-1)
 
 
+class AddAirfoilSegmentsCmd(BaseCommand):
+    """Add a drawn NACA aerofoil as its PARTS, in one undo step.
+
+    A separate command rather than several ``AddCurveSegmentCmd``s: the parts
+    are one thing the user drew, so one Undo has to take all of them back —
+    three presses leaving a lower surface and a trailing edge behind is a
+    geometry nobody authored. The split itself is `ProjectModel.add_airfoil_parts`'.
+    """
+
+    def __init__(self, session, template_seg, refresh_cb, select_cb):
+        self.session = session
+        self.template_seg = template_seg
+        self.refresh_cb = refresh_cb
+        self.select_cb = select_cb
+        self.added_segs: list = []
+        # Same full pre-add snapshot as AddCurveSegmentCmd, for the same reason:
+        # removing by object identity no-ops once a sibling command's undo has
+        # deep-copied the segment list.
+        self._snap = _snapshot_full_state(session)
+        self._added_idx = -1
+
+    def description(self) -> str:
+        ids = ", ".join(str(s.id) for s in self.added_segs) or "?"
+        return f"Add Aerofoil (Edge {ids})"
+
+    def execute(self):
+        pm = self.session.project_model
+        if self.added_segs:
+            # Redo: re-add the SAME segment objects, rebuilding the list rather
+            # than appending in place (a sibling's snapshot may hold this one).
+            pm.segments = pm.segments + list(self.added_segs)
+            last = max(s.id for s in self.added_segs)
+            if last >= pm._next_curve_id:
+                pm._next_curve_id = last + 1
+        else:
+            self.added_segs = pm.add_airfoil_parts(self.template_seg)
+        self.session.is_geometry_modified = True
+        self.refresh_cb()
+        try:
+            self._added_idx = pm.segments.index(self.added_segs[0])
+            self.select_cb(self._added_idx)
+        except (ValueError, IndexError):
+            self._added_idx = -1
+
+    def undo(self):
+        _restore_full_state(self.session, self._snap)
+        self.refresh_cb()
+        segs = self.session.project_model.segments
+        if segs:
+            self.select_cb(max(0, min(self._added_idx - 1, len(segs) - 1)))
+        else:
+            self.select_cb(-1)
+
+
 class DuplicateTransformCmd(BaseCommand):
     """Command to duplicate a segment with transform, optionally deleting the original segment."""
     def __init__(self, session, seg_idx: int, new_seg, delete_original: bool, refresh_cb, select_cb):

@@ -191,7 +191,19 @@ CURVE_TYPE_LABELS = {
     "triangle": "Triangle",
     "quadrilateral": "Quad",
     "polygon": "Polygon",
+    # An aerofoil arrives as several edges that differ only by which PART of
+    # the section they are, so the part has to be in the label or the model
+    # tree shows three identical rows.
+    "naca4": lambda seg: "NACA %s %s" % (
+        seg.parameters.get("designation", "0012"),
+        _naca_part_label(seg.parameters.get("part", "full"))),
 }
+
+
+def _naca_part_label(part: str) -> str:
+    """The aerofoil part's user-facing name, from its one owner."""
+    from app.services.naca_airfoil import part_label
+    return part_label(part)
 
 
 def make_button(text: str, color: str = '#26293c', *,

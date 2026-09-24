@@ -56,7 +56,8 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
             "Triangle",
             "Quadrilateral",
             "Polygon",
-            "Arc"
+            "Arc",
+            "NACA 4-digit aerofoil"
         ])
         self.curve_type_combo.setStyleSheet(COMBO_STYLE)
         self.curve_type_combo.setToolTip("Select the geometric shape type for this curve edge")

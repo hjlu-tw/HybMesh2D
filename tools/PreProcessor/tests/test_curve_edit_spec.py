@@ -63,8 +63,11 @@ class _Seg:
 check("0. importing the spec does not pull Qt in", "PyQt6" not in sys.modules)
 
 # ── 1. the combo row order is one list, owned by the model ────────────────
-check("1. nine curve types, arc last", len(CURVE_TYPES) == 9
-      and CURVE_TYPES[8] == "arc" and CURVE_TYPES[0] == "custom")
+# Ten since #147: the parametric aerofoil is last, so every earlier row keeps
+# the index the panel's combo and its widget stack already use for it.
+check("1. ten curve types, arc 8th and the aerofoil last",
+      len(CURVE_TYPES) == 10 and CURVE_TYPES[8] == "arc"
+      and CURVE_TYPES[9] == "naca4" and CURVE_TYPES[0] == "custom")
 check("1. an unknown row is a custom formula, not an IndexError",
       curve_type_for_index(99) == "custom" and curve_type_for_index(-1) == "custom")
 

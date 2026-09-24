@@ -155,6 +155,17 @@ class GeometryService:
                 [seg.parameters.get("x0", 0.0), seg.parameters.get("y0", 0.0)],
             ])
             xs, ys = _sample_polyline_pinned(verts, n)
+        elif seg.curve_type == "naca4":
+            # The aerofoil's points come from services/naca_airfoil.py, the ONE
+            # owner the resampler's NacaAirfoil.hpp mirrors. The uniform
+            # arc-length re-fit below is NOT decoration: the resampler hands the
+            # generated polyline to its own `uniform` strategy, which is exactly
+            # this, so applying it here is what makes the preview and the
+            # exported .dat the same points (circle and line do the same).
+            from app.services.naca_airfoil import params_points
+            pts = params_points(seg.parameters, n)
+            arr = np.asarray(pts, dtype=float)
+            xs, ys = _resample_polyline_uniform(arr[:, 0], arr[:, 1], n)
         elif seg.curve_type == "polygon":
             v_str = seg.parameters.get("vertices_str", "0,0; 1,0; 1,1; 0,1")
             verts = _parse_vertices_str(v_str)

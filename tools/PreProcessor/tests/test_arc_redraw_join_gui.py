@@ -111,10 +111,12 @@ app.processEvents()
 sb = mw.sidebar_view
 ep = sb.edge_props_panel
 
-check(len(CURVE_TYPES) == 9 and CURVE_TYPES[8] == "arc", "CURVE_TYPES has arc at index 8")
+check(len(CURVE_TYPES) == 10 and CURVE_TYPES[8] == "arc",
+      "CURVE_TYPES has arc at index 8 (ten types since #147 added the aerofoil)")
 check(ep.curve_type_combo.count() == len(CURVE_TYPES)
       and ep.shape_stack.count() == len(CURVE_TYPES),
-      f"combo({ep.curve_type_combo.count()}) == stack({ep.shape_stack.count()}) == types(9)")
+      f"combo({ep.curve_type_combo.count()}) == stack({ep.shape_stack.count()}) "
+      f"== types({len(CURVE_TYPES)})")
 check(all(hasattr(ep, a) for a in
           ("arc_cx", "arc_cy", "arc_r", "arc_theta0", "arc_theta1")),
       "edge-props has the arc spin boxes")

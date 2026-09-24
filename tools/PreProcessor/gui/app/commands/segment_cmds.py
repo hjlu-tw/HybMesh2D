@@ -27,6 +27,7 @@ from app.commands.segment_cmds_core import (
 from app.commands.segment_structure_cmds import (
     RemoveSegmentCmd,
     AddCurveSegmentCmd,
+    AddAirfoilSegmentsCmd,
     DuplicateTransformCmd,
     DuplicateMultipleTransformCmd,
     ClearGeometryCmd,
@@ -45,6 +46,7 @@ __all__ = [
     "UpdateParamsCmd",
     "RemoveSegmentCmd",
     "AddCurveSegmentCmd",
+    "AddAirfoilSegmentsCmd",
     "SetClosedModeCmd",
     "ToggleGlobalSplineCmd",
     "ToggleMatchPreviousCmd",

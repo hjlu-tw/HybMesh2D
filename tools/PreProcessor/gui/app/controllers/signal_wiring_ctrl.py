@@ -57,10 +57,17 @@ class SignalWiringMixin:
             ("Triangle", "triangle"),
             ("Polygon (closed)", "polygon"),
             ("Polyline (open)", "polyline"),
+            ("NACA 4-digit aerofoil", "naca"),
         ]:
             act = self._shape_tool_menu.addAction(label)
             if tool == "polyline":
                 act.setToolTip("Draw an OPEN multi-segment line (not auto-closed)")
+            if tool == "naca":
+                act.setToolTip(
+                    "Draw a parametric NACA 4-digit aerofoil: click the leading "
+                    "edge, then the trailing edge.\nIt arrives SPLIT at those "
+                    "two points — an upper and a lower surface edge (and a "
+                    "trailing-edge edge when the section is blunt).")
             act.triggered.connect(lambda _checked=False, t=tool: self.enter_shape_tool(t))
         self._shape_tool_menu.addSeparator()
         custom_act = self._shape_tool_menu.addAction("Custom Formula…")

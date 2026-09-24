@@ -3,7 +3,8 @@ from app.commands.split_cmds import AddSplitCmd, RemoveSplitCmd, AutoDetectSplit
 from app.commands.vertex_cmds import InsertVertexCmd
 from app.commands.segment_cmds import (
     UpdateStrategyCmd, UpdateParamsCmd, RemoveSegmentCmd,
-    AddCurveSegmentCmd, SetClosedModeCmd, ToggleGlobalSplineCmd,
+    AddCurveSegmentCmd, AddAirfoilSegmentsCmd, SetClosedModeCmd,
+    ToggleGlobalSplineCmd,
     ToggleMatchPreviousCmd, UpdateSegmentStateCmd, UpdateMultipleSegmentsStateCmd,
     CreateSegmentsFromIndicesCmd, BakeCurveToGeometryCmd, DuplicateTransformCmd,
     DuplicateMultipleTransformCmd
@@ -15,7 +16,8 @@ __all__ = [
     "AddSplitCmd", "RemoveSplitCmd", "AutoDetectSplitCmd",
     "InsertVertexCmd",
     "UpdateStrategyCmd", "UpdateParamsCmd", "RemoveSegmentCmd",
-    "AddCurveSegmentCmd", "SetClosedModeCmd", "ToggleGlobalSplineCmd",
+    "AddCurveSegmentCmd", "AddAirfoilSegmentsCmd", "SetClosedModeCmd",
+    "ToggleGlobalSplineCmd",
     "ToggleMatchPreviousCmd", "UpdateSegmentStateCmd", "UpdateMultipleSegmentsStateCmd",
     "CreateSegmentsFromIndicesCmd", "BakeCurveToGeometryCmd", "DuplicateTransformCmd",
     "DuplicateMultipleTransformCmd", "JoinEdgesToPolygonCmd"

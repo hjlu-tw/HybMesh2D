@@ -59,6 +59,8 @@ class OpenEndpointControllerMixin:
             ct = getattr(seg, "curve_type", "custom")
             if ct in ("triangle", "quadrilateral", "circle"):
                 continue  # inherently closed
+            if ct == "naca4" and seg.parameters.get("part", "full") == "full":
+                continue  # the whole section is a closed loop; its PARTS are not
             if ct == "polygon" and getattr(seg, "closed", True):
                 continue  # already a closed loop
             pr = GeometryService.get_segment_points(session, seg)

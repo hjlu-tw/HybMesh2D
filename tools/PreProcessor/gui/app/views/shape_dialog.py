@@ -42,6 +42,11 @@ class ShapeParamDialog(QDialog):
         self._spins: dict[str, CleanDoubleSpinBox] = {}
         self._poly_edit: PolygonEditor | None = None
         self._closed_cb: QCheckBox | None = None
+        # Shape parameters that are not numbers: a line of text and a checkbox,
+        # both driven off shape_spec's own tables so this dialog gains a shape's
+        # non-numeric fields by the same edit that declares them.
+        self._texts: dict[str, QLineEdit] = {}
+        self._bools: dict[str, QCheckBox] = {}
         # Angle params are stored in radians but edited here in DEGREES.
         self._angle_keys = shape_spec.ANGLE_KEYS.get(self._curve_type, set())
         self._changed_cb = changed_cb
@@ -72,6 +77,16 @@ class ShapeParamDialog(QDialog):
                 "endpoints.")
             form.addRow(self._closed_cb)
         else:
+            for key, attr in shape_spec.TEXT_ATTRS.get(self._curve_type, {}).items():
+                edit = QLineEdit(str(p.get(key, "")))
+                edit.setStyleSheet(SPIN_STYLE)
+                self._texts[key] = edit
+                form.addRow(QLabel(key.replace("_", " ").title() + ":"), edit)
+            for key, attr in shape_spec.BOOL_ATTRS.get(self._curve_type, {}).items():
+                box = QCheckBox(key.replace("_", " ").title())
+                box.setChecked(bool(p.get(key, False)))
+                self._bools[key] = box
+                form.addRow(box)
             for key, label in _FIELDS.get(self._curve_type, []):
                 spin = CleanDoubleSpinBox()
                 spin.setStyleSheet(SPIN_STYLE)
@@ -135,6 +150,10 @@ class ShapeParamDialog(QDialog):
         # Live two-way binding: edits here drive the canvas preview / handles.
         for spin in self._spins.values():
             spin.valueChanged.connect(self._emit_changed)
+        for edit in self._texts.values():
+            edit.textChanged.connect(self._emit_changed)
+        for box in self._bools.values():
+            box.toggled.connect(self._emit_changed)
         if self._poly_edit is not None:
             self._poly_edit.textChanged.connect(self._emit_changed)
         if self._closed_cb is not None:
@@ -160,7 +179,8 @@ class ShapeParamDialog(QDialog):
     def set_values(self, params: dict, n_points: int | None = None):
         """Silently push values into the fields (used when the canvas control
         points are dragged) without re-emitting the change signal."""
-        widgets = list(self._spins.values()) + [self._node_spin]
+        widgets = (list(self._spins.values()) + list(self._texts.values())
+                   + list(self._bools.values()) + [self._node_spin])
         if self._poly_edit is not None:
             widgets.append(self._poly_edit)
         if self._spacing_spin is not None:
@@ -179,6 +199,12 @@ class ShapeParamDialog(QDialog):
                         v = float(params[key])
                         spin.setValue(math.degrees(v) if key in self._angle_keys
                                       else v)
+                for key, edit in self._texts.items():
+                    if key in params:
+                        edit.setText(str(params[key]))
+                for key, box in self._bools.items():
+                    if key in params:
+                        box.setChecked(bool(params[key]))
             if n_points is not None:
                 self._node_spin.setValue(int(n_points))
         finally:
@@ -203,6 +229,10 @@ class ShapeParamDialog(QDialog):
         for key, spin in self._spins.items():
             v = spin.value()
             out[key] = math.radians(v) if key in self._angle_keys else v
+        for key, edit in self._texts.items():
+            out[key] = edit.text()
+        for key, box in self._bools.items():
+            out[key] = box.isChecked()
         return out, self._node_spin.value()
 
     def is_closed(self) -> bool:

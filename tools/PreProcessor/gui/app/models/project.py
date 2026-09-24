@@ -217,6 +217,38 @@ class ProjectModel:
         self.segments.append(seg)
         return seg
 
+    def add_airfoil_parts(self, template) -> list:
+        """Add a drawn aerofoil as the SEGMENTS it is split into, not as one edge.
+
+        This is what "arrives already segmented" means (#147): the section is
+        split at its trailing edge and at its leading edge, so a topology
+        template binds to the upper surface, the lower surface — and, on a blunt
+        section, the trailing-edge base — by the ordinary stable CAD segment id,
+        with no new resolution rule. A blunt section therefore yields THREE
+        edges and a sharp one TWO; which, is `naca_airfoil.segment_parts`'.
+
+        ``template`` is the pending edge the user drew and confirmed; its
+        parameters are copied onto every part, so the parts describe ONE
+        aerofoil. Returns the created segments in part order.
+        """
+        from app.services.naca_airfoil import part_node_counts, segment_parts
+        parts = segment_parts(bool(template.parameters.get("sharp_te", True)))
+        counts = part_node_counts(
+            template.parameters.get("n_points", 100), parts)
+        made = []
+        for part in parts:
+            seg = SegmentModel(self._next_curve_id, -1, -1)
+            self._next_curve_id += 1
+            seg.type = "curve"
+            seg.curve_type = "naca4"
+            seg.curve_mode = getattr(template, "curve_mode", "parametric")
+            seg.parameters = copy.deepcopy(template.parameters)
+            seg.parameters["part"] = part
+            seg.parameters["n_points"] = counts[part]
+            self.segments.append(seg)
+            made.append(seg)
+        return made
+
     def remove_segment(self, index: int):
         if 0 <= index < len(self.segments):
             self.segments.pop(index)

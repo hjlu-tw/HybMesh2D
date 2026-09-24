@@ -31,7 +31,8 @@ from dataclasses import dataclass, field
 #: lists indexed by the same combo is a reordering away from disagreeing about
 #: which shape the user picked.
 CURVE_TYPES = ("custom", "horizontal_line", "vertical_line", "line",
-               "circle", "triangle", "quadrilateral", "polygon", "arc")
+               "circle", "triangle", "quadrilateral", "polygon", "arc",
+               "naca4")
 
 
 def curve_type_for_index(index: int) -> str:

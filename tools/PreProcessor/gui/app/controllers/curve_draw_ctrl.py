@@ -137,8 +137,14 @@ class CurveDrawControllerMixin:
         try:
             xs, ys = GeometryService.compute_curve_preview_pts(
                 seg, seg.parameters.get("n_points", 50), session.original_points)
-        except Exception:
+        except Exception as exc:
             xs, ys = None, None
+            # A shape the user is still TYPING cannot draw — a half-entered NACA
+            # designation is the reachable case — and the reason is the only
+            # thing that explains the blank preview. Transient on purpose: the
+            # next keystroke replaces it, so it never becomes a modal or one log
+            # line per character.
+            self.main_window.flash_status(str(exc) or type(exc).__name__, 4000)
         if xs is not None and ys is not None and len(xs) > 0:
             canvas.update_curve_preview(session.session_id, np.column_stack([xs, ys]))
         else:

@@ -9,6 +9,7 @@ import numpy as np
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor
 
+from app.services.canvas_tools import DRAW_NPTS, draw_hint
 from app.services.logging_setup import get_logger
 
 _log = get_logger(__name__)
@@ -244,11 +245,6 @@ class CanvasDrawMixin:
 
     # ── Interactive shape drawing ──────────────────────────────────────────
 
-    # Number of points each tool collects (None = variable, finished by a
-    # double-click — used for the free polygon tool).
-    _DRAW_NPTS = {'line': 2, 'circle': 2, 'arc': 3, 'rectangle': 2,
-                  'triangle': 3, 'polygon': None, 'polyline': None}
-
     def start_draw_mode(self, tool: str):
         """Enter interactive shape-drawing mode for ``tool``.  Clicks place the
         defining points (each becomes a draggable control point) with a live
@@ -305,29 +301,7 @@ class CanvasDrawMixin:
         return self._draw_tool is not None
 
     def _draw_hint_text(self) -> str:
-        tool = self._draw_tool
-        n = len(self._draw_pts)
-        if tool == 'line':
-            return "Click start point" if n == 0 else "Click end point"
-        if tool == 'circle':
-            return "Click centre" if n == 0 else "Click to set the radius"
-        if tool == 'arc':
-            return ("Click the arc centre" if n == 0 else
-                    "Click to set the radius (and start angle)" if n == 1 else
-                    "Click to set the end angle")
-        if tool == 'rectangle':
-            return "Click a corner" if n == 0 else "Click the opposite corner"
-        if tool == 'triangle':
-            return f"Click point {n + 1} of 3"
-        if tool == 'polygon':
-            return ("Click to add vertices — double-click to finish"
-                    if n < 3 else
-                    f"{n} vertices — double-click to finish")
-        if tool == 'polyline':
-            return ("Click to add points — double-click to finish"
-                    if n < 2 else
-                    f"{n} points — double-click to finish (open polyline)")
-        return "Click to place the start point"
+        return draw_hint(self._draw_tool, len(self._draw_pts))
 
     def _add_draw_point(self, x: float, y: float):
         """Append a placed point and give it a draggable control-point handle."""
@@ -438,7 +412,7 @@ class CanvasDrawMixin:
 
     def _handle_draw_click(self, x: float, y: float, is_double: bool):
         tool = self._draw_tool
-        need = self._DRAW_NPTS.get(tool, 2)
+        need = DRAW_NPTS.get(tool, 2)
 
         # Snap the placed point to a nearby edge endpoint (incl. the first click).
         if self.snap_cb is not None:
