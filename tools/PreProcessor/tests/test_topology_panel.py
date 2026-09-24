@@ -338,6 +338,40 @@ check("12b. ...and the panel's own sources call plan() rather than deriving a "
 check("12c. ...checked against sources that really were read, so 12b cannot pass "
       f"on an empty string ({len(_src)} chars)", len(_src) > 5000)
 
+# ── 12d. the THIRD family's read-out, through the same one loop ─────────
+# #148 asks for the C-grid's counts to be "derived, displayed and overridable, as the
+# other two families do it", so this is the same pair of questions one family along:
+# is the working on screen, and is it the FAMILY's own working.
+_AF = os.path.join(_REPO, "examples", "geometries", "naca0012_cgrid.dat")
+cg_cfg = cfg_for(MESH_MODE_MULTIBLOCK, family="cgrid", cgrid_body_geom=_AF)
+cg_cfg.bl_initial_thickness = 1e-3
+cg_cfg.add_geom_file(_AF)
+panel.set_config(cg_cfg)
+cg_shown = panel.topo_cgrid_derived.text()
+check(f"12d. the C-grid read-out shows its derivation with the working — the section "
+      f"as it was READ, the spacing and the growth each count came from, and the fact "
+      f"that a generated far field carries BC_GEOM: {cg_shown!r}",
+      "chord" in cg_shown and "trailing edge at" in cg_shown
+      and "BL_INITIAL_THICKNESS" in cg_shown and "BC_GEOM" in cg_shown)
+from app.services import topology_cgrid as _cg  # noqa: E402
+
+_cg_plan = _cg.plan(panel.get_config().topology,
+                    _tb.context_for_config(panel.get_config()))
+check("12e. ...and every line of it is a line topology_cgrid.plan produced, so the "
+      "panel holds no second copy of a third family's derivation",
+      cg_shown == "\n".join(_cg_plan.lines()))
+panel.topo_cgrid_radial_count.setValue(25)
+check(f"12f. ...and an override is taken and REPORTED as one, which is what makes "
+      f"the derivation a default rather than a cage "
+      f"({panel.topo_cgrid_derived.text().splitlines()[-2]!r})",
+      "25 nodes (overridden)" in panel.topo_cgrid_derived.text())
+panel.set_config(cfg_for(MESH_MODE_MULTIBLOCK))
+check("12g. ...and with no family selected BOTH binding families' read-outs say so "
+      "rather than leaving the last one's numbers on screen — the loop runs on every "
+      f"path ({panel.topo_cgrid_derived.text()!r})",
+      "no template selected" in panel.topo_cgrid_derived.text()
+      and "no template selected" in panel.topo_ogrid_derived.text())
+
 # ── 13. naming a geometry CAPTURES its segment ids as the binding ───────
 # What makes a later deletion a refusal rather than a silently shorter ring: with the
 # row blank the family adopts whatever the geometry has at projection time.

@@ -3064,6 +3064,39 @@ base, which `naca_airfoil.segment_parts` is the one owner of. The refusal names 
 what a blunt section is, and names the fix ("redraw the section with 'Sharp trailing edge' on"),
 with the sharp section of the same designation as check 12b's negative control.
 
+**The injections, and the two things the HARNESS got wrong before the gate did.** Seven mutations,
+2026-09-24, each reverted and the tree compared afterwards; the record is in
+`tests/test_topology_cgrid.py`'s own header. Two of them are worth repeating here because they are
+about the measurement rather than about the code. (i) Apple's python3 caches bytecode OUTSIDE the
+tree, in `~/Library/Caches/com.apple.python`, and validates it by `(mtime, size)` — so a restore at
+the SAME SIZE is silently ignored, and `x_le` for `x_te` is exactly that. The first run ended with a
+clean `git status`, a source file that read correctly under `inspect.getsource`, and `far_corners`
+still answering with the mutation; three checks were red against a tree with nothing in it.
+Bumping the mtime was not enough. The harness now runs with `PYTHONDONTWRITEBYTECODE=1`, which
+removes the variable rather than working around it. (ii) Two injections CRASHED the gate part-way —
+one at check 8c, which indexed `[0]` into a list of `cut` edges the mutation had emptied, and one
+inside the winding walk, which looked a `None` corner up in a dict. They measured as 2 and 3
+checks. Both sites were guarded, and the second injection then measured as TWELVE. A crash is not a
+weak bite; it is an unmeasured one, and the gate is what has to be fixed.
+
+Three of the seven are worth their own line for what they say about the code rather than the
+harness. `H` — putting `ring_closes` back to the version that pinned every side's direction — reddens
+check 2 on `b_wake_up` of every document in the spread, which is the negative control for the
+relaxation itself: without it this family's own output fails exactly as the shipped hand-written
+document did. `D` — removing the blunt refusal — reddens check 12 ALONE, and that is the useful
+part: the section is still refused, by the "exactly two surfaces" count one line below, so what the
+injection removes is the SENTENCE and not the safety. And `F` — `GROWTH` 1.2 -> 1.5, 43 radial nodes
+becoming 23 — reddens check 11b alone, against a prediction of "11b and 14": the real mesher meshes
+the coarser grid to zero inverted cells, so the binary cannot see a derivation that is merely worse.
+
+**The panel side is one loop, not a third branch.** `_refresh_topology_counts` now walks
+`(row attribute, family name, planner)` for the two binding families, and the binding CONTEXT is
+built once for a family that needs one — `Family.binds`, the registry's own answer, so a fourth
+family needs no edit there and the H-grid still pays nothing (a context is a `.dat` and a `.meta`
+parse per geometry, paid per keystroke). `tests/test_topology_panel.py` checks 12d-12g are the
+O-grid's own 11/12 asked one family along, with 12g holding the loop's "on every path" property
+that #138's review had to find the hard way for the repair flags.
+
 ##### Named blind spots
 
 * **The far field's six sides carry one boundary name, and nothing here can make that better.** It

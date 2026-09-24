@@ -47,6 +47,48 @@ pre-injection state afterwards. Each line is what the mutation ACTUALLY did, REA
 THE EXIT CODE and not from a count of FAIL lines. Where the result differed from the
 prediction written first, the correction is the record.
 
+  A. the upper surface is always the one LEAVING the trailing edge (the cross-product
+     measurement deleted) -> exit 1, checks 9 and 9b. NOT 9c: the mirrored section's
+     rings still wind counter-clockwise, because the far field is laid out in world
+     axes and only the surface edges' direction changed — which is the same fact this
+     family rests on, seen from the other side.
+  B. the wake declared ``interface`` instead of ``cut`` -> exit 1, checks 8 and 8c.
+     The document is otherwise LEGAL — an interface bounds two blocks too, so checks
+     2, 4, 5 and 7 all stay green and the mesher meshes it; what is lost is the
+     declaration that this line is a cut, which #57's own note says is DECLARED here
+     rather than inferred from the absence of a binding.
+  D. the blunt-trailing-edge refusal removed -> exit 1, check 12 ALONE, and that is
+     the useful part: the section is still refused, by the "exactly two surfaces"
+     count one line below, so what the injection removes is the SENTENCE and not the
+     safety. 12 goes red on the wording, which is what the criterion asks for ("with
+     the problem named").
+  E. the far field's nose placed ahead of the TRAILING edge rather than the leading
+     one -> exit 1, check 13 alone. Nothing else can see it: the document is legal,
+     it meshes, and only the comparison against the shipped hand-written corners
+     knows where f2 belongs.
+  F. ``GROWTH`` 1.2 -> 1.5 -> exit 1, check 11b alone (43 radial nodes became 23,
+     against the shipped document's 41). Predicted "11b and 14"; the mesher meshes
+     the coarser grid to zero inverted cells, so the real binary cannot see it.
+  H. ``ring_closes`` put back to the version that pinned every side's direction ->
+     exit 1, check 2 alone, on ``b_wake_up`` of every document in the spread. This is
+     the negative control for the relaxation itself: without it this family's own
+     output fails the shared checker exactly as the shipped hand-written document did.
+  J. the two wake blocks name the cut as their SOUTH instead of their west -> exit 1,
+     TWELVE checks (2, 4, 8, 9c, the whole 14 series and 16b/16c). The blast radius is
+     the point: naming the same four edges in a different order is not a relabelling,
+     it re-frames both blocks, and the real mesher refuses the document.
+
+  THE FIRST RUN OF THIS HARNESS WAS WRONG TWICE, and both corrections are in the tree
+  rather than in this comment. (i) Apple's python3 caches bytecode OUTSIDE the tree
+  (``~/Library/Caches/com.apple.python``) and validates it by ``(mtime, size)``, so a
+  restore at the SAME SIZE — ``x_le`` for ``x_te`` is exactly that — was silently
+  ignored: ``git status`` was clean, the source file read correctly, and
+  ``far_corners`` still answered with the mutation. Bumping the mtime was not enough;
+  the harness now runs with ``PYTHONDONTWRITEBYTECODE=1``. (ii) Two injections CRASHED
+  this file part-way (B at check 8c, J inside the winding walk), so they measured as
+  2 and 3 checks; both sites were guarded, and J then measured as TWELVE. A crash is
+  not a weak bite, it is an unmeasured one.
+
 NAMED BLIND SPOTS:
 
   * Nothing here drives the GUI. That the panel captures the aerofoil's binding when
@@ -240,10 +282,14 @@ check("8b. ONE declared corner is shared by all FOUR blocks, and FIVE edges end 
       "it — the cut, the two trailing-edge radials and the two surfaces — so the "
       "highest-risk point in the grid is welded by identity and needs no tolerance: "
       + ("; ".join(bad) if bad else "one four-way corner, five edges"), not bad)
-_cut = [e for e in _DOCS[0][1]["edges"] if e["kind"] == "cut"][0]
+# GUARDED, because a mutation that removes the cut altogether must leave the rest of
+# this file RUNNING: an injection that crashes the gate at its third check is measured
+# on three checks, and what the other thirty would have said is then unknown.
+_cuts = [e for e in _DOCS[0][1]["edges"] if e["kind"] == "cut"]
 check(f"8c. ...and the cut carries NO binding, so no face of it reaches the .bnd and "
       f"the two blocks share its nodes by identity rather than coinciding "
-      f"({sorted(_cut)})", "binding" not in _cut)
+      f"({sorted(_cuts[0]) if _cuts else 'there is no cut edge'})",
+      bool(_cuts) and "binding" not in _cuts[0])
 
 # ── 9. the section is READ, not assumed ────────────────────────────────────
 _up, _cu = context("unit")
@@ -294,6 +340,10 @@ def ring_area(doc, ctx, block):
     a, b = s
     d = inv._other_end(w, a)
     c = inv._other_end(e, b)
+    # A ring that does not close has no area rather than a KeyError: check 2 is what
+    # reports that, and a crash here would stop this file before it got there.
+    if c is None or d is None:
+        return 0.0
     pts = [at(x) for x in (a, b, c, d)]
     if any(p is None for p in pts):
         return 0.0
