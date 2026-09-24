@@ -476,6 +476,140 @@ into file segments, and the canvas draws it as a single pyqtgraph item.
   layer, hit-test points, split markers, closing edge, stats — but never the
   analytic (curve) items, which a session can legitimately have on their own.
 
+**A PARAMETRIC AEROFOIL, AND A LAW WRITTEN TWICE ON PURPOSE** (#147, parent #146;
+`app/services/naca_airfoil.py` + `tools/PreProcessor/include/NacaAirfoil.hpp`,
+`app/models/shape_spec.py`'s `naca4` rows, `app/models/project.py::add_airfoil_parts`).
+#133 deferred this in as many words — *"an airfoil shape arrives with the C-grid
+template that actually needs it"* — and the gap it left is upstream of the whole
+template library: the CAD stage offered `line`, `circle`, `arc`, `triangle`,
+`quadrilateral`, `polygon` and `custom`, so the only way to get an aerofoil into a case
+was to bring a `.dat` from outside and bind a template to whatever segmentation that
+file happened to carry.
+
+**Why it is a `curve_type` and not a new kind of object.** It joins `circle` and
+`polygon` in the machinery that already exists: declared in `shape_spec` (defaults,
+dialog fields, sidebar widget names, control points, drag, the drawing tool), generated
+in `GeometryService.compute_curve_preview_pts`, handled in the resampler's `curve_type`
+dispatch, serialised by the one `SegmentModel.to_dict()` that the project file, the
+workspace and the pipeline script all go through. The round trip therefore needed no
+code at all, which is asserted by driving it rather than by saying so
+(`test_naca_airfoil_parity.py` check 5).
+
+**THE LAW HAS ONE OWNER PER HOST, AND THAT IS NOT A PREFERENCE.** #146 asked for ONE
+Qt-free owner both the GUI preview and the resampler read. A Python module cannot be
+read by a C++ binary; the converse is worse, because the canvas preview runs on every
+drag of a control point and must work in a checkout with no build tree — every
+mesher gate in this repo self-skips when `build/` is empty, and a preview that needed
+`surface_resampler` would make drawing a shape depend on having compiled one. So the
+camber/thickness law is written twice, each host having exactly one copy, and
+**`tests/test_naca_airfoil_parity.py` is what makes the pair behave as one**: it drives
+the preview through the real `GeometryService` and the law through the real
+`surface_resampler`, on a config built from a real `SegmentModel.to_dict()`, and
+compares coordinates. Measured 2026-09-24 over seven parameter sets: **worst deviation
+6.9e-11**, which is the `.dat`'s own `setprecision(10)` quantum and not a property of
+the law — so the tolerance is 1e-9 and deliberately not tighter, a tolerance below the
+file's resolution being a measurement of the writer. A source scan was refused for
+#135's reason: a claim about a shared funnel was true in the source while the edit
+never reached it.
+
+Both files are written to be mirrored literally — powers as repeated multiplication
+rather than `**`, the same evaluation order, the two exact endpoints ASSIGNED rather
+than computed — because the thing being protected is a numerical agreement and every
+avoidable difference in spelling is a place for one to appear.
+
+**THE PREVIEW APPLIES THE UNIFORM RE-FIT BECAUSE THE RESAMPLER DOES.** The generator
+samples cosine in x, crowding the points where the surface turns; the resampler then
+hands that polyline to the segment's `uniform` strategy, which redistributes it by arc
+length. The preview therefore ends with `_resample_polyline_uniform` — not decoration,
+and not a choice: `circle` and `line` already do exactly this, for exactly this reason,
+and removing it is one of the injections that bites (M, 1.2e-01 apart). What the cosine
+spacing buys is the FACETING the redistribution interpolates on, which is what keeps
+the nodes near the leading edge on the real surface.
+
+**THE SHAPE ARRIVES SEGMENTED, AND THE SPLIT IS DECIDED IN ONE PLACE.**
+`naca_airfoil.segment_parts` returns `("upper", "lower")` for a sharp section and
+`("upper", "lower", "te")` for a blunt one; `ProjectModel.add_airfoil_parts` turns a
+drawn aerofoil into exactly those `SegmentModel`s, each carrying the same parameters
+and its own `part`, and `AddAirfoilSegmentsCmd` adds them as ONE undo step — three
+presses leaving a lower surface and a trailing edge behind is a geometry nobody
+authored. The ids are the ordinary CAD segment ids, so the C-grid's bindings are the
+stable-id lookups #137 already built and there is no new resolution rule. The node
+budget splits between the two surfaces; the trailing-edge base takes `TE_PART_POINTS`
+of its own rather than a proportional share, which on a base a few thousandths of a
+chord long would be one point.
+
+**A BLUNT TRAILING EDGE IS PRODUCED HERE, AND REFUSED BY THE TEMPLATE.** #147 asked for
+this to be decided and stated rather than left to chance, and the two halves land in
+different tickets. The classic 4-digit thickness law (`-0.1015`) leaves the section OPEN
+at x = 1 by `0.0021*t` of chord; that is a real aerofoil, so it is produced, and its
+base is a real third segment whose span is the law's own `y(1)` doubled (measured
+0.00252 at 12% thickness, gated). The closed variant (`-0.1036`) makes the five
+coefficients sum to zero and is the DEFAULT, because a sharp trailing edge is the one a
+C-grid's four blocks can meet at. What is REFUSED is the shape that does not exist: a
+`te` part on a SHARP section, which would be a zero-length segment, comes back as a
+`NacaError` in Python and an empty point list with a named reason in C++. The C-grid
+family's own refusal of a blunt section belongs to #148 and is a different refusal, for
+a different reason — its four blocks sit on one declared corner a blunt edge has not
+got.
+
+**AN ELEMENT THAT PRODUCED NOTHING NOW SAYS SO.** The resampler used to print
+`Successfully processed element to ... (0 points)` and write an empty `.dat`, which on a
+refused aerofoil appeared one line under the refusal's own reason. A named refusal
+contradicted by the next line reads as noise, so the empty case is reported as the
+failure it is and nothing is written. Reported by the ONE writer, so it cannot be true
+of one shape and not another.
+
+**What the injections found, and one that cannot be fixed by writing a check.** 17
+mutations, 16 bite, recorded in the gate's own docstring. Two lessons are worth more
+than the list. **A parameter the gate does not MOVE is a parameter the gate does not
+check**: every `full` case originally asked for an EVEN node count, and under an even
+count the two ways of rounding the per-side split agree exactly — so a host rounding
+the other way was invisible until an odd-count case existed, and the same injection
+then bit in both hosts. **And six C++ injections came back INERT on the first run for a
+reason that was not the gate's**: make compares timestamps at one-second granularity,
+and an inject-build-restore-build cycle finishes inside one second, so the mutated
+header was never compiled and a real bite looked exactly like a check that does not
+bite. The same shape as this repo's `__pycache__` restore trap, in another language.
+
+**And the per-tool drawing tables left the canvas for `services/canvas_tools.py`.** How
+many points a tool collects (`DRAW_NPTS`) and what it asks for next (`DRAW_HINTS` /
+`draw_hint`) were a class constant and a nine-branch if-chain inside
+`views/canvas_draw_mixin.py`. They are one tool's two facts, and a tool that gains one
+without the other is a tool that never completes or never prompts — so they are now
+declared side by side, in the Qt-free module that already exists for canvas logic
+"away from Qt, so it is testable without a display". What forced the move rather than
+merely justifying it was the 500-line standard: adding the aerofoil tool took that mixin
+to 502, and the table version — being better prose — took it to 507. Moving both tables
+out left it at 472 and `canvas_tools.py` at 244, which is the shape the standard exists
+to produce: a file gets smaller because something belonged elsewhere, not because
+comments were cut to fit a number.
+
+**Named blind spots.**
+- **Nothing joins the parts after they are created.** Changing the chord on the upper
+  surface alone leaves a geometry whose two halves disagree. The preview shows it
+  immediately and no export is silently wrong, but there is no model-level link that
+  would prevent it — the parts are ordinary segments, which is exactly what makes the
+  binding mechanism free. A linked edit is a feature, not a fix, and is not in #147.
+- **The parity gate proves the two hosts AGREE, never that either is RIGHT.** Both
+  could carry the same wrong coefficient. Standing between that and a shipped aerofoil
+  is check 1 alone — a handful of published figures (6% half-thickness at 12%, maximum
+  thickness at x = 0.3, the closed-TE coefficients summing to zero) — not an
+  independent implementation.
+- **One injection stays INERT, measured**: dropping the C++ end-snap leaves the
+  computed value in place, ~1.7e-17 from the assigned one, three orders BELOW the
+  `.dat`'s own quantum, so no comparison against that file can see it. Exactness at the
+  two points where the surfaces meet is checked on the Python owner, where it can be
+  compared with 0.0 itself; the C++ half of it is unguarded and the gate says so.
+- **The single-edge `full` form under-resolves a BLUNT base**, measured rather than
+  fixed: uniform arc-length distribution gives a base 0.25% of chord long no interior
+  node of its own, so the loop cuts that corner. The SEGMENTED form is what a template
+  binds to; `full` is a convenience, and check 4d states the number.
+- **A transform of an aerofoil BAKES it to a polygon**, through
+  `transform_apply_ctrl`'s documented fallback, and the log names it. A similarity
+  transform could stay analytic; a mirror could not (it is a different camber sign),
+  and half a rule is worse than the fallback that already tells the truth.
+
+
 **Window layout** is persisted by `app/services/ui_state.py` — **window geometry and
 dock state, and nothing else** — namespaced by `LAYOUT_VERSION` (now 2; bump it when
 the layout changes so stale state is ignored rather than restored). It never touches
@@ -1245,7 +1379,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 276, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 277, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —

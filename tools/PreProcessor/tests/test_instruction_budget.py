@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eleven rule files now — 58,537 / 50,834 / 45,018 / 39,554 / 37,310 / 35,517 / 25,369 / 22,516 / 15,762 / 12,672 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-topology, mesher, gui-seams, gui-handoff, gui-results, gui-canvas-edit, gui-lifecycle) — so "moving text into another rule file
+    Eleven rule files now — 58,537 / 50,834 / 45,018 / 39,554 / 37,310 / 35,517 / 25,369 / 22,516 / 16,727 / 15,762 / 8,969  characters (mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-topology, mesher, gui-seams, gui-handoff, gui-canvas-edit, gui-results, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 1,463 / 9,166 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    nine, which have 14,982 / 20,446 / 22,690 / 24,483 / 34,631 / 37,484 / 44,238 / 47,328 / 51,031. #76 spent 3,446 of
+    nine, which have 14,982 / 20,446 / 22,690 / 24,483 / 34,631 / 37,484 / 43,273 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 37,955 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 38,091 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 37,955 taken down to the boundary above is 37,500, to
+# are its size and its slack -- and 38,091 taken down to the boundary above is 38,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -679,7 +679,15 @@ _SOURCES = {
 # shape. The figure then went stale at `77c2561` -- the FIRST commit after `9e33a6e` to
 # touch the root at all -- on an edit that stayed INSIDE the band with every check
 # reporting ALL PASS -- #109's defect one level down, inside #109's own fix.
-ROOT_BUDGET = 38_500
+# #147 is the FIFTH re-band and the first whose cause is a rule file GROWING rather than
+# a rule file being born: no row was added, but an area gained three globs and its
+# description one clause, 135 characters, which took the slack to 410. That is the same
+# move as #131's and #136's with the new-file half removed, so the reading stands with
+# one correction: it is not "any ticket that adds a tripwire row" but any ticket that
+# WIDENS one, and a ticket that puts a module under an existing rule file does that by
+# construction. The floor cannot be met by writing less prose here -- a glob list that
+# does not name the globs is the stale enumeration this table exists to prevent.
+ROOT_BUDGET = 39_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

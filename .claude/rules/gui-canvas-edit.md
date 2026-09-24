@@ -3,6 +3,9 @@ paths:
   - tools/PreProcessor/gui/app/views/canvas*
   - tools/PreProcessor/gui/app/services/edge_edit*
   - tools/PreProcessor/gui/app/services/shape_refit*
+  - tools/PreProcessor/gui/app/services/naca_airfoil*
+  - tools/PreProcessor/gui/app/services/canvas_tools*
+  - tools/PreProcessor/gui/app/models/shape_spec*
   - tools/PreProcessor/gui/app/commands/**
   - tools/PreProcessor/gui/app/popup_stack.py
 ---
@@ -23,7 +26,15 @@ where `_edit_in_progress()` still is — plus the four controllers that open, co
 `controllers/undo_ctrl.py` (the module global undo is named after),
 `controllers/transform_apply_ctrl.py` (the whole of duplicate/transform closure), and
 `controllers/segment_canvas_ctrl.py` (`_geometry_connect`, `_apply_geometry_update`,
-`_clear_geometry_canvas` — the one-polyline rules).
+`_clear_geometry_canvas` — the one-polyline rules). For the aerofoil block (#147):
+`services/geometry_service.py` (the preview branch), `models/project.py`
+(`add_airfoil_parts`), `views/panels/edge_props_shape_build_mixin.py` and
+`views/panels/edge_props_panel.py` (the sidebar page and the combo row, whose OWN rules
+are `.claude/rules/gui-panels-config.md`'s), `views/shape_dialog.py`,
+`controllers/signal_wiring_ctrl.py` (the shape-tool menu) — and, outside the GUI tree
+altogether, `tools/PreProcessor/include/NacaAirfoil.hpp` and
+`tools/PreProcessor/src/main.cpp`, which `.claude/rules/mesher.md`'s `include/**` and
+`src/**` DO reach while that file carries no rule about the resampler's shape dispatch.
 
 **Pop-up stacking reaches furthest of all, and no glob of this file reaches a single call site**:
 `app/utils.py` re-exports `keep_on_top`, and **every** modeless pop-up must go through it, so the
@@ -127,6 +138,50 @@ finished reordering.
   list, and a pop-up parented to a panel is hidden with that panel.
 - `BatchDialog` opts out on purpose (it runs for minutes and must be free to sit behind).
 Gated by `tests/test_popup_stacking.py`.
+
+**A PARAMETRIC NACA 4-DIGIT AEROFOIL IS A `curve_type`, AND ITS LAW HAS ONE OWNER PER
+HOST** (`services/naca_airfoil.py`, Qt-free and stdlib-only;
+`tools/PreProcessor/include/NacaAirfoil.hpp`; `models/shape_spec.py`'s `naca4` rows;
+`models/project.py::add_airfoil_parts`; #147). It joins `circle` and `polygon` in the
+machinery that exists — no new kind of object, and the project file / workspace /
+pipeline round trip comes free from `SegmentModel.to_dict()`.
+- **The law is written TWICE, once per host, and that is deliberate.** A Python module
+  cannot be read by a C++ binary, and the canvas preview must run on every drag with no
+  build tree. Each host has exactly ONE copy; a third anywhere is the defect.
+- **What holds them together is `tests/test_naca_airfoil_parity.py`, which DRIVES BOTH**
+  — the preview through `GeometryService`, the law through the real `surface_resampler`
+  — and compares coordinates. **A source scan is not a substitute** (#135). Tolerance
+  1e-9 and NOT tighter: the `.dat` is written at `setprecision(10)`, so 5e-11 is its own
+  quantum and anything below that measures the writer.
+- **Mirror it literally**: powers as repeated multiplication, the same evaluation order,
+  the two exact endpoints ASSIGNED rather than computed. A change to one file without
+  the same change to the other is what that gate catches.
+- **The preview ends with `_resample_polyline_uniform` because the resampler's `uniform`
+  strategy does the same to the generated polyline** — as `circle` and `line` already
+  do. Removing it is an injection that bites.
+- **The shape arrives SEGMENTED, and `naca_airfoil.segment_parts` is the only thing that
+  decides how**: upper + lower for a sharp section, plus a trailing-edge base for a
+  blunt one. The parts are ordinary CAD segments with ordinary ids, so a topology
+  template binds through #137's stable-id lookups with no new rule, and
+  `AddAirfoilSegmentsCmd` adds them in ONE undo step.
+- **A blunt trailing edge is PRODUCED, correctly; a `te` part on a SHARP section is
+  REFUSED** with the reason named, in both hosts. The C-grid template's refusal of a
+  blunt section (#148) is a different refusal for a different reason.
+- **An element that produced NO points is reported as a failure and writes nothing** —
+  by the one writer in `tools/PreProcessor/src/main.cpp`, so it is true of every shape.
+- **`shape_spec`'s non-numeric shape parameters are TABLES** (`TEXT_ATTRS`,
+  `BOOL_ATTRS`), not per-type branches in the widget helpers. The polygon's vertex
+  string was the first and was a hand-written special case; the second one made it a
+  table. A third must go in the table.
+Gated by `tests/test_naca_airfoil_parity.py` (64 checks, 17 recorded injections) and
+`tests/test_naca_airfoil_gui.py` (18 checks, through the real `AppController`).
+Blind spots: in those two files' docstrings, and below.
+
+**The per-tool shape-drawing tables are `services/canvas_tools.py`'s, not the canvas
+mixin's** (`DRAW_NPTS`, `DRAW_HINTS`, `draw_hint`). How many points a tool collects and
+what it asks for next are one tool's two facts; declaring them side by side is what
+stops a new tool having one and not the other, and Qt-free is what makes them readable
+without a display.
 
 **Duplicate/transform closure is type-preserving, and only the polygon-bake fallback re-derives the
 `closed` flag** (`transform_apply_ctrl`): a line stays a line, an **arc stays an arc**…, and the copy
