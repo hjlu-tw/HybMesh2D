@@ -4,6 +4,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <iostream>
 #include "GeomUtils.hpp"
 
@@ -40,12 +41,18 @@ public:
     // rather than meshed as an accidental shape.
     static bool parseDesignation(const std::string& text, double& m, double& p,
                                  double& t, std::string& why) {
-        std::string s;
-        for (char c : text) if (!std::isspace(static_cast<unsigned char>(c))) s += c;
+        // SURROUNDING whitespace only, and ASCII digits only -- both of these
+        // were divergences from the Python owner, found by review rather than
+        // imagined here: stripping whitespace ANYWHERE made "0 012" a valid
+        // section in this binary and a refusal on the canvas. The messages
+        // below are the Python owner's word for word, because the parity gate
+        // reads them to prove the binary refused for the reason the law
+        // refuses -- two wordings make that check pass on a different refusal.
+        std::string s = trim(text);
         for (auto& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-        if (s.rfind("NACA", 0) == 0) s = s.substr(4);
+        if (s.rfind("NACA", 0) == 0) s = trim(s.substr(4));
         bool digits = (s.size() == 4);
-        for (char c : s) if (!std::isdigit(static_cast<unsigned char>(c))) digits = false;
+        for (char c : s) if (c < '0' || c > '9') digits = false;
         if (!digits) {
             why = "NACA designation '" + text + "' is not four digits (e.g. 0012 or 2412).";
             return false;
@@ -54,11 +61,14 @@ public:
         p = (s[1] - '0') / 10.0;
         t = std::stoi(s.substr(2)) / 100.0;
         if (t <= 0.0) {
-            why = "NACA designation '" + text + "' has zero thickness.";
+            why = "NACA designation '" + text + "' has zero thickness; the last "
+                  "two digits are thickness in per cent of chord.";
             return false;
         }
         if (m > 0.0 && p <= 0.0) {
-            why = "NACA designation '" + text + "' has camber but places it at x = 0.";
+            why = "NACA designation '" + text + "' has camber (first digit "
+                  + std::string(1, s[0]) + ") but places it at x = 0 (second "
+                  "digit 0); a cambered section needs 1-9 there.";
             return false;
         }
         return true;
@@ -101,24 +111,37 @@ public:
     // caller reports it; a segment with no points is skipped downstream rather
     // than meshed as something the user did not draw.
     static std::vector<Point2D> points(const std::string& designation, int n,
-                                       const std::string& part, double chord,
+                                       const std::string& partIn, double chord,
                                        double xLe, double yLe, double alphaDeg,
                                        bool sharpTe, std::string& why) {
         std::vector<Point2D> out;
         double m = 0.0, p = 0.0, t = 0.0;
         if (!parseDesignation(designation, m, p, t, why)) return out;
+        // The Python owner spells this `str(part or "full").lower()`, so an
+        // empty key and a capitalised one mean the same thing there; they were
+        // refusals here, which is a divergence about what the two hosts ACCEPT
+        // rather than about where either puts a point -- the class of defect no
+        // comparison of coordinates can see.
+        std::string part = partIn.empty() ? std::string("full") : partIn;
+        for (auto& c : part) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         if (part != "full" && part != "upper" && part != "lower" && part != "te") {
-            why = "Unknown aerofoil part '" + part + "'.";
+            why = "Unknown aerofoil part '" + partIn + "'; expected one of "
+                  "full, upper, lower, te.";
             return out;
         }
-        if (chord <= 0.0) { why = "Aerofoil chord must be positive."; return out; }
+        if (chord <= 0.0) {
+            why = "Aerofoil chord must be positive (got " + fmtG(chord) + ").";
+            return out;
+        }
         if (n < 2) n = 2;
 
         std::vector<Point2D> local;
         if (part == "te") {
             if (sharpTe) {
                 why = "This aerofoil has a SHARP trailing edge, so it has no "
-                      "trailing-edge segment.";
+                      "trailing-edge segment: the upper and lower surfaces meet "
+                      "at one point. Turn the sharp trailing edge off to give "
+                      "it a blunt base.";
                 return out;
             }
             Point2D lo = surfacePoint(1.0, m, p, t, false, false);
@@ -146,6 +169,21 @@ public:
     }
 
 private:
+    // `%g` for a double, so a refusal message reads the same on both sides of
+    // the seam (Python formats the same value the same way).
+    static std::string fmtG(double v) {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "%g", v);
+        return std::string(buf);
+    }
+
+    static std::string trim(const std::string& v) {
+        size_t a = 0, b = v.size();
+        while (a < b && std::isspace(static_cast<unsigned char>(v[a]))) ++a;
+        while (b > a && std::isspace(static_cast<unsigned char>(v[b - 1]))) --b;
+        return v.substr(a, b - a);
+    }
+
     // Cosine spacing; `fromTe` runs 1 -> 0 (the upper surface's direction).
     // cos(0) is 1.0 and cos(pi) is -1.0 exactly, so both ends are exact.
     static double cosineX(int k, int n, bool fromTe) {

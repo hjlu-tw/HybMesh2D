@@ -94,15 +94,35 @@ SIDEBAR_ATTRS: dict[str, dict[str, str]] = {
 # parameter kind rather than a second special case. Behaviour for polygon is
 # unchanged: it has no SIDEBAR_ATTRS row, so it still reads back exactly
 # ``{"vertices_str": ...}``.
+POLYGON_VERTICES_ATTR = "poly_vertices"
+
 TEXT_ATTRS: dict[str, dict[str, str]] = {
-    "polygon": {"vertices_str": "poly_vertices"},
+    "polygon": {"vertices_str": POLYGON_VERTICES_ATTR},
     "naca4": {"designation": "naca_designation"},
 }
 BOOL_ATTRS: dict[str, dict[str, str]] = {
     "naca4": {"sharp_te": "naca_sharp_te"},
 }
 
-POLYGON_VERTICES_ATTR = "poly_vertices"
+# Labels for the parameters FIELDS does not carry, because FIELDS is the
+# NUMERIC layout. Declared rather than derived from the key: deriving gave the
+# modal dialog "Sharp Te" while the sidebar said "Sharp trailing edge", which is
+# two names for one control and exactly what this module exists to prevent.
+PARAM_LABELS: dict[str, dict[str, str]] = {
+    "polygon": {"vertices_str": "Vertices"},
+    "naca4": {"designation": "Designation", "sharp_te": "Sharp trailing edge"},
+}
+
+
+def param_label(curve_type: str, key: str) -> str:
+    """The user-facing label for one shape parameter, numeric or not."""
+    declared = PARAM_LABELS.get(curve_type, {}).get(key)
+    if declared:
+        return declared
+    for k, label in FIELDS.get(curve_type, []):
+        if k == key:
+            return label
+    return key.replace("_", " ").title()
 POLYGON_DEFAULT = DEFAULTS["polygon"]["vertices_str"]
 
 # Parameter keys that are ANGLES: stored internally in radians (the samplers and

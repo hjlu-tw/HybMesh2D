@@ -6,6 +6,9 @@ from app.services.geometry_service import GeometryService
 from app.models import shape_spec
 from app.controllers.curve_ctrl import _apply_default_polygon_spacing
 from app.utils import block_signals
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 
 class CurveDrawControllerMixin:
@@ -143,7 +146,14 @@ class CurveDrawControllerMixin:
             # designation is the reachable case — and the reason is the only
             # thing that explains the blank preview. Transient on purpose: the
             # next keystroke replaces it, so it never becomes a modal or one log
-            # line per character.
+            # line per character. The `debug` beside it is what makes this a
+            # RECORDING handler rather than a discarding one: the status bar
+            # shows `str(exc)`, which for an unexpected AttributeError is not a
+            # diagnosis, and the call rate is why it is `debug` and not
+            # `warning` (gui-seams.md, "A site called PER SAMPLE or per
+            # repaint").
+            _log.debug("pending-edge preview failed for a %s edge",
+                       getattr(seg, "curve_type", "?"), exc_info=True)
             self.main_window.flash_status(str(exc) or type(exc).__name__, 4000)
         if xs is not None and ys is not None and len(xs) > 0:
             canvas.update_curve_preview(session.session_id, np.column_stack([xs, ys]))

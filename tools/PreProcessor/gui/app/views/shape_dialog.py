@@ -77,13 +77,18 @@ class ShapeParamDialog(QDialog):
                 "endpoints.")
             form.addRow(self._closed_cb)
         else:
-            for key, attr in shape_spec.TEXT_ATTRS.get(self._curve_type, {}).items():
+            # Labels come from shape_spec, like the numeric rows' do: deriving
+            # them from the key gave this dialog "Sharp Te" while the sidebar
+            # said "Sharp trailing edge" — one control under two names.
+            for key in shape_spec.TEXT_ATTRS.get(self._curve_type, {}):
                 edit = QLineEdit(str(p.get(key, "")))
                 edit.setStyleSheet(SPIN_STYLE)
                 self._texts[key] = edit
-                form.addRow(QLabel(key.replace("_", " ").title() + ":"), edit)
-            for key, attr in shape_spec.BOOL_ATTRS.get(self._curve_type, {}).items():
-                box = QCheckBox(key.replace("_", " ").title())
+                form.addRow(
+                    QLabel(shape_spec.param_label(self._curve_type, key) + ":"),
+                    edit)
+            for key in shape_spec.BOOL_ATTRS.get(self._curve_type, {}):
+                box = QCheckBox(shape_spec.param_label(self._curve_type, key))
                 box.setChecked(bool(p.get(key, False)))
                 self._bools[key] = box
                 form.addRow(box)

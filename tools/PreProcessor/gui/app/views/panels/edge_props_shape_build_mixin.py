@@ -341,72 +341,10 @@ class EdgePropsShapeBuildMixin:
                 layout_line, layout_circle, layout_arc, layout_tri, layout_quad,
                 layout_naca]
 
-    def _build_naca_page(self):
-        """Widget 9: the parametric NACA 4-digit aerofoil.
+    # (The `# Connect combobox switch` note that used to sit here was orphaned
+    # after a `return` long before #147 and said nothing about any live code;
+    # the wiring it referred to is `wire_curve_edits` below.)
 
-        The widget NAMES are shape_spec's (``SIDEBAR_ATTRS`` / ``TEXT_ATTRS`` /
-        ``BOOL_ATTRS``), so the read/write pair and the edit wiring pick them up
-        with no second list. ``part`` has no widget on purpose: which piece of
-        the section an edge is, is decided when the aerofoil is CREATED (two
-        surfaces, plus a trailing-edge base when it is blunt), and a combo that
-        let one edge become the other's part would leave the geometry with two
-        uppers and no lower.
-        """
-        widget_naca = QWidget()
-        layout_naca = QFormLayout(widget_naca)
-        layout_naca.setContentsMargins(0, 0, 0, 0)
-
-        self.naca_designation = QLineEdit(shape_spec.DEFAULTS["naca4"]["designation"])
-        self.naca_designation.setStyleSheet(SPIN_STYLE)
-        self.naca_designation.setToolTip(
-            "NACA 4-digit designation, e.g. 0012 (symmetric, 12% thick) or\n"
-            "2412 (2% camber at 40% chord, 12% thick).")
-        self.naca_chord = CleanDoubleSpinBox()
-        self.naca_chord.setRange(1e-6, 1e6)
-        self.naca_chord.setDecimals(4)
-        self.naca_chord.setValue(1.0)
-        self.naca_chord.setStyleSheet(SPIN_STYLE)
-        self.naca_chord.setToolTip("Chord length, leading edge to trailing edge")
-        self.naca_x_le = CleanDoubleSpinBox()
-        self.naca_x_le.setRange(-1e6, 1e6)
-        self.naca_x_le.setDecimals(4)
-        self.naca_x_le.setStyleSheet(SPIN_STYLE)
-        self.naca_x_le.setToolTip("X-coordinate of the leading edge")
-        self.naca_y_le = CleanDoubleSpinBox()
-        self.naca_y_le.setRange(-1e6, 1e6)
-        self.naca_y_le.setDecimals(4)
-        self.naca_y_le.setStyleSheet(SPIN_STYLE)
-        self.naca_y_le.setToolTip("Y-coordinate of the leading edge")
-        self.naca_alpha = CleanDoubleSpinBox()
-        self.naca_alpha.setRange(-180.0, 180.0)
-        self.naca_alpha.setDecimals(2)
-        self.naca_alpha.setSuffix("\u00b0")
-        self.naca_alpha.setStyleSheet(SPIN_STYLE)
-        self.naca_alpha.setToolTip(
-            "Angle of attack: the section is pitched by MINUS this angle about\n"
-            "its leading edge, so a positive value is nose-up against a flow\n"
-            "running along +X.")
-        self.naca_sharp_te = QCheckBox("Sharp trailing edge")
-        self.naca_sharp_te.setChecked(True)
-        self.naca_sharp_te.setStyleSheet("color:#a0a8c0; font-size:11px;")
-        self.naca_sharp_te.setToolTip(
-            "On: the closed-trailing-edge variant (-0.1036), so the two\n"
-            "surfaces meet at one point.\n"
-            "Off: the report's open trailing edge (-0.1015), whose base is a\n"
-            "segment of its own.")
-        layout_naca.addRow(help_label("Designation:", "NACA 4-digit designation, e.g. 0012"),
-                           self.naca_designation)
-        layout_naca.addRow(help_label("Chord:", "Chord length"), self.naca_chord)
-        layout_naca.addRow(help_label("Leading edge:", "Leading-edge position (x, y)"),
-                           self._xy_row(self.naca_x_le, self.naca_y_le))
-        layout_naca.addRow(help_label("Angle of attack:", "Nose-up angle in degrees"),
-                           self.naca_alpha)
-        layout_naca.addRow(help_widget(self.naca_sharp_te,
-                           "Off gives the report's open (blunt) trailing edge"))
-        self.shape_stack.addWidget(widget_naca)
-        return layout_naca
-
-        # Connect combobox switch
 
     # ── The analytic-edge form's interface ───────────────────────────────
     def _curve_scalar_widgets(self):
@@ -473,8 +411,12 @@ class EdgePropsShapeBuildMixin:
         """What the analytic-edge form currently says."""
         curve_type = curve_type_for_index(self.curve_type_combo.currentIndex())
         shape_params = {}
-        if (curve_type in shape_spec.SIDEBAR_ATTRS
-                or curve_type in shape_spec.TEXT_ATTRS):
+        # All THREE parameter tables, not two: a shape whose only declared
+        # parameter is a checkbox would otherwise read back `{}` and the form
+        # would author nothing at all.
+        if any(curve_type in table for table in
+               (shape_spec.SIDEBAR_ATTRS, shape_spec.TEXT_ATTRS,
+                shape_spec.BOOL_ATTRS)):
             shape_params = shape_spec.read_widget_params(self, curve_type)
         return CurveEditSpec(
             curve_type=curve_type,

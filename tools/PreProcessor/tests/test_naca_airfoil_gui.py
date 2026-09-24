@@ -76,6 +76,7 @@ app = QApplication.instance() or QApplication(sys.argv)
 from app.controller import AppController                           # noqa: E402
 from app.models import shape_spec                                  # noqa: E402
 from app.models.curve_edit_spec import CURVE_TYPES                 # noqa: E402
+from app.models.segment import SegmentModel                        # noqa: E402
 from app.services import naca_airfoil as na                        # noqa: E402
 from app.services.canvas_tools import DRAW_NPTS, draw_hint         # noqa: E402
 from app.services.geometry_service import GeometryService          # noqa: E402
@@ -206,6 +207,33 @@ check(ep.naca_designation.text() == "4415"
       "4. ...including the two that are NOT spin boxes: the designation (%r) "
       "and the sharp-TE flag (%r)"
       % (ep.naca_designation.text(), ep.naca_sharp_te.isChecked()))
+
+
+# ── 6. the one parameter a PART may not change on its own ─────────────────── #
+# #147's review found the reachable broken state: un-ticking Sharp trailing edge
+# on the upper surface alone leaves that edge blunt, its sibling sharp, and no
+# trailing-edge segment created — an inconsistent section a template would then
+# bind to, with nothing on screen saying so. It decides the SEGMENT SET, which
+# is what separates it from every other aerofoil parameter (those are merely
+# wrong-looking on one part, and the preview shows it).
+check(not ep.naca_sharp_te.isEnabled(),
+      "6. the sharp-TE flag is read-only on a PART of a split aerofoil")
+check("Draw the aerofoil again" in ep.naca_sharp_te.toolTip(),
+      "6. ...and says why, where a greyed control is looked at (%r)"
+      % ep.naca_sharp_te.toolTip()[-40:])
+
+whole = SegmentModel(99, -1, -1)
+whole.type = "curve"
+whole.curve_type = "naca4"
+whole.curve_mode = "parametric"
+whole.parameters = dict(shape_spec.DEFAULTS["naca4"])
+whole.parameters["n_points"] = 60
+sess.project_model.segments.append(whole)
+c._select_segment_by_index(len(sess.project_model.segments) - 1)
+app.processEvents()
+check(ep.naca_sharp_te.isEnabled(),
+      "6. ...while a WHOLE section (part=full) may still change it — the rule "
+      "is about the split, not about the shape")
 
 
 # ── 5. a blunt section arrives as three edges ─────────────────────────────── #

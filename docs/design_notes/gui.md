@@ -584,12 +584,54 @@ out left it at 472 and `canvas_tools.py` at 244, which is the shape the standard
 to produce: a file gets smaller because something belonged elsewhere, not because
 comments were cut to fit a number.
 
+**WHAT THE REVIEW FOUND, and the one the parity gate was blind to by construction.** The
+Standards axis read the two hosts line by line and found FOUR divergences, every one of
+them about which INPUTS the hosts accept rather than about where either puts a point — so
+no comparison of coordinates could ever see one, because a gate that compares the output
+of inputs BOTH hosts accept never reaches them. `"0 012"` was a `NacaError` on the canvas
+and a valid 0012 in the resampler, which had stripped whitespace anywhere in the string;
+the full-width digits `"００１２"` were accepted by `str.isdigit()` and parsed by `int()`
+while `std::isdigit` refused them; an empty or capitalised `part` was normalised in
+Python and refused in C++; and the refusal MESSAGES differed, which would let a
+message-matching check pass on a refusal that happened for another reason. All four are
+fixed in both hosts, and check 7 now drives each input through the law AND the binary and
+requires the same verdict with the same sentence. **The lesson is the gate's shape, not
+the four bugs**: a parity gate over outputs is blind to the input domain, and the fix is
+a check over what is REFUSED.
+
+**WHY A SHARP SECTION HAS NO TRAILING-EDGE SEGMENT, although #147's own prose asks for
+one.** The ticket says the shape arrives segmented *"so the C-grid family has upper,
+lower and trailing-edge segments to bind to by stable id"*, while its parent #146 decides
+*"A blunt trailing edge is a refusal, not a repair"* — so on every section the C-grid
+will accept, the `te` part does not exist, and the two sentences cannot both be honoured.
+They do not need to be: the C-grid's trailing edge is **one declared CORNER where four
+blocks meet**, not an edge, and a corner binds to a position on a segment — the shared
+endpoint of `upper` and `lower`. #148 therefore binds its trailing-edge corner to the end
+of the upper surface and needs no third segment; what it would have no way to use is the
+`te` segment, which only exists on the sections it refuses. Recorded here rather than
+resolved in code because the resolution IS the code: a zero-length segment is refused
+(with its reason) instead of being manufactured to satisfy a sentence.
+
 **Named blind spots.**
+- **Segment ids are POSITIONAL, and that is #137's mechanism rather than this one's.**
+  `ProjectModel.renumber_segments` reassigns 1..N in list order on add, delete and
+  export, so drawing an aerofoil shifts every later edge's id by two or three. The
+  aerofoil's parts are no worse off than any other edge — the criterion asks for ids
+  "like any other CAD segment" and they are exactly that — but a binding stored as an
+  int id is re-pointed by a reorder, and #148 will store three of them. Worth settling
+  before it, and named here so it is settled deliberately.
 - **Nothing joins the parts after they are created.** Changing the chord on the upper
   surface alone leaves a geometry whose two halves disagree. The preview shows it
   immediately and no export is silently wrong, but there is no model-level link that
   would prevent it — the parts are ordinary segments, which is exactly what makes the
   binding mechanism free. A linked edit is a feature, not a fix, and is not in #147.
+  **ONE of the parameters is guarded, and the line is which ones change the SEGMENT
+  SET.** Un-ticking *Sharp trailing edge* on one part alone would leave that edge blunt,
+  its sibling sharp, and no trailing-edge segment created — an inconsistent section a
+  template would then bind to, with nothing on screen saying so. Every other parameter
+  edited on one part is merely wrong-LOOKING and the preview shows it. So the checkbox is
+  read-only once the aerofoil has been split, with a tooltip saying why and what to do
+  instead; the rest stay editable, which is the honest scope of the guard.
 - **The parity gate proves the two hosts AGREE, never that either is RIGHT.** Both
   could carry the same wrong coefficient. Standing between that and a shipped aerofoil
   is check 1 alone — a handful of published figures (6% half-thickness at 12%, maximum
@@ -1379,7 +1421,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 277, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 278, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —

@@ -16,9 +16,11 @@ from app.views.panels.edge_props_shapes_mixin import EdgePropsShapesMixin
 from app.views.panels.edge_props_dist_mixin import EdgePropsDistMixin
 from app.views.panels.edge_props_dialogs_mixin import EdgePropsDialogsMixin
 from app.views.panels.edge_props_shape_build_mixin import EdgePropsShapeBuildMixin
+from app.views.panels.edge_props_naca_mixin import EdgePropsNacaMixin
 
 class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixin,
-                     EdgePropsDialogsMixin, EdgePropsShapeBuildMixin):
+                     EdgePropsDialogsMixin, EdgePropsShapeBuildMixin,
+                     EdgePropsNacaMixin):
     # The panel says WHAT happened, never which widget it happened on. Declared
     # here rather than on EdgePropsDistMixin because PyQt only collects signals
     # from a class built by the Qt metaclass, which a plain mixin is not.
@@ -277,6 +279,18 @@ class EdgePropsPanel(CollapsibleSection, EdgePropsShapesMixin, EdgePropsDistMixi
 
         # #2: the By-Node/By-Spacing mode row applies to polygon only; a stored
         # 'spacing' key means the polygon is distributed by spacing.
+        # The sharp-TE flag decides the aerofoil's SEGMENT SET, not just its
+        # drawing: turning it off on one part of an already-split section would
+        # leave that part blunt, its sibling sharp, and no trailing-edge segment
+        # created — an inconsistent section a topology template would then bind
+        # to, with nothing on screen saying so. Every OTHER aerofoil parameter
+        # edited on one part alone is merely wrong-looking, and the preview
+        # shows it. So this one is read-only once the aerofoil has been split;
+        # changing it means drawing the section again.
+        self._set_naca_te_editable(
+            not (curve_type == "naca4"
+                 and seg.parameters.get("part", "full") != "full"))
+
         is_poly = (curve_type == "polygon")
         self.curve_dist_mode.setVisible(is_poly)
         if self._curve_mode_label:

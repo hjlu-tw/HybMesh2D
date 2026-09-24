@@ -26,6 +26,7 @@ from app.styles import (
 # the GUI toolkit (see that module's docstring). Re-exported here so the Qt-side
 # call sites that already say `from app.utils import repo_root` keep working;
 # the `X as X` form marks them as intentional re-exports for the linter.
+from app.services.naca_airfoil import part_label
 from app.services.paths import (
     repo_root as repo_root,
     find_binary_executable as find_binary_executable,
@@ -196,14 +197,8 @@ CURVE_TYPE_LABELS = {
     # tree shows three identical rows.
     "naca4": lambda seg: "NACA %s %s" % (
         seg.parameters.get("designation", "0012"),
-        _naca_part_label(seg.parameters.get("part", "full"))),
+        part_label(seg.parameters.get("part", "full"))),
 }
-
-
-def _naca_part_label(part: str) -> str:
-    """The aerofoil part's user-facing name, from its one owner."""
-    from app.services.naca_airfoil import part_label
-    return part_label(part)
 
 
 def make_button(text: str, color: str = '#26293c', *,

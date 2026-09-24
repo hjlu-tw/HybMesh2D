@@ -84,7 +84,14 @@ def parse_designation(text) -> tuple[float, float, float]:
     s = str(text).strip().upper()
     if s.startswith("NACA"):
         s = s[4:].strip()
-    if len(s) != 4 or not s.isdigit():
+    # ASCII digits only, and SURROUNDING whitespace only. Both halves are
+    # divergences a review found between the two hosts rather than hazards
+    # imagined here: `str.isdigit()` accepts the full-width forms, which
+    # `int()` then parses happily while `std::isdigit` refuses them; and
+    # stripping whitespace anywhere in the string (which the C++ side did)
+    # made "0 012" a NacaError on the canvas and a valid section in the
+    # resampler. Check 7 of the parity gate drives both hosts on both.
+    if len(s) != 4 or not all(ch in "0123456789" for ch in s):
         raise NacaError(
             "NACA designation %r is not four digits (e.g. 0012 or 2412)." % text)
     m = int(s[0]) / 100.0
@@ -94,6 +101,10 @@ def parse_designation(text) -> tuple[float, float, float]:
         raise NacaError(
             "NACA designation %r has zero thickness; the last two digits are "
             "thickness in per cent of chord." % text)
+    # Both refusals below are worded IDENTICALLY in NacaAirfoil.hpp. The reason
+    # is not tidiness: the gate reads the resampler's message to prove the
+    # binary refused for the reason the law refuses, and two wordings make that
+    # check pass on a refusal that happened for another reason.
     # A cambered section needs its camber position: '2012' puts maximum camber
     # at x = 0, where the two-branch law divides by p*p.
     if m > 0.0 and p <= 0.0:

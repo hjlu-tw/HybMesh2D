@@ -8,6 +8,9 @@ paths:
   - tools/PreProcessor/gui/app/models/shape_spec*
   - tools/PreProcessor/gui/app/commands/**
   - tools/PreProcessor/gui/app/popup_stack.py
+  - tools/PreProcessor/gui/app/views/panels/edge_props_naca*
+  - tools/PreProcessor/include/NacaAirfoil*
+  - tools/PreProcessor/src/main.cpp
 ---
 
 # GUI canvas and editing rules
@@ -29,12 +32,15 @@ where `_edit_in_progress()` still is — plus the four controllers that open, co
 `_clear_geometry_canvas` — the one-polyline rules). For the aerofoil block (#147):
 `services/geometry_service.py` (the preview branch), `models/project.py`
 (`add_airfoil_parts`), `views/panels/edge_props_shape_build_mixin.py` and
-`views/panels/edge_props_panel.py` (the sidebar page and the combo row, whose OWN rules
-are `.claude/rules/gui-panels-config.md`'s), `views/shape_dialog.py`,
-`controllers/signal_wiring_ctrl.py` (the shape-tool menu) — and, outside the GUI tree
-altogether, `tools/PreProcessor/include/NacaAirfoil.hpp` and
-`tools/PreProcessor/src/main.cpp`, which `.claude/rules/mesher.md`'s `include/**` and
-`src/**` DO reach while that file carries no rule about the resampler's shape dispatch.
+`views/panels/edge_props_panel.py` (the shape stack's host and the combo row, whose OWN
+rules are `.claude/rules/gui-panels-config.md`'s), `views/shape_dialog.py`,
+`controllers/signal_wiring_ctrl.py` (the shape-tool menu). **The two RESAMPLER files are
+reached by this file's own last two globs, deliberately rather than by inheritance**: the
+first draft of this paragraph ASSERTED that `.claude/rules/mesher.md`'s `src/**` and
+`include/**` match a path nested under `tools/PreProcessor/`, and one observation of that
+is not a measurement — so the globs here name the two files outright and the claim is
+gone rather than argued. `mesher.md` carries no rule about the resampler's shape dispatch
+either way.
 
 **Pop-up stacking reaches furthest of all, and no glob of this file reaches a single call site**:
 `app/utils.py` re-exports `keep_on_top`, and **every** modeless pop-up must go through it, so the
@@ -175,7 +181,9 @@ pipeline round trip comes free from `SegmentModel.to_dict()`.
   table. A third must go in the table.
 Gated by `tests/test_naca_airfoil_parity.py` (64 checks, 17 recorded injections) and
 `tests/test_naca_airfoil_gui.py` (18 checks, through the real `AppController`).
-Blind spots: in those two files' docstrings, and below.
+Blind spots: in those two gates' docstrings and in `docs/design_notes/gui.md` — this
+file has no `## Named blind spots` section, which is where its header sends every other
+rule in it.
 
 **The per-tool shape-drawing tables are `services/canvas_tools.py`'s, not the canvas
 mixin's** (`DRAW_NPTS`, `DRAW_HINTS`, `draw_hint`). How many points a tool collects and

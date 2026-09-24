@@ -428,6 +428,21 @@ first_line = (proc.stderr.strip().splitlines() or [""])[0]
 check("SHARP trailing edge" in proc.stderr,
       "4b. ...and the resampler NAMES the reason: %r" % first_line[:90])
 
+# The refusal is the ELEMENT's, and only when it asked for something. An
+# element declaring NO segments asked for nothing and must stay a success, or
+# one empty entry takes a whole multi-element resample down with it — the blast
+# radius #147's review measured on the first version of this.
+empty_out = os.path.join(tmp, "empty.dat")
+empty_cfg = os.path.join(tmp, "empty.json")
+with open(empty_cfg, "w", encoding="utf-8") as f:
+    json.dump({"elements": [{"name": "nothing", "input_file": "",
+                             "output_file": empty_out, "segments": []}]}, f)
+pe = subprocess.run([_EXE, empty_cfg], cwd=_ROOT, capture_output=True,
+                    text=True, timeout=60)
+check(pe.returncode == 0,
+      "4c. an element that DECLARED no segments is still a success (rc=%d)"
+      % pe.returncode)
+
 bad = make_seg({"designation": "banana", "part": "full"}, 20)
 proc, pts = resample([bad], name="bad_desig")
 check(proc.returncode != 0 and "four digits" in proc.stderr,
@@ -444,6 +459,65 @@ check(len(on_base) < 3,
       "4d. MEASURED, not fixed: the single-edge `full` form leaves the blunt "
       "base with %d node(s) of its own — the SEGMENTED form is what a template "
       "binds to" % len(on_base))
+
+
+# ── 7. the two hosts agree about what they REFUSE, and how they SAY it ────── #
+# Added by #147's review, which found FOUR divergences that every check above
+# was blind to: all of them are about which INPUTS the two hosts accept, and a
+# gate that only compares the points of inputs both accept cannot see one.
+# `_REFUSALS` drives each input through the law AND through the binary and
+# requires the same verdict, with the same sentence when it is a refusal — the
+# wording matters because a message-matching check on two different wordings
+# passes on a refusal that happened for another reason.
+
+REFUSALS = [
+    ("  0012  ", "surrounding whitespace is stripped by both"),
+    ("0 012", "INTERNAL whitespace is not: the C++ side used to strip it, so "
+              "this drew on the canvas' refusal and meshed as 0012"),
+    ("naca2412", "a lower-case NACA prefix"),
+    ("NACA 0012", "a prefixed designation with a space after it"),
+    ("\uff10\uff10\uff11\uff12", "FULL-WIDTH digits: str.isdigit() accepted "
+                                 "them and int() parsed them, std::isdigit "
+                                 "never did"),
+    ("0000", "zero thickness"),
+    ("2012", "camber placed at x = 0"),
+    ("12", "too short"),
+]
+
+for desig, why in REFUSALS:
+    try:
+        na.airfoil_points(desig, 30, "full")
+        py_ok, py_msg = True, ""
+    except na.NacaError as exc:
+        py_ok, py_msg = False, str(exc)
+    seg = make_seg({"designation": desig, "part": "full"}, 30)
+    proc, pts = resample([seg], name="ref%d" % REFUSALS.index((desig, why)))
+    cpp_ok = (proc.returncode == 0 and bool(pts))
+    check(py_ok == cpp_ok,
+          "7. %r: both hosts %s — %s" % (desig,
+                                         "accept it" if py_ok else "refuse it",
+                                         why))
+    if not py_ok:
+        check(py_msg in proc.stderr,
+              "7. ...and the binary gives the law's own sentence, not a "
+              "different one (%r)" % py_msg[:60])
+
+# The same question about `part`, which the Python owner normalises and the C++
+# side used to compare exactly.
+for part, want_ok in (("", True), ("Upper", True), ("UPPER", True),
+                      ("middle", False)):
+    try:
+        na.airfoil_points("0012", 30, part)
+        py_ok = True
+    except na.NacaError:
+        py_ok = False
+    seg = make_seg({"designation": "0012", "part": part}, 30)
+    proc, pts = resample([seg], closed=(part in ("", "full")),
+                         name="part_%s" % (part or "empty"))
+    cpp_ok = (proc.returncode == 0 and bool(pts))
+    check(py_ok == cpp_ok == want_ok,
+          "7. part %r: both hosts %s it (py %s, cpp %s)"
+          % (part, "take" if want_ok else "refuse", py_ok, cpp_ok))
 
 
 # ── 5. the round trip ─────────────────────────────────────────────────────── #

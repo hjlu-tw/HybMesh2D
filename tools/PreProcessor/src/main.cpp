@@ -1223,7 +1223,14 @@ bool processElement(const json& config) {
     // reason is the contradiction that makes a named refusal read as noise, so
     // the empty case is reported as the failure it is -- and reported by this
     // one writer, so it cannot be true of one shape and not another.
-    if (resPts.empty()) {
+    //
+    // DECLARED segments and none of them produced anything -- never "this
+    // element declared nothing". An element with an empty `segments` list asked
+    // for nothing and got it, and failing THAT would take a whole multi-element
+    // resample down over one empty entry, which nothing asked for. The narrow
+    // form is the one #147's review left: the condition is "the user asked for
+    // geometry and none arrived".
+    if (resPts.empty() && !config.value("segments", json::array()).empty()) {
         std::cerr << "Failed: element '" << config.value("name", std::string("?"))
                   << "' produced NO points; nothing was written. See the "
                      "warning(s) above for the reason." << std::endl;

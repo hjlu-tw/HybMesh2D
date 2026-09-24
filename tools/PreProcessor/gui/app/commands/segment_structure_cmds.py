@@ -81,13 +81,25 @@ class AddCurveSegmentCmd(BaseCommand):
             self._added_idx = -1
 
     def undo(self):
-        _restore_full_state(self.session, self._snap)
-        self.refresh_cb()
-        segs = self.session.project_model.segments
-        if segs:
-            self.select_cb(max(0, min(self._added_idx - 1, len(segs) - 1)))
-        else:
-            self.select_cb(-1)
+        _undo_add(self)
+
+
+def _undo_add(cmd):
+    """Undo an ADD: restore the pre-add snapshot and land the selection.
+
+    Shared by the two add commands, which had it byte-identical. The selection
+    rule is the part worth having once: after removing what was added, select
+    the row BEFORE it, clamped into the list that is left, and -1 when nothing
+    is. `cmd` supplies `session`, `_snap`, `refresh_cb`, `select_cb` and
+    `_added_idx`.
+    """
+    _restore_full_state(cmd.session, cmd._snap)
+    cmd.refresh_cb()
+    segs = cmd.session.project_model.segments
+    if segs:
+        cmd.select_cb(max(0, min(cmd._added_idx - 1, len(segs) - 1)))
+    else:
+        cmd.select_cb(-1)
 
 
 class AddAirfoilSegmentsCmd(BaseCommand):
@@ -135,13 +147,7 @@ class AddAirfoilSegmentsCmd(BaseCommand):
             self._added_idx = -1
 
     def undo(self):
-        _restore_full_state(self.session, self._snap)
-        self.refresh_cb()
-        segs = self.session.project_model.segments
-        if segs:
-            self.select_cb(max(0, min(self._added_idx - 1, len(segs) - 1)))
-        else:
-            self.select_cb(-1)
+        _undo_add(self)
 
 
 class DuplicateTransformCmd(BaseCommand):
