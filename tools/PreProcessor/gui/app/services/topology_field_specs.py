@@ -175,6 +175,76 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               # and the detached provenance summary reads it from here so it cannot
               # print a sentinel as a count the user chose (#139).
               opts=dict(lo=0, hi=20000, special="(derived)")),
+    # ── C-grid (#148) ────────────────────────────────────────────────────────
+    FieldSpec("topo_cgrid_body_geom", "path", "Aerofoil Geometry",
+              "The section the C wraps. One of the geometries this mesh loads, "
+              "split into exactly two surfaces meeting at a SHARP trailing edge — "
+              "which is what a section drawn in the CAD stage arrives as. A blunt "
+              "trailing edge arrives as three segments and is refused: all four "
+              "blocks meet on one declared trailing-edge corner, and an open "
+              "trailing edge has no such point.",
+              model="cgrid_body_geom", group=GROUP, modes=_MB,
+              opts=dict(caption="Select aerofoil geometry",
+                        filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_cgrid_body_segs", "text", "Bound Aerofoil Segments",
+              "READ-ONLY, by the rule the O-grid's binding rows above state: which "
+              "edges bind is the template's decision, and a binding is the CAD "
+              "segment's STABLE ID rather than its position in a list.",
+              model="cgrid_body_segs", group=GROUP, modes=_MB,
+              opts=dict(placeholder="(both of the section's surfaces)",
+                        readonly=True)),
+    FieldSpec("topo_cgrid_wake_length", "sci", "Wake Length",
+              "How far downstream of the trailing edge the outlet plane sits. The "
+              "wake cut runs the whole of it, and it is the length the two wake "
+              "blocks are as long as. A PHYSICAL length: the node count it implies "
+              "is derived and shown below.",
+              model="cgrid_wake_length", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-12, hi=1e9)),
+    FieldSpec("topo_cgrid_far_radius", "sci", "Far-Field Radius",
+              "How far out the far field reaches, measured ahead of the leading "
+              "edge and above and below the trailing edge. The far field is "
+              "GENERATED from this and the wake length rather than drawn, so its "
+              "six sides are straight and carry the run's BC_GEOM; the section's "
+              "own two carry the conditions on its CAD segments.",
+              model="cgrid_far_radius", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-12, hi=1e9)),
+    FieldSpec("topo_cgrid_cell", "sci", "Target Cell Edge",
+              "The cell edge length to aim for along the section's surface. The "
+              "node count each surface gets is derived from it and from that "
+              "surface's own arc length, and shown below.",
+              model="cgrid_cell", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-12, hi=1e9)),
+    FieldSpec("topo_cgrid_te_cell", "sci", "Trailing-Edge Cell",
+              "The cell length AT the trailing edge — the one spacing the whole "
+              "document clusters to. The two surfaces cluster to it at both ends, "
+              "the wake cut clusters to it where it leaves the trailing edge "
+              "(the shear layer continues the boundary layer that fed it), and the "
+              "far field's two nose sides cluster to it at their trailing-edge end "
+              "so the outer distribution tracks the body's. Left uniform, the "
+              "shipped hand-written case meshes with zero inverted cells and then "
+              "drives the solver to NaN.",
+              model="cgrid_te_cell", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-12, hi=1e9)),
+    FieldSpec("topo_cgrid_wake_count", "int", "Override Wake Nodes",
+              "0 takes the derived count: the fewest nodes that cross the wake "
+              "from the trailing-edge cell without ever growing faster than 1.2, "
+              "which is this project's own red line for cell-to-cell expansion.",
+              model="cgrid_wake_count", group=GROUP, modes=_MB,
+              opts=dict(lo=0, hi=20000, special="(derived)")),
+    FieldSpec("topo_cgrid_radial_count", "int", "Override Radial Nodes",
+              "0 takes the derived count, by the same growth law as the wake's — "
+              "but starting from the run's BL_INITIAL_THICKNESS, which is the "
+              "first cell every radial edge asks for at its body end.",
+              model="cgrid_radial_count", group=GROUP, modes=_MB,
+              opts=dict(lo=0, hi=20000, special="(derived)")),
+    FieldSpec("topo_cgrid_derived", "label", "Derivation",
+              "What the parameters above imply, with the working shown: the "
+              "section as it was READ (its chord, where its trailing edge is and "
+              "how long each surface is), the node count each surface gets, and "
+              "the wake and radial counts with the spacing and the growth they "
+              "were derived from.",
+              model=None, group=GROUP, modes=_MB),
+
     FieldSpec("topo_ogrid_derived", "label", "Derivation",
               "What the parameters above imply, with the working shown: the ring's "
               "blocks and circumferential cells, the 1:1 growth ratio those imply, "
@@ -191,7 +261,8 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
 #: check 9 requires both halves to be rows of this table, and check 10 requires each
 #: segment row to be READ-ONLY.
 BINDING_ROWS = (("topo_ogrid_body_geom", "topo_ogrid_body_segs"),
-                ("topo_ogrid_far_geom", "topo_ogrid_far_segs"))
+                ("topo_ogrid_far_geom", "topo_ogrid_far_segs"),
+                ("topo_cgrid_body_geom", "topo_cgrid_body_segs"))
 
 #: Rows that author the model's STATE rather than a family's parameter: which family
 #: is selected, and whether it still generates the document (#139). Declared rather
@@ -207,4 +278,5 @@ TOPOLOGY_STATE_ROWS = ("topo_family", "topo_detached")
 #: read-out displays a number the family function computed and writes nothing back.
 #: Named here so the bidirectional gate can hold "every OTHER row is read by a
 #: family" without a read-out counting as an unread parameter.
-TOPOLOGY_READONLY = ("topo_hgrid_counts_derived", "topo_ogrid_derived")
+TOPOLOGY_READONLY = ("topo_hgrid_counts_derived", "topo_ogrid_derived",
+                     "topo_cgrid_derived")

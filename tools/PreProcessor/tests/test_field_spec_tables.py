@@ -996,6 +996,16 @@ MODE_SPECS_WITHOUT_KEY = {
     "topo_ogrid_radial_count": "as topo_ogrid_body_geom",
     "topo_ogrid_derived": "a derived read-out (model=None) of the family's own "
                           "radial derivation; authors nothing",
+    "topo_cgrid_body_geom": "as topo_ogrid_body_geom",
+    "topo_cgrid_body_segs": "as topo_ogrid_body_geom",
+    "topo_cgrid_wake_length": "as topo_ogrid_body_geom",
+    "topo_cgrid_far_radius": "as topo_ogrid_body_geom",
+    "topo_cgrid_cell": "as topo_ogrid_body_geom",
+    "topo_cgrid_te_cell": "as topo_ogrid_body_geom",
+    "topo_cgrid_wake_count": "as topo_ogrid_body_geom",
+    "topo_cgrid_radial_count": "as topo_ogrid_body_geom",
+    "topo_cgrid_derived": "a derived read-out (model=None) of the C-grid's own "
+                          "section and count derivation; authors nothing",
 }
 
 from app.services.mesh_modes import (  # noqa: E402

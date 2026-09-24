@@ -1421,7 +1421,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 278, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 280, worst 524) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -2956,6 +2956,132 @@ check snaps to 1e-10 and sorts, snapping BEFORE sorting.
   whose attr is a `BindingContext` field — the same scoping blind spot the parameter walk already
   records. A family reading a run quantity through a helper that takes it as a plain float, rather
   than off the context, is invisible to both.
+
+
+#### THE C-GRID WRAPS A DRAWN AEROFOIL (#148, parent #146)
+
+Two modules: `services/topology_cgrid.py` (the family — the derivation, the plan and the document)
+and `services/topology_cgrid_section.py` (what is READ off the aerofoil, and every refusal about
+it). The cut is `topology_ogrid_binding.py`'s own: one half is about a block, the other about the
+user's CAD, and together they pass the ~500-line standard — the family came out at 508 in one file.
+The gate is `tests/test_topology_cgrid.py`; the fixture writer is
+`tests/topology_outline_fixture.py::write_airfoil`, which builds a section through
+`naca_airfoil.segment_parts` and `airfoil_points` so a BLUNT one arrives with three segments
+because the CAD stage draws one that way, not because the writer was told to.
+
+**The ticket's claim was that this family adds no mechanism, and that held.** The registry entry,
+the field-spec rows with no `.dat` key, the bidirectional parameter gate, the stable-id bindings,
+the projection funnel, the canvas skeleton, the repair dropdown and detach all took the family with
+no edit. Two things DID have to change, and neither is a mechanism: the shared invariant checker
+(below), and one new predicate on the registry (`Family.binds`, so the panel builds a binding
+context for a family that needs one rather than naming the two families that do).
+
+**THE SHARED INVARIANT CHECKER WAS STRICTER THAN THE MESHER, AND NO C-GRID COULD EVER HAVE PASSED
+IT.** `topology_doc_invariants.ring_closes` required a block's `[south, east, north, west]` to be
+declared in the convention's own direction — `s[1] == e[0] and e[1] == n[1] and n[0] == w[1] and
+w[0] == s[0]`. `src/MultiBlock.cpp::resolveBlockFrames` requires no such thing and says why in its
+own comment: the block's i direction comes from the SOUTH edge alone and the other three may be
+declared either way, "because a shared edge is ONE edge with ONE declared direction, named by two
+blocks whose logical frames need not agree about it". A C-grid is the case that forces it. Its wake
+cut is the west of BOTH wake blocks, and each block's CCW ring wants it declared the opposite way
+round from the other's: for `b_wake_up` the strict rule wants `["wk", "te"]` and for `b_wake_lo`
+`["te", "wk"]`, and no single declaration is both.
+
+This was not reasoned out — it was MEASURED, on the first thing that could measure it. Running the
+existing checker over the shipped, working, hand-written `examples/topology/cgrid_naca0012.json`
+returned exactly one complaint, `shipped/b_wake_up`, for a document `./run.sh -conf
+config/multiblock_cgrid.dat` meshes to zero inverted cells. A gate that refuses a shipped artefact
+is wrong about the rule, not about the artefact. `ring_closes` now mirrors the frame resolution
+literally, and gained the mesher's OTHER ring refusal with it — a ring that closes onto fewer than
+four distinct corners, which `resolveBlockFrames` checks "after the ring match rather than instead
+of it, because it is reachable". The relaxation was injection-tested against the shape it was
+written for: the H-grid gate's injection A (east and west swapped) still fails it, a reversed
+SOUTH edge fails it (the mesher refuses that too, south being what fixes the frame), and a reversed
+WEST edge now passes — which is the whole change.
+
+**THE FAR FIELD IS GENERATED FROM TWO LENGTHS, WHICH REVERSES THE O-GRID'S OWN DECISION FOR THIS
+FAMILY, DELIBERATELY.** #133 decided a template writes no geometry, and #137 gave the reason: "a
+far field synthesised from a radius would be a straight-sided polygon with as many sides as there
+are blocks — a square far field on the four-block case", so the O-grid asks the user to DRAW one.
+#148's own demo asks for the opposite — "picking C-grid and filling in physical quantities (wake
+length, far-field radius, target cell edge) produces a working topology with no hand-editing" —
+and its acceptance criteria bind only the WALL edges to the aerofoil's own segments. So the six
+far-field corners are FREE coordinates and their edges are the straight lines between them. Three
+consequences, two measured and one a limitation with no route round it:
+
+* **The corners are EXACTLY the shipped document's.** With the model's untouched defaults — wake
+  19, radius 10 — on a unit-chord section the six generated corners land on the six the
+  hand-written document declares on its drawn far field, to 0.0. That is check 13, and it is what
+  makes "the template reproduces the target" a comparison rather than a resemblance. The defaults
+  were chosen to make it so; that is the point of a default that has to mesh.
+* **The hexagon costs at one corner and nothing at the wall.** Both documents through the same
+  binary on the same section (check 14c): the template 14,784 cells at 48.6 degrees peak
+  non-orthogonality, the shipped 11,520 at 29.9 — 1.63x, at the kink where `e_ff_up` meets
+  `e_ff_nose_up` and the drawn D leaves its corner horizontally instead. At the wall the two are
+  the same: the first cell off the aerofoil is 0.05% off the declared `BL_INITIAL_THICKNESS`
+  against the shipped case's 0.10%, and both run to zero inverted cells.
+* **Its six sides carry `BC_GEOM` and cannot carry an `outlet` of their own.** A free corner
+  belongs to no geometry, so a bound edge — which is how a condition is read off a segment — is not
+  available there. The shipped document's `.bnd` names `farfield`, `outlet` and `wall`; the
+  template's names `farfield` and `wall` (checks 14b2 and 14d). There is no route round this from
+  the template path, and the read-out says so in its last line rather than leaving it to be
+  discovered from a `.bnd`.
+
+**A 32.6% first cell that the smoother recovers, which looks like a defect and is the geometry.**
+Before the elliptic sweeps the aerofoil's first cell runs 6.738e-04 where 1.000e-03 was asked —
+32.62% off. It is not the tanh law failing: the radial edges deliver the declared height exactly at
+their own ends, and the wall between them is transfinite, so the first cell scales with the local
+i-line length. The generated hexagon's nose chord passes 6.73 chords from the section at its
+closest approach where the radials are 10, and 1e-3 x 0.673 is 6.74e-4. The wall control functions
+then pull it back to 0.05% in the exported mesh. Check 14b asserts BOTH numbers, from the two
+quality blocks the run prints, so the recovery is pinned rather than the final figure alone — and
+because reading the first block by accident is exactly the mistake the check's first draft made
+(its regex found four matches where two were expected, and the extra two were the pre-smoothing
+ones).
+
+**The section is READ, and that is what makes one document shape serve both windings.** Which joint
+is the trailing edge is decided by x (the downstream one, because the wake goes downstream); which
+surface is the upper one by the sign of the chord crossed with that surface's own midpoint. A
+section drawn CLOCKWISE therefore changes exactly one thing in the output: `af_up` is declared
+`["le", "te"]` instead of `["te", "le"]`, and the four block tuples are byte-identical (check 9b).
+No mirrored tuple, which is what the O-grid needed — and the reason is the relaxation above. A
+block's west may be declared either way, so a surface edge reversing direction is free, where the
+O-grid's ring reversal changed which edges were opposite sides.
+
+**`GROWTH = 1.2` is this repo's own red line, not a tuned constant.** The wake and radial counts
+are both "the fewest nodes that cross the span from a declared first cell without ever exceeding
+this expansion", and 1.2 is where `tools/scripts/visualize_dat.py --quality` turns red. The only
+check on it that exists is that it reproduces the shipped document's hand-declared radial count of
+41 at 43 (check 11b, within two nodes); the wake comes out at 38 where the shipped document
+declares 25, which is a finer wake and not a disagreement — solving the shipped 25 back out gives a
+growth of about 1.35, i.e. the hand-written case is more aggressive than this project's own ruler.
+
+**A blunt trailing edge is refused on the SEGMENT COUNT, and that is the right test rather than a
+proxy for one.** The four-way corner needs the two surfaces to meet at a point. On a closed loop
+with two segments they meet by construction — the span of the last segment wraps to the first
+point — so there is no gap to measure; what a blunt section actually has is a THIRD segment, its
+base, which `naca_airfoil.segment_parts` is the one owner of. The refusal names the count, names
+what a blunt section is, and names the fix ("redraw the section with 'Sharp trailing edge' on"),
+with the sharp section of the same designation as check 12b's negative control.
+
+##### Named blind spots
+
+* **The far field's six sides carry one boundary name, and nothing here can make that better.** It
+  is a consequence of generating rather than drawing, measured in check 14d as "one name where the
+  shipped document has two". A user who needs an outlet distinct from the far field has no route
+  through this template at all — not a degraded one, none.
+* **Check 14c's bound is a FACTOR against the shipped case's own number**, so it moves if the
+  shipped case changes. It bounds the cost of the hexagon; it is not a quality target, and 48.6
+  degrees is not asserted to be good.
+* **The `up_first` measurement is exercised on a MIRRORED section**, which for a symmetric
+  designation is the same shape wound the other way. A cambered section drawn clockwise is not in
+  the spread; the code path is the same one, and nothing here proves it.
+* **Nothing gates that a C-grid document MESHES except at the defaults.** The spread of six
+  parameter sets is checked structurally and only the defaults reach the binary — the same bound
+  the other two families' gates carry, and for the same reason.
+* **The containment refusal is containment, not usefulness.** A far-field radius of 0.4 chords
+  contains a NACA 0012 and is refused by nothing here, while being a far field in name only. The
+  check exists to stop blocks folding, and it is stated as that rather than as a sanity bound.
 
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)

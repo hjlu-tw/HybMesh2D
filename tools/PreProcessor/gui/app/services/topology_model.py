@@ -27,7 +27,9 @@ import json
 import os
 from dataclasses import dataclass, fields
 
-from app.services import topology_hgrid, topology_ogrid, topology_ogrid_binding
+from app.services import (
+    topology_cgrid, topology_hgrid, topology_ogrid, topology_ogrid_binding,
+)
 
 #: ``family`` value meaning "no template" — the user names a topology file by hand,
 #: which is the path that existed before this ticket and still works unchanged.
@@ -85,6 +87,29 @@ class TopologyModel:
     # "no override" has to be a value, and any count below the mesher's own floor of
     # 2 cannot be one the user means.
     ogrid_radial_count: int = 0
+
+    # ── C-grid (#148) ────────────────────────────────────────────────────────
+    # ONE bound geometry, the aerofoil, stored as stable segment ids by the rule
+    # the O-grid's rows above state. The far field is NOT drawn here: it is
+    # GENERATED from the two lengths below as six free corners, which is what
+    # #148's own demo asks for and what makes those six sides carry the run's
+    # BC_GEOM rather than conditions of their own.
+    cgrid_body_geom: str = ""
+    cgrid_body_segs: str = ""
+    # The two physical lengths the far field is placed from: how far downstream
+    # the outlet plane is from the trailing edge, and how far out the D reaches.
+    # The defaults are the shipped hand-written C-grid's own figures for a unit
+    # chord, so "accept the defaults and generate" reproduces its corners exactly.
+    cgrid_wake_length: float = 19.0
+    cgrid_far_radius: float = 10.0
+    cgrid_cell: float = 0.02
+    # The cell length at the trailing edge — the one spacing the whole document
+    # clusters to, because the wake shear layer continues the boundary layer and
+    # the far field's nose sides have to track the body's own distribution.
+    cgrid_te_cell: float = 0.005
+    # 0 = take the derived count, by the rule `ogrid_radial_count` above states.
+    cgrid_wake_count: int = 0
+    cgrid_radial_count: int = 0
 
     def to_dict(self) -> dict:
         """Every parameter, as plain JSON-able values.
@@ -263,6 +288,20 @@ class Family:
     #: be exact rather than a count.
     reads_context: tuple = ()
 
+    @property
+    def binds(self) -> bool:
+        """True for a family that resolves bindings against the user's CAD.
+
+        Spelled HERE rather than at the panel, which asks it to decide whether to
+        build a :class:`~app.services.topology_binding.BindingContext` at all — a
+        context is a ``.dat`` and a ``.meta`` parse per geometry, paid on every
+        keystroke, and the H-grid needs none. It IS ``broken is not None``, because a
+        family that binds is exactly one that can report a broken binding: #138 gives
+        ``broken=None`` to "a family that binds to nothing", and a second spelling in
+        the panel would be free to disagree with the registry about which those are.
+        """
+        return self.broken is not None
+
 
 #: The registry. Adding a family is adding a function and a row here — and a
 #: field-spec row per parameter, which the bidirectional gate then requires.
@@ -272,6 +311,11 @@ FAMILIES: tuple[Family, ...] = (
     Family(topology_ogrid.FAMILY, "O-grid (ring around a drawn body)",
            topology_ogrid.build, "ogrid_",
            broken=topology_ogrid_binding.broken_bindings,
+           reads_context=(("first_cell", "First Cell Height "
+                           "(BL_INITIAL_THICKNESS)", "bl_initial_thickness"),)),
+    Family(topology_cgrid.FAMILY, "C-grid (wake cut around a drawn aerofoil)",
+           topology_cgrid.build, "cgrid_",
+           broken=topology_cgrid.broken_bindings,
            reads_context=(("first_cell", "First Cell Height "
                            "(BL_INITIAL_THICKNESS)", "bl_initial_thickness"),)),
 )

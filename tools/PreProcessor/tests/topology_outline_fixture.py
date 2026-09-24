@@ -132,3 +132,63 @@ def meta_stamp(dat_path):
     re-read" rests on a measurement rather than on the cache's docstring."""
     st = os.stat(dat_path + ".meta")
     return (st.st_mtime_ns, st.st_size)
+
+
+def write_airfoil(stem, seg_ids, bcs, n=195, designation="0012", chord=1.0,
+                  x_le=0.0, y_le=0.0, alpha_deg=0.0, sharp_te=True,
+                  mirror_y=False):
+    """A DRAWN aerofoil as a ``.dat`` plus its ``.meta`` sidecar (#148).
+
+    Built through the CAD stage's OWN law and the CAD stage's own segmentation —
+    ``naca_airfoil.segment_parts`` decides how many segments there are and
+    ``airfoil_points`` decides where the points go — so a blunt section arrives here
+    with THREE segments because that is what the CAD produces, not because this
+    writer was told to make three. A fixture that hand-wrote the split would be
+    testing the C-grid against this file's idea of an aerofoil.
+
+    The point layout mirrors the shipped ``naca0012_cgrid.dat``: each part
+    contributes every point but its last (the joint belongs to the part that STARTS
+    there), and the loop closes on a trailing duplicate stamped with the first
+    segment's id — which is what ``topology_binding._close_loop`` drops and what the
+    mesher's loader pops.
+
+    ``mirror_y`` negates y, which leaves the section's SHAPE alone for a symmetric
+    designation and reverses the loop's WINDING: the segment that leaves the trailing
+    edge is then the -y surface. That is the one thing the C-grid family has to
+    measure rather than assume, so it is a fixture flag rather than a second file.
+    """
+    from app.services.naca_airfoil import (
+        airfoil_points, part_node_counts, segment_parts,
+    )
+    parts = segment_parts(bool(sharp_te))
+    if len(seg_ids) != len(parts) or len(bcs) != len(parts):
+        raise ValueError(f"this section has {len(parts)} part(s) "
+                         f"({', '.join(parts)}); give one id and one bc for each.")
+    counts = part_node_counts(n, parts)
+    runs = [airfoil_points(designation=designation, n=counts[q], part=q, chord=chord,
+                           x_le=x_le, y_le=y_le, alpha_deg=alpha_deg,
+                           sharp_te=sharp_te) for q in parts]
+    pts, ids = [], []
+    for sid, run in zip(seg_ids, runs):
+        pts += run[:-1]
+        ids += [sid] * (len(run) - 1)
+    pts.append(runs[0][0])
+    ids.append(seg_ids[0])
+    if mirror_y:
+        pts = [(x, -y) for x, y in pts]
+    with open(stem + ".dat", "w", encoding="utf-8") as f:
+        for x, y in pts:
+            f.write(f"{x:.12f} {y:.12f}\n")
+    with open(stem + ".dat.meta", "w", encoding="utf-8") as f:
+        f.write("HYBMESH_META 2\n")
+        f.write(f"COUNT {len(pts)}\n")
+        f.write("NPIECES 0\n")
+        f.write(f"NSEGMENTS {len(parts)}\n")
+        for sid, bc in zip(seg_ids, bcs):
+            f.write(f"{sid} {bc} line\n")
+        f.write(f"POINTS {len(pts)}\n")
+        prev = None
+        for s in ids:
+            f.write(f"{s} {1 if s != prev else 0}\n")
+            prev = s
+    return stem + ".dat"

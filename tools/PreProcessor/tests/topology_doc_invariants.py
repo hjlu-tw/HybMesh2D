@@ -55,13 +55,29 @@ def unique_ids(why, doc) -> list:
 
 
 def ring_closes(why, doc) -> list:
-    """Each block's four edges close a ring in ``[south, east, north, west]``.
+    """Each block's four edges close a ring, by THE MESHER'S OWN RULE.
 
     Walked BY DIRECTION, not as a set: a block whose east and west are swapped still
     names the same four edges, so a set comparison passes it while the mesher refuses
-    it (injection A of the H-grid gate). South and north run i-min -> i-max, west and
-    east run j-min -> j-max, so the ring is south -> east -> reversed north ->
-    reversed west and must return to where it started.
+    it (injection A of the H-grid gate).
+
+    THE RULE IS `resolveBlockFrames`'s, MIRRORED — and this used to be STRICTER than
+    it, which #148 found by measuring the shipped, working, hand-written
+    ``examples/topology/cgrid_naca0012.json`` against it and getting one complaint.
+    The mesher fixes the block's i direction from the SOUTH edge's own declared
+    direction and then allows the other three to be declared EITHER WAY, traversing
+    each in whichever direction closes the ring. It has to: a shared edge is ONE edge
+    with ONE direction named by two blocks whose logical frames need not agree about
+    it, and a C-grid's wake cut is the WEST of both wake blocks — so no single
+    declaration of it can satisfy a rule that pins west to one direction, and no
+    C-grid could ever pass the version of this check that did.
+
+    Nothing is inferred by the relaxation, which is the mesher's own argument: the
+    frame is still fixed entirely by the south edge plus which corners the other
+    three touch. A set of four edges that does not close is still a complaint, and so
+    is a ring that closes onto fewer than four distinct corners — the mesher refuses
+    that too, and it is reachable (two distinct edges over one corner pair make the
+    block's j-max corner its own i-max corner, and there is no interior to fill).
     """
     by_id = {e["id"]: e for e in doc["edges"]}
     bad = []
@@ -70,9 +86,29 @@ def ring_closes(why, doc) -> list:
             bad.append(f"{why}/{b['id']}: does not name four known edges")
             continue
         s, e, n, w = (by_id[i]["corners"] for i in b["edges"])
-        if not (s[1] == e[0] and e[1] == n[1] and n[0] == w[1] and w[0] == s[0]):
+        a, bb = s                       # the south edge fixes the i direction
+        d = _other_end(w, a)            # west meets south at the i-min/j-min corner
+        c = _other_end(e, bb)           # east meets south at i-max/j-min
+        if d is None or c is None or sorted(n) != sorted([d, c]):
             bad.append(f"{why}/{b['id']}")
+            continue
+        if len({a, bb, c, d}) != 4:
+            bad.append(f"{why}/{b['id']}: closes onto {len({a, bb, c, d})} corners")
     return bad
+
+
+def _other_end(edge_corners, at):
+    """The far end of ``edge_corners`` given that one of its ends is ``at``.
+
+    ``None`` when neither end is — which is the mesher's ``ringFail``: "its <side>
+    edge must have an end at corner '<at>'".
+    """
+    x, y = edge_corners
+    if x == at:
+        return y
+    if y == at:
+        return x
+    return None
 
 
 def legal_counts(why, doc) -> list:

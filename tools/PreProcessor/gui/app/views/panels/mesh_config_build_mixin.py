@@ -214,12 +214,23 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         ``cfg`` is the mesh configuration the O-grid's derivation resolves its
         geometries against; ``None`` means "not available here", which is the state
         during a population and at construction. The H-grid half needs none — it
-        binds to nothing.
+        binds to nothing, which is what `Family.binds` answers below.
         """
-        from app.services import topology_hgrid, topology_ogrid
+        from app.services import (
+            topology_binding, topology_cgrid, topology_hgrid, topology_model,
+            topology_ogrid,
+        )
         from app.views.panels.field_widgets import read_specs
         model = TopologyModel()
         read_specs(self, TOPOLOGY_SPECS, model)
+        # ONE context for the whole refresh, built only for a family that BINDS —
+        # `Family.binds` is the registry's own answer, so a third binding family
+        # needs no edit here and the H-grid still pays nothing. A context is a
+        # `.dat` and a `.meta` parse per geometry and this runs per keystroke, which
+        # is why it is not built unconditionally.
+        _fam = topology_model.family_for(model.family)
+        ctx = (topology_binding.context_for_config(cfg)
+               if cfg is not None and _fam is not None and _fam.binds else None)
         lbl = getattr(self, "topo_hgrid_counts_derived", None)
         if lbl is not None:
             if model.family != topology_hgrid.FAMILY:
@@ -231,15 +242,16 @@ class MeshConfigBuildMixin(SpecRowsMixin):
                 lbl.setText(f"X: {', '.join(str(v) for v in xc)}    "
                             f"Y: {', '.join(str(v) for v in yc)}"
                             f"    ({len(xc)}x{len(yc)} blocks)")
-        lbl = getattr(self, "topo_ogrid_derived", None)
-        ctx = None
-        if lbl is not None:
-            if model.family != topology_ogrid.FAMILY:
+        for attr, fam_name, planner in (
+                ("topo_ogrid_derived", topology_ogrid.FAMILY, topology_ogrid.plan),
+                ("topo_cgrid_derived", topology_cgrid.FAMILY, topology_cgrid.plan)):
+            lbl = getattr(self, attr, None)
+            if lbl is None:
+                continue
+            if model.family != fam_name:
                 lbl.setText("—  (no template selected)")
             else:
-                from app.services import topology_binding
-                ctx = None if cfg is None else topology_binding.context_for_config(cfg)
-                lbl.setText("\n".join(topology_ogrid.plan(model, ctx).lines()))
+                lbl.setText("\n".join(planner(model, ctx).lines()))
         # HERE rather than in its own traversal, because this is the one place that
         # already holds both the model read back from the widgets and the context for
         # this case — and it runs on every template keystroke and every set_config,

@@ -12,8 +12,8 @@ Loaded on demand when a topology service, the mesh canvas or its two mixins, a m
 mixin, or the mesher-config writer is read. Rules only — the rationale (the measurements, the
 injections, the reversals and the named blind spots) is `docs/design_notes/gui.md`, sections "THE
 TOPOLOGY TEMPLATE LIBRARY", "THE TOPOLOGY MODEL SURVIVES THE SESSION", "THE BLOCK SKELETON ON THE
-CANVAS", "THE O-GRID BINDS TO THE CAD", "THE BROKEN BINDING IS REPAIRED FROM THE PANEL" and "THE
-TOPOLOGY DETACHES INTO A FILE". Read
+CANVAS", "THE O-GRID BINDS TO THE CAD", "THE BROKEN BINDING IS REPAIRED FROM THE PANEL", "THE
+TOPOLOGY DETACHES INTO A FILE" and "THE C-GRID WRAPS A DRAWN AEROFOIL". Read
 the matching section before overruling a rule here; when a rule changes, update BOTH.
 
 **THE ELEVENTH RULE FILE, AND THE SECOND TAKEN BECAUSE ONE WAS FULL.** These four blocks (#134,
@@ -290,6 +290,68 @@ PANEL".
 Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES INTO A FILE".
 
 
+**THE C-GRID WRAPS A DRAWN AEROFOIL: ONE CUT, ONE FOUR-WAY CORNER** (#148, parent #146;
+`services/topology_cgrid.py`, `services/topology_cgrid_section.py`)
+
+- **THE WAKE IS ONE `cut` EDGE AND IT IS THE WEST OF BOTH WAKE BLOCKS.** Not an edge two blocks
+  happen to share — any `interface` is that — but the same SIDE of both, which is what makes the
+  wake continuous rather than two surfaces that coincide. It carries no binding, so no face of it
+  reaches the `.bnd`. **AND THE TRAILING EDGE IS ONE DECLARED CORNER on which all FOUR blocks and
+  FIVE edges meet** — the cut, the two trailing-edge radials and the two surfaces — so the
+  highest-risk point in the grid is welded by identity with no tolerance anywhere. Gate:
+  `tests/test_topology_cgrid.py` checks 8-8c.
+- **THE SHARED INVARIANT CHECKER WAS STRICTER THAN THE MESHER, AND `ring_closes` WAS RELAXED TO
+  `resolveBlockFrames`'s OWN RULE.** The south edge fixes the block's i direction and the other
+  three may be declared EITHER WAY, traversed in whichever direction closes the ring; a set of four
+  that does not close, and a ring closing onto fewer than four distinct corners, are still
+  complaints. This is not a convenience for this family — it is forced: the cut is the west of both
+  wake blocks and each one's counter-clockwise ring wants it declared the opposite way round, so no
+  C-grid could ever have passed the old rule. MEASURED rather than argued: the old check returned
+  one complaint on the shipped, working, hand-written `examples/topology/cgrid_naca0012.json`.
+  Injection-held in both directions — east/west swapped still fails, a reversed SOUTH still fails
+  (the mesher refuses that too), a reversed WEST now passes.
+  Why: docs/design_notes/gui.md, "no C-grid could ever have passed"
+- **THE FAR FIELD IS GENERATED FROM TWO LENGTHS, WHICH REVERSES THE O-GRID'S "DRAWN, NEVER
+  GENERATED" FOR THIS FAMILY.** #148's demo is "fill in wake length, far-field radius and target
+  cell edge", and its criteria bind only the WALL edges to the aerofoil's segments — so the six
+  far-field corners are FREE coordinates and their edges the straight lines between them. **The
+  cost is stated, not discovered**: those six sides carry the run's `BC_GEOM` and cannot carry an
+  `outlet` of their own, which the read-out's last line says. Gate: checks 13 (the six generated
+  corners land on the shipped document's own, to 0.0, on the untouched defaults), 14c (what the
+  hexagon costs — 1.63x peak non-orthogonality at the one corner where the drawn D curves, and
+  nothing at the wall) and 14d (one boundary name where the shipped document has two).
+- **THE SECTION IS READ, NEVER ASSUMED**, and that is what lets ONE document shape serve a section
+  drawn either way round. The trailing edge is the joint further DOWNSTREAM; the upper surface is
+  the one on the +y side of the chord, by a cross product. A CLOCKWISE section changes exactly one
+  thing — `af_up` is declared `["le", "te"]` instead of `["te", "le"]` — and the four block tuples
+  are identical, where the O-grid needed a mirrored tuple. That is a consequence of the relaxation
+  above: a block's west may be declared either way. Gate: checks 9-9c, the last measuring every
+  ring's winding in real coordinates for both windings.
+- **A BLUNT TRAILING EDGE IS REFUSED, ON THE SEGMENT COUNT.** Four blocks on one corner needs the
+  two surfaces to meet at a point; a blunt section has a base segment of its own and arrives from
+  the CAD stage as THREE (`naca_airfoil.segment_parts`, the one owner of that). The refusal names
+  the count, what a blunt section is, and the fix. Not a geometric gap test: on a closed two-segment
+  loop the surfaces meet BY CONSTRUCTION, so there is no gap to measure. Gate: check 12, with the
+  sharp section of the same designation as 12b's negative control.
+- **`GROWTH = 1.2` IS THIS REPO'S OWN RED LINE FOR CELL EXPANSION** (`visualize_dat.py --quality`),
+  not a tuned constant; the wake and radial counts are both "the fewest nodes that cross the span
+  from a declared first cell without exceeding it", both DISPLAYED with their working and both
+  overridable by a `0 = derived` spin box. The trailing-edge cell is the ONE spacing the whole
+  document clusters to — both surfaces at both ends, the wake where it leaves the trailing edge,
+  and the far field's two nose sides at their trailing-edge end so the outer distribution tracks
+  the body's. Clustering the nose sides' OTHER end as well was measured and is worse (82 degrees of
+  peak non-orthogonality against 49). Gate: checks 11-11d.
+- **`Family.binds` IS THE REGISTRY'S ANSWER TO "DOES THIS FAMILY NEED A BINDING CONTEXT"**, asked by
+  the panel so a third binding family needs no edit there and the H-grid still pays nothing — a
+  context is a `.dat` and a `.meta` parse per geometry, paid per keystroke. It IS `broken is not
+  None`, because #138 gives that to "a family that binds to nothing".
+- **The aerofoil FIXTURE is built through the CAD stage's own law and segmentation**
+  (`tests/topology_outline_fixture.py::write_airfoil`), so a blunt section arrives with three
+  segments because the CAD draws one that way. A fixture that hand-wrote the split would test the
+  C-grid against the gate's idea of an aerofoil.
+
+Why, and every measurement: `docs/design_notes/gui.md`, "THE C-GRID WRAPS A DRAWN AEROFOIL".
+
 **THE SKELETON IS THE TOPOLOGY MODEL DRAWN, AND THE NODE COUNT IS THE POINT** (#136, parent #133;
 `services/topology_skeleton.py`, `views/mesh_canvas_skeleton_mixin.py`, `views/mesh_canvas.py`)
 
@@ -438,7 +500,17 @@ against one list — the shape `gui-panels-config.md` uses, and these six came f
   effect by another route and is #137's pairing design rather than #138's.
 - **`Family.broken` being unset is indistinguishable from "nothing is broken".** It is `None` for
   the H-grid, correctly; a third family that forgot to declare one would report nothing and no
-  gate would notice.
+  gate would notice. Since #148 it decides a second thing through `Family.binds` — whether the
+  panel builds a context at all — so the same omission would also leave that family's read-out
+  answering without one.
+- **The C-grid's far field carries ONE boundary name, and nothing can make it better from the
+  template path** — not a degraded outlet, none. It is what generating rather than drawing costs,
+  measured in `test_topology_cgrid.py` check 14d.
+- **The C-grid's containment refusal is containment, not usefulness.** A far-field radius of 0.4
+  chords contains a NACA 0012 and is refused by nothing; the check exists to stop blocks folding.
+- **The C-grid's `up_first` measurement is exercised on a MIRRORED section only**, which for a
+  symmetric designation is the same shape wound the other way. A cambered section drawn clockwise
+  is not in the spread.
 - **Nothing gates that a family's document MESHES except for the DEFAULTS.** The spread of eight
   parameter sets is checked structurally; only `TopologyModel()`'s defaults are run through the
   real binary, because eight mesher runs in a gate is a cost nobody asked for. A parameter set that
