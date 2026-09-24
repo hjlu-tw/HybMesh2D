@@ -62,6 +62,51 @@ NAMED BLIND SPOTS.
      `GeometryService`, which is what the canvas calls; that a control-point
      drag reaches it is `test_curve_edit_spec.py`'s and the edit-owner gate's.
 
+INJECTIONS, run by hand 2026-09-24 -- 17 mutations, 16 bite, 1 INERT and named.
+A C++ injection cannot be automated from inside a Python gate (it needs a
+rebuild), so these are recorded rather than permanent:
+
+  A  a thickness coefficient drifts 0.2843 -> 0.2840 (C++)      -> 3.x, 1.7e-04
+  B  the C++ exact TE/LE snap is dropped                        -> INERT, below
+  C  the C++ rotation takes alpha's sign the other way          -> 3.x, 5.2e+00
+  D  the C++ full loop rounds the per-side split the other way  -> 3.7, 4.4e-05
+  D2 the PYTHON full loop does the same                         -> 3.7, 4.4e-05
+  E  C++ accepts a `te` part on a SHARP section                 -> 4b
+  F  C++ stops refusing a designation that is not four digits   -> 4c
+  G  the resampler's `naca4` dispatch entry is renamed away     -> 3.x, all six
+  H  the Python camber branch condition is inverted             -> 3.x, 1.4e+00
+  I  the blunt TE coefficient becomes the sharp one             -> 1e, 3.d/e, 4a
+  J  a SHARP section is segmented into three parts              -> 2a, 2c
+  K  the parts stop carrying the drawn parameters               -> 2c, 2e
+  L  the TE base takes a proportional share of the node budget  -> 2d
+  M  the preview skips the uniform re-fit the resampler applies -> 3.x, 1.2e-01
+  N  shape_spec's aerofoil defaults drift from the generator's  -> 6c
+  O  the widget tables drop the polygon's default fallback      -> 6a
+  P  NEGATIVE CONTROL: a comment-only edit                      -> inert, rightly
+
+**B is INERT for a measured reason, and is kept in the list rather than
+deleted.** Dropping the C++ end-snap leaves the computed value in place, which
+differs from the assigned one by ~1.7e-17 -- three orders BELOW the `.dat`'s own
+10-decimal quantum, so no comparison against that file can ever see it. What the
+snap is for is EXACTNESS at the two points where the surfaces meet, and that is
+check 1c's job, on the Python owner, where the values can be compared to 0.0
+itself. The C++ half of it is unguarded and this says so.
+
+**D was inert too, until the case that could see it existed.** Every `full` case
+asked for an EVEN node count, and under an even count the two ways of rounding
+the per-side split agree exactly. Case 3.7 (an odd count) was added for that
+reason, and both hosts' version of the injection then bit.
+
+**And six of the C++ injections came back inert on the FIRST run for a reason
+that was not the gate's**: make compares timestamps at one-second granularity,
+and an inject-build-restore-build cycle finishes inside one second, so the
+mutated header was never compiled. A real bite looked exactly like a check that
+does not bite. Any future run of these must delete
+`build/CMakeFiles/surface_resampler.dir/tools/PreProcessor/src/main.cpp.o`
+rather than trust the timestamp -- and read the EXIT CODE, since a mutation that
+makes the gate CRASH prints no FAIL line at all (injection K did, until check 2e
+was made to report a refusal instead of raising through it).
+
 Run:  python3 tools/PreProcessor/tests/test_naca_airfoil_parity.py
 """
 import json
@@ -250,11 +295,14 @@ check(len({s.id for s in made}) == len(made) and all(s.id > 0 for s in made),
       % [s.id for s in made])
 check(all(s.curve_type == "naca4" and s.type == "curve" for s in made),
       "2c. ...and an ordinary analytic edge, not a new kind of object")
-shared = {k: v for k, v in made[0].parameters.items() if k != "part"
-          and k != "n_points"}
-check(all({k: v for k, v in s.parameters.items()
-           if k != "part" and k != "n_points"} == shared for s in made),
-      "2c. ...all describing ONE aerofoil (same designation, chord, LE, alpha)")
+# Against the TEMPLATE's own values, not merely against each other: parts that
+# all lost the drawn parameters equally would agree with one another perfectly.
+drawn = {k: v for k, v in tpl.parameters.items() if k != "n_points"}
+missing = [(s.id, k) for s in made for k, v in drawn.items()
+           if k != "part" and s.parameters.get(k) != v]
+check(not missing,
+      "2c. ...all carrying the parameters the user DREW — designation, chord, "
+      "LE, alpha, sharp TE (mismatched: %r)" % missing[:4])
 
 pm2 = ProjectModel()
 tpl2 = make_seg({"designation": "0012", "sharp_te": False}, 120)
@@ -270,15 +318,23 @@ check(sum(s.parameters["n_points"] for s in made2[:2]) >= 118,
       % (made2[0].parameters["n_points"], made2[1].parameters["n_points"]))
 
 # The parts really are the loop: walking them end to end closes it.
-ends = []
+# Guarded: a part whose parameters were not the drawn ones can be a shape the
+# law REFUSES, and an unhandled NacaError here would end the run with no named
+# check — a crash reads as "the gate is broken", not as "the split is wrong".
+ends, why = [], ""
 for s in made2:
-    xs, ys = preview(s, s.parameters["n_points"])
-    ends.append(((xs[0], ys[0]), (xs[-1], ys[-1])))
+    try:
+        xs, ys = preview(s, s.parameters["n_points"])
+        ends.append(((xs[0], ys[0]), (xs[-1], ys[-1])))
+    except Exception as exc:                        # noqa: BLE001 - reported
+        why = "%s part: %s" % (s.parameters.get("part"), exc)
+        break
 gaps = [math.hypot(ends[i][1][0] - ends[(i + 1) % 3][0][0],
-                   ends[i][1][1] - ends[(i + 1) % 3][0][1]) for i in range(3)]
-check(max(gaps) < 1e-12,
-      "2e. the three parts chain end to end into one closed loop (worst gap "
-      "%.3e)" % max(gaps))
+                   ends[i][1][1] - ends[(i + 1) % 3][0][1])
+        for i in range(3)] if len(ends) == 3 else []
+check(bool(gaps) and max(gaps) < 1e-12,
+      "2e. the three parts chain end to end into one closed loop (%s)"
+      % (why or "worst gap %.3e" % max(gaps) if gaps else "no points"))
 
 
 # ── 3-6 need the binary ───────────────────────────────────────────────────── #
@@ -309,6 +365,13 @@ CASES = [
     ("thin and thick, at a large angle",
      {"designation": "6409", "part": "full", "chord": 12.5, "x_le": -3.0,
       "alpha_deg": 12.0}, 200, True),
+    # An ODD node count, where the loop's two halves CANNOT be equal. Every
+    # other `full` case above asks for an even one, and under an even count the
+    # two ways of rounding the per-side split agree exactly -- so a host
+    # rounding the other way was invisible until this case existed (measured:
+    # injection D was inert without it).
+    ("a full loop at an ODD node count",
+     {"designation": "2412", "part": "full", "sharp_te": False}, 121, True),
 ]
 
 worst_overall = 0.0
@@ -317,22 +380,21 @@ for i, (label, params, n, closed) in enumerate(CASES):
     xs, ys = preview(seg, n)
     gui = list(zip(xs, ys))
     proc, cpp = resample([seg], closed=closed, name="case%d" % i)
+    tag = "3.%d" % (i + 1)
     check(proc.returncode == 0,
-          "3%s. the resampler accepts %s (rc=%d)" % ("abcdef"[i], label,
-                                                     proc.returncode))
+          "%s. the resampler accepts %s (rc=%d)" % (tag, label, proc.returncode))
     check(len(gui) == len(cpp) == n,
-          "3%s. ...and both hosts produce %d points (gui %d, cpp %d)"
-          % ("abcdef"[i], n, len(gui), len(cpp)))
+          "%s. ...and both hosts produce %d points (gui %d, cpp %d)"
+          % (tag, n, len(gui), len(cpp)))
     dev = worst_dev(gui, cpp)
     worst_overall = max(worst_overall, dev if dev != float("inf") else 0.0)
     check(dev <= TOL,
-          "3%s. ...agreeing to %.3e, under the %.0e tolerance" % ("abcdef"[i],
-                                                                 dev, TOL))
+          "%s. ...agreeing to %.3e, under the %.0e tolerance" % (tag, dev, TOL))
 
 check(worst_overall > 0.0,
-      "3g. the comparison is really comparing (worst deviation over all six "
+      "3.8. the comparison is really comparing (worst deviation over all %d "
       "cases %.3e, which is the .dat's own 10-decimal quantum and not zero)"
-      % worst_overall)
+      % (len(CASES), worst_overall))
 
 # A parameter the gate does not MOVE is a parameter the gate does not check.
 moved = set()
@@ -341,7 +403,7 @@ for _lbl, params, _n, _c in CASES:
                  if v != na.DEFAULTS.get(k, object()))
 declared = set(na.DEFAULTS) | {"part"}
 check(moved >= declared,
-      "3h. every declared aerofoil parameter is moved off its default by at "
+      "3.9. every declared aerofoil parameter is moved off its default by at "
       "least one case (missing: %r)" % sorted(declared - moved))
 
 
