@@ -369,6 +369,7 @@ BLIND SPOTS, named rather than papered over:
 Run:  python3 tools/PreProcessor/tests/test_multiblock_shape_surface.py
 Skips cleanly if ./build/HybMesh2D has not been built.
 """
+import glob
 import json
 import math
 import os
@@ -461,10 +462,16 @@ PIN_TOL = 1e-6
 # exactly 1.0, naming a disagreement that was the printf.
 PRINT_EPS = 5e-7
 
-# The five shipped multi-block configs: the name this gate prints, the shipped
+# Every shipped multi-block config: the name this gate prints, the shipped
 # `config/<name>.dat` it drives, and the block ids the topology document gives.
-# #129 ran the first two rows of this table; #140 added the other three, and the
-# C-grid is the reason it exists — see the entry above.
+# #129 ran the first two rows of this table; #140 added three more, and the
+# C-grid is the reason it exists — see the entry above. #153 added the sixth.
+#
+# THE TABLE IS CHECKED AGAINST `config/` (check 17), not trusted. #140's claim was
+# "every shipped case's three figures are PINNED", and nothing here held it: a new
+# shipped config joins the family with no row, no pin and no failure, which is the
+# hole `test_multiblock_smooth_surface.py`'s group 13 had already closed for itself
+# and this file had not. The two-ring O-grid arrived exactly that way.
 CASES = (
     ("square", "multiblock_square", ("block0",)),
     ("cavity", "multiblock_cavity", ("cavity",)),
@@ -472,6 +479,8 @@ CASES = (
     ("ogrid", "multiblock_ogrid", ("q0", "q1", "q2", "q3")),
     ("cgrid", "multiblock_cgrid",
      ("b_wake_up", "b_upper", "b_lower", "b_wake_lo")),
+    ("tworing", "multiblock_tworing",
+     ("q0", "q1", "q2", "q3", "p0", "p1", "p2", "p3")),
 )
 
 # WHAT EACH SHIPPED CASE MEASURES, measured 2026-09-17 at the shipped defaults and
@@ -486,6 +495,13 @@ PINS = {
               "max": 32.767868},
     "cgrid": {"cells": 5760, "median": 4.832007, "p95": 148.005672,
               "max": 3147.957636},
+    # Measured 2026-09-29 (#153). Its max is the O-grid's to five decimals and for
+    # the same reason — both declare a 1e-3 first cell under the same 0.0327
+    # azimuthal spacing — while the median and p95 are LOWER, which is one half of
+    # what splitting the ring bought and is recorded in
+    # `test_multiblock_tworing_surface.py` check 9 beside the half it cost.
+    "tworing": {"cells": 4608, "median": 1.685363, "p95": 21.128734,
+                "max": 32.767047},
 }
 
 # HOW MANY QUADS EACH CASE'S WALL BAND HOLDS, measured 2026-09-18 and pinned
@@ -506,6 +522,11 @@ BAND_PINS = {
     "hgrid": (76, 4),
     "ogrid": (2304, 2304),
     "cgrid": (2022, 3738),
+    # #153. The band reaches the INNER ring's 2208 and stops: the outer ring's
+    # clustering is at its seam end, not at a wall, so the walk has nothing to
+    # follow there. That is the two-ring case's own statement of what the band
+    # means, and it is why its bulk is larger than the O-grid's at the same budget.
+    "tworing": (2208, 2400),
 }
 
 failures = []
@@ -1018,6 +1039,26 @@ def main() -> int:
         missing = sorted(n for n in outs if not outs[n] or not stems[n])
         check("every shipped case produced a report and a quads run for the "
               f"checks below to read (missing: {missing})", not missing)
+
+        # --- 17. THE TABLE IS THE SHIPPED SET, read off `config/` (#153) ------
+        # #140's claim is "EVERY shipped case's three figures are PINNED", and
+        # until this check nothing held it: `CASES` was a hand-kept list, so a new
+        # `config/multiblock_*.dat` joined the family with no row, no pin and no
+        # failure. The identical hole was closed in
+        # `test_multiblock_smooth_surface.py` group 13 for that file alone, and its
+        # own comment says why — "a SIXTH one cannot ship without a gate". This is
+        # that sentence made true here too, and #153's two-ring O-grid is the case
+        # that walked through the gap while it was open.
+        shipped = sorted(os.path.basename(f)[:-4] for f in
+                         glob.glob(os.path.join(_REPO, "config", "multiblock_*.dat")))
+        check(f"17. the shipped multi-block configs are exactly the ones this table "
+              f"pins, read off `config/` rather than from the table itself — so a "
+              f"NEW one cannot ship with its three figures un-pinned ({shipped})",
+              shipped == sorted(c[1] for c in CASES))
+        check(f"17. ...and every one of them has a figure pin AND a band pin, so a "
+              f"row cannot be added to `CASES` while its numbers stay unwritten "
+              f"({sorted(set(c[0] for c in CASES) - (set(PINS) & set(BAND_PINS)))})",
+              set(c[0] for c in CASES) <= (set(PINS) & set(BAND_PINS)))
 
         # --- 9. a correct large number is not a failure ----------------------
         # Both extremes, off the runs already made rather than a third run of the

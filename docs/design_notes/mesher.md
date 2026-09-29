@@ -4058,6 +4058,112 @@ turns a gate red rather than making a rule file quietly wrong again. Corrected i
 rule file in the same change as the code, which is the point: a rule-file sentence the
 tree contradicts talks the next ticket out of work it could have done.
 
+**A TWO-RING O-GRID, MEASURED AGAINST THE SINGLE RING** (#153, measured 2026-09-29).
+#151 shipped the key and a two-block fixture; this is the case a user runs, and #150's
+whole argument was that splitting the O-grid's single ring buys something. It does not
+buy what that argument predicted, and the number is the deliverable.
+
+`examples/topology/tworing_ogrid.json` + `config/multiblock_tworing.dat`: eight blocks
+around the same r = 0.5 circle in the same r = 10 far field, separated by four
+`follows` interfaces on `examples/geometries/circle_seam.dat`, a hand-authored
+concentric circle at r = 1 segmented into the same four quarters as the body. It needed
+NO C++ CHANGE, which is the strongest thing this case says about #151's design.
+
+- **THE COMPARISON IS EXACT, NOT "COMPARABLE".** 96 nodes around and 25 + 25 - 1 = 49
+  across is the single ring's 96 x 49, so the two meshes export the same **4704
+  vertices, 9216 triangles and 192 boundary edges**. Nothing had to be normalised, and
+  `test_multiblock_tworing_surface.py` check 8 reads both counts off both runs rather
+  than asserting one of them. That was a design constraint on the document, not a
+  coincidence: a two-ring case at a different budget would have made every line below an
+  impression.
+
+  | at `MB_SMOOTH_ITERS 20` | single ring | two rings |
+  |---|---|---|
+  | non-orthogonality max / mean (deg) | 2.024972 / 1.875000 | **2.024972 / 1.875000** |
+  | wall first cell, worst relative | 0.000371 | **0.000000** |
+  | cell shape median / p95 / max | 1.845977 / 23.662285 / 32.767868 | **1.685363 / 21.128734 / 32.767047** |
+  | worst wall-normal expansion ratio | 1.3972 | **1.5960** |
+  | worst wall-normal CONTRACTION ratio | 0.7724 | **0.5058** |
+  | wall-height warnings at the default | 4 (`o0`-`o3`) | **0** |
+
+  | unsmoothed (`MB_SMOOTH_ITERS 0`) | single ring | two rings |
+  |---|---|---|
+  | wall first cell, worst relative | 0.000036 | 0.000171 |
+  | cell shape median / p95 | 1.841722 / 23.432989 | 1.626823 / 20.820181 |
+  | worst wall-normal expansion ratio | 1.1853 | 1.2580 |
+  | cell-size ratio ACROSS the seam | — | 1.000000000 |
+
+- **NON-ORTHOGONALITY DOES NOT MOVE, AND THAT IS STRUCTURAL.** Both figures are set by
+  the 96 nodes AROUND and by the stored circles' faceting, neither of which the radial
+  split touches; on concentric circles the radials are perpendicular to the arcs either
+  way. So the quantity #153 names first is the one the seam cannot help. Anyone
+  expecting a split to improve it on a body of this shape should read that as the
+  geometry's answer, not the implementation's.
+- **THE EXPANSION RATIO GOES THE WRONG WAY, AND THE ARITHMETIC SAYS WHY.** One tanh law
+  covering 1e-3 to 0.807 in 48 intervals grows by 1.185 per cell; two laws each covering
+  their own range in 24 grow by 1.258 and 1.175. Splitting a smooth monotone
+  distribution in half does not make either half easier — each still spans its own
+  decades of scale, with half the intervals to do it in, and the shared seam node is
+  spent twice. A sweep over seam radius and the 48-interval split at the same budget put
+  the BEST two-ring worst ratio at 1.213 (seam at r = 3, 36 + 12 intervals), still above
+  the single ring's 1.185, so the shipped 25/25 at r = 1 is not a badly chosen point —
+  the family has no point that wins here.
+- **WHAT IT DOES BUY, measured rather than argued.** The wall spacing is held EXACTLY
+  through the default sweeps where the single ring drifts to 0.037%, and the four
+  wall-height warnings the single ring prints disappear, because the outer ring DECLARES
+  its far-field-end spacing instead of inheriting whatever one law happened to finish
+  at. The cell shape is better at the median and at p95 (the max is identical — it is
+  the first cell off the wall, which both documents declare the same way). And the seam
+  itself is a declared object: a real zone boundary a later family, a hybrid fill or a
+  solver zone can be attached to, which is the thing #154 needs and no number here
+  measures.
+- **THE DEFAULT SWEEPS COST THIS CASE MORE THAN THEY COST THE SINGLE RING.** Unsmoothed,
+  the two-ring radial distribution is clean: the seam's cell-size ratio is 1.000000000
+  and the worst expansion 1.258. After the shipped 20 sweeps the seam is a visible kink —
+  the last cell into it stretched 1.443, the first cell out of it squashed to 0.506 —
+  because the seam is FROZEN (#151's widened freeze) while each ring's interior relaxes
+  toward uniformity on its own side of it. The single ring degrades too (1.185 to 1.397),
+  just less. The whole sweep is recorded rather than tuned away, at 0 / 2 / 5 / 10 / 20:
+  the two-ring worst ratio runs 1.2580 / 1.2596 / 1.2678 / 1.3685 / 1.5960 and the single
+  ring's 1.1853 / 1.1877 / 1.1913 / 1.2028 / 1.3972. The shipped config carries NO
+  `MB_SMOOTH_ITERS` line, exactly as the single-ring config does not, because a
+  comparison in which one side is tuned is not a comparison — and the mesher's own
+  warning on both runs already says the iteration has turned by sweep 2.
+- **THE MIDDLE RING'S 120 FACETS PER QUARTER ANSWER TO TWO DIVISIBILITY RULES.** 120 is
+  a multiple of the 24 intervals a seam edge carries, so #94's sample-rate advice does
+  not fire on the seam at all; and of the BODY's 40, so the count advice #94 gives on the
+  body's four edges still reads "declare count 41", exactly as it does on the shipped
+  single ring. That second half is the one a later edit would break silently: the advice
+  is the GCD of every stretch on the equivalence class, and the seam JOINED that class,
+  so a 96- or 192-facet middle ring — both of which satisfy the first rule — pulls the
+  GCD from 40 to 8 and tells the user to coarsen the body to 9 nodes. A geometry that
+  makes ANOTHER edge's advice worse is the defect, not the advice.
+- **THE ACCEPTANCE RUN, and it did not go to NaN.** getPGrid exit 0 (4704 vertices, 9216
+  elements, 192 boundary flags over the same 8 segments the single ring has — the seam
+  reaches the solver as nothing at all, which is what `follows` is for), then
+  `unicones.eqn6.mac` exit 0 at M 0.2, T 288 K, unit Re 200, zero incidence, Linf 1,
+  `cfl 0.6` constant, `ns_sol` with CONST_PRANDTL, 100 iterations. No NaN anywhere in the
+  log. Quoted in `tools/PreProcessor/tests/test_multiblock_tworing_surface.py`'s
+  docstring, which is where a dated run belongs; #150 asked for it by name because this
+  path has already produced a grid with zero inverted cells that then drove the solver to
+  NaN.
+- **WHAT THIS DOES NOT SAY.** One body, one budget. A circle is the case where a single
+  tanh law has the LEAST trouble spanning wall to far field, because the wall-normal
+  extent is the same everywhere around it; the two-ring argument is at its weakest here
+  and #150's out-of-scope list keeps the two-ring C-grid — where that extent varies by
+  an order around the section — out of this batch. Nothing here measures the shape where
+  the split is supposed to pay.
+- **A BOOKKEEPING NOTE FOR THE NEXT TICKET.** This change left
+  `.claude/rules/mesher-multiblock.md` with **3 characters** of headroom against its
+  60,000 budget, and its two-ring block only fits because a set of justification-only
+  measurements were dropped from it (style rule 6: keep a measurement that constrains a
+  decision, drop one that only justifies it) — every one of them already stated in THIS
+  note, checked by grep before the deletion and not after. Two stale figures in that
+  file's blind-spot list were corrected in the same pass: the golden comparator's
+  multi-block share, written as "six of nineteen" beside an "all ten multi-block cases"
+  two bullets down, is eleven of twenty. The next rule that file gains needs the TWELFTH
+  rule file, on #85's and #137's precedent.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

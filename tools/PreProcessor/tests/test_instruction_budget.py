@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 222 more of today because this repo's own prose
+bytes, which the root file has 226 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -491,8 +491,8 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eleven rule files now — 59,803 / 52,329 / 50,834 / 46,445 / 39,554 / 35,517 / 25,325 / 22,904 / 22,516 / 15,762 / 8,969  characters (mesher-multiblock, gui-topology, pipeline-case, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-handoff, gui-results, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 197 / 7,671 of
+    Eleven rule files now — 59,997 / 52,329 / 50,834 / 46,445 / 39,554 / 35,517 / 25,325 / 22,904 / 22,516 / 15,762 / 8,969  characters (mesher-multiblock, gui-topology, pipeline-case, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-handoff, gui-results, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 3 / 7,671 of
     headroom the two large ones have left, and not at all for a move into any of the other
     nine, which have 9,166 / 13,555 / 20,446 / 24,483 / 34,675 / 37,096 / 37,484 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 38,444 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 38,846 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 38,444 taken down to the boundary above is 38,000, to
+# are its size and its slack -- and 38,846 taken down to the boundary above is 38,500, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -687,7 +687,15 @@ _SOURCES = {
 # WIDENS one, and a ticket that puts a module under an existing rule file does that by
 # construction. The floor cannot be met by writing less prose here -- a glob list that
 # does not name the globs is the stale enumeration this table exists to prevent.
-ROOT_BUDGET = 39_000
+# #153 is the SIXTH re-band and the first with neither cause: no rule file was born, none
+# gained a glob, and no tripwire row moved. What grew was the Build & Run section -- a
+# sixth shipped `config/multiblock_*.dat`, its one-line invocation and the clause naming
+# what it declares, 402 characters, which took the slack to 154. So the corrected reading
+# widens once more: it is any ticket that adds to something the root file ENUMERATES, and
+# the tripwire table is only the largest of those lists. A shipped case a user runs is
+# documentation the root is the entry point to; leaving it out to stay in band would trade
+# a gated figure for an undocumented artefact, which is the wrong way round.
+ROOT_BUDGET = 39_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -1375,6 +1383,12 @@ def _fmt_word_lower(values):
     return _fmt_word(values).lower()
 
 
+def _fmt_word_upper(values):
+    """`_fmt_word`'s word where the prose SHOUTS it, as the smoothing gate's first line
+    does. A third formatter over one derivation, on `_fmt_word_lower`'s own reasoning."""
+    return _fmt_word(values).upper()
+
+
 def _parse_names(text):
     return tuple(p.strip() for p in text.split(","))
 
@@ -1582,33 +1596,69 @@ def _block_field_injections(world):
 # and `test_signal_guards.py` number nothing, which is why this pattern is applied to ONE
 # named file rather than offered as a general reader.
 _CHECK_GROUP = re.compile(r"check\(\s*f?\"(\d+)\.")
-_OTHER_THREE = ("multiblock_square", "multiblock_cavity", "multiblock_hgrid")
+# The configs that reach the smoothing gate through the shared retargeter -- every shipped
+# multi-block config no OTHER gate owns, so this file runs them itself. DERIVED from the
+# code, not listed here: it was a literal triple until #153 shipped a sixth config into
+# that group, and a hand-kept list of what a gate drives is the same decaying figure this
+# whole check exists about, one level in. `mb_shipped_config.shipped_config` is the one
+# retargeter (`test_shipped_config_seam.py` holds that), so its call sites ARE the set.
+_SHIPPED_CALL = re.compile(r"shipped_config\(\s*\"(multiblock_\w+)\"\s*\)")
+
+
+def _smooth_other_configs(world):
+    """The shipped configs `test_multiblock_smooth_surface.py` drives through
+    `shipped_config`, sorted -- i.e. the ones no other gate owns a `base_config` for.
+
+    A `_DeriveError` when a config is retargeted more than once, because the group that
+    drives it then has two answers and both figures below name ONE.
+    """
+    text, where = _source(world, "test_multiblock_smooth_surface.py")
+    names = [m.group(1) for m in _SHIPPED_CALL.finditer(text)]
+    dupes = sorted(n for n in set(names) if names.count(n) > 1)
+    if dupes:
+        raise _DeriveError(
+            "%s retargets %s through `shipped_config(...)` more than once; these figures "
+            "need exactly one call per config, so that the group driving each one is "
+            "unambiguous." % (where, ", ".join("`%s`" % n for n in dupes)))
+    if not names:
+        raise _DeriveError(
+            "%s makes no `shipped_config(\"multiblock_*\")` call at all, so which shipped "
+            "configs it drives itself cannot be read off the code. Either the calls moved "
+            "or this figure no longer has a subject." % where)
+    return tuple(sorted(names))
+
+
+def _smooth_other_count(world):
+    """How many of them there are -- the count the head docstring spells as a word.
+
+    Registered beside the group number rather than left as prose because it is the half
+    that moved: #153 took it from three to four, and the sentence stating it is the file's
+    first line.
+    """
+    return (len(_smooth_other_configs(world)),)
 
 
 def _smooth_other_three_group(world):
-    """Which numbered group of `test_multiblock_smooth_surface.py` drives the other three
-    shipped multi-block configs, read off the CODE and never off the prose.
+    """Which numbered group of `test_multiblock_smooth_surface.py` drives the shipped
+    configs it retargets itself, read off the CODE and never off the prose.
 
     Off the code deliberately: the defect (#116) was a head docstring disagreeing with
     four other passages in its own file and with the rule file, and a derivation that read
     any of those five would only have picked a side. What the group IS, is where the runs
     are -- so this finds each config's one `shipped_config(...)` retarget and takes the
-    group of the first numbered check after it, requiring all three to agree.
+    group of the first numbered check after it, requiring all of them to agree.
 
-    All three, not one: "GROUP n ALSO DRIVES THE OTHER THREE" is a claim about the three
+    All of them, not one: "GROUP n ALSO DRIVES THE OTHER <N>" is a claim about the set
     together, and a split across two groups makes the sentence unwriteable rather than
     merely wrong. That is a `_DeriveError` naming both groups, not a silent pick.
     """
     text, where = _source(world, "test_multiblock_smooth_surface.py")
     groups = set()
-    for config in _OTHER_THREE:
-        calls = list(re.finditer(r"shipped_config\(\"%s\"\)" % re.escape(config), text))
-        if len(calls) != 1:
-            raise _DeriveError(
-                "%s retargets to `%s` through `shipped_config(...)` %d times; this figure "
-                "needs exactly one, so that the group driving that config is unambiguous."
-                % (where, config, len(calls)))
-        m = _CHECK_GROUP.search(text, calls[0].end())
+    for config in _smooth_other_configs(world):
+        call = _SHIPPED_CALL.search(text, 0)
+        while call is not None and call.group(1) != config:
+            call = _SHIPPED_CALL.search(text, call.end())
+        m = _CHECK_GROUP.search(text, call.end())
         if m is None:
             raise _DeriveError(
                 "%s has no numbered `check(\"N. ...` after its `shipped_config(\"%s\")` "
@@ -1617,9 +1667,9 @@ def _smooth_other_three_group(world):
         groups.add(int(m.group(1)))
     if len(groups) != 1:
         raise _DeriveError(
-            "%s drives the other three shipped configs from %d different groups (%s), and "
-            "the head docstring names ONE. Either the code or that sentence has to change."
-            % (where, len(groups), ", ".join(str(g) for g in sorted(groups))))
+            "%s drives the shipped configs it retargets itself from %d different groups "
+            "(%s), and the head docstring names ONE. Either the code or that sentence has "
+            "to change." % (where, len(groups), ", ".join(str(g) for g in sorted(groups))))
     return (groups.pop(),)
 
 
@@ -1729,6 +1779,9 @@ _FIGURES = {
     # Digits, not a word: the sentence writes "GROUP 13", and a group number is an
     # identifier a reader greps for in the file rather than a count they read.
     "smooth_group": _Figure(_parse_nums, _fmt_nums, _smooth_other_three_group),
+    # A WORD, and shouted: the sentence reads "THE OTHER FOUR". One derivation behind it
+    # and the group number, so the two halves of that sentence cannot come apart.
+    "smooth_other_count": _Figure(_parse_word, _fmt_word_upper, _smooth_other_count),
 }
 
 SELF_REPORT = (
@@ -1851,8 +1904,8 @@ SELF_REPORT = (
     # the entry point, which is also the copy furthest from the runs it names.
     {"label": "the smoothing gate's other-three group number",
      "target": "src:test_multiblock_smooth_surface.py",
-     "pattern": r"SINCE~#114~GROUP~([\d,]+)~ALSO~DRIVES~THE~OTHER~THREE",
-     "fields": ("smooth_group",)},
+     "pattern": r"SINCE~#114~GROUP~([\d,]+)~ALSO~DRIVES~THE~OTHER~(\w+)",
+     "fields": ("smooth_group", "smooth_other_count")},
     # #120. The two live measurements inside `ROOT_BUDGET`'s OWN derivation -- the
     # evidence the constant rests on. #109 wrote them as a dated fact and cited blind
     # spot (g), which covers history and four families of hand-maintained figure and
@@ -3419,13 +3472,13 @@ check(len(_hits) == 1 and "'12'" in _hits[0]
 # the code is what the figure is about. A gate that read the number out of the prose
 # beside it would pass here.
 inj = copy_world(world)
-_renamed = 'check(f"13. all three added configs EXIT 0'
+_renamed = 'check(f"13. all four added configs EXIT 0'
 assert inj["sources"][_SMOOTH].count(_renamed) == 1, "injection fixture: check moved"
 inj["sources"][_SMOOTH] = inj["sources"][_SMOOTH].replace(
-    _renamed, 'check(f"14. all three added configs EXIT 0')
+    _renamed, 'check(f"14. all four added configs EXIT 0')
 check(_smooth_other_three_group(inj) == (14,),
-      "injection 13m2. injection is well-formed: the code now drives the other three "
-      "configs from group 14, and the docstring still says what it said")
+      "injection 13m2. injection is well-formed: the code now drives those configs from "
+      "group 14, and the docstring still says what it said")
 _hits = [f for f in check_self_report(inj) if "smooth_group" in f]
 check(len(_hits) == 1 and "14" in _hits[0],
       "injection 13m2. check 7 follows the CODE, not the prose beside the figure: moving "
@@ -3435,6 +3488,45 @@ check(_ok and not check_self_report(synced)
       and "SINCE #114 GROUP 14 ALSO DRIVES" in synced["sources"][_SMOOTH],
       "injection 13m2. ...and `--sync` rewrites the head docstring from the code, so the "
       "file's first line stops being hand-maintained")
+
+# 13m3. #153's half of the same sentence: the COUNT, which is the figure that actually
+# moved. It read THREE from #114 until a sixth shipped config arrived in that group, and
+# it sat in the file's FIRST LINE — the copy furthest from the runs it counts, which is
+# exactly where #116 found the group number wrong.
+_COUNT_LABEL = "the smoothing gate's other-three group number"
+inj, was = bend_figure(world, _COUNT_LABEL, 2, "SEVEN")
+check(was == _fmt_word_upper(_smooth_other_count(world)) and was != "SEVEN"
+      and _resolve(inj, _entry_by_label(_COUNT_LABEL))[1] is None,
+      "injection 13m3. injection is well-formed: the docstring stated how many shipped "
+      "configs that group drives, and now states a number no reading of the code gives")
+_hits = [f for f in check_self_report(inj) if "smooth_other_count" in f]
+check(len(_hits) == 1 and "SEVEN" in _hits[0]
+      and _hits[0].startswith(_TARGET_PATH["src:" + _SMOOTH]),
+      "injection 13m3. check 7 fails on the head docstring's COUNT, naming the gate file "
+      "and both words — the half that had no gate until #153 moved it")
+
+# 13m4. ...and the direction that matters, since the count moves when the CODE gains a
+# config and not when anybody edits prose: drop one of the retargets and the word must
+# follow it down. A gate reading the count out of the sentence would pass here, and the
+# sentence would go on claiming a config nothing runs.
+inj = copy_world(world)
+_tr_call = '                           config=lambda: shipped_config("multiblock_tworing"))\n'
+assert inj["sources"][_SMOOTH].count(_tr_call) == 1, "injection fixture: retarget moved"
+inj["sources"][_SMOOTH] = inj["sources"][_SMOOTH].replace(_tr_call, "")
+check(_smooth_other_count(inj) == (_smooth_other_count(world)[0] - 1,)
+      and _smooth_other_three_group(inj) == _smooth_other_three_group(world),
+      "injection 13m4. injection is well-formed: the code drives one config fewer and "
+      "still drives the rest from the same group, so the COUNT alone is what moved")
+_hits = [f for f in check_self_report(inj) if "smooth_other_count" in f]
+check(len(_hits) == 1 and _fmt_word_upper(_smooth_other_count(inj)) in _hits[0],
+      "injection 13m4. check 7 follows the CODE here too: a config leaving that group "
+      "reddens the file's first line rather than leaving it counting a run nobody makes")
+synced, _changes, _ok = sync_world(inj)
+check(_ok and not check_self_report(synced)
+      and ("ALSO DRIVES THE OTHER " + _fmt_word_upper(_smooth_other_count(inj))
+           in synced["sources"][_SMOOTH]),
+      "injection 13m4. ...and `--sync` rewrites the word from the code, so neither half "
+      "of that sentence is hand-maintained any more")
 
 # 13n. the structural half again, in the shape this figure can actually break: the three
 # configs driven from two different groups. "GROUP n ALSO DRIVES THE OTHER THREE" is a
@@ -3549,7 +3641,7 @@ for _label, _target, _was, _now in (
         ("the block-field gate's injection count", "note:mesher.md",
          "injections into `src/Mesh.cpp`", "injections into the writer"),
         (_GROUP_LABEL, "src:" + _SMOOTH,
-         "ALSO DRIVES THE OTHER THREE", "ALSO DRIVES THE REMAINING THREE"),
+         "ALSO DRIVES THE OTHER FOUR", "ALSO DRIVES THE REMAINING FOUR"),
         # Built from `_ROOT_NAME` rather than written out: this target is THIS file, so a
         # literal here would be a second occurrence of the very phrase the fixture
         # requires to be unique, and the loop would abort on its own source text.

@@ -83,6 +83,7 @@ import test_multiblock_surface as mb                  # noqa: E402
 import test_multiblock_binding_surface as mbb         # noqa: E402
 import test_multiblock_ogrid_surface as mbo          # noqa: E402
 import test_multiblock_cgrid_surface as mbc          # noqa: E402
+import test_multiblock_tworing_surface as mbt       # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
 from app.services.logging_setup import get_logger     # noqa: E402
 
@@ -338,6 +339,21 @@ CASES = {
     #     that a `.vtk` still renders.
     "mb_ogrid": _shipped_multiblock(mbo),
     "mb_cgrid": _shipped_multiblock(mbc),
+    #   mb_tworing (#153): the EIGHT-block two-ring O-grid, and the only shipped
+    #     case whose block boundary in the middle of the fluid is a CURVE -- four
+    #     `follows` interfaces on a concentric circle, welded to the four inner
+    #     blocks on one side and the four outer ones on the other. Captured over all
+    #     three exported files, which is what #153 asks of it, and each of the three
+    #     is where a different regression would land. A lost `follows` puts the seam
+    #     on the inscribed square, moving 96 nodes by up to 0.293 in the `.vtk` and
+    #     the `.vrt`. A `follows` that started exporting a boundary face -- the one
+    #     thing the key is defined NOT to do -- adds 96 faces and four patches to the
+    #     `.bnd` while leaving the coordinates untouched, so the `.bnd` is the only
+    #     file that would say so. A lost weld along the curve tears the two rings
+    #     apart and doubles the seam's nodes, which the `.cel` connectivity carries.
+    #     Its `ds_start` is the inner ring's own last interval, so a change to the
+    #     tanh solver moves the whole outer ring rather than one edge of it.
+    "mb_tworing": _shipped_multiblock(mbt),
     #   mb_cgrid_smooth (#81): the same shipped C-grid with MB_SMOOTH_ITERS 1, the
     #     only case here whose node positions come from the SMOOTHER rather than
     #     from the fill. Every interior node moves on that one sweep, so a kernel

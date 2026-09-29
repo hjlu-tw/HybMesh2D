@@ -1,0 +1,169 @@
+// AN EIGHT-BLOCK TWO-RING O-GRID around the same circular body (issue #153) —
+// the first shipped document whose block boundary in the middle of the fluid is
+// a CURVE rather than a chord.
+//
+//   ./run.sh -conf config/multiblock_tworing.dat
+//
+// WHAT IS NEW HERE, AND WHAT IS NOT.
+//
+// Everything about the O-grid beside it (examples/topology/ogrid_circle.json) is
+// reused verbatim: the corner ring on the body, the radial equivalence class that
+// wraps around and closes, the wall clustering solved for from the run's
+// BL_INITIAL_THICKNESS. The one new statement is the seam. Each of the four
+// `s*` edges below is an `interface` that says
+//
+//     "follows": {"geom": "circle_seam.dat", "seg": <k>}
+//
+// which is #151's key: the same object as a `binding` with the boundary-condition
+// half removed, because an interior line is not a boundary. It makes the edge lie
+// on that circle's own polyline by arc length, and it does nothing else — the seam
+// exports no face, carries no condition, and reports no first-cell height. Without
+// it the two rings would meet along a square, each of its four chords sagging
+// 0.293 r inside the ring the document declares.
+//
+// THE MIDDLE RING IS A GEOMETRY THE USER DREW. It is an ordinary concentric
+// circle, examples/geometries/circle_seam.dat, hand-authored and segmented into
+// the same four quarters as the body so every corner is a joint. Nothing generates
+// it; a circle needs nothing generated. Its 480 facets are 120 to a quarter, and
+// that number answers to TWO divisibility rules rather than to a taste for round
+// ones: 120 is a multiple of the 24 intervals a seam edge carries, so the seam is
+// sampled a whole number of facets to a node and #94's advice does not fire on it;
+// and it is a multiple of the body's own 40, so the count advice #94 gives on the
+// BODY's four edges — which do fire, at 1.667 facets per interval, exactly as they
+// do on the single-ring O-grid — still reads 'declare count 41'. That advice is the
+// GCD of every stretch on the equivalence class, and the seam joined that class: at
+// 96 or 192 facets it would have pulled the GCD from 40 down to 8 and told the user
+// to coarsen the body to 9 nodes. A geometry that silently makes another edge's
+// advice worse is the defect, not the advice.
+//
+// THE TWO RINGS ARE CONTINUOUS ACROSS THE SEAM, AND THAT IS DECLARED, NOT TUNED.
+// The inner ring runs r = 0.5 -> 1.0 in 24 intervals with its first cell at the
+// run's BL_INITIAL_THICKNESS (1e-3); the tanh law that solves for that first cell
+// finishes at 5.813418e-02. The outer ring therefore STARTS there —
+// "ds_start": 0.05813418 on every `ro*` below — so the first cell out of the seam
+// is the last cell into it and the seam is not visible as a jump in cell size. The
+// number is the inner ring's own arithmetic read off, not a value someone liked
+// the look of: change the inner ring's count, its span or the run's wall height
+// and this number is wrong and the seam shows.
+//
+// THE CELL BUDGET IS THE SINGLE RING'S, EXACTLY. 96 nodes around and 25 + 25 - 1
+// = 49 across, against the single ring's 96 x 49: the same 4704 vertices, the same
+// 9216 triangles, the same 192 boundary edges, in eight blocks instead of four.
+// That is what makes the comparison in docs/design_notes/mesher.md a measurement
+// rather than an impression — and that comparison, run 2026-09-29, goes BOTH ways:
+// this mesh holds its wall spacing better and has the better cell shape, its
+// non-orthogonality is identical to every digit, and its worst wall-normal
+// EXPANSION RATIO is worse (1.258 against 1.185). Read it before preferring this
+// topology to the simpler one.
+//
+// Each block's i runs OUTWARD (its south and north are the two radials) and its j
+// runs ANTICLOCKWISE (its west is the inner arc, its east the outer one), which is
+// the frame the block orientation rule requires — the same frame as the O-grid's.
+{
+  "format_version": 1,
+
+  // THREE rings of corners, each a joint where one quarter ends and the next
+  // begins, declared once as the t = 0 of the segment that starts there.
+  "corners": [
+    {"id": "b0", "kind": "on_geometry", "geom": "circle_body.dat", "seg": 0, "t": 0.0},
+    {"id": "b1", "kind": "on_geometry", "geom": "circle_body.dat", "seg": 1, "t": 0.0},
+    {"id": "b2", "kind": "on_geometry", "geom": "circle_body.dat", "seg": 2, "t": 0.0},
+    {"id": "b3", "kind": "on_geometry", "geom": "circle_body.dat", "seg": 3, "t": 0.0},
+
+    // The middle ring. These four are the ONLY corners in any shipped document
+    // that sit on a geometry which is not a boundary of the mesh.
+    {"id": "m0", "kind": "on_geometry", "geom": "circle_seam.dat", "seg": 0, "t": 0.0},
+    {"id": "m1", "kind": "on_geometry", "geom": "circle_seam.dat", "seg": 1, "t": 0.0},
+    {"id": "m2", "kind": "on_geometry", "geom": "circle_seam.dat", "seg": 2, "t": 0.0},
+    {"id": "m3", "kind": "on_geometry", "geom": "circle_seam.dat", "seg": 3, "t": 0.0},
+
+    {"id": "f0", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 0, "t": 0.0},
+    {"id": "f1", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 1, "t": 0.0},
+    {"id": "f2", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 2, "t": 0.0},
+    {"id": "f3", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 3, "t": 0.0}
+  ],
+
+  "edges": [
+    // ── The INNER ring's radials, body -> seam ──────────────────────────────
+    // One equivalence class that wraps around and closes: 'ri0' seeds the count
+    // and the other three propagate. Each declares its 'start' — the corner on
+    // the body — a wall end, so its first cell is the run's BL_INITIAL_THICKNESS
+    // and the tanh law solves for the clustering that delivers it.
+    {"id": "ri0", "corners": ["b0", "m0"], "kind": "interface", "count": 25,
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri1", "corners": ["b1", "m1"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri2", "corners": ["b2", "m2"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri3", "corners": ["b3", "m3"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+
+    // ── The OUTER ring's radials, seam -> far field ─────────────────────────
+    // A SECOND equivalence class, separate from the inner one — no block has an
+    // inner radial and an outer radial as its two i-sides — which is the whole
+    // point of the split: these 24 intervals answer to the far field and those 24
+    // answer to the wall. They cluster at their 'start', the corner on the SEAM,
+    // to the height the inner ring finished at. Not 'wall_ends': that end is not
+    // a wall, and the number is not BL_INITIAL_THICKNESS.
+    {"id": "ro0", "corners": ["m0", "f0"], "kind": "interface", "count": 25,
+     "spacing": {"ds_start": 0.05813418}},
+    {"id": "ro1", "corners": ["m1", "f1"], "kind": "interface",
+     "spacing": {"ds_start": 0.05813418}},
+    {"id": "ro2", "corners": ["m2", "f2"], "kind": "interface",
+     "spacing": {"ds_start": 0.05813418}},
+    {"id": "ro3", "corners": ["m3", "f3"], "kind": "interface",
+     "spacing": {"ds_start": 0.05813418}},
+
+    // ── The body. One block side per source segment; these carry the wall. ──
+    {"id": "w0", "corners": ["b0", "b1"], "kind": "wall", "count": 25,
+     "binding": {"geom": "circle_body.dat", "seg": 0}},
+    {"id": "w1", "corners": ["b1", "b2"], "kind": "wall", "count": 25,
+     "binding": {"geom": "circle_body.dat", "seg": 1}},
+    {"id": "w2", "corners": ["b2", "b3"], "kind": "wall", "count": 25,
+     "binding": {"geom": "circle_body.dat", "seg": 2}},
+    {"id": "w3", "corners": ["b3", "b0"], "kind": "wall", "count": 25,
+     "binding": {"geom": "circle_body.dat", "seg": 3}},
+
+    // ── THE SEAM. Four interior lines that FOLLOW a curve. ──────────────────
+    // Each is the east of an inner block and the west of an outer one, so the two
+    // rings share its nodes rather than each generating their own, and it welds by
+    // node identity like any other shared edge. `follows` rather than `binding`:
+    // the circle's sidecar labels these segments 'seam', and that label reaches
+    // nothing — no patch in the .bnd carries it, which is exactly the point. Their
+    // count propagates from the body arc through the inner block.
+    {"id": "s0", "corners": ["m0", "m1"], "kind": "interface",
+     "follows": {"geom": "circle_seam.dat", "seg": 0}},
+    {"id": "s1", "corners": ["m1", "m2"], "kind": "interface",
+     "follows": {"geom": "circle_seam.dat", "seg": 1}},
+    {"id": "s2", "corners": ["m2", "m3"], "kind": "interface",
+     "follows": {"geom": "circle_seam.dat", "seg": 2}},
+    {"id": "s3", "corners": ["m3", "m0"], "kind": "interface",
+     "follows": {"geom": "circle_seam.dat", "seg": 3}},
+
+    // ── The far field. Bound, so its condition comes from its own sidecar. ──
+    {"id": "o0", "corners": ["f0", "f1"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 0}},
+    {"id": "o1", "corners": ["f1", "f2"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 1}},
+    {"id": "o2", "corners": ["f2", "f3"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 2}},
+    {"id": "o3", "corners": ["f3", "f0"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 3}}
+  ],
+
+  // [south, east, north, west] = [radial in, outer arc, radial out, inner arc].
+  // The inner ring's east is the seam and the outer ring's west is the SAME
+  // declared edge, which is where the two rings are welded; 'q3' and 'p3' close
+  // their own rings back onto 'ri0' and 'ro0'.
+  "blocks": [
+    {"id": "q0", "edges": ["ri0", "s0", "ri1", "w0"]},
+    {"id": "q1", "edges": ["ri1", "s1", "ri2", "w1"]},
+    {"id": "q2", "edges": ["ri2", "s2", "ri3", "w2"]},
+    {"id": "q3", "edges": ["ri3", "s3", "ri0", "w3"]},
+
+    {"id": "p0", "edges": ["ro0", "o0", "ro1", "s0"]},
+    {"id": "p1", "edges": ["ro1", "o1", "ro2", "s1"]},
+    {"id": "p2", "edges": ["ro2", "o2", "ro3", "s2"]},
+    {"id": "p3", "edges": ["ro3", "o3", "ro0", "s3"]}
+  ]
+}

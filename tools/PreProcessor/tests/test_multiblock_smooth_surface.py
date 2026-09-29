@@ -24,18 +24,20 @@ own them rather than composed here — the same rule the golden comparator follo
 these files are documentation a user runs, and an edit to one has to be visible
 from a gate.
 
-SINCE #114 GROUP 13 ALSO DRIVES THE OTHER THREE — ``multiblock_square``,
-``multiblock_cavity`` and ``multiblock_hgrid``, so all FIVE shipped multi-block
-configs are exercised for the wall warning's floor. Those three have no gate of
+SINCE #114 GROUP 13 ALSO DRIVES THE OTHER FOUR — every shipped multi-block config
+no other gate owns a ``base_config`` for, so all of them are exercised for the wall
+warning's floor. That group ENUMERATES them from ``config/`` rather than from a list,
+which is what caught #153's two-ring O-grid arriving as a sixth; they have no gate of
 their own to import from (nothing else in the tree runs them), so they enter
 through ``shipped_config`` — the ONE retargeter since #126, in
-``mb_shipped_config``, which this file used to own a third copy of. What each of the three can and cannot see is in
+``mb_shipped_config``, which this file used to own a third copy of. What each of them can and cannot see is in
 the blind spots, per config: the floor-revert injection reaches NONE of them, and
-saying so is half of what this widening bought. (That group number is a GATED figure
-since #116: this line said 12 while the code, the numbered list below, the section
-banner and the rule file all said 13, and `test_instruction_budget.py` check 7 now
-derives it from the checks that follow the three ``shipped_config`` retargets. Renumber
-the group and run that gate with ``--sync`` rather than editing this sentence.)
+saying so is half of what this widening bought. (BOTH numbers in that sentence are
+GATED figures since #116 and #153: this line said 12 while the code, the numbered list
+below, the section banner and the rule file all said 13, and `test_instruction_budget.py`
+check 7 now derives the group AND the count from the ``shipped_config`` retargets
+themselves. Renumber the group or drive another config, and run that gate with
+``--sync`` rather than editing this sentence.)
 
 What this pins down:
 
@@ -77,8 +79,9 @@ What this pins down:
      asserted on real files: the two noise warnings are gone, the two walls whose
      deviation is real still warn in the SAME run, and the two that went quiet are
      back at a cap where their own deviation rises above the floor.
- 13. AND THE SAME CRITERION ON ALL FIVE SHIPPED CONFIGS (#114), which was checked
-     on two of them until that ticket. The H-grid's eight declared wall edges give
+ 13. AND THE SAME CRITERION ON EVERY SHIPPED CONFIG (#114), which was checked
+     on two of them until that ticket, and on five until #153 added the two-ring
+     O-grid — a sixth that this group's own from-disk enumeration is what caught. The H-grid's eight declared wall edges give
      seven warnings whose smallest, 5.90e-6 relative, is now the TIGHTEST upper
      bound this floor has — under the C-grid's `e_ff` pair at 9.499e-6 — and its
      eighth starts 0.15% off its declaration, is IMPROVED to 0.08% and is
@@ -1543,10 +1546,12 @@ def main() -> int:
         shipped = sorted(os.path.basename(f)[:-4] for f in
                          glob.glob(os.path.join(_REPO, "config", "multiblock_*.dat")))
         driven = ["multiblock_cavity", "multiblock_cgrid", "multiblock_hgrid",
-                  "multiblock_ogrid", "multiblock_square"]
-        check(f"13. the five shipped multi-block configs are exactly the five this "
-              f"file drives, read off `config/` rather than from a list here — so a "
-              f"SIXTH one cannot ship without a gate ({shipped})",
+                  "multiblock_ogrid", "multiblock_square", "multiblock_tworing"]
+        check(f"13. the shipped multi-block configs are exactly the ones this file "
+              f"drives, read off `config/` rather than from a list here — so a NEW "
+              f"one cannot ship without a gate. That is not a hypothetical: #153's "
+              f"two-ring O-grid is the sixth, and this check is what sent it here "
+              f"({shipped})",
               shipped == driven)
         # THE EXIT CODE IS READ, as it is for every other run in this file: a case
         # that folded and exited 9 still prints its banners, so a group that only
@@ -1557,10 +1562,13 @@ def main() -> int:
                            config=lambda: shipped_config("multiblock_cavity"))
         rc_hg, hg, _ = run(tmp, "hg114",
                            config=lambda: shipped_config("multiblock_hgrid"))
-        check(f"13. all three added configs EXIT 0 at the default cap, so the "
+        rc_tr, tr, _ = run(tmp, "tr153",
+                           config=lambda: shipped_config("multiblock_tworing"))
+        check(f"13. all four added configs EXIT 0 at the default cap, so the "
               f"banners the checks below parse describe a mesh that was actually "
-              f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg})",
-              (rc_sq, rc_cv, rc_hg) == (0, 0, 0))
+              f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg}, tworing "
+              f"{rc_tr})",
+              (rc_sq, rc_cv, rc_hg, rc_tr) == (0, 0, 0, 0))
         w_hg = wall_height_warns(hg)
         hg_before, hg_after = wall_banner(hg, before=True), wall_banner(hg)
         check(f"13. the shipped H-GRID's eight declared wall edges are all MEASURED "
@@ -1691,6 +1699,32 @@ def main() -> int:
                   and sl.get("cap") == 20 and sl.get("moved", 0) > 0
                   and all(v == 0.0 for v in bef.values())
                   and all(v == 0.0 for v in aft.values()))
+        # THE TWO-RING O-GRID (#153) IS THE THIRD KIND OF SILENCE HERE, and it is
+        # the one this group's criterion is actually about. It is not a rectangle:
+        # its eight wall edges go IN at a real deviation (the body's four at
+        # 0.0171%, from a fill that cannot land a 1e-3 first cell on a faceted
+        # circle exactly) and come OUT at 0.0000%, so the sweeps IMPROVED every one
+        # of them. That is the C-grid airfoil pair's property — the bar is the mesh
+        # the solve started from, not the declaration — on the only shipped case
+        # where it holds for EVERY wall at once, which makes it the cleanest
+        # statement of the bar in the tree. A bar rewritten as an absolute tolerance
+        # on the declaration would pass every other check in this group and warn
+        # about all eight of these.
+        tr_b, tr_a = wall_banner(tr, before=True), wall_banner(tr)
+        w_tr, sl_tr = wall_height_warns(tr), smooth_line(tr)
+        check(f"13. the shipped TWO-RING O-GRID measures EIGHT wall edges — four on "
+              f"the body, four on the far field; its four SEAM edges are interfaces "
+              f"and correctly report no first-cell height at all (before {sorted(tr_b)})",
+              sorted(tr_b) == sorted(tr_a)
+              == ["o0", "o1", "o2", "o3", "w0", "w1", "w2", "w3"])
+        check(f"13. ...and warns about NONE of them, on a run free to move "
+              f"{sl_tr.get('moved')} nodes, because the sweeps made every one "
+              f"BETTER rather than because nothing moved — the bar's own sentence "
+              f"on the only shipped case where it holds for every wall at once "
+              f"(before {tr_b}, after {tr_a})",
+              not w_tr and sl_tr.get("cap") == 20 and sl_tr.get("moved", 0) > 0
+              and max(tr_b.values()) > 0.0
+              and all(tr_a[e] <= tr_b[e] for e in tr_b))
 
     print()
     if failures:

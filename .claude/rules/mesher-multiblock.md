@@ -137,7 +137,7 @@ wall first-cell height accuracy, CELL SHAPE and cell count, plus one machine-rea
 `HYBMESH_MB_QUALITY cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=…
 wall_first_cell_worst_rel=… quad_midline_ratio_cells=… quad_midline_ratio_median=…
 quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance gate is a grep.
-- **Printed on every run, including a good one** — three of the four numbers are the baseline
+- **Printed on every run, including a good one**: three of the four numbers are the baseline
   elliptic smoothing is judged against.
 - **Its own module rather than more of `MultiBlock.cpp`**: a different question ("is this mesh
   usable?" vs "what does this document declare?"), and a pure function of a finished mesh.
@@ -187,8 +187,7 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
   so a square reads **1.0** and not the 1.414 the split triangles would give, and the figure is
   **independent of `MB_SPLIT_QUADS`** — measured on the shipped O-grid: `cells=` 9216 → 4608 while
   all four `quad_midline_ratio_*` are identical to every digit the line prints (#129 wrote
-  "bitwise"; both sides are read off a six-decimal line, so the check cannot see a
-  difference under 5e-7 and no surface carries more precision to read).
+  "bitwise"; both sides are read off a six-decimal line, so nothing under 5e-7 is visible).
   - **The metric's name is in the KEY, never as a value.** Every token of `HYBMESH_MB_QUALITY` is
     `key=<float>` and `qlines` — the ONE parser, imported by SIX gates from the one that owns
     it — floats all of them, so a `shape_metric=…` token would break all seven files. The
@@ -204,13 +203,9 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
   - **NO COLOUR AND NO THRESHOLD, anywhere, by decision.** The shipped O-grid's max is 32.77 =
     0.0327 azimuthal spacing / 0.001 requested `BL_INITIAL_THICKNESS` — what the user asked for,
     not a defect. `test_multiblock_quality_gate.py` gains no bar on these three figures.
-  - **THE SHIPPED C-GRID'S max 3147.958 IS THE SAME QUOTIENT, and it is ARITHMETIC** (#140). Its
-    worst cell is the LAST cell on the wake cut, at the outlet: **3.143570** — the last of the
-    wake's 24 intervals, `count` 25 with `ds_start` 0.005 over a 19-chord span — over **0.000998606**,
-    the first radial interval the two outlet-plane edges declare as a wall end and
-    `BL_INITIAL_THICKNESS 0.001` sizes. Both numbers are spacings the DOCUMENT asks for, so a fix
-    would change the TOPOLOGY's wake count and not the mesher; the negative control is that a 26th
-    wake node moves the max to 3003.344 and moves no other case.
+  - **THE SHIPPED C-GRID'S max 3147.958 IS THE SAME QUOTIENT, and it is ARITHMETIC** (#140): the
+    wake cut's last interval over the outlet plane's first radial one, BOTH spacings the DOCUMENT
+    asks for — so a fix changes the TOPOLOGY's wake count and not the mesher.
   - **EVERY SHIPPED CASE'S THREE FIGURES ARE PINNED, AND A PIN IS NOT A THRESHOLD** (#140). All
     five shipped multi-block configs run in `test_multiblock_shape_surface.py`, and each one's
     median / p95 / max is held against the day it was measured by a check whose label names the
@@ -475,10 +470,10 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   edge (wall-only, and a wall is ONE block's side — a shared edge follows a curve via `follows`
   instead), and a block welded to ITSELF is inexpressible — right for a transfinite fill, but an
   O-grid seam cannot be one edge. (#55's O-grid is four blocks in a RING for that reason; its
-  wrap-around class is `test_multiblock.cpp` 33.) **CORRECTED 2026-09-29 (#151): it also said
-  "nothing exceeds four blocks" and no such limit exists** — a nine-block strip fills
-  (`tests/cpp/test_multiblock.cpp` 59, GATED rather than quoted) and `ogrid_splits` admits 64.
-  What is true is the ARITY rule one line up, written far too widely.
+  wrap-around class is `test_multiblock.cpp` 33.) **CORRECTED 2026-09-29 (#151): "nothing exceeds
+  four blocks" was never a limit** — `tests/cpp/test_multiblock.cpp` 59 fills nine (GATED rather
+  than quoted), `ogrid_splits` admits 64, and #153 SHIPS eight. What is true is the ARITY rule one
+  line up.
 
 **A circular O-GRID: curved arcs, a ring that CLOSES, and a wall spacing SOLVED for** (still the
 one pure entry point; the law is `tools/PreProcessor/include/Spacing.hpp`; #55). **Full rationale,
@@ -502,15 +497,13 @@ the measurements that forced the blending change, the acceptance run and the bli
   the edge could not honour (coarser than its count allows) is a WARNING measured on the produced
   nodes, not re-derived from the law — and **in ARC LENGTH, never the chord**: a bound edge follows
   a polyline, so a first interval spanning several facets has a shorter chord, and comparing that
-  fired the warning on a law that had honoured the request exactly, blaming the node count for the
-  geometry's own faceting. Gated with a negative control by `test_multiblock.cpp` 36.
+  fired the warning on a law that had honoured the request exactly. Gated with a negative control
+  by `test_multiblock.cpp` 36.
 - **`coons` blends by the boundary's own NORMALIZED ARC LENGTH, not by the logical index**, and this
   is load bearing rather than a refinement: the index blend put an O-grid's first interior ring
   **6927% above** the requested wall height (806% even at twelve sectors), the arc-length blend
   reproduces a polar annulus EXACTLY. Facing curves are averaged; a degenerate side falls back to the
-  index; both ends pinned to 0 and 1. **Behaviour-preserving on the existing set, measured against a
-  HEAD binary**: worst node movement 6.7e-16, with `golden_mesh.py`'s 3 DIFFs the node-SET-membership
-  artefact above.
+  index; both ends pinned to 0 and 1.
 - **The O-grid is FOUR BLOCKS IN A RING** (`examples/topology/ogrid_circle.json`,
   `config/multiblock_ogrid.dat`): i runs outward, j anticlockwise, so the four radials are ONE
   equivalence class that WRAPS — one declared count, three propagated, the last block welded back to
@@ -518,17 +511,15 @@ the measurements that forced the blending change, the acceptance run and the bli
   which it stops binding the 96-node ring, not a convergence point. Measured on the shipped files at
   the default: 0 inverted, non-orthogonality max **2.025°**, wall first cell **0.037%** (0.0036%
   unsmoothed). The angle is the stored polyline's FACETING, not the law, and is now the BODY's 160
-  facets under the same ring. **The wall figure is NOT**, and that is new: 0.0036% is what the
+  facets under the same ring. **The wall figure is NOT**: 0.0036% is what the
   faceting leaves, and the default's 20 sweeps take it to 0.037% — so at the default the SMOOTHER's
-  own perturbation of the second row is the larger of the two effects, and #55's "10× finer circles
-  measure 0.0007%" is a statement about the unsmoothed number. #55's 2.25° / 0.08% were the FAR
-  FIELD's 80 facets and are what #80's last unmet bullet was written against. **Do not make the far field commensurate with the
+  own perturbation of the second row is the larger of the two effects. **Do not make the far field commensurate with the
   ring** (96, 192, 288 all reach the 1.875° floor): the ring's count is one declared number the
   equivalence class propagates, so that would couple a geometry file to a count nothing enforces.
-  A robust 2.025 over a fragile 1.875 — the reasoning is #57's far-field-clustering blind spot.
+  A robust 2.025 over a fragile 1.875.
 - **The shipped circles are checked against their ONE generator** (`write_circle` in the surface
-  gate), never trusted: a hand-edited `.dat` whose `.meta` still describes the old point set is a
-  mesh with corners on the wrong segments and no error at all.
+  gate), never trusted: a `.meta` describing the old point set is a mesh with corners on the wrong
+  segments and no error at all.
 - Gated by `tests/cpp/test_multiblock.cpp` 30-36, `tests/test_multiblock_ogrid_surface.py` (8 groups
   on the SHIPPED files, reusing #53's conformity measure) and the `mb_ogrid` golden case. The
   dated solver acceptance run is in that file's docstring.
@@ -556,8 +547,8 @@ acceptance run: `docs/design_notes/mesher.md`.**
 - **The far field's two nose sides cluster at their TRAILING-EDGE end to the AIRFOIL's own
   `ds_start`.** Over the chordwise surface the body's normals are nearly vertical and that boundary
   is horizontal, so the outer point opposite a body point sits at nearly the same x and the outer
-  distribution must TRACK the body's. Left uniform: 59.52° / 16.0° / 3.46%, blowing up just aft of
-  the **LEADING** edge. With it: **32.04° / 4.56° / 0.44%**, at the same `cfl 0.6` the O-grid used.
+  distribution must TRACK the body's. Left uniform it blows up just aft of the **LEADING** edge
+  (59.52° / 16.0° / 3.46% against **32.04° / 4.56° / 0.44%**, at the same `cfl 0.6`).
   **DERIVED, not tuned**: change the airfoil edges' spacing and this must follow.
 - **A recorded acceptance run must state its CFL**: lowering `cfl` to 0.3 also makes the BAD mesh
   run, so "the solver runs" is quotable without improving the grid. The wake's 3144:1 worst edge
@@ -571,6 +562,23 @@ acceptance run: `docs/design_notes/mesher.md`.**
   `tests/test_multiblock_cgrid_surface.py` (9 groups on the SHIPPED files, reusing #53's conformity
   measure) and the `mb_cgrid` golden case. The dated solver acceptance run is in that file's
   docstring.
+
+**A TWO-RING O-GRID, and the number it was built to produce does NOT favour it**
+(`examples/topology/tworing_ogrid.json` + `config/multiblock_tworing.dat`; #153). **NO C++
+CHANGE**: eight blocks, four `follows` seams (#151) on a hand-drawn `circle_seam.dat`. Gated by
+`tests/test_multiblock_tworing_surface.py` (11 groups), whose docstring holds the dated acceptance
+run, and by the `mb_tworing` golden case over all three exported files.
+- **The seam geometry's faceting divides BOTH the seam edges' 24 intervals and the BODY's 40**
+  (120 per quarter), so #94's advice does not fire on the seam AND still names count 41 on the
+  body — the GCD is over the equivalence class and the seam JOINED it; at 96 or 192 it names 9.
+- **The outer ring's `ds_start` IS the inner ring's last interval** (`0.05813418`), which is what
+  makes the seam invisible as a jump in cell size. **DERIVED, not tuned**: change that ring's count,
+  its span or `BL_INITIAL_THICKNESS` and this must follow.
+- **The budget is the single ring's EXACTLY** (4704 / 9216 / 192), which is what makes the
+  comparison a measurement — and **it goes BOTH ways, so do not re-argue it from the topology**:
+  identical non-orthogonality, a better-held wall spacing and a better cell shape, against a WORSE
+  wall-normal expansion ratio (1.258 to 1.185), the quantity #150 expected to win on.
+  Why: `docs/design_notes/mesher.md`, "A TWO-RING O-GRID, MEASURED AGAINST THE SINGLE".
 
 **The BLOCK ID is written to the VTK as a cell field, and it is OPTIONAL** (`Element::blockId`
 in `include/Mesh.hpp`, the `CELL_DATA` section in `src/Mesh.cpp::exportVTK`, filled by the
@@ -619,17 +627,17 @@ captured with it on.
 ## Named blind spots
 
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against
-one list. #68 moved the first; #69 moved the rest; #89 split the list with the rules.
+one list.
 **One blind spot that also covers this path is in `.claude/rules/mesher.md`'s list instead** —
-`golden_mesh.py` does not compare the `.bnd` `segm_no` column, and six of that comparator's
-nineteen cases are multi-block. It is not duplicated here, because a blind spot living in two
+`golden_mesh.py` does not compare the `.bnd` `segm_no` column, and eleven of that comparator's
+twenty cases are multi-block. It is not duplicated here, because a blind spot living in two
 places is one that will only ever be updated in one; a reader of this file alone would not
 otherwise learn the hole exists.
 
 - **Non-orthogonality says nothing about the shape of the SPLIT TRIANGLES** — it is measured on the
   structured grid cells only.
 - **`golden_mesh.py` DOES NOT COMPARE THE VTK CELL FIELD**, so a defect confined to #106's block
-  id is invisible to all ten multi-block cases: it reads the `.vtk` through `VTKMesh`, whose parser
+  id is invisible to every one of them: it reads the `.vtk` through `VTKMesh`, whose parser
   stops at `CELL_TYPES`. Measured — 19/19 SAME across the commit that ADDED the field. The same
   shape as the `.bnd` `segm_no` hole in `.claude/rules/mesher.md`'s list, and stated here because
   it is this path's field; `tests/test_multiblock_block_field.py` is the whole of its coverage.
@@ -643,8 +651,7 @@ otherwise learn the hole exists.
 - **Nothing projects onto an ANALYTIC curve.** A bound edge follows the stored POLYLINE, so
   "follows the circle" is measured against that polyline's vertices and the wall-height residue is
   its faceting. `BL_USE_ANALYTIC_GEOM` is a declared survivor nothing reads — and #83
-  KEPT it that way on purpose rather than by omission, by deciding that wall nodes do not slide;
-  the rule above carries the reason. The same faceting owns the O-grid's NON-ORTHOGONALITY too
+  KEPT it so DELIBERATELY, by deciding that wall nodes do not slide; the rule above says why. The same faceting owns the O-grid's NON-ORTHOGONALITY too
   (#93), not only the wall height: a facets-per-interval ratio that does not divide costs up to
   0.375° at the worst ratio.
   ~~**Nothing checks a bound edge's sample rate against its polyline.**~~ **CLOSED by #94**, which
@@ -659,9 +666,9 @@ otherwise learn the hole exists.
   the count is exact everywhere it has been measured.
   Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL"
   and "A SAMPLE RATE THE POLYLINE CANNOT CARRY IS NOW SAID".
-- **A curved interface is DECLARABLE since #151** (`follows`), but #55's O-grid is still a single
-  ring, no two-sided stretching with DIFFERENT heights at each end exists (#153 owns the two-ring
-  case), and nothing SHIPPED declares a curved `cut` — only the C++ gate exercises one.
+- **A curved interface is DECLARABLE since #151** (`follows`) and a two-ring O-grid SHIPS since
+  #153; no two-sided stretching with DIFFERENT heights at each end exists, and nothing SHIPPED
+  declares a curved `cut` — only the C++ gate exercises one.
 - **The arc-length blending's magnitude is measured OUT OF TREE**: no gate re-measures the 6927%
   the logical-index blend cost, only its consequence through `test_multiblock.cpp` 33/34 and the
   surface gate's quality line.
@@ -672,8 +679,7 @@ otherwise learn the hole exists.
 - **Nothing measures the QUALITY of the randomized rule's bit stream.** Checks 24-26 assert that
   both diagonals appear, that the pattern is not parity's, and that it is a function of the four
   declared inputs — a hash with a visible period would pass all of them. Deliberate: a distribution
-  test over 12 cells asserts noise, and the property that matters (no direction imprinted on a
-  uniform region) is what `MbQuality` measures on a real case.
+  test over 12 cells asserts noise, and the property that matters is what `MbQuality` measures.
 - **The C-grid's 0.005 far-field clustering is UNENFORCED**: derived from the airfoil edges' own
   `ds_start`, but two numbers in one document that happen to agree; only the acceptance run would
   notice them diverging.

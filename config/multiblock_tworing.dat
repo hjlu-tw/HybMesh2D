@@ -1,0 +1,50 @@
+# ==============================================================================
+# Multi-block structured meshing (MESH_MODE 1) — an EIGHT-BLOCK TWO-RING O-GRID
+# around the same circular body the four-block O-grid uses.
+#
+#   ./run.sh -conf config/multiblock_tworing.dat
+#
+# What this case adds to the multi-block family:
+#   * the block boundary in the middle of the fluid is a CURVE. Each of the four
+#     seam edges declares `follows` (#151) on a hand-authored concentric circle,
+#     so it lies on that polyline by arc length while carrying no boundary
+#     condition and exporting no face;
+#   * TWO radial equivalence classes instead of one, so the wall-normal law that
+#     holds the first cell at BL_INITIAL_THICKNESS answers to the wall and the
+#     one that reaches the far field answers to the far field;
+#   * the outer ring STARTS at the height the inner ring finished at, stated in
+#     the topology document, so the seam is not a jump in cell size.
+#
+# THE BUDGET IS THE SINGLE RING'S, EXACTLY — 4704 vertices, 9216 triangles, 192
+# boundary edges — which is what makes the two meshes comparable. The comparison is
+# in docs/design_notes/mesher.md and it goes BOTH ways: a better-held wall spacing
+# and a better cell shape here, an identical non-orthogonality, and a WORSE worst
+# wall-normal expansion ratio. Read it before preferring this to the simpler one.
+# ==============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE examples/topology/tworing_ogrid.json
+
+# THREE geometries, and only two of them are boundaries. The body carries 'wall'
+# in its sidecar and the far field 'farfield'; the middle ring carries 'seam',
+# which reaches NOTHING — a following edge takes no condition, so if that label
+# ever appeared in the .bnd it would arrive under its own name rather than hiding
+# inside 'wall'.
+GEOM_FILE examples/geometries/circle_body.dat
+GEOM_FILE examples/geometries/circle_seam.dat
+GEOM_FILE examples/geometries/circle_farfield.dat
+
+# The wall spacing, under the name it already has. Only the INNER ring's radials
+# take it; the outer ring's first cell is declared in the topology document,
+# because the seam is not a wall.
+BL_INITIAL_THICKNESS 0.001
+
+MB_SPLIT_QUADS 1
+
+# The FALLBACK. Both boundary geometries bind, so nothing should reach it — and
+# the run says so, one row per patch, naming the segment each was read off.
+BC_GEOM wall
+
+EXPORT_VTK 1
+EXPORT_STARCD 1
+OUTPUT_FILENAME results/meshes/multiblock_tworing/mesh_multiblock_tworing.vtk
