@@ -1655,9 +1655,8 @@ def _smooth_other_three_group(world):
     text, where = _source(world, "test_multiblock_smooth_surface.py")
     groups = set()
     for config in _smooth_other_configs(world):
-        call = _SHIPPED_CALL.search(text, 0)
-        while call is not None and call.group(1) != config:
-            call = _SHIPPED_CALL.search(text, call.end())
+        call = next(c for c in _SHIPPED_CALL.finditer(text)
+                    if c.group(1) == config)     # `config` came from this same walk
         m = _CHECK_GROUP.search(text, call.end())
         if m is None:
             raise _DeriveError(
