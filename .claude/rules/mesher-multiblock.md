@@ -335,6 +335,22 @@ wall that drift exported a band of wall at every junction.)
   sidecar's own point INDICES, never coordinates.
 - **A bound edge FOLLOWS the segment's polyline; it does not cut the chord.** One code path serves
   both (an unbound edge's "polyline" is its two corners), and that reduction is bit-identical.
+- **`follows` IS `binding` MINUS THE BOUNDARY-CONDITION HALF** (#151): same object (`{geom, seg}`),
+  same unknown-key strictness, interior-line ONLY. `binding` stays wall-only and unchanged.
+  - **It feeds the resolution above and nothing else** — a way IN to that one branch, never a
+    third. Gated as an EQUALITY: a following edge's nodes equal a bound wall's BIT FOR BIT.
+  - **The three checks that are properties of HAVING A PATH are reused unchanged** — both corners
+    on the segment, nodes by arc length, the sample-rate advice (ONE message for both keys, "sample
+    the source stretch it lies on"). **NOTHING gated on the KIND moved**: a following edge takes no
+    BC label, exports no face, is not in `wallSpecs`, and does not count as a declared binding.
+  - **Three refusals**: `follows` on a wall names `binding`; `binding` on an interior line names
+    `follows`; BOTH is refused naming both, checked before either is checked against the kind. Each
+    names the key used — `follows segment N of ...`, never `binds to`.
+  - **The shared-edge report publishes the path source** (`MbSharedEdge::followsGeom`/`followsSeg`;
+    `following segment N of '<file>'` / `a straight chord`) — also the gate the smoother's freeze
+    rule reads (`.claude/rules/mesher-smoothing.md`). Gated by `test_multiblock.cpp` 58 and
+    `tests/test_multiblock_follows_surface.py` (`examples/topology/curved_seam_blocks.json`).
+  Why: `docs/design_notes/mesher.md`, "AN INTERIOR LINE THAT FOLLOWS A CURVE".
 - **A geometry is named BY NAME** — exact declared path, then a *unique* basename — never by
   position in the loaded list. An ambiguous basename is refused, not resolved by order.
 - **A label stays a LABEL.** The seam emits the sidecar's grouping label and `Config::resolveGroupBc`
@@ -349,20 +365,20 @@ wall that drift exported a band of wall at every junction.)
   row per patch naming the segment it was read off.
 - **A SAMPLE RATE THE SOURCE POLYLINE CANNOT CARRY IS SAID, AND THE WARNING IS KEYED ON THE COST
   RATHER THAN ON THE RATIO** (`sampleRate` in `src/MultiBlock.cpp`; `MB_SAMPLE_RATE_TOL_DEG`, 0.1
-  deg of TURN; #94). A bound edge places its nodes by arc length, so when its interval count and
-  its stretch's facet count are not commensurate, consecutive nodes span different numbers of
-  facets and the polygon it meshes has IRREGULAR corners — nothing is wrong with the declaration
-  and nothing errors, the mesh is simply worse than the same declaration on a better-resolved
-  geometry. The warning names the EDGE, both counts, the ratio, both angles and BOTH fixes with the
-  arithmetic done: resample so the stretch carries a MULTIPLE of the interval count, or declare the
-  count whose intervals divide the facets — saying that the count PROPAGATES, so it moves the
-  opposite side of every block on the chain.
+  deg of TURN; #94). An edge WITH A PATH — bound or following (#151) — places its nodes by arc
+  length, so when its interval count and its stretch's facet count are not commensurate,
+  consecutive nodes span different numbers of facets and the polygon it meshes has IRREGULAR
+  corners: nothing is wrong with the declaration and nothing errors, the mesh is simply worse than
+  the same declaration on a better-resolved geometry. The warning names the EDGE, both counts, the
+  ratio, both angles and BOTH fixes with the arithmetic done — resample so the stretch carries a
+  MULTIPLE of the interval count, or declare the count whose intervals divide the facets, saying
+  that the count PROPAGATES so it moves the opposite side of every block on the chain.
   - **THE COST IS AN ANGLE AND THAT IS THE DECISION.** A non-dividing ratio on a STRAIGHT stretch
-    costs exactly nothing, so keying on the ratio fires on **14 of the 19 shipped bound edges** and
-    is read by nobody, while keying on the cost fires on **8**, every one of them one of the
-    O-grid's two circles. Measured as the worst turn the mesh nodes make against the worst an EVEN
-    sampling of the same curve at the same density would make, both maxima over the edge's interior
-    nodes the way `MbQuality` takes its worst corner.
+    costs nothing, so keying on the ratio fires on **14 of the 19 shipped bound edges** and is read
+    by nobody, while keying on the cost fires on **8**, all of them the O-grid's two circles.
+    Measured as the worst turn the mesh nodes make against the worst an EVEN sampling of the same
+    curve at the same density would make, both maxima over the edge's interior nodes the way
+    `MbQuality` takes its worst corner.
   - **THE POLYLINE's TURN MUST BE SMEARED over each vertex's two half-facets**, and that is
     required rather than tidy: read as a STEP at the vertex, a window shorter than one facet — the
     shipped far field, at 0.833 facets per interval — returns the whole vertex turn, `even` comes
@@ -375,16 +391,14 @@ wall that drift exported a band of wall at every junction.)
     exactly when it divides that stretch's facet count. #94's review found the per-edge version,
     which advised 41 on the shipped O-grid's body arcs and 21 on its far-field ones with `w0` and
     `o0` in ONE class: two contradictory instructions, one of which (41) puts the far field at the
-    1/n worst case and costs 2.250° against the 0.750 it started from. **Unbound edges are excluded
-    from that gcd** — a chord is one facet and would drag every chain it touches to 1 — and **a
-    chain of coprime stretches is told it has no count**, rather than being handed the useless 2.
+    1/n worst case and costs 2.250° against the 0.750 it started from. **Edges with NO path are
+    excluded from that gcd** — a chord is one facet and would drag every chain it touches to 1 —
+    and **a chain of coprime stretches is told it has no count**, not handed the useless 2.
   - **AND IT IS ONE-DIRECTIONAL: a ratio of 1/n is the WORST sampling, not an exempt one.** #94's
-    review asked for `intervals % facets` as well, reasoning that n equal intervals to a facet is
-    even sampling. Measured, every n-th node lands on a vertex and takes its WHOLE turn while the
-    rest take none: 0.500 costs 2.250° of turn against the shipped 0.833's 0.750°. Widening it
-    would silence the worst cases, and check 57's `ogrid("", 7, 11)` row is what stops that.
-    The MESSAGE is what the review got right — at an exact 1/n the nodes do span the same number
-    of facets — so it states the ratio as "not a WHOLE number of facets to a node".
+    review asked for `intervals % facets` too; measured, 0.500 costs 2.250° of turn against the
+    shipped 0.833's 0.750°, so widening it would silence the worst cases. Check 57's
+    `ogrid("", 7, 11)` row stops that. The MESSAGE states the ratio as "not a WHOLE number of
+    facets to a node", which is the half the review got right.
   - Gated by `tests/cpp/test_multiblock.cpp` 57, whose fixture is non-commensurate BY DECLARATION
     so that #95 cannot take the coverage away with the shipped geometry (14 hand injections, 3
     inert and named); `tests/test_multiblock_ogrid_surface.py` group 9, which asserts the warned
@@ -432,16 +446,12 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   shape), not a string compared at six sites — it shipped as the latter, and the review that
   caught it also caught a second copy of the four SIDE names in the `.cpp`.
 - **It decides three things and NO arithmetic**: how many block sides the edge may be (`wall` 1,
-  `interface`/`cut` 2); whether a `binding` is allowed (`wall` only); and whether it exports as a
+  `interface`/`cut` 2); WHICH key may say the edge lies on a source segment (`binding` on a `wall`,
+  `follows` on an interior line); and whether it exports as a
   boundary face (`wall` only, also the `MbWallSpec` gate). An interface and a cut weld identically —
   **said out loud**: the distinction lives in the declaration, the validation and the report
   (`MbResult::sharedEdges`, a `Cut '<id>'` banner row), which is what makes a later divergence a
   change rather than a rewrite. Still never INFERRED from the binding.
-- **Refusing a `binding` on an interface/cut costs a CURVED interface, and the refusal says so.** A
-  binding both makes the edge FOLLOW the geometry and supplies the BC; only the second is meaningless
-  on an interior line. So an interior line is a straight CHORD and the BL/far-field seam #55 wants is
-  undeclarable. Refused rather than half-honoured — a binding whose BC half is silently ignored is a
-  setting that does nothing — and it needs its OWN key, not a reused one.
 - **A block's frame comes from its SOUTH edge; this REVERSES #50's rule.** The other three sides may
   be declared either way and are traversed as the ring requires — a shared edge has ONE direction and
   two blocks whose frames need not agree. Nothing is inferred: four edges that do not CLOSE a ring
@@ -462,9 +472,12 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   `test_multiblock_ogrid_surface.py`.
   Why: `docs/design_notes/mesher.md`, "SUPERSEDED 2026-09-04 by #55, and the PREMISE was wrong".
 - **What welding cannot express, refused rather than approximated**: nothing welds along a BOUND
-  edge, nothing exceeds four blocks, and a block welded to ITSELF is inexpressible — right for a
-  transfinite fill, but an O-grid seam cannot be one edge. (#55's O-grid is four blocks in a RING
-  for that reason; its wrap-around class is `test_multiblock.cpp` 33.)
+  edge (wall-only, and a wall is ONE block's side — a shared edge follows a curve via `follows`
+  instead), and a block welded to ITSELF is inexpressible — right for a transfinite fill, but an
+  O-grid seam cannot be one edge. (#55's O-grid is four blocks in a RING for that reason; its
+  wrap-around class is `test_multiblock.cpp` 33.) **CORRECTED 2026-09-29 (#151): it also said
+  "nothing exceeds four blocks" and no such limit exists** — a nine-block strip meshes at exit 0
+  and `ogrid_splits` admits 64. What is true is the ARITY rule one line up, written far too widely.
 
 **A circular O-GRID: curved arcs, a ring that CLOSES, and a wall spacing SOLVED for** (still the
 one pure entry point; the law is `tools/PreProcessor/include/Spacing.hpp`; #55). **Full rationale,
@@ -645,9 +658,9 @@ otherwise learn the hole exists.
   the count is exact everywhere it has been measured.
   Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL"
   and "A SAMPLE RATE THE POLYLINE CANNOT CARRY IS NOW SAID".
-- **A curved INTERFACE is still undeclarable** (a `binding` is wall-only), so #55's O-grid is a
-  single ring rather than a boundary-layer ring inside a far-field one, and no two-sided stretching
-  function with DIFFERENT heights at each end exists.
+- **A curved interface is DECLARABLE since #151** (`follows`), but #55's O-grid is still a single
+  ring, no two-sided stretching with DIFFERENT heights at each end exists (#153 owns the two-ring
+  case), and nothing SHIPPED declares a curved `cut` — only the C++ gate exercises one.
 - **The arc-length blending's magnitude is measured OUT OF TREE**: no gate re-measures the 6927%
   the logical-index blend cost, only its consequence through `test_multiblock.cpp` 33/34 and the
   surface gate's quality line.

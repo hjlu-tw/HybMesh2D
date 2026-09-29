@@ -3969,6 +3969,84 @@ measured on the old and new trees:
 the applier silently skip it, which is the same "the setting does nothing" failure
 class as the above.
 
+**AN INTERIOR LINE THAT FOLLOWS A CURVE** (#151, measured 2026-09-29). Until this
+ticket every `interface` and every `cut` was a straight CHORD between its two declared
+corners, and the mesher's own refusal said why and what it cost: the only key that made
+an edge follow a source segment was `binding`, a binding supplies a boundary condition as
+well as a path, and a condition on a line in the middle of the fluid is a setting that
+does nothing. It was refused rather than half-honoured. `follows: {geom, seg}` is that
+statement with the condition half removed.
+
+- **WHY A SECOND KEY AND NOT A RELAXED `binding`.** A `binding` whose BC half is silently
+  ignored on an interface is exactly the class of defect this path exists to refuse — a
+  declaration the user writes, that the run accepts, and that decides nothing. The two
+  keys are the two statements, each refused on the kind that cannot make it, and an edge
+  declaring BOTH is refused naming both. That last check runs BEFORE either key is checked
+  against the kind: ordered the other way the answer would be whichever key the kind
+  happens to reject, which looks right on a wall and on an interface and is an accident
+  either way.
+- **ONE PATH RESOLUTION, AND THE GATE IS AN EQUALITY.** The resolution had exactly two
+  branches — the chord between two corners for an edge with no path, the sub-path of a
+  source segment for one with a path — so `follows` is a way IN to the second branch and
+  not a third branch. The `Attached` record grew one `carriesBc` flag and the map lost its
+  `bound` name for `onPath`; everything gated on which key was used is the
+  boundary-condition half alone. What makes that checkable rather than asserted is
+  `test_multiblock.cpp` 58's equality: a following edge's node positions equal, BIT FOR
+  BIT, the positions of the same stretch of the same curve declared as a bound wall. Two
+  resolutions that agree today are a defect waiting for one of them to be edited.
+- **THE THREE CHECKS THAT ARE PROPERTIES OF HAVING A PATH ARE REUSED UNCHANGED**: both
+  corners must lie on the segment, the nodes are placed by arc length, and the sample-rate
+  advice is measured against the polyline. Each refusal and each warning names the KEY the
+  edge used, so a message about a `follows` never sends the reader to look at a `binding`.
+  The sample-rate message lost its one spelling of "a bound stretch" for "the source
+  stretch it lies on", in the message and in its three readers — one spelling rather than
+  two, which is the trap `.claude/rules` calls "sweeping a class needs its spellings".
+- **NOTHING GATED ON THE KIND MOVED, and that was re-checked rather than taken from the
+  spec.** Side arity, wall-spacing reporting (`wallSpecs`), boundary-face export
+  (`addBoundary`) and shared-edge listing all read `kind` and nothing else. A following
+  edge takes no BC label, contributes no face and reports no first-cell height; it also
+  does not count towards the "no topology edge declares a `binding`" warning, because that
+  warning is about where the boundary CONDITIONS came from and a `follows` supplies none.
+- **THE SMOOTHER HAD TO BE TOLD, and this is the finding the ticket did not anticipate.**
+  #84 freed the shared edges, on the argument that an interior line has no declared shape
+  to lose. A following edge has one. Measured on the shipped fixture with the default
+  `MB_SMOOTH_ITERS 20`: the sweeps pulled all 39 interior seam nodes off their arc, the
+  worst by **4.961e-02** against a radius of 1.25 — the declared curve silently replaced
+  by one nobody wrote down, with a green mesh and zero inverted cells on top of it. The
+  freeze rule is NARROWED by the declaration rather than withdrawn: the wall clause's own
+  second half, "a node on a bound edge would leave the geometry it was attached to by arc
+  length", is true of a following node word for word. The gate is
+  `MbSharedEdge::followsGeom`, published for the report and read by `mbSmoothPlan`, so no
+  kind string is compared there either. After the change the same run puts all 41 seam
+  nodes on the polyline to 3.7e-09, the residue being the `.vrt`'s own 8 decimals.
+- **THE FIXTURE IS TWO BLOCKS AND NO SHIPPED CONFIG.**
+  `examples/topology/curved_seam_blocks.json` over a 40-facet arc
+  (`examples/geometries/arc_seam.dat`, chord 2, sagitta 0.5, one source segment labelled
+  `seam` and deliberately UNMAPPED so a condition that leaked would arrive under its own
+  name). No `config/multiblock_*.dat` ships with it: the command-line demo of this
+  capability is #153's two-ring O-grid, and a sixth shipped config would redden
+  `test_multiblock_smooth_surface.py` check 13 — which exists to stop one shipping
+  un-gated — to buy a second demo of the same two blocks.
+- **THE GOLDEN SET IS THE PROOF THAT THIS IS AN ADDITION.** Captured from a binary built
+  at `a517ddd` via `HYBMESH_GOLDEN_BIN` and compared against the working tree: 19 of 19
+  SAME, the 18 real meshes at a worst coordinate deviation of 0.000e+00 except
+  `wedge_45`'s 1.157e-13, and `isolated_corner` matching a NO-MESH outcome.
+
+**"NOTHING EXCEEDS FOUR BLOCKS" WAS NEVER TRUE** (#151, measured 2026-09-29).
+`.claude/rules/mesher-multiblock.md` carried that sentence in its "what welding cannot
+express" bullet since #53. No such limit exists anywhere in the mesher: a hand-written
+nine-block strip (one row of blocks, eight shared interfaces) meshes at exit 0 with 0
+inverted cells over 216 cells and 140 vertices, and the GUI O-grid FAMILY's
+`ogrid_splits` field admits up to 64, its own gate projecting a four-segment body split
+three ways into TWELVE blocks (`tools/PreProcessor/tests/test_topology_ogrid.py`,
+`SPREAD`). What the sentence appears to have been groping at is the ARITY rule beside it
+— a shared edge is a side of exactly two blocks — which is true and is written one line
+up. **The ticket that raised this said "sixteen blocks"; the gate's own widest case is
+TWELVE**, and it projects those documents rather than meshing them, so the nine-block
+strip above is what actually answers the question. Corrected in the rule file in the same
+change as the code, which is the point: a rule-file sentence the tree contradicts talks
+the next ticket out of work it could have done.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

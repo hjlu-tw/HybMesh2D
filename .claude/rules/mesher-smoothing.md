@@ -47,10 +47,28 @@ attributable, and the one #85 deliberately spent.
 - **WHICH NODES MOVE IS `mbSmoothPlan`'s ANSWER, stated rather than read off a loop**
   (`include/MbShared.hpp` + `src/MbShared.cpp` in `hybmesh_pure`; #84). FROZEN: a node on an edge
   whose declared KIND is `wall` (the outer boundary is the DOMAIN, not the discretisation, and a
-  bound node would leave the geometry it was attached to by arc length), and every DECLARED CORNER.
-  MOVES: everything else — interior to a block, or interior to an `interface` or a `cut`. The wall
-  gate is `MbResult::wallSpecs`, the list `measureMbQuality` and `mbWallTargets` walk; no kind
+  bound node would leave the geometry it was attached to by arc length), every DECLARED CORNER, and
+  — since #151 — every node of a shared edge that declares a `follows`.
+  MOVES: everything else — interior to a block, or interior to an `interface` or a `cut` that
+  follows nothing. The wall
+  gate is `MbResult::wallSpecs`, the list `measureMbQuality` and `mbWallTargets` walk; the
+  following gate is `MbSharedEdge::followsGeom`, the seam's own published answer to "which interior
+  lines are curves". No kind
   string is compared and NO POSITION is compared anywhere in that module.
+- **A FOLLOWING SEAM IS FROZEN, and that NARROWS #84 rather than withdrawing it** (#151). #84 freed
+  the shared edges because an interior line had no declared shape to lose — the chord between two
+  corners is whatever the solve leaves it as. An edge that declares `follows` HAS one: its nodes
+  are placed by arc length along a source polyline, so the wall clause's own second half ("would
+  leave the geometry it was attached to by arc length") is true of it word for word. MEASURED on
+  `examples/topology/curved_seam_blocks.json`: the 20 default sweeps pulled all 39 interior seam
+  nodes off their arc, the worst by 4.961e-02 against a radius of 1.25 — a declared curve silently
+  replaced by one nobody wrote down. The ghost layer is still built across it and the block
+  interiors still move; freezing the line is not freezing the mesh. Gated by
+  `tests/cpp/test_multiblock.cpp` 58 (frozen at 0 movable shared, the same seam as a CHORD still at
+  3) and `tests/test_multiblock_follows_surface.py` group 3, which measures the exported nodes
+  against the polyline AFTER the default sweeps.
+  **The banner says so**: `walls, declared corners and any interior line that FOLLOWS a curve are
+  frozen`.
 - **REVERSES #81: a node interior to an interface or a cut MOVES, and the objection that froze it
   is ANSWERED rather than dropped — the node is moved ONCE, in ONE frame, from ONE stencil.**
   Why: `docs/design_notes/mesher.md`, "#81's OBJECTION WAS REAL AND IS ANSWERED". A node on a
