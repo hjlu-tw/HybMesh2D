@@ -121,8 +121,17 @@ struct MbNodeMove {
 //     SET: an edge runs corner to corner, so a declared corner always lands at a
 //     side's own end, and the fill refuses a block whose four sides do not meet at
 //     four shared corner nodes.
+//   * A node on a shared edge that declares `follows` is FROZEN (#151). Its
+//     position is placed by arc length along a source polyline, so it is a
+//     DECLARED POSITION exactly as a wall's is, and the second half of the wall
+//     clause above — "would leave the geometry it was attached to by arc length" —
+//     is true of it word for word. #84's argument for freeing the shared edges is
+//     that an interior line has no declared shape to lose; that argument stops at
+//     the one that has. The gate is `MbSharedEdge::followsGeom`, the seam's own
+//     published answer to "which interior lines are curves", so no kind string is
+//     compared here either.
 //   * Every OTHER node moves: strictly interior to a block, or interior to an
-//     edge declared `interface` or `cut`.
+//     edge declared `interface` or `cut` that follows nothing.
 //
 // The gate for "is this a wall" is `MbResult::wallSpecs`, the seam's own published
 // list — the SAME list `measureMbQuality` and `mbWallTargets` walk. There is no

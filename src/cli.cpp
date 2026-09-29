@@ -706,6 +706,12 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // KIND. An interface and a cut weld by the same rule, so this row is where the
     // difference between the two is visible at all — and "a cut is a cut" is a
     // claim about the declaration, which means a run has to be able to show it.
+    //
+    // AND WITH THE PATH IT TOOK, for the same reason: since #151 an interior line
+    // may declare `follows` and become a CURVE, so a run that named only the kind
+    // could not show that the seam the document declared is the seam it got. A
+    // line with no `follows` says "a straight chord" rather than staying silent —
+    // silence is what a reader cannot tell from a feature that did not fire.
     for (const auto& se : res.sharedEdges) {
         const std::string a = (se.blockA >= 0 && static_cast<size_t>(se.blockA)
                                                     < res.blocks.size())
@@ -720,7 +726,12 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                   << hybmesh::mbSideAxis(se.sideA).name
                   << " of block '" << a << "' and the "
                   << hybmesh::mbSideAxis(se.sideB).name
-                  << " of block '" << b << "'\n";
+                  << " of block '" << b << "', "
+                  << (se.followsGeom.empty()
+                          ? std::string("a straight chord")
+                          : "following segment " + std::to_string(se.followsSeg)
+                                + " of '" + se.followsGeom + "'")
+                  << "\n";
     }
     // The RULE is named, not assumed. It used to read "alternating diagonal by
     // index parity" unconditionally, which was true of the only rule there was;
@@ -868,13 +879,15 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                   << " (last sweep's largest node move / domain diagonal; converges "
                      "below " << tol.str() << ")\n";
         // WHICH NODES THE SOLVE WAS FREE TO MOVE (#84). The freeze rule is a
-        // decision about the DECLARATION — walls and declared corners are frozen,
-        // interfaces and cuts are not — so a run has to be able to show it, the
-        // same reason the propagated counts and the welded shared edges are
-        // reported. Before #84 the second figure was 0 by construction.
+        // decision about the DECLARATION — walls, declared corners and, since
+        // #151, any interior line that declares a `follows` are frozen; an
+        // interface or a cut that follows nothing is not — so a run has to be able
+        // to show it, the same reason the propagated counts and the welded shared
+        // edges are reported. Before #84 the second figure was 0 by construction.
         std::cout << bannerRow("Movable nodes") << res.smoothMoved << " of "
                   << res.nodes.size() << ", of which " << res.smoothMovedShared
-                  << " on a shared edge (walls and declared corners are frozen)\n";
+                  << " on a shared edge (walls, declared corners and any interior "
+                     "line that FOLLOWS a curve are frozen)\n";
         std::cout << "HYBMESH_MB_SMOOTH sweeps=" << res.smoothSweeps
                   << " cap=" << config.mbSmoothIters
                   << " converged=" << (res.smoothConverged ? 1 : 0)

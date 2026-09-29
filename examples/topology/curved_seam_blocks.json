@@ -1,0 +1,68 @@
+// TWO BLOCKS SHARING ONE CURVED INTERIOR LINE (issue #151) — the smallest
+// topology that says something no earlier example could.
+//
+// The five shipped documents beside this one have interior lines, and every one
+// of them is a straight CHORD between its two declared corners. That was not a
+// choice: the only key that made an edge follow a source segment was `binding`,
+// and a `binding` also supplies a boundary condition, which is meaningless on a
+// line in the middle of the fluid — so it was refused on an interface and on a
+// cut, and the mesher's own refusal said what that cost.
+//
+// `follows` is that statement with the condition half removed. Same object as a
+// `binding`, accepted on an interior line and refused on a wall:
+//
+//     "follows": {"geom": "arc_seam.dat", "seg": 0}
+//
+// The edge 'seam' below therefore takes its nodes by ARC LENGTH along that
+// geometry's own polyline, exactly as a bound wall does. It is still not a
+// boundary: it exports no face, takes no boundary condition (its segment's label
+// is 'seam' and that label reaches nothing), reports no first-cell height, and
+// welds the two blocks by node identity like any other shared edge.
+//
+// The curve rises to y = 0.5 at its midpoint while the chord between its two
+// corners is y = 0, so this is not a refinement — without `follows` the "arc"
+// is a straight line and the two blocks meet along it.
+{
+  "format_version": 1,
+
+  // The seam's two ends are the two ends of the geometry's ONE segment: t = 0 is
+  // its first point and t = 1, on the last segment of an OPEN polyline, is its
+  // final one. The other four corners are free coordinates — the outer box is a
+  // box and has no geometry to lie on.
+  "corners": [
+    {"id": "sw", "kind": "on_geometry", "geom": "arc_seam.dat", "seg": 0, "t": 0.0},
+    {"id": "se", "kind": "on_geometry", "geom": "arc_seam.dat", "seg": 0, "t": 1.0},
+    {"id": "nw", "kind": "free", "xy": [0.0, 1.5]},
+    {"id": "ne", "kind": "free", "xy": [2.0, 1.5]},
+    {"id": "bl", "kind": "free", "xy": [0.0, -1.0]},
+    {"id": "br", "kind": "free", "xy": [2.0, -1.0]}
+  ],
+
+  "edges": [
+    // THE CURVED SEAM. One declared line, the SOUTH of the upper block and the
+    // NORTH of the lower one, so the two share its nodes rather than each
+    // generating their own. Its 41 nodes over the polyline's 40 facets is one
+    // facet to a node, which is the sampling a curve carries exactly.
+    {"id": "seam", "corners": ["sw", "se"], "kind": "interface", "count": 41,
+     "follows": {"geom": "arc_seam.dat", "seg": 0}},
+
+    // The upper block's other three sides, and the lower block's. Only 'e' and
+    // 'le' seed a count: 'seam' seeds the whole i class (it is the south of one
+    // block and the north of the other, so 'n' and 'lb' follow it), while the two
+    // blocks' j directions are separate classes with no shared edge between them.
+    {"id": "e", "corners": ["se", "ne"], "kind": "wall", "count": 13},
+    {"id": "n", "corners": ["nw", "ne"], "kind": "wall"},
+    {"id": "w", "corners": ["sw", "nw"], "kind": "wall"},
+
+    {"id": "lb", "corners": ["bl", "br"], "kind": "wall"},
+    {"id": "le", "corners": ["br", "se"], "kind": "wall", "count": 11},
+    {"id": "lw", "corners": ["bl", "sw"], "kind": "wall"}
+  ],
+
+  // [south, east, north, west]. 'seam' is the upper block's SOUTH and the lower
+  // block's NORTH, which is where the two are welded.
+  "blocks": [
+    {"id": "up", "edges": ["seam", "e", "n", "w"]},
+    {"id": "lo", "edges": ["lb", "le", "seam", "lw"]}
+  ]
+}

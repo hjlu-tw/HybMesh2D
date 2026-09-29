@@ -763,7 +763,7 @@ def main() -> int:
         # group 9 proves the warning APPEARS where it costs something, and this one
         # proves it stays quiet where it does not. Neither half is worth much alone.
         said = [ln for ln in (p.stdout + p.stderr).splitlines()
-                if "sample a bound stretch" in ln]
+                if "sample the source stretch it lies on" in ln]
         check("10. the shipped C-grid says NOTHING about its sample rates, though "
               "six of its eight bound edges do not divide — they are straight, so "
               "the cost is nil (%d warnings)" % len(said),

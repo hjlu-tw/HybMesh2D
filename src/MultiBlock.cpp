@@ -192,6 +192,16 @@ struct EdgeSpec {
     // re-derive it from a position.
     std::string bindGeom;
     int bindSeg = -1;
+    // The source segment this edge LIES ON without carrying its boundary
+    // condition ("follows"); `followGeom` empty for an edge that declares none.
+    // The SAME object shape as `binding`, because it is the same statement minus
+    // the half only a wall can make — and it feeds the SAME path resolution, so a
+    // curved interface and a bound wall cannot come apart. It supplies no BC
+    // label, contributes no boundary face and makes the edge no more a wall than
+    // it was: every kind-gated behaviour reads `kind` and this key reaches none
+    // of them.
+    std::string followGeom;
+    int followSeg = -1;
 };
 
 struct BlockSpec {
@@ -475,7 +485,8 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
         const std::string where = w.str();
         if (!e.is_object()) { err = where + ": must be an object."; return false; }
         if (!rejectUnknownKeys(e, where.c_str(),
-                               {"id", "corners", "kind", "binding", "count", "spacing"}, err))
+                               {"id", "corners", "kind", "binding", "follows",
+                                "count", "spacing"}, err))
             return false;
 
         EdgeSpec spec;
@@ -531,26 +542,48 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
         // is near a reference segment, so there is no tolerance in the chain to
         // drift past — which is how a curved inlet came to export a band of wall on
         // the other path.
+        //
+        // TWO KEYS SAY "THIS EDGE LIES ON THAT SEGMENT", and which one an edge may
+        // use is decided by its KIND. `binding` is the wall's: it makes the edge
+        // follow the segment AND carries that segment's boundary condition into
+        // the export. `follows` is the interior line's: the same object, the same
+        // path resolution, and none of the condition half, because an interface
+        // and a cut are not boundaries and a BC there would be a setting that
+        // does nothing. Neither is inferred from the other and neither infers the
+        // kind.
+        //
+        // The pair is read BEFORE either is checked against the kind, so an edge
+        // that declares BOTH is refused naming both rather than having one of
+        // them silently win — two answers to one question is the failure, and
+        // which of the two the parser happens to look at first is not an answer.
         auto bd = e.find("binding");
+        auto fo = e.find("follows");
+        if (bd != e.end() && fo != e.end()) {
+            err = where + " ('" + spec.id + "'): it declares BOTH a 'binding' and a "
+                  "'follows', which are two answers to one question — where this edge "
+                  "lies. They differ only in the boundary-condition half: 'binding' "
+                  "carries the segment's condition and is for a 'wall'; 'follows' "
+                  "carries none and is for an interior line ('interface' or 'cut'). "
+                  "Keep the one this edge's kind ('"
+                + hybmesh::mbEdgeKindName(spec.kind) + "') accepts and drop the other.";
+            return false;
+        }
         if (bd != e.end()) {
-            // A binding says "this edge LIES ON that source segment", which is a
-            // statement about a wall. An interface and a cut are interior lines in
-            // the fluid; there is no segment for them to lie on, and accepting one
-            // would make the kind and the binding two statements of one fact that
-            // can only ever disagree.
+            // A binding says "this edge LIES ON that source segment, and carries
+            // its boundary condition". The second half is a statement about a
+            // wall: an interface and a cut are interior lines in the fluid, and a
+            // condition on one is a setting that does nothing. So the path half
+            // alone is what an interior line asks for, and it has its OWN key.
             if (spec.kind != hybmesh::MB_EDGE_WALL) {
                 err = where + " ('" + spec.id + "'): kind '"
                     + hybmesh::mbEdgeKindName(spec.kind) + "' declares a 'binding', but "
-                      "only a 'wall' lies on a source segment — an interface and a cut "
-                      "are interior lines in the fluid, so there is no boundary "
-                      "condition for one to carry. Drop the binding, or declare the edge "
-                      "a wall. WHAT THIS COSTS, said rather than hidden: an interior line "
-                      "is therefore a straight chord between its two corners, so a CURVED "
-                      "interface — the natural boundary-layer / far-field seam — cannot be "
-                      "declared yet. Refused rather than half-honoured, because a binding "
-                      "whose condition half is silently ignored is a setting that does "
-                      "nothing; it needs its own key, which arrives with the work that "
-                      "needs a curved seam.";
+                      "only a 'wall' carries a boundary condition — an interface and a "
+                      "cut are interior lines in the fluid, so there is no condition for "
+                      "one to take. To have this edge FOLLOW that segment's polyline "
+                      "without taking its condition, declare \"follows\": {\"geom\": "
+                      "..., \"seg\": ...} instead — the same object, minus the half "
+                      "only a wall can make. To have it carry the condition, declare the "
+                      "edge a wall.";
                 return false;
             }
             const std::string bw = where + " ('" + spec.id + "') binding";
@@ -567,6 +600,36 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
                 return false;
             }
             spec.bindSeg = sg->get<int>();
+        }
+        if (fo != e.end()) {
+            // A `follows` says "this edge LIES ON that source segment" and stops
+            // there. On a wall that is the weaker of the two statements the edge
+            // can make and the refusal names the stronger one, so either mistake
+            // is one sentence from being fixed.
+            if (spec.kind == hybmesh::MB_EDGE_WALL) {
+                err = where + " ('" + spec.id + "'): kind 'wall' declares a 'follows', "
+                      "but a wall IS a boundary — the segment it lies on is also where "
+                      "its condition comes from, and 'follows' takes none. Declare "
+                      "\"binding\": {\"geom\": ..., \"seg\": ...} instead: the same "
+                      "object, plus the boundary condition this edge needs. 'follows' is "
+                      "for an interior line ('interface' or 'cut'), which has no "
+                      "condition to take.";
+                return false;
+            }
+            const std::string fw = where + " ('" + spec.id + "') follows";
+            if (!fo->is_object()) {
+                err = fw + ": must be an object, \"follows\": "
+                           "{\"geom\": \"<file>\", \"seg\": <id>}.";
+                return false;
+            }
+            if (!rejectUnknownKeys(*fo, fw.c_str(), {"geom", "seg"}, err)) return false;
+            if (!requireString(*fo, "geom", fw.c_str(), spec.followGeom, err)) return false;
+            auto sg = fo->find("seg");
+            if (sg == fo->end() || !sg->is_number_integer() || sg->get<int>() < 0) {
+                err = fw + ": needs \"seg\": <id>, the source segment this edge lies on.";
+                return false;
+            }
+            spec.followSeg = sg->get<int>();
         }
 
         // 'count' is a SEED, not a requirement: opposite sides of a block carry
@@ -1433,10 +1496,12 @@ Point2D coons(const std::vector<Point2D>& south, const std::vector<Point2D>& nor
 
 // WHICH NODES MOVE: the answer is `mbSmoothPlan` (include/MbShared.hpp), which
 // owns the freeze rule and states it — nodes strictly interior to a block, plus
-// the nodes interior to every edge declared `interface` or `cut`; frozen are the
-// nodes of every edge declared `wall` (the DOMAIN rather than the discretisation,
-// and a node on a bound edge would leave the geometry it was attached to by arc
-// length) and every DECLARED CORNER, which is the four-way corner's answer.
+// the nodes interior to every edge declared `interface` or `cut` that follows
+// nothing; frozen are the nodes of every edge declared `wall` (the DOMAIN rather
+// than the discretisation, and a node on a bound edge would leave the geometry it
+// was attached to by arc length), the nodes of every interior line that declares
+// a `follows` (the same sentence: a declared position, placed by arc length), and
+// every DECLARED CORNER, which is the four-way corner's answer.
 //
 // #84 FREED THE SHARED EDGES, and #81-#83 had frozen them for a reason that had
 // to be answered rather than dropped: a boundary node is written by the EDGE, an
@@ -2052,8 +2117,16 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         int segId = -1;
         std::string bc;
         double ta = 0.0, tb = 1.0;
+        // Did the edge get here through a `binding` (and so carry its segment's
+        // boundary condition), or through a `follows` (and so carry only the
+        // path)? ONE map for both, because the three checks below are properties
+        // of HAVING A PATH and not of BEING A WALL — both corners on the segment,
+        // nodes placed by arc length, the sample rate advised on — and a second
+        // map would be a second resolution for the two to drift apart in. What is
+        // gated on this flag is exactly the boundary-condition half.
+        bool carriesBc = false;
     };
-    std::map<std::string, Attached> bound;              // edge id -> its source segment
+    std::map<std::string, Attached> onPath;             // edge id -> its source segment
     std::map<std::pair<int, int>, SegSpan> spans;       // (geom, seg) -> resolved segment
 
     auto spanFor = [&](int gi, int seg, const std::string& who,
@@ -2112,20 +2185,34 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         return false;
     };
 
+    // ONE loop for both keys, and that is the rule rather than a tidiness: a
+    // `follows` is a `binding` minus the boundary-condition half, so everything
+    // that is a property of HAVING A PATH is resolved here once and the only
+    // branch is the half that is not.
+    size_t nBound = 0;
     for (const auto& e : edges) {
-        if (e.bindGeom.empty()) continue;
+        const bool carriesBc = !e.bindGeom.empty();
+        const std::string& geomName = carriesBc ? e.bindGeom : e.followGeom;
+        if (geomName.empty()) continue;
+        const int seg = carriesBc ? e.bindSeg : e.followSeg;
+        // The KEY the edge used, named in every refusal below, so a message about
+        // a `follows` never tells the user to go and look at their `binding`.
+        const std::string lies = carriesBc ? "binds to" : "follows";
+        if (carriesBc) ++nBound;
         const std::string who = "edge '" + e.id + "'";
-        const int gi = findGeometry(geoms, e.bindGeom, who, err);
+        const int gi = findGeometry(geoms, geomName, who, err);
         if (gi < 0) return fail(err);
         const SegSpan* sp = nullptr;
-        if (!spanFor(gi, e.bindSeg, who, sp)) return fail(err);
+        if (!spanFor(gi, seg, who, sp)) return fail(err);
 
-        // A bound edge LIES ON its segment, so both of its corners must be ON it.
-        // Without that there is no stretch of geometry for the edge to follow, and
-        // a straight chord drawn between two free corners and then CALLED a piece
-        // of that wall is exactly the slightly-wrong-mesh-with-no-error this path
-        // exists to refuse.
+        // An edge that LIES ON its segment must have both corners ON it. Without
+        // that there is no stretch of geometry for the edge to follow, and a
+        // straight chord drawn between two free corners and then CALLED a piece of
+        // that curve is exactly the slightly-wrong-mesh-with-no-error this path
+        // exists to refuse. Identical for both keys: it is a question about the
+        // path, and both keys declare one.
         Attached at;
+        at.carriesBc = carriesBc;
         const Corner* ends[2] = {cornerById(e.a), cornerById(e.b)};
         double ts[2] = {0.0, 0.0};
         for (int k = 0; k < 2; ++k) {
@@ -2134,8 +2221,8 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                 return fail(who + ": corner '" + (k ? e.b : e.a) + "' resolved during "
                             "parsing and not during binding; the topology was not read "
                             "consistently and no mesh was made.");
-            if (tOnSegment(*c, gi, e.bindSeg, ts[k])) continue;
-            return fail(who + " binds to segment " + std::to_string(e.bindSeg) + " of '"
+            if (tOnSegment(*c, gi, seg, ts[k])) continue;
+            return fail(who + " " + lies + " segment " + std::to_string(seg) + " of '"
                         + geoms[static_cast<size_t>(gi)].file + "', so both of its "
                           "corners must lie on that segment — but corner '"
                         + c->id + "' is "
@@ -2150,31 +2237,41 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         }
         if (ts[0] == ts[1])
             return fail(who + ": both of its corners lie at t = " + std::to_string(ts[0])
-                        + " on segment " + std::to_string(e.bindSeg)
+                        + " on segment " + std::to_string(seg)
                         + ", so the edge has no length.");
         at.ta = ts[0];
         at.tb = ts[1];
         at.geomId = gi;
-        at.segId = e.bindSeg;
-        const auto& labels = geoms[static_cast<size_t>(gi)].segBc;
-        const auto lb = labels.find(e.bindSeg);
-        at.bc = (lb != labels.end()) ? lb->second : std::string();
-        if (at.bc.empty()) {
-            // Bound, and still on the fallback. Worth saying out loud: the user
-            // named a segment precisely so the condition would follow from the
-            // declaration, and here it did not.
-            at.bc = bc;
-            r.warnings.push_back("edge '" + e.id + "' binds to segment "
-                + std::to_string(e.bindSeg) + " of '"
-                + geoms[static_cast<size_t>(gi)].file + "', which carries no boundary "
-                  "condition label in its '.meta' sidecar, so the edge takes the config "
-                  "default '" + bc + "'. Assign that segment a condition in the "
-                  "PreProcessor to have it follow from the declaration.");
+        at.segId = seg;
+        // THE BOUNDARY-CONDITION HALF, and the ONLY thing gated on which key was
+        // used. A following edge is an interior line: it takes no label, exports
+        // no face, and the warning below about a segment with no label would be
+        // advice about a setting it does not have.
+        if (carriesBc) {
+            const auto& labels = geoms[static_cast<size_t>(gi)].segBc;
+            const auto lb = labels.find(seg);
+            at.bc = (lb != labels.end()) ? lb->second : std::string();
+            if (at.bc.empty()) {
+                // Bound, and still on the fallback. Worth saying out loud: the user
+                // named a segment precisely so the condition would follow from the
+                // declaration, and here it did not.
+                at.bc = bc;
+                r.warnings.push_back("edge '" + e.id + "' binds to segment "
+                    + std::to_string(seg) + " of '"
+                    + geoms[static_cast<size_t>(gi)].file + "', which carries no boundary "
+                      "condition label in its '.meta' sidecar, so the edge takes the config "
+                      "default '" + bc + "'. Assign that segment a condition in the "
+                      "PreProcessor to have it follow from the declaration.");
+            }
         }
-        bound[e.id] = at;
+        onPath[e.id] = at;
     }
 
-    if (bound.empty())
+    // COUNTED ON THE BINDINGS ALONE, not on the map: this warning is about where
+    // the boundary conditions came from, and a topology whose every path comes
+    // from a `follows` has exactly as many declared conditions as one with no
+    // paths at all — which is none.
+    if (nBound == 0)
         r.warnings.push_back("no topology edge declares a 'binding', so every boundary "
                              "edge carries the config default BC '" + bc + "'. Bind a "
                              "wall edge to a source segment to have its condition come "
@@ -2185,9 +2282,13 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // segment) key, or the config default for an edge that declares no binding.
     std::vector<Attached> edgeBc(edges.size());
     for (size_t k = 0; k < edges.size(); ++k) {
-        const auto it = bound.find(edges[k].id);
-        if (it == bound.end()) edgeBc[k].bc = bc;
-        else                   edgeBc[k] = it->second;
+        const auto it = onPath.find(edges[k].id);
+        // A FOLLOWING edge is on this list and carries nothing off it. It has a
+        // path and no condition, so it falls through to the default exactly as an
+        // edge with no path does — and since only a wall reaches `addBoundary`,
+        // this is the belt to that braces rather than the only guard.
+        if (it == onPath.end() || !it->second.carriesBc) edgeBc[k].bc = bc;
+        else                                            edgeBc[k] = it->second;
     }
 
     // ── Node allocation: every shared node is allocated ONCE ──────────────
@@ -2235,15 +2336,20 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             return fail("edge '" + e.id + "': a corner resolved during parsing and not "
                         "during filling; the topology was not read consistently and no "
                         "mesh was made.");
-        const auto bd = bound.find(e.id);
-        if (bd == bound.end()) paths[k] = {ca->xy, cb->xy};
+        // THE TWO BRANCHES, and there are still two: the chord between the two
+        // corners for an edge that declares no path, and the sub-path of the
+        // source segment for one that does. `follows` added a way IN to the second
+        // branch and no third branch, which is what makes a curved interface and a
+        // bound wall the same resolution rather than two that agree today.
+        const auto pd = onPath.find(e.id);
+        if (pd == onPath.end()) paths[k] = {ca->xy, cb->xy};
         else {
-            const SegSpan& sp = spans.at({bd->second.geomId, bd->second.segId});
-            paths[k] = subPath(sp.pts, sp.cum, bd->second.ta, bd->second.tb);
+            const SegSpan& sp = spans.at({pd->second.geomId, pd->second.segId});
+            paths[k] = subPath(sp.pts, sp.cum, pd->second.ta, pd->second.tb);
         }
     }
 
-    // THE LARGEST INTERVAL COUNT THAT SUITS EVERY BOUND EDGE ON A CHAIN, per
+    // THE LARGEST INTERVAL COUNT THAT SUITS EVERY EDGE WITH A PATH ON A CHAIN, per
     // equivalence class — the GCD of their facet counts, since an interval count
     // divides a stretch evenly exactly when it divides that stretch's facet count.
     //
@@ -2261,7 +2367,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // cannot help.
     std::map<int, int> classFacetGcd;
     for (size_t k = 0; k < edges.size(); ++k) {
-        if (bound.find(edges[k].id) == bound.end()) continue;
+        if (onPath.find(edges[k].id) == onPath.end()) continue;
         const int f = static_cast<int>(paths[k].size()) - 1;
         if (f <= 0) continue;
         int& g = classFacetGcd[edgeClass[k]];
@@ -2274,7 +2380,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     for (size_t k = 0; k < edges.size(); ++k) {
         const EdgeSpec& e = edges[k];
         const std::vector<Point2D>& path = paths[k];
-        const auto bd = bound.find(e.id);
+        const auto pd = onPath.find(e.id);
         // The two end intervals this law really produced, IN ARC LENGTH — the
         // measure the request is in. See `discretise`: comparing the CHORD
         // instead made this warning fire on a bound curved edge whose law had
@@ -2306,7 +2412,9 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         }
         // A SAMPLE RATE THE SOURCE POLYLINE CANNOT CARRY IS SAID (#94).
         //
-        // BOUND EDGES ONLY, and the two conditions are both required rather than
+        // EDGES WITH A PATH ONLY — bound walls and following interior lines alike,
+        // because the measurement is about a polyline and both keys declare one —
+        // and the two conditions are both required rather than
         // belt and braces. The RATIO must not divide, because the message's advice
         // ("resample to a multiple", "declare a count that divides") is only true
         // of an edge whose ratio is the problem; the COST must clear the bar,
@@ -2323,7 +2431,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         // the most irregular polygon in the whole family, costing 2.250 deg of turn
         // against 0.750 at the shipped 0.833. Widening the test would silence the
         // WORST cases, so it stays as it is, and check 57 pins the 1/n row.
-        if (bd != bound.end()) {
+        if (pd != onPath.end()) {
             const SampleRate sr = sampleRate(path, pathArc, eNodes[k].pts, nodeArc);
             if (sr.intervals > 0 && sr.facets % sr.intervals != 0
                 && sr.excessDeg() > hybmesh::MB_SAMPLE_RATE_TOL_DEG) {
@@ -2338,21 +2446,21 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                     gcdF >= 2
                         ? ", or declare count " + std::to_string(gcdF + 1)
                           + " on this edge's equivalence class — the largest count that "
-                            "suits EVERY bound edge on that chain"
+                            "suits EVERY edge on that chain that lies on a polyline"
                           + (gcdF + 1 < e.count
                                  ? std::string(", and coarser than the ")
                                    + std::to_string(e.count) + " declared here"
                                  : std::string(""))
                           + ". The count PROPAGATES, so it moves the opposite side of "
                             "every block on the chain"
-                        : std::string(". No single count suits this chain — its bound "
+                        : std::string(". No single count suits this chain — its "
                             "stretches share no common divisor above 1 — so resampling "
                             "is the only fix that does not simply move the problem to "
                             "another edge of it");
                 r.warnings.push_back(
                     "edge '" + e.id + "': its " + std::to_string(e.count) + " nodes ("
-                    + std::to_string(sr.intervals) + " intervals) sample a bound stretch "
-                      "stored as " + std::to_string(sr.facets) + " polyline facets — "
+                    + std::to_string(sr.intervals) + " intervals) sample the source stretch it "
+                      "lies on, stored as " + std::to_string(sr.facets) + " polyline facets — "
                     + fmt3(static_cast<double>(sr.facets) / sr.intervals)
                     + " facets per interval, which is not a WHOLE number of facets to a "
                       "node, so the polyline's own turning does not fall equally on the "
@@ -2569,7 +2677,8 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // PUBLISHED BEFORE THE SMOOTHER RATHER THAN AFTER THE SPLIT, which is where it
     // sat until #84 and where it was one line too late. The smoother's freeze rule
     // is stated on the DECLARATION — a wall is frozen, an interface or a cut is not
-    // — and this list is the declaration's own answer to "which sides are shared".
+    // unless it declares a `follows` — and this list is the declaration's own
+    // answer both to "which sides are shared" and to "which of them are curves".
     // Emitted after the split, it was an empty vector at the moment the sweep read
     // it, so every shared node stayed frozen and the ticket's whole deliverable was
     // silently a no-op. Nothing here reads a cell or a node position, so this is a
@@ -2594,6 +2703,13 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         se.sideA = static_cast<MbSide>(u[0].side);
         se.blockB = u[1].block;
         se.sideB = static_cast<MbSide>(u[1].side);
+        // WHICH INTERIOR LINES ARE CURVES. Read off the DECLARATION, like the kind
+        // beside it: `follows` is the only way a shared edge can have a path (a
+        // `binding` is wall-only and a wall is never shared), so this is the
+        // document's own answer to "is this seam a curve or the chord between its
+        // two corners" rather than something re-derived from the nodes.
+        se.followsGeom = edges[k].followGeom;
+        se.followsSeg = edges[k].followSeg;
         r.sharedEdges.push_back(se);
     }
 

@@ -442,7 +442,7 @@ def main() -> int:
         p5, _ = run_case(tmp, "rate", base_config() + NO_SMOOTH)
         q5 = quality(p5.stdout)
         said = [ln for ln in (p5.stdout + p5.stderr).splitlines()
-                if "sample a bound stretch" in ln]
+                if "sample the source stretch it lies on" in ln]
         # WHICH FOUR, NOT HOW MANY. A count cannot tell the four body arcs from the
         # four far-field ones, so four far-field warnings with the body silent would
         # read the same — and that is the state #95 was supposed to leave behind.

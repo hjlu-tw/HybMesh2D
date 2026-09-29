@@ -809,6 +809,97 @@ hybmesh::MbGeometry circleGeom(int perSeg, double radius,
     return g;
 }
 
+// ── A CURVE, and the two ways an edge can be told to lie on it (#151) ─────
+//
+// An OPEN polyline in ONE source segment: the circular arc through (0, 0),
+// (0.5, `sagitta`) and (1, 0), stored as `facets` straight pieces.
+//
+// Open and single-segment deliberately. What the pair of documents below is for
+// is the STRETCH between two corners on a curve, and the smallest thing that has
+// one is a segment whose two ends ARE those corners — t = 0 and t = 1 on the last
+// segment of an open polyline, which is that segment's own first and final point.
+// A closed body would put a joint between two segments at each corner and drag
+// `tOnSegment`'s joint equivalence into a case that is not about it.
+//
+// Curved is the whole point: on a straight stretch the chord IS the geometry, so
+// nothing a square can express distinguishes an edge that follows its segment
+// from one that cuts across it.
+hybmesh::MbGeometry arcGeom(int facets, double sagitta = 0.2,
+                            const std::string& file = "arc.dat",
+                            const std::string& bc = "seam") {
+    hybmesh::MbGeometry g;
+    g.file = file;
+    g.closed = false;
+    const double R = (0.25 + sagitta * sagitta) / (2.0 * sagitta);
+    const double cy = sagitta - R;                    // centre, below the chord
+    const double a0 = std::atan2(-cy, -0.5);          // the angle of (0, 0)
+    const double a1 = std::atan2(-cy, 0.5);           // ...and of (1, 0)
+    for (int k = 0; k <= facets; ++k) {
+        const double a = a0 + (a1 - a0) * k / facets;
+        g.points.push_back({0.5 + R * std::cos(a), cy + R * std::sin(a)});
+        g.segId.push_back(0);
+    }
+    g.segBc[0] = bc;
+    return g;
+}
+
+// TWO BLOCKS STACKED ON ONE SHARED LINE, which is the smallest topology an
+// interface can appear in at all (an interface is a side of exactly two blocks).
+//
+// `mExtra` is appended to that shared edge and `mKind` is its kind, so a case
+// differs from its neighbour by exactly the declaration it is about. The upper
+// block's SOUTH is the shared edge, so its j = 0 row is that edge read in its own
+// declared direction — which is what lets check 58 compare it, node for node,
+// against the same stretch declared as a bound wall.
+//
+//   nw ──n── ne          up = [m,  e,  n,  w ]      m is up's SOUTH
+//   │        │           lo = [lb, le, m,  lw]      ...and lo's NORTH
+//   w   up   e
+//   │        │
+//   sw ──m── se
+//   │        │
+//   lw  lo   le
+//   │        │
+//   bl ─lb─ br
+std::string arcStack(const std::string& mExtra,
+                     const std::string& mKind = "interface",
+                     const std::string& geom = "arc.dat") {
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "sw", "kind": "on_geometry", "geom": ")") + geom + R"(", "seg": 0, "t": 0.0},
+    {"id": "se", "kind": "on_geometry", "geom": ")" + geom + R"(", "seg": 0, "t": 1.0},
+    {"id": "nw", "kind": "free", "xy": [0.0, 0.5]},
+    {"id": "ne", "kind": "free", "xy": [1.0, 0.5]},
+    {"id": "bl", "kind": "free", "xy": [0.0, -0.5]},
+    {"id": "br", "kind": "free", "xy": [1.0, -0.5]}
+  ],
+  "edges": [
+    {"id": "m", "corners": ["sw", "se"], "kind": ")" + mKind
+        + R"(", "count": 5)" + mExtra + R"(},
+    {"id": "e", "corners": ["se", "ne"], "kind": "wall", "count": 3},
+    {"id": "n", "corners": ["nw", "ne"], "kind": "wall"},
+    {"id": "w", "corners": ["sw", "nw"], "kind": "wall"},
+    {"id": "lb", "corners": ["bl", "br"], "kind": "wall"},
+    {"id": "le", "corners": ["br", "se"], "kind": "wall", "count": 3},
+    {"id": "lw", "corners": ["bl", "sw"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "up", "edges": ["m", "e", "n", "w"]},
+    {"id": "lo", "edges": ["lb", "le", "m", "lw"]}
+  ]
+})";
+}
+
+// The SAME stretch of the SAME curve, declared as a bound wall on ONE block — the
+// other half of check 58's equality. `boundSquare` is reused rather than rewritten
+// so that the two documents differ in the declaration under test and in nothing
+// else the fill can read: same count, same spacing (none), same two corners.
+std::string arcWall() {
+    return boundSquare(att("sw", 0.0, 0, "arc.dat"), att("se", 1.0, 0, "arc.dat"),
+                       R"(, "binding": {"geom": "arc.dat", "seg": 0})");
+}
+
 // A four-block O-GRID around `circleGeom`: four radial interfaces, four bound
 // body arcs, four bound far-field arcs.
 //
@@ -4423,7 +4514,7 @@ int main() {
         CHECK(bad.ok, "57. the non-commensurate O-grid meshes (err: " + bad.error + ")");
         std::vector<std::string> rate;
         for (const std::string& w : bad.warnings)
-            if (mentions(w, "sample a bound stretch")) rate.push_back(w);
+            if (mentions(w, "sample the source stretch it lies on")) rate.push_back(w);
         CHECK(!rate.empty(),
               "57. a bound edge whose node count its polyline cannot place evenly "
               "is named in a warning");
@@ -4446,8 +4537,8 @@ int main() {
         const std::string& w0 = rate.empty() ? bad.error : rate[0];
         CHECK(mentions(w0, "edge '"),
               "57. ...naming the EDGE (got: " + w0 + ")");
-        CHECK(mentions(w0, " nodes (") && mentions(w0, " intervals) sample a bound "
-                                                      "stretch stored as ")
+        CHECK(mentions(w0, " nodes (") && mentions(w0, " intervals) sample the source "
+                                                      "stretch it lies on, stored as ")
                   && mentions(w0, " polyline facets"),
               "57. ...quoting BOTH counts — the mesh's and the polyline's (got: "
               + w0 + ")");
@@ -4489,12 +4580,12 @@ int main() {
         long facets = -1, intervals = -1, base = -1, mul = -1, count = -1;
         {
             const size_t p1 = w0.find(" nodes (");
-            const size_t p2 = w0.find("stretch stored as ");
+            const size_t p2 = w0.find("stretch it lies on, stored as ");
             const size_t p3 = w0.find("MULTIPLE of ");
             const size_t p4 = w0.find("or declare count ");
             const size_t p5 = w0.find("facets (");
             if (p1 != std::string::npos) intervals = std::atol(w0.c_str() + p1 + 8);
-            if (p2 != std::string::npos) facets    = std::atol(w0.c_str() + p2 + 18);
+            if (p2 != std::string::npos) facets    = std::atol(w0.c_str() + p2 + 30);
             if (p3 != std::string::npos) base      = std::atol(w0.c_str() + p3 + 12);
             if (p4 != std::string::npos) count     = std::atol(w0.c_str() + p4 + 17);
             if (p5 != std::string::npos) mul       = std::atol(w0.c_str() + p5 + 8);
@@ -4555,7 +4646,7 @@ int main() {
         CHECK(good.ok, "57. the commensurate O-grid meshes (err: " + good.error + ")");
         size_t quiet = 0;
         for (const std::string& w : good.warnings)
-            if (mentions(w, "sample a bound stretch")) ++quiet;
+            if (mentions(w, "sample the source stretch it lies on")) ++quiet;
         CHECK(quiet == 0,
               "57. a commensurate declaration says NOTHING, so the warning means "
               "something when it appears (got " + std::to_string(quiet) + ")");
@@ -4579,7 +4670,7 @@ int main() {
         CHECK(half.ok, "57. the 1/n O-grid meshes (err: " + half.error + ")");
         size_t onFar = 0, onBody = 0;
         for (const std::string& w : half.warnings) {
-            if (!mentions(w, "sample a bound stretch")) continue;
+            if (!mentions(w, "sample the source stretch it lies on")) continue;
             if (mentions(w, "edge 'o")) ++onFar;
             if (mentions(w, "edge 'w")) ++onBody;
         }
@@ -4607,7 +4698,7 @@ int main() {
         long lone = -1;
         size_t noneSuits = 0, mixedSaid = 0;
         for (const std::string& w : mixed.warnings) {
-            if (!mentions(w, "sample a bound stretch")) continue;
+            if (!mentions(w, "sample the source stretch it lies on")) continue;
             ++mixedSaid;
             if (mentions(w, "No single count suits this chain")) ++noneSuits;
             const size_t at = w.find("or declare count ");
@@ -4632,7 +4723,7 @@ int main() {
         CHECK(cop.ok, "57. the coprime O-grid meshes (err: " + cop.error + ")");
         std::vector<std::string> copSaid;
         for (const std::string& w : cop.warnings)
-            if (mentions(w, "sample a bound stretch")) copSaid.push_back(w);
+            if (mentions(w, "sample the source stretch it lies on")) copSaid.push_back(w);
         CHECK(!copSaid.empty(), "57. ...and it warns at all");
         size_t noCount = 0;
         for (const std::string& w : copSaid) {
@@ -4656,7 +4747,7 @@ int main() {
         CHECK(flat.ok, "57. the straight bound square meshes (err: " + flat.error + ")");
         size_t flatSaid = 0;
         for (const std::string& w : flat.warnings)
-            if (mentions(w, "sample a bound stretch")) ++flatSaid;
+            if (mentions(w, "sample the source stretch it lies on")) ++flatSaid;
         CHECK(flatSaid == 0,
               "57. a ratio that does not divide on a STRAIGHT stretch costs nothing "
               "and is not reported — the warning is keyed on the measured cost, not "
@@ -4668,10 +4759,252 @@ int main() {
         MbResult none = build(square(5, 4));
         size_t noneSaid = 0;
         for (const std::string& w : none.warnings)
-            if (mentions(w, "sample a bound stretch")) ++noneSaid;
+            if (mentions(w, "sample the source stretch it lies on")) ++noneSaid;
         CHECK(noneSaid == 0,
               "57. an edge that declares no binding is not measured against a "
               "polyline it does not have (got " + std::to_string(noneSaid) + ")");
+    }
+
+    // ── 58. AN INTERIOR LINE THAT FOLLOWS A CURVE (#151) ───────────────────
+    //
+    // `follows` is `binding` with the boundary-condition half removed: the same
+    // object, accepted on an interior line and refused on a wall, feeding the SAME
+    // path resolution and reaching none of the four behaviours the KIND decides.
+    //
+    // THE CLAIM THIS GROUP IS REALLY ABOUT is the equality below: a following
+    // edge's node positions equal, bit for bit, the positions of the same stretch
+    // declared as a bound wall. Two resolutions that agree today are a defect
+    // waiting for one of them to be edited; one resolution is a property. The rest
+    // of the group is what makes that equality mean something — that the path is
+    // a CURVE and not the chord (the negative control), and that having it costs
+    // the edge none of its interior-line behaviour.
+    {
+        const std::vector<hybmesh::MbGeometry> arc{arcGeom(10)};
+        const std::string follow = R"(, "follows": {"geom": "arc.dat", "seg": 0})";
+
+        MbResult f = hybmesh::buildMultiBlock(arcStack(follow), arc, MbParams{});
+        CHECK(f.ok, "58. 'follows' parses on an INTERFACE and the topology meshes "
+                    "(err: " + f.error + ")");
+        MbResult fc = hybmesh::buildMultiBlock(arcStack(follow, "cut"), arc, MbParams{});
+        CHECK(fc.ok, "58. ...and on a CUT, because the rule is about interior lines "
+                     "rather than about one kind (err: " + fc.error + ")");
+
+        // THE EQUALITY. `up` reads its SOUTH in the edge's own declared direction
+        // (a block's frame comes from its south edge), and `b0` reads its south the
+        // same way, so the two rows are the same stretch walked the same way.
+        MbResult b = hybmesh::buildMultiBlock(arcWall(), arc, MbParams{});
+        CHECK(b.ok, "58. the same stretch declared as a BOUND WALL meshes (err: "
+                    + b.error + ")");
+        const hybmesh::MbBlock* up = nullptr;
+        for (const auto& blk : f.blocks) if (blk.id == "up") up = &blk;
+        CHECK(up != nullptr && !b.blocks.empty(), "58. both fills produced their block");
+        bool same = false, anyOffChord = false;
+        double worstOffChord = 0.0;
+        if (up && !b.blocks.empty() && up->ni == b.blocks[0].ni) {
+            same = true;
+            for (int i = 0; i < up->ni; ++i) {
+                const Point2D pf = nodeOf(f, *up, i, 0);
+                const Point2D pb = nodeOf(b, b.blocks[0], i, 0);
+                if (pf.x != pb.x || pf.y != pb.y) same = false;
+                // ...and the negative control, in the same loop: the chord between
+                // the two corners is y = 0, so any interior node with y != 0 is a
+                // node the polyline put there and the chord could not.
+                if (i > 0 && i + 1 < up->ni) {
+                    anyOffChord = anyOffChord || std::fabs(pf.y) > 1e-9;
+                    worstOffChord = std::max(worstOffChord, std::fabs(pf.y));
+                }
+            }
+        }
+        CHECK(same, "58. A FOLLOWING EDGE'S NODES ARE THE BOUND WALL'S, BIT FOR BIT — "
+                    "one path resolution serving both keys, not two that agree today");
+        CHECK(anyOffChord && worstOffChord > 0.15,
+              "58. ...and that path is the CURVE: the seam's interior nodes sit up to "
+              + std::to_string(worstOffChord) + " off the chord between its two corners, "
+              "which at a sagitta of 0.2 is the polyline and not a straight line");
+
+        // AND WITHOUT THE KEY IT IS THE CHORD, which is what makes the line above a
+        // measurement rather than a description of the fixture.
+        MbResult plain = hybmesh::buildMultiBlock(arcStack(""), arc, MbParams{});
+        CHECK(plain.ok, "58. the same topology WITHOUT 'follows' meshes (err: "
+                        + plain.error + ")");
+        const hybmesh::MbBlock* pu = nullptr;
+        for (const auto& blk : plain.blocks) if (blk.id == "up") pu = &blk;
+        bool allOnChord = pu != nullptr;
+        if (pu) for (int i = 0; i < pu->ni; ++i)
+            if (std::fabs(nodeOf(plain, *pu, i, 0).y) > 1e-12) allOnChord = false;
+        CHECK(allOnChord, "58. ...and every node of the undeclared seam lies ON the "
+                          "chord, so the offset above is the key's doing");
+
+        // ── the two refusals that point at each other ──────────────────────
+        refuses(arcStack(R"(, "binding": {"geom": "arc.dat", "seg": 0})"),
+                "follows", "58. a 'binding' on an INTERFACE names 'follows'", arc);
+        refuses(arcStack(R"(, "binding": {"geom": "arc.dat", "seg": 0})", "cut"),
+                "follows", "58. ...and on a CUT", arc);
+        refuses(swap1(arcWall(), R"("binding": {"geom": "arc.dat", "seg": 0})",
+                      R"("follows": {"geom": "arc.dat", "seg": 0})"),
+                "binding", "58. a 'follows' on a WALL names 'binding'", arc);
+        // BOTH AT ONCE IS REFUSED NAMING BOTH, rather than one silently winning.
+        // Checked on a wall AND on an interface, because a parser that ordered its
+        // kind checks first would answer this with whichever key the kind rejects
+        // and would look right on one of the two.
+        const std::string both = R"(, "binding": {"geom": "arc.dat", "seg": 0})"
+                                 R"(, "follows": {"geom": "arc.dat", "seg": 0})";
+        for (const char* k : {"interface", "cut"}) {
+            MbResult r = hybmesh::buildMultiBlock(arcStack(both, k), arc, MbParams{});
+            CHECK(!r.ok && mentions(r.error, "'binding'") && mentions(r.error, "'follows'"),
+                  std::string("58. an ") + k + " declaring BOTH keys is refused naming "
+                  "BOTH (got: " + r.error + ")");
+        }
+        {
+            MbResult r = hybmesh::buildMultiBlock(
+                swap1(arcWall(), R"("binding": {"geom": "arc.dat", "seg": 0})",
+                      R"("binding": {"geom": "arc.dat", "seg": 0}, )"
+                      R"("follows": {"geom": "arc.dat", "seg": 0})"),
+                arc, MbParams{});
+            CHECK(!r.ok && mentions(r.error, "'binding'") && mentions(r.error, "'follows'"),
+                  "58. ...and so is a WALL declaring both (got: " + r.error + ")");
+        }
+
+        // ── the same object shape, and the same unknown-key strictness ──────
+        refuses(arcStack(R"(, "follows": {"geom": "arc.dat", "seg": 0, "t": 0.5})"),
+                "t", "58. an unknown key inside 'follows' is refused, as inside a "
+                     "'binding'", arc);
+        refuses(arcStack(R"(, "follows": "arc.dat")"), "must be an object",
+                "58. a 'follows' that is not an object is refused", arc);
+        refuses(arcStack(R"(, "follows": {"geom": "arc.dat"})"), "seg",
+                "58. a 'follows' with no 'seg' is refused", arc);
+        refuses(arcStack(R"(, "follows": {"seg": 0})"), "geom",
+                "58. a 'follows' with no 'geom' is refused", arc);
+        refuses(arcStack(R"(, "follows": {"geom": "arc.dat", "seg": -1})"), "seg",
+                "58. a negative 'seg' is refused", arc);
+        refuses(arcStack(R"(, "follows": {"geom": "nowhere.dat", "seg": 0})"),
+                "nowhere.dat", "58. a 'follows' naming a geometry that is not loaded "
+                               "is refused BY NAME", arc);
+
+        // ── a corner that is not on the segment it follows ──────────────────
+        //
+        // The same check a bound wall already gets, and the message names the key
+        // the edge used: a refusal about a 'follows' that told the reader to look
+        // at their 'binding' would be a sentence away from useless.
+        {
+            MbResult r = hybmesh::buildMultiBlock(
+                swap1(arcStack(follow),
+                      R"({"id": "se", "kind": "on_geometry", "geom": "arc.dat", "seg": 0, "t": 1.0})",
+                      R"({"id": "se", "kind": "free", "xy": [1.0, 0.0]})"),
+                arc, MbParams{});
+            CHECK(!r.ok && mentions(r.error, "'se'") && mentions(r.error, "follows segment 0")
+                      && mentions(r.error, "free coordinate"),
+                  "58. a following edge whose corner is NOT on the segment is refused by "
+                  "name, and the message says 'follows' rather than 'binds to' (got: "
+                  + r.error + ")");
+        }
+
+        // ── the four kind-gated behaviours, unchanged ───────────────────────
+        //
+        // This is the property #150's spec asks a review to RE-CHECK rather than
+        // take on trust: adding a path source must not quietly make an edge more
+        // of a wall than its kind says it is.
+        size_t wallSpecsOnM = 0;
+        for (const auto& ws : f.wallSpecs) if (ws.edgeId == "m") ++wallSpecsOnM;
+        CHECK(wallSpecsOnM == 0,
+              "58. a following edge reports NO wall spacing: 'how tall is the first "
+              "cell off it' is not a question about an interior line ("
+              + std::to_string(wallSpecsOnM) + ")");
+        CHECK(f.wallSpecs.size() == b.wallSpecs.size() + 2,
+              "58. ...while the six walls around it still do, so the report lost "
+              "nothing (" + std::to_string(f.wallSpecs.size()) + ")");
+        size_t seamFaces = 0, labelled = 0;
+        for (const auto& be : f.boundaryEdges) {
+            const Point2D p1 = f.nodes[static_cast<size_t>(be.v1)];
+            const Point2D p2 = f.nodes[static_cast<size_t>(be.v2)];
+            // Every node of the seam is a point of the arc, whose interior rises to
+            // y = 0.2 while every other boundary of this topology is a straight
+            // side at y = 0.5, y = -0.5, x = 0 or x = 1.
+            if (std::fabs(p1.y) > 1e-9 && std::fabs(p1.y) < 0.4
+                && std::fabs(p2.y) > 1e-9 && std::fabs(p2.y) < 0.4) ++seamFaces;
+            if (be.bc == "seam") ++labelled;
+        }
+        CHECK(seamFaces == 0,
+              "58. a following edge is NOT exported as a boundary face — both blocks "
+              "have cells against it, so a face there is a wall through the middle of "
+              "the fluid (" + std::to_string(seamFaces) + ")");
+        CHECK(labelled == 0 && !f.boundaryEdges.empty(),
+              "58. ...and takes NO boundary condition: its segment's own label 'seam' "
+              "reaches nothing, because 'follows' carries the path half and not the "
+              "condition half (" + std::to_string(labelled) + " of "
+              + std::to_string(f.boundaryEdges.size()) + " faces)");
+        size_t shared = 0, curved = 0;
+        for (const auto& se : f.sharedEdges) {
+            ++shared;
+            if (se.edgeId == "m" && se.followsGeom == "arc.dat" && se.followsSeg == 0)
+                ++curved;
+        }
+        CHECK(shared == 1 && curved == 1,
+              "58. ...and IS still listed as a shared edge, with the segment it "
+              "follows beside the kind — a run has to be able to show which of its "
+              "interior lines are curves and which are chords ("
+              + std::to_string(shared) + " shared, " + std::to_string(curved)
+              + " following)");
+        for (const auto& se : plain.sharedEdges)
+            CHECK(se.followsGeom.empty() && se.followsSeg == -1,
+                  "58. ...while a chord publishes no path source at all");
+
+        // ── the sample-rate advice reaches it ───────────────────────────────
+        //
+        // The third of the three checks that are properties of HAVING A PATH
+        // rather than of BEING A WALL. 10 facets under 4 intervals is 2.5 facets
+        // to a node on a curve turning ~87 deg, so a seam sampled at a rate its
+        // polyline cannot carry says so here exactly as a bound wall does.
+        size_t rateSaid = 0;
+        for (const auto& w : f.warnings)
+            if (mentions(w, "edge 'm'")
+                && mentions(w, "sample the source stretch it lies on")) ++rateSaid;
+        CHECK(rateSaid == 1,
+              "58. the sample-rate advice fires on a FOLLOWING edge, because the "
+              "measurement is about a polyline and this edge has one ("
+              + std::to_string(rateSaid) + ")");
+        size_t plainSaid = 0;
+        for (const auto& w : plain.warnings)
+            if (mentions(w, "sample the source stretch it lies on")) ++plainSaid;
+        CHECK(plainSaid == 0,
+              "58. ...and not on the chord version, which has no polyline to be "
+              "measured against (" + std::to_string(plainSaid) + ")");
+
+        // ── THE SMOOTHER LEAVES A DECLARED CURVE WHERE IT WAS ──────────────
+        //
+        // The half that makes every claim above survive the default run. #84 freed
+        // the shared edges because an interior line had no declared shape to lose;
+        // a following one has, and MEASURED on the shipped two-block fixture the
+        // 20 default sweeps pulled all 39 of its interior seam nodes off the arc,
+        // the worst by 4.961e-02 against a radius of 1.25. The gate is the
+        // published `followsGeom`, so the freeze is read off the declaration in
+        // the same way the wall's is.
+        const hybmesh::MbSmoothPlan pf = hybmesh::mbSmoothPlan(f);
+        const hybmesh::MbSmoothPlan pp = hybmesh::mbSmoothPlan(plain);
+        CHECK(pf.movedShared == 0,
+              "58. every node of a FOLLOWING seam is frozen: its position is placed "
+              "by arc length along a polyline, which is a declared position exactly "
+              "as a wall's is (" + std::to_string(pf.movedShared) + ")");
+        CHECK(pp.movedShared == 3,
+              "58. ...while the SAME seam declared as a chord still moves, so #84's "
+              "rule is narrowed by the declaration and not withdrawn ("
+              + std::to_string(pp.movedShared) + " of the 3 interior nodes of a "
+              "5-node edge)");
+        CHECK(pf.ghostEdges == 1 && pf.movedNodes > 0,
+              "58. ...and the seam still gets its ghost layer and the block "
+              "interiors still move, so freezing the line is not freezing the mesh ("
+              + std::to_string(pf.ghostEdges) + " ghost edges, "
+              + std::to_string(pf.movedNodes) + " movable)");
+
+        // ── a topology whose ONLY path is a 'follows' still says the BCs are
+        //    all coming from the fallback, because none of them was declared ──
+        size_t noBind = 0;
+        for (const auto& w : f.warnings)
+            if (mentions(w, "no topology edge declares a 'binding'")) ++noBind;
+        CHECK(noBind == 1,
+              "58. a 'follows' does not count as a declared boundary condition: the "
+              "run still says every boundary edge is on the config default ("
+              + std::to_string(noBind) + ")");
     }
 
     return hybmesh::test::report("test_multiblock");

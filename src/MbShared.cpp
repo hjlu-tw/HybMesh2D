@@ -147,11 +147,32 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
         isWall[static_cast<size_t>(ws.block)][static_cast<size_t>(ws.side)] = true;
     }
     std::vector<std::array<bool, 4>> isShared(nb, {false, false, false, false});
+    // ── AND WHICH OF THEM LIE ON A CURVE, from the same published list ──────
+    //
+    // A shared edge that declares `follows` has its nodes placed by ARC LENGTH
+    // along a source polyline, which is a DECLARED POSITION exactly as a wall's
+    // is. #84 freed the shared edges because an interior line had no declared
+    // shape to lose — the chord between two corners is whatever the smoother
+    // leaves it as — and that argument stops at the edge that has one. The reason
+    // this module's header already gives for freezing a bound edge is the same
+    // sentence, word for word: a node on it "would leave the geometry it was
+    // attached to by arc length".
+    //
+    // MEASURED, and that is why this is a rule and not a precaution: on the
+    // shipped two-block fixture the 20 default sweeps pulled all 39 interior seam
+    // nodes off their arc, the worst by 4.961e-02 against a radius of 1.25 — a
+    // declared curve silently replaced by one nobody wrote down.
+    std::vector<std::array<bool, 4>> isFollowing(nb, {false, false, false, false});
     for (const MbSharedEdge& se : mesh.sharedEdges) {
         if (se.blockA >= 0 && static_cast<size_t>(se.blockA) < nb)
             isShared[static_cast<size_t>(se.blockA)][static_cast<size_t>(se.sideA)] = true;
         if (se.blockB >= 0 && static_cast<size_t>(se.blockB) < nb)
             isShared[static_cast<size_t>(se.blockB)][static_cast<size_t>(se.sideB)] = true;
+        if (se.followsGeom.empty()) continue;
+        if (se.blockA >= 0 && static_cast<size_t>(se.blockA) < nb)
+            isFollowing[static_cast<size_t>(se.blockA)][static_cast<size_t>(se.sideA)] = true;
+        if (se.blockB >= 0 && static_cast<size_t>(se.blockB) < nb)
+            isFollowing[static_cast<size_t>(se.blockB)][static_cast<size_t>(se.sideB)] = true;
     }
 
     // ── WHICH OF THE TWO BLOCKS MOVES A SHARED EDGE'S NODES ────────────────
@@ -220,6 +241,8 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
                 if (shared) {
                     // On a WALL side: the domain, not the discretisation.
                     if (isWall[bi][static_cast<size_t>(side)]) continue;
+                    // On a FOLLOWING side: a declared position, like a wall's.
+                    if (isFollowing[bi][static_cast<size_t>(side)]) continue;
                     if (!isShared[bi][static_cast<size_t>(side)]) continue;
                     // The other block's to move.
                     if (!ownsSide[bi][static_cast<size_t>(side)]) continue;

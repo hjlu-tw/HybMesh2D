@@ -348,7 +348,8 @@ inline MbSideAxis mbSideAxis(MbSide s) {
 //
 // The kind is DECLARED and never inferred from whether a `binding` is present: a
 // wake cut is two blocks sharing one line that is NOT a boundary, and inference
-// would file it as an ordinary interface.
+// would file it as an ordinary interface. Nor from a `follows`, for the same
+// reason one level along: an interface and a cut may both lie on a curve.
 enum MbEdgeKind { MB_EDGE_WALL = 0, MB_EDGE_INTERFACE = 1, MB_EDGE_CUT = 2 };
 
 inline const char* mbEdgeKindName(MbEdgeKind k) {
@@ -371,14 +372,20 @@ inline const char* mbEdgeKindName(MbEdgeKind k) {
 // WHAT IS AND IS NOT DISTINGUISHED, said plainly because the name invites a
 // stronger reading. The kind decides three things today, all of them checkable:
 // how many block sides the edge may be (a wall exactly one, the other two exactly
-// two), whether it may declare a `binding` (a wall only — a cut lies in the fluid
-// and has no source segment to lie on), and whether it is exported as a boundary
-// face carrying a BC (a wall only). What it does NOT yet decide is any arithmetic:
+// two), WHICH KEY may say that the edge lies on a source segment (`binding` on a
+// wall, `follows` on an interior line — one statement with the boundary-condition
+// half, one without), and whether it is exported as a boundary face carrying a BC
+// (a wall only). What it does NOT yet decide is any arithmetic:
 // an interface and a cut weld by the same rule, because with node identity shared
 // there is nothing left for a second rule to do. The kind is what makes a later
 // divergence — a periodic cut, a non-matching interface — a change rather than a
 // rewrite, and `MbResult::sharedEdges` is what lets a user see which shared lines
 // are which in the meantime.
+//
+// WHICH INTERIOR LINES ARE CURVES is published here for the same reason the kind
+// is: a `follows` is a declaration, and a run that cannot show which of its seams
+// took a polyline and which took the chord between two corners is a run in which
+// a path-resolution defect looks like the document's own choice.
 struct MbSharedEdge {
     std::string edgeId;
     MbEdgeKind kind = MB_EDGE_INTERFACE;
@@ -386,6 +393,11 @@ struct MbSharedEdge {
     MbSide sideA = MB_SOUTH;       // ...and which of its sides, as each declared it
     MbSide sideB = MB_SOUTH;
     int nodes = 0;                 // node count along it, ONE number by construction
+    // The source segment this line FOLLOWS, from its `follows` key. `followsGeom`
+    // empty (and `followsSeg` -1) is the straight chord between the two corners,
+    // which is what every interior line was before #151.
+    std::string followsGeom;
+    int followsSeg = -1;
 };
 
 // One edge's resolved node count, and whether the document said so.

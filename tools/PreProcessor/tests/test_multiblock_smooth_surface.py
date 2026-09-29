@@ -1269,7 +1269,8 @@ def main() -> int:
         check("11. ...in the banner as well as in the token, saying which nodes are "
               "frozen and why",
               re.search(r"Movable nodes\s+: \d+ of \d+, of which \d+ on a shared "
-                        r"edge \(walls and declared corners are frozen\)",
+                        r"edge \(walls, declared corners and any interior line "
+                        r"that FOLLOWS a curve are frozen\)",
                         out84) is not None)
         check("11. ...and a run that smoothed NOTHING reports neither figure, "
               "because 0 movable nodes is a real answer and must not stand in for "
