@@ -54,6 +54,7 @@ FAIL line at all.
   F  ``largest_offset`` reports the bracket's MIDPOINT     -> 6c, exit 1
   G  the zero-length-edge carry-forward is removed         -> 7, exit 1
   H  the duplicated end point is not re-created            -> 1c, exit 1
+  Q  `geometry_primitives.signed_area`'s sign is flipped   -> 2a, 2c, 5a (15), exit 1
   I  NEGATIVE CONTROL: a docstring edit                    -> inert, rightly
 
 F AND G FIRST BIT BY CRASHING — exit 1 with ZERO FAIL lines, because the refusal

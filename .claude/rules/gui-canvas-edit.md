@@ -196,9 +196,14 @@ rule in it.
 #152, parent #150). What comes back is an ORDINARY discrete geometry — no new
 `curve_type` in the GUI and none in the resampler, so the shape-parity surface does not
 grow.
-- **`offset_points(points, distance, closed)` is the only place the law lives.** The
-  canvas preview and the thing that writes the geometry call it, so they cannot produce
-  different curves. Nothing may re-derive a normal, a bisector or a fold bound elsewhere.
+- **`offset_points(points, distance, closed)` is the only place the law lives.** Nothing
+  may re-derive a normal, a bisector or a fold bound elsewhere, and a canvas preview —
+  there is NONE today, the function has one caller — must call it rather than approximate
+  it. Stated as the precondition it is: #150 asks for one owner "so that the canvas
+  preview and the thing that writes the geometry cannot produce different curves", and a
+  rule asserting a second caller the tree does not have is the defect class #132 is about.
+  The winding is measured with `services/geometry_primitives.signed_area`, the ONE
+  shoelace — `surface_sample` and `stl_extrude` re-export it rather than keeping copies.
 - **The result has the SOURCE'S LENGTH and the source's point order**, which is what makes
   the source's split indices index it and mean the same thing. The derived session takes
   the source's `split_indices` and a DEEP COPY of its file segments, so segment ids,
@@ -218,11 +223,23 @@ grow.
   positive is the RIGHT of travel, stated rather than inferred.
 - **A fold is REFUSED, never trimmed, and the refusal carries a number that works.** A
   trimmed offset has fewer points than its source, which breaks the one property this
-  object exists for. `OffsetRefused.max_distance` is SIGNED and feasible, so feeding it
-  straight back in succeeds; the local (edge-reversal) bound is analytic, the global
-  (crossing) bound is bisected, and the bisection keeps the known-good end of its bracket.
-- **Only the DISCRETE geometry is offset.** A source with no points is refused by name and
-  pointed at Convert to Discrete, rather than silently offsetting nothing.
+  object exists for. `OffsetRefused.max_distance` is SIGNED and feasible (`largest_offset`
+  finds it), so feeding it straight back in succeeds; the local (edge-reversal) bound is
+  analytic, the global (crossing) bound is bisected, and the bisection keeps the known-good
+  end of its bracket. **The "never" has ONE measured exception**: the crossing sweep is
+  O(N²) and is skipped above `CROSSING_MAX_POINTS` (4000), so past that only the local
+  bound applies — the gate pins the constant so the exemption cannot widen in silence.
+- **Only a WHOLLY discrete geometry may be offset.** A source with no points, and a source
+  holding ANY analytic edge, are both refused by name and pointed at Convert to Discrete —
+  as a precondition (`report_info`, and a log line graded to agree with it), not an error.
+  Dropping the analytic edges and keeping the rest is the tempting answer and is WRONG:
+  `renumber_segments` closes the gap, so an offset id would mirror a different source
+  segment, silently, which is the one property the object exists for.
+- **Renaming a source is a WRITE.** A drawn geometry has no path, so its display name is
+  the whole identity a record can hold; the geometry list's Rename calls
+  `rename_derived_sources`, or every offset of it is stranded behind a refusal that blames
+  the wrong thing. A rename made OUTSIDE the app is beyond that reach, and the refusal
+  says so in its own words.
 - **The record is DATA and regeneration is an ACTION.** `ProjectModel.derived_from` is
   carried by `to_state_dict()` — the ONE serialiser both the `.hws` `project_config` and
   the pipeline script's `cads` entry now use, so a field added to the model cannot reach
@@ -234,9 +251,9 @@ grow.
   source is not open is refused NAMING it — never skipped, and never resolved to whatever
   is nearest. It re-mirrors the source's segmentation as well as its points, in ONE undo
   step (`RegenerateOffsetCmd`).
-Gated by `tests/test_geometry_offset.py` (26 checks, 9 recorded injections) and
-`tests/test_offset_geometry_gui.py` (39 checks, 12 recorded injections, through the real
-`AppController`). Three of those 21 were INERT or CRASHED on their first run and the
+Gated by `tests/test_geometry_offset.py` (26 checks, 10 recorded injections) and
+`tests/test_offset_geometry_gui.py` (48 checks, 16 recorded injections, through the real
+`AppController`). Four of those 26 were INERT or CRASHED on their first run and the
 gates were changed to reach them — a recorded injection that was never re-run is a claim,
 not a measurement. Blind spots: in those two gates' docstrings and in
 `docs/design_notes/gui.md`.

@@ -6,10 +6,15 @@ could draw a second circle; for an aerofoil, or for anything drawn by hand, ther
 was no way to get that curve short of computing it outside the tool.
 
 THE OFFSET IS A PURE FUNCTION OF (points, distance, closed), AND NOTHING ELSE.
-The canvas preview and the thing that writes the geometry call the same
-:func:`offset_points`, so they cannot produce different curves — the developer
-story #150 states, and the reason this module is a service rather than a method
-on the controller that happens to need it. It is numpy-only: no Qt, gated by
+#150's developer story asks for ONE owner "so that the canvas preview and the
+thing that writes the geometry cannot produce different curves". There is no
+preview today — :func:`offset_points` has exactly one caller, the CAD-stage
+creation path — so what this module delivers is the PRECONDITION for that, not the
+comparison: a preview, when one is drawn, calls this and nothing else. Stated that
+way round because a rule file asserting a second caller that does not exist is a
+claim the tree contradicts, which is a defect class this repo has tickets about.
+It is the reason this is a service rather than a method on the controller that
+happens to need it. It is numpy-only: no Qt, gated by
 ``tests/test_qt_free_seam.py``'s ``services/`` sweep.
 
 WHAT COMES BACK IS AN ORDINARY POINT ARRAY OF THE SAME LENGTH. One offset point
@@ -71,6 +76,8 @@ Two things count as folding, and they are found differently:
 from __future__ import annotations
 
 import numpy as np
+
+from app.services import geometry_primitives
 
 __all__ = ["OffsetRefused", "offset_points", "largest_offset",
            "CROSSING_MAX_POINTS"]
@@ -187,10 +194,9 @@ def _vertex_miters(points, closed: bool):
     if closed:
         m = _miter(np.roll(n, 1, axis=0), n)
         # The stored winding, not a guess: (ey, -ex) is outward for a
-        # counter-clockwise loop and inward for a clockwise one.
-        x, y = loop[:, 0], loop[:, 1]
-        area = 0.5 * float(np.dot(x, np.roll(y, -1)) - np.dot(np.roll(x, -1), y))
-        if area < 0.0:
+        # counter-clockwise loop and inward for a clockwise one. The shoelace is
+        # `geometry_primitives`', not a fifth copy of it (#152 review).
+        if geometry_primitives.signed_area(loop) < 0.0:
             m = -m
     else:
         m = np.empty_like(loop)

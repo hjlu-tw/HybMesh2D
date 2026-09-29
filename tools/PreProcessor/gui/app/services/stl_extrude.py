@@ -19,16 +19,16 @@ from __future__ import annotations
 import struct
 import numpy as np
 
+from app.services import geometry_primitives
 from app.services.stl_loader import _BIN_TRI_DTYPE, triangle_normals
 
 
 # --------------------------------------------------------------------------- #
 # Polygon helpers
 # --------------------------------------------------------------------------- #
-def _signed_area(poly: np.ndarray) -> float:
-    """Signed area of a 2D polygon (positive => counter-clockwise)."""
-    x, y = poly[:, 0], poly[:, 1]
-    return 0.5 * float(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y))
+#: Re-export, not a copy: the law lives in `services/geometry_primitives.py`
+#: (#152). The private name stays because `controllers/extrude_ctrl.py` imports it.
+_signed_area = geometry_primitives.signed_area
 
 
 def _clean_loop(poly: np.ndarray, tol: float = 1e-12) -> np.ndarray:

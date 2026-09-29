@@ -144,6 +144,30 @@ class SessionTabsControllerMixin:
         self._sync_geometry_list()
         return session
 
+    def rename_session(self, session, idx: int, new_name: str):
+        """Rename one geometry layer, everywhere its name is an identity.
+
+        A rename is not a relabel. A DRAWN geometry has no file path, so its
+        display name is the whole identity a derived-offset record can hold
+        (#152) — renaming without re-pointing those records leaves every offset
+        of it unregenerable behind a refusal that blames the wrong thing ("its
+        source is not open"; it is open, under another name). Every session is
+        open at once here, so the repair is complete for any rename made in the
+        app. The caller still owns the tree row, which is the one part of this
+        that belongs to the widget it was clicked in.
+        """
+        old_name = session.display_name.lstrip("*")
+        session.display_name = new_name
+        shown = session.display_name.lstrip("*")
+        moved = self.rename_derived_sources(old_name, shown)
+        if moved:
+            self.log("[Offset] Re-pointed %d derived geometr%s at the new name "
+                     "'%s'." % (moved, "y" if moved == 1 else "ies", shown))
+        self.main_window.tab_widget.setTabText(idx, session.display_name)
+        if session is self.active_session():
+            self.main_window.update_title(
+                session.display_name, session.is_geometry_modified)
+
     def switch_tab(self, idx: int):
         if idx < 0 or idx >= len(self.sessions):
             self.active_idx = -1

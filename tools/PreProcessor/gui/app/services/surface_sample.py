@@ -31,16 +31,13 @@ from __future__ import annotations
 
 import numpy as np
 
+from app.services import geometry_primitives
 from app.services.surface_source import START_RULES, SurfaceCurve
 
 
-def signed_area(points: np.ndarray) -> float:
-    """Shoelace area of a closed polyline; > 0 = counter-clockwise."""
-    p = np.asarray(points, dtype=float)
-    if len(p) < 3:
-        return 0.0
-    x, y = p[:, 0], p[:, 1]
-    return 0.5 * float(np.dot(x, np.roll(y, -1)) - np.dot(np.roll(x, -1), y))
+#: Re-export, not a copy: the law lives in `services/geometry_primitives.py`
+#: (#152). The name stays here because this module's own callers use it.
+signed_area = geometry_primitives.signed_area
 
 
 def orient_curve(curve: SurfaceCurve, ccw: bool = True) -> SurfaceCurve:

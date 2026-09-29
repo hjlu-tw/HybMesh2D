@@ -580,6 +580,15 @@ user could draw a second circle; for an aerofoil — the case the mesher is mean
 at — nobody is going to hand-draw a curve offset from the section, so the seam and the
 curve it follows had to land together or neither would be usable.
 
+**THE ONE OWNER IS A PRECONDITION, NOT A COMPARISON — SAID THAT WAY ROUND ON PURPOSE.**
+#150's developer story asks for one Qt-free owner *"so that the canvas preview and the thing
+that writes the geometry cannot produce different curves"*. There is no preview: the dialog
+shows a distance and a side, and `offset_points` has exactly ONE caller. The first draft of
+the rule file and of the module docstring wrote the story's *reason* as though both callers
+existed, which is a claim the tree contradicts — the defect class #132 is about, arriving in
+the very ticket whose review found it. What is true is the precondition: the law has one
+home, and a preview, when one is drawn, calls it rather than approximating it.
+
 **WHY IT IS A DERIVED GEOMETRY IN THE CAD STAGE AND NOT SOMETHING A TEMPLATE WRITES.** The
 rule that a topology template writes no geometry survives intact; the precedent is the
 optionally-drawn far field, where the template binds to an outline the user has rather than
@@ -596,6 +605,18 @@ without the user re-segmenting anything, and a stable segment id on the offset m
 same thing as the id it mirrors. Re-segmenting the result instead would be a second answer
 to a question the source has already answered, and two answers drift — the failure class
 `services/topology_binding.py` exists about, one layer down.
+
+**WHICH IS WHY A MIXED SOURCE IS REFUSED, AND THE FIRST VERSION OF THIS WAS WRONG.** The
+result is one point array, so an analytic edge has nothing to become; the obvious answer is
+to keep the file segments and drop the rest, and it shipped that way until #152's own Spec
+review probed it. `renumber_segments` closes the gap: a source numbered (1 file, 2 curve,
+3 file) yielded an offset numbered (1, 2), whose id 2 mirrored the source's id **3** —
+silently, with no log and no refusal, which is the id-mirroring property above broken by
+the code meant to guarantee it. So a source holding ANY analytic edge is refused, naming
+how many and pointing at Convert to Discrete, exactly as a source with no discrete points
+at all is. Both are preconditions the user can fix, so both are `report_info` and both log
+at a grade that agrees with the dialog — the first draft said `[ERROR]` beside a
+`report_info`, which the Standards axis caught.
 
 **THE VERTEX DIRECTION IS THE MITER, AND THE CIRCLE TEST STATES BOTH NUMBERS.** At a vertex
 whose two adjacent edge normals are `na` and `nb`, the point lying on BOTH offset lines is
@@ -643,9 +664,13 @@ identical seven keys, each written out by hand in its own module, so a field add
 model reached one file or the other depending on who remembered. Both now go through
 `ProjectModel.to_state_dict()`. The READ sides stay separate and that is deliberate: the
 workspace preserves segment ids where `load_from_config` renumbers them. The collapse also
-paid for itself against the file-length standard — `models/pipeline_config.py` 524 -> 520
-and `controllers/session_io_ctrl.py` 508 -> 503, both pins LOWERED rather than raised,
-which is the only direction a pin may move.
+paid for itself against the file-length standard — `models/pipeline_config.py` 524 -> 520,
+its pin LOWERED rather than raised, which is the only direction a pin may move; and
+`controllers/session_io_ctrl.py` 508 -> 500, which took it back INSIDE the standard and so
+DELETED its pin, the gate's self-invalidating half firing in the direction nobody plans
+for. The second of those took a second nudge: the rename repair below put it back over,
+and the fix was to move the rename into `controllers/session_tabs_ctrl.py`, which owns tab
+naming, rather than to raise anything.
 
 **A REGENERATION WHOSE SOURCE IS GONE IS REFUSED BY NAME.** The source is looked for among
 the OPEN sessions, by display name and then by path, because the thing being offset is the
@@ -653,6 +678,25 @@ geometry as it is NOW — a source edited but not yet exported lives only in its
 is never resolved to whatever is nearest; the gate leaves a DECOY tab whose points would be
 visible in the result if it had been, which is how a fallback like that would otherwise pass
 every check that only looked at the refusal.
+
+**WHICH MAKES RENAMING THE SOURCE A WRITE, not a relabel** — the second thing #152's Spec
+review found, and the more surprising one. A drawn geometry has no path, so its display
+name is the whole identity a record can hold. Renaming it in the geometry list therefore
+left every offset of it permanently unregenerable, behind a refusal that blamed the wrong
+thing: *"its source geometry 'X' is not open"* — it was open, under another name. Every
+session is open at once in this app, so the rename can and does re-point the records that
+name the old one (`rename_derived_sources`), and says how many it moved. A rename made
+OUTSIDE the app — a workspace edited by hand — is beyond that reach, so the refusal now
+names it as a possibility instead of asserting the one cause it used to.
+
+**And a fifth shoelace was nearly written.** The winding test is a signed area, which this
+tree already spelled out four times. The review would have made it five; instead
+`services/geometry_primitives.signed_area` is now the ONE copy and
+`services/surface_sample.signed_area` and `services/stl_extrude._signed_area` are thin
+re-exports keeping their own names so their callers are untouched.
+`services/topology_binding`'s method of the same name answers a different question — the
+area of a ring described by (segment id, arc fraction) pairs — and is deliberately not
+folded in.
 
 **And the per-tool drawing tables left the canvas for `services/canvas_tools.py`.** How
 many points a tool collects (`DRAW_NPTS`) and what it asks for next (`DRAW_HINTS` /
@@ -1504,7 +1548,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 286, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 286, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —

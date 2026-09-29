@@ -466,11 +466,8 @@ class SessionIOControllerMixin:
                 text=session.display_name.lstrip('*')
             )
             if ok and new_name.strip():
-                session.display_name = new_name.strip()
+                self.rename_session(session, session_idx, new_name.strip())
                 item.setText(0, session.display_name)
-                self.main_window.tab_widget.setTabText(session_idx, session.display_name)
-                if session is self.active_session():
-                    self.main_window.update_title(session.display_name, session.is_geometry_modified)
         elif action == close_action:
             self.close_tab(session_idx)
 

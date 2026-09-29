@@ -293,15 +293,32 @@ class ProjectModel:
 
     # ── JSON I/O ──────────────────────────────────────────────────────────
 
+    def derived_dict(self) -> dict | None:
+        """This model's derived-geometry record as a dict, or ``None``.
+
+        One expression, three writers: ``to_state_dict`` below (which the workspace
+        and the pipeline script share) and ``export_config``, which is a THIRD
+        hand-written serialiser this ticket did not collapse — it emits a different
+        key set (a format version, the length unit, and the optional keys only when
+        set), and folding it in would change the JSON the resampler reads. So the
+        duplication that remains is the key LIST, not the record."""
+        return None if self.derived_from is None else self.derived_from.to_dict()
+
     def to_state_dict(self) -> dict:
-        """This model's authored state, as the dict BOTH project files carry.
+        """The eight keys BOTH project files carry, from one serialiser.
 
         The ``.hws`` workspace's ``project_config`` section and the pipeline
-        script's ``cads`` entry held the identical seven keys, each written out by
-        hand in its own module — so a field added to the model reached one file or
-        the other depending on who remembered. #152 collapsed them here, which is
-        why a derived geometry's record arrives in both by construction. The
-        READ sides stay separate: the workspace preserves segment ids where
+        script's ``cads`` entry held the identical seven, each written out by hand
+        in its own module — so a field added to the model reached one file or the
+        other depending on who remembered, which is how #152's record would have
+        arrived in one of them. It is eight now because that record is the
+        eighth. NOT everything the model holds: the three ``length_unit*`` fields
+        are authored state and are deliberately absent, because neither file has
+        ever carried them there (the workspace does not store them at all, and
+        ``export_config`` writes them at the top level) — adding them here would
+        change both files' schema, which is a different ticket.
+
+        The READ sides stay separate: the workspace preserves segment ids where
         ``load_from_config`` renumbers them, and that is a real difference."""
         return {
             "input_file": self.input_file,
@@ -311,8 +328,7 @@ class ProjectModel:
             "global_spline": self.global_spline,
             "transform": copy.deepcopy(self.transform),
             "segments": [s.to_dict() for s in self.segments],
-            "derived_from": (self.derived_from.to_dict()
-                             if self.derived_from is not None else None),
+            "derived_from": self.derived_dict(),
         }
 
 
@@ -398,7 +414,7 @@ class ProjectModel:
         if self.transform:
             config["transform"] = copy.deepcopy(self.transform)
         if self.derived_from is not None:
-            config["derived_from"] = self.derived_from.to_dict()
+            config["derived_from"] = self.derived_dict()
         # Transient, run-specific keys (e.g. preview_markers) that should not be
         # persisted to user-saved configs.
         if extra:

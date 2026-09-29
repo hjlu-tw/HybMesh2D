@@ -74,5 +74,7 @@ class DerivedOffset:
                    distance=dist)
 
     def describe(self) -> str:
-        """The one-line summary shown to the user (log, tab, tooltip)."""
+        """The one-line summary the log carries. Not the tab, which is named
+        from the same two facts by the controller, and not a tooltip —
+        there is none."""
         return "offset %+g from '%s'" % (self.distance, self.source_name)

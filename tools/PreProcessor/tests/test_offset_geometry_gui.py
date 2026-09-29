@@ -37,6 +37,12 @@ What is checked:
      and a session with no discrete points at all.
   7. A FOLD REFUSED IN THE CONTROLLER CHANGES NOTHING. No tab is added, and the
      number the refusal names creates one when fed back through the same action.
+  8. A MIXED SOURCE IS REFUSED, AND A RENAMED ONE STILL REGENERATES. Dropping a
+     source's analytic edges and keeping the rest would let `renumber_segments`
+     close the gap, so an offset's id would mirror a DIFFERENT source segment —
+     silently. And a drawn geometry has no path, so its display name is the whole
+     identity a record can hold; renaming it re-points the records that name it,
+     rather than stranding them behind a refusal that blames the wrong thing.
 
 NAMED BLIND SPOTS.
 
@@ -44,9 +50,10 @@ NAMED BLIND SPOTS.
     `signed_distance()` checked as arithmetic (check 1e); the creation path is
     entered at `create_offset_geometry`, which is where the dialog hands over.
     What the widgets look like is not covered here.
-  * **The source's ANALYTIC edges are not offset**, by design, and nothing here
-    drives a source that has both kinds. A mixed source yields an offset of its
-    discrete half; that is the documented behaviour, not a tested one.
+  * **A source renamed OUTSIDE the app is beyond check 8b's reach** — a workspace
+    edited by hand, or a `.dat` renamed on disk and reopened. The refusal says so
+    in its own words; nothing here drives it, because there is no in-app action
+    that produces it.
   * **Nothing meshes the result.** That an offset geometry reaches the mesher like
     any other is the claim "it is an ordinary geometry" makes; this gate checks
     the shape of the object, not a run.
@@ -72,6 +79,10 @@ line at all and would otherwise score as silence.
                                                        -> 7a, 7d, exit 1
   L  the not-a-derived-geometry refusal is a silent return
                                                        -> 6a, exit 1
+  M  the mixed-source refusal is dropped                 -> 8a (x2), exit 1
+  N  the MENU path checks only the no-points half of it  -> 8a, exit 1
+  O  `rename_derived_sources` is a no-op                 -> 8b (x2), exit 1
+  P  the refusal is graded `[ERROR]` again               -> 6c, exit 1
   J  NEGATIVE CONTROL: a comment-only edit               -> inert, rightly
 
 G AND H WERE INERT ON THE FIRST RUN, and the ledger above names where they bite
@@ -393,6 +404,74 @@ check(said("[Offset]", "blank", "no discrete geometry"),
       % ([ln for ln in _seen if "[Offset]" in ln][:1],))
 check(said("Convert to Discrete"),
       "6b. ...naming the action that fixes it")
+_line = [ln for ln in _seen if "[Offset]" in ln][0]
+check(user_log.classify(_line)[0] != "ERROR",
+      "6c. ...and it is not graded ERROR: a precondition the user can fix is "
+      "what `report_info` means, and the log line must agree with the dialog "
+      "(%r)" % (user_log.classify(_line)[0],))
+
+
+# ── 8. a MIXED source, and a renamed one ──────────────────────────────────── #
+
+c4 = AppController()
+mixed = seed(c4, c4.active_session(), r=1.0, name="mixed")
+arc = mixed.project_model.add_curve_segment()
+arc.curve_type = "circle"
+# In the MIDDLE, not appended: a trailing analytic edge would renumber to nothing,
+# so a fixture with one there would make the check below pass without the hazard.
+mixed.project_model.segments.insert(1, mixed.project_model.segments.pop())
+mixed.project_model.renumber_segments()
+ids_before = [s.id for s in mixed.project_model.segments]
+tabs4 = len(c4.sessions)
+del _seen[:]
+check(c4.create_offset_geometry(mixed, 0.1) is None and len(c4.sessions) == tabs4,
+      "8a. a source holding an ANALYTIC edge is refused and opens no tab (%d)"
+      % len(c4.sessions))
+check(said("[Offset]", "mixed", "analytic"),
+      "8a. ...by name, saying how many: %r"
+      % ([ln for ln in _seen if "[Offset]" in ln][:1],))
+check([s.id for s in mixed.project_model.segments] == ids_before,
+      "8a. ...and the SOURCE is untouched (%r)"
+      % ([s.id for s in mixed.project_model.segments],))
+# Through the MENU entry as well, which is the path a user takes. The dialog is
+# stubbed to Rejected purely as a safety net: with the refusal in place it is never
+# constructed, and without one this check would otherwise block on a modal exec().
+OffsetGeometryDialog.exec = lambda self: 0
+del _seen[:]
+c4.active_idx = c4.sessions.index(mixed)
+c4.offset_active_geometry()
+check(len(c4.sessions) == tabs4 and said("[Offset]", "mixed", "analytic"),
+      "8a. ...and the refusal comes BEFORE the dialog, so a mixed source is never "
+      "asked for a distance it cannot be given (%d tabs, %r)"
+      % (len(c4.sessions), [ln for ln in _seen if "[Offset]" in ln][:1]))
+# Why it is refused rather than partly honoured: dropping the curve edge and
+# renumbering would move a file segment's id off the one it mirrors.
+_file_ids = [s.id for s in mixed.project_model.segments if s.type == "file"]
+check(_file_ids != list(range(1, len(_file_ids) + 1)),
+      "8a. (precondition) the hazard is real in this fixture: keeping only the "
+      "file segments and renumbering would move %r onto %r"
+      % (_file_ids, list(range(1, len(_file_ids) + 1))))
+
+c5 = AppController()
+src5 = seed(c5, c5.active_session(), r=1.0, name="hull")
+off5 = c5.create_offset_geometry(src5, 0.15)
+del _seen[:]
+moved = c5.rename_derived_sources("hull", "hull_v2")
+src5.display_name = "hull_v2"
+check(moved == 1
+      and off5.project_model.derived_from.source_name == "hull_v2",
+      "8b. renaming a source RE-POINTS the records that name it — a drawn "
+      "geometry's name is its whole identity (%d moved, %r)"
+      % (moved, off5.project_model.derived_from.source_name))
+src5.original_points = circle(3.0)
+c5.active_idx = c5.sessions.index(off5)
+c5.regenerate_offset_geometry()
+check(abs(radius(off5.original_points) - (3.0 + 0.15 / math.cos(math.pi / N))) < 1e-9,
+      "8b. ...so regeneration still finds it and still follows it (%.9f)"
+      % radius(off5.original_points))
+check(c5.rename_derived_sources("hull_v2", "hull_v2") == 0
+      and c5.rename_derived_sources("", "x") == 0,
+      "8b. ...while a no-op rename moves nothing")
 
 
 # ── 7. a fold refused in the controller changes nothing ───────────────────── #

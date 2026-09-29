@@ -2,6 +2,25 @@ from __future__ import annotations
 import numpy as np
 
 
+def signed_area(points) -> float:
+    """Shoelace area of a closed polyline; > 0 = counter-clockwise, 0 below three
+    points.
+
+    THE ONE COPY. This law was written out four times in this tree before #152 —
+    here would have been a fifth — so ``services/surface_sample.signed_area`` and
+    ``services/stl_extrude._signed_area`` are now thin re-exports of this, keeping
+    their own names so their callers are untouched. (``topology_binding``'s method
+    of the same name answers a different question — the area of a ring described
+    by (segment id, arc fraction) pairs — and is deliberately not folded in.)
+    It lives here because this module is numpy-only and depends on nothing, so
+    every other geometry service can reach it without an import chain."""
+    p = np.asarray(points, dtype=float)
+    if p.ndim != 2 or len(p) < 3:
+        return 0.0
+    x, y = p[:, 0], p[:, 1]
+    return 0.5 * float(np.dot(x, np.roll(y, -1)) - np.dot(np.roll(x, -1), y))
+
+
 def project_point_to_segment(p, a, b):
     """Nearest point on segment a→b to point p, and the parameter t in [0, 1].
 

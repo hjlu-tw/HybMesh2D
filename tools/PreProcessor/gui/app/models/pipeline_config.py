@@ -483,8 +483,8 @@ class PipelineConfig:
     def cad_section(project_model: ProjectModel) -> dict:
         """One ProjectModel -> a ``cads`` entry.
 
-        The same seven keys the ``.hws`` workspace writes, from the same
-        serialiser — see ``ProjectModel.to_state_dict``."""
+        The same keys the ``.hws`` workspace writes, from the same serialiser —
+        see ``ProjectModel.to_state_dict``, which is where the count lives."""
         return project_model.to_state_dict()
 
     @classmethod

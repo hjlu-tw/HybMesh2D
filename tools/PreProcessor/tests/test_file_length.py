@@ -109,7 +109,6 @@ _GUI = gui_dir(_REPO)
 PINS = {
     "app/models/pipeline_config.py": 520,        # the worst offender
     "app/services/case_run_note.py": 508,
-    "app/controllers/session_io_ctrl.py": 503,
     "app/services/result_legs.py": 501,
     "app/models/solver_config.py": 501,
 }
