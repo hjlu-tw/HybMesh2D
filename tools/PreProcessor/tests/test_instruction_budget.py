@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 226 more of today because this repo's own prose
+bytes, which the root file has 236 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Eleven rule files now — 59,997 / 52,329 / 50,834 / 46,445 / 39,554 / 35,517 / 25,325 / 22,904 / 22,516 / 15,762 / 8,969  characters (mesher-multiblock, gui-topology, pipeline-case, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-handoff, gui-results, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 3 / 7,671 of
+    Twelve rule files now — 52,329 / 50,834 / 47,343 / 46,445 / 39,554 / 35,517 / 25,325 / 22,904 / 22,516 / 18,512 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-handoff, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 7,671 / 9,166 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    nine, which have 9,166 / 13,555 / 20,446 / 24,483 / 34,675 / 37,096 / 37,484 / 44,238 / 51,031. #76 spent 3,446 of
+    ten, which have 12,657 / 13,555 / 20,446 / 24,483 / 34,675 / 37,096 / 37,484 / 41,488 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 38,846 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 40,269 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 38,846 taken down to the boundary above is 38,500, to
+# are its size and its slack -- and 40,269 taken down to the boundary above is 40,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -695,7 +695,16 @@ _SOURCES = {
 # the tripwire table is only the largest of those lists. A shipped case a user runs is
 # documentation the root is the entry point to; leaving it out to stay in band would trade
 # a gated figure for an undocumented artefact, which is the wrong way round.
-ROOT_BUDGET = 39_500
+# #153 is the SEVENTH too, in the same commit and for the cause #137's entry above names:
+# it took the TWELFTH rule file, so a tripwire row went in and the paragraph counting them
+# was rewritten. That is the second time one ticket has re-banded twice, and the reading
+# holds in both halves — anything the root ENUMERATES grows it, and the rule-file table is
+# the largest of those lists. Note what did NOT work: the first attempt avoided the new
+# rule file by compressing `.claude/rules/mesher-multiblock.md` to 3 characters of slack,
+# which `docs/agents/rule-file-style.md` refuses ("when a rule file runs out of budget the
+# answer is a SPLIT, not a harder compression"). Staying inside this band is never a reason
+# to break that one.
+ROOT_BUDGET = 41_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -1655,8 +1664,12 @@ def _smooth_other_three_group(world):
     text, where = _source(world, "test_multiblock_smooth_surface.py")
     groups = set()
     for config in _smooth_other_configs(world):
-        call = next(c for c in _SHIPPED_CALL.finditer(text)
-                    if c.group(1) == config)     # `config` came from this same walk
+        call = next((c for c in _SHIPPED_CALL.finditer(text)
+                     if c.group(1) == config), None)
+        if call is None:                 # unreachable while `config` comes from the
+            raise _DeriveError(          # walk above; a NAMED error, not AttributeError
+                "%s no longer retargets `%s` through `shipped_config(...)`, so the "
+                "group driving it cannot be read off the code." % (where, config))
         m = _CHECK_GROUP.search(text, call.end())
         if m is None:
             raise _DeriveError(
@@ -1901,7 +1914,7 @@ SELF_REPORT = (
     # review found the first count written here (four) short of the tree's, which is this
     # check's whole subject arriving inside the ticket that widened it. What decayed was
     # the entry point, which is also the copy furthest from the runs it names.
-    {"label": "the smoothing gate's other-three group number",
+    {"label": "the smoothing gate's own-config group and count",
      "target": "src:test_multiblock_smooth_surface.py",
      "pattern": r"SINCE~#114~GROUP~([\d,]+)~ALSO~DRIVES~THE~OTHER~(\w+)",
      "fields": ("smooth_group", "smooth_other_count")},
@@ -3454,7 +3467,7 @@ check(_ok and check_self_report(synced)
 # with, which said 12 while four other passages in that file, its rule file and the CODE
 # all said 13. Bent in the prose first.
 _SMOOTH = "test_multiblock_smooth_surface.py"
-_GROUP_LABEL = "the smoothing gate's other-three group number"
+_GROUP_LABEL = "the smoothing gate's own-config group and count"
 inj, was = bend_figure(world, _GROUP_LABEL, 1, "12")
 check(was == _fmt_nums(_smooth_other_three_group(world)) and was != "12"
       and _resolve(inj, _entry_by_label(_GROUP_LABEL))[1] is None,
@@ -3492,7 +3505,7 @@ check(_ok and not check_self_report(synced)
 # moved. It read THREE from #114 until a sixth shipped config arrived in that group, and
 # it sat in the file's FIRST LINE — the copy furthest from the runs it counts, which is
 # exactly where #116 found the group number wrong.
-_COUNT_LABEL = "the smoothing gate's other-three group number"
+_COUNT_LABEL = _GROUP_LABEL          # ONE anchor, two fields: 13m bends the first
 inj, was = bend_figure(world, _COUNT_LABEL, 2, "SEVEN")
 check(was == _fmt_word_upper(_smooth_other_count(world)) and was != "SEVEN"
       and _resolve(inj, _entry_by_label(_COUNT_LABEL))[1] is None,

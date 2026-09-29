@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The multi-block CELL SHAPE figures, through the real binary on ALL FIVE shipped
+"""The multi-block CELL SHAPE figures, through the real binary on EVERY shipped
 cases, with every figure PINNED (issue #129, then #140; parent #128).
 
 The arithmetic is pinned next door in ``tests/cpp/test_cell_shape.cpp`` (a square
@@ -15,7 +15,7 @@ the demo in the ticket is ``./run.sh -conf config/multiblock_ogrid.dat`` and a
 composed equivalent would leave an edit to that file invisible from here.
 
 #140 CHANGED THIS FILE'S SUBJECT, and the change is worth stating rather than
-inferring from the table below. #129 shipped it against TWO of the five shipped
+inferring from the table below. #129 shipped it against TWO of the then-five shipped
 multi-block configs — the O-grid and the H-grid — and asserted STRUCTURAL bars
 only (ordering, agreement, independence), keeping its measured figures as a dated
 record explicitly "not a threshold in disguise". A per-story audit of #128 then
@@ -60,9 +60,9 @@ What this pins down:
      figures are read back off a six-decimal line, so a difference under 5e-7
      would be invisible to it. The word is corrected rather than the check
      widened — there is nowhere with more precision to read the figure from. On
-     all five cases now, which is acceptance criterion 4 of #140 for the C-grid.
-  8. Every figure is at or above 1.0 and ordered median <= p95 <= max, on all five
-     cases. 1.0 is the metric's floor, so this is what stops an absent measurement
+     every case now, which is acceptance criterion 4 of #140 for the C-grid.
+  8. Every figure is at or above 1.0 and ordered median <= p95 <= max, on every
+     case. 1.0 is the metric's floor, so this is what stops an absent measurement
      reaching a user as a number.
   9. NO THRESHOLD AND NO FAILURE: the shipped O-grid's max is ~32.8 and the
      C-grid's ~3148, and both runs exit 0 with nothing on those rows coloured or
@@ -121,6 +121,12 @@ What this pins down:
      Two-sided on purpose — a bulk p95 under 3 alone would also pass if the band
      had swallowed the whole mesh. It is a bar on the split DOING something, not a
      quality threshold: #128 rules those out and #140's pins are not ones.
+ 19. ``CASES`` IS THE SHIPPED SET, read off ``config/`` rather than trusted (#153).
+     #140's claim is that EVERY shipped case's three figures are pinned, and nothing
+     held it: a new ``config/multiblock_*.dat`` joined the family with no row, no pin
+     and no failure. ``test_multiblock_smooth_surface.py`` group 13 had closed the
+     identical hole for itself and this file had not, and #153's two-ring O-grid is
+     the case that walked through the gap while it was open.
 
 WHY THE C-GRID'S MAX IS ARITHMETIC AND NOT A DEFECT, which is #140's acceptance
 criterion 3 in the form a gate can hold. Measured 2026-09-17 on the shipped case:
@@ -167,6 +173,9 @@ tracks the wake's own count that way is the quotient claimed above; a defect in 
 radial law would not have cared.
 
 INJECTIONS, run by hand 2026-09-17 against this file and two shipped topologies,
+with FIVE rows in `CASES` — #153 added a sixth, so every check COUNT below is the
+count that run saw and is not re-derived here (#43's rule: a dated run is annotated,
+never edited). Which checks each injection reaches is unchanged by a new row.
 each restored by CONTENT from a copy taken first (#131's lesson: a `git checkout`
 on a mixed tree is not a restore). All six bit, and the counts below were RE-RUN
 after review widened check 13 and replaced the exact branch's tautology — an
@@ -382,14 +391,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
 sys.path.insert(0, _HERE)
-# The ONE shipped-config retargeter (#126), called directly for all five cases.
+# The ONE shipped-config retargeter (#126), called directly for every case.
 # `test_shipped_config_seam.py` derives the set of retargeters from the tree and
 # fails on a second, so this file defines none — and it calls the seam rather than
 # the O-grid's and the C-grid's `base_config` wrappers, which exist to carry a
 # per-gate ARGUMENT (a mutated topology, a wall thickness, a BC fallback) and this
 # gate passes none: `base_config()` with no arguments is `shipped_config(<name>)`.
-# #129 imported the O-grid's wrapper for its one case; five cases in one table is
-# what makes calling the seam directly the simpler of the two.
+# #129 imported the O-grid's wrapper for its one case; a table of them is what
+# makes calling the seam directly the simpler of the two.
 from mb_shipped_config import shipped_config  # noqa: E402
 # The ONE parser for the quality line, imported from the gate that owns it rather
 # than written again here — `.claude/rules/mesher-smoothing.md` forbids the fourth
@@ -643,7 +652,7 @@ def midlines(pts, quad):
     why ``qlines`` is imported rather than copied. A parser copied four times is
     four places one format change has to land; an independently written METRIC that
     agrees with the C++ everywhere is evidence the C++ computes what its header
-    says. Check 12 is that agreement, over every exported quad of all five shipped
+    says. Check 12 is that agreement, over every exported quad of every shipped
     cases.
     """
     p = [pts[i] for i in quad]
@@ -872,8 +881,8 @@ def one_case(tmp, name, config_name, blocks):
     # sets as well as the numbers have to survive the split being turned off.
     # THIS IS WHERE THE STRICT-SUBSET CASE IS COVERED: the C++ gate's own
     # fixture is a one-block document whose four walls band every cell, and
-    # three of the five cases here have a band that is a proper part of the
-    # mesh.
+    # the hgrid, ogrid, cgrid and tworing rows here have a band that is a proper
+    # part of the mesh.
     check(f"{name}: 15. the two halves are identical with MB_SPLIT_QUADS off "
           f"too — the same counts and the same figures to every digit the line "
           f"prints",
@@ -1023,7 +1032,7 @@ def main() -> int:
         return 0
 
     with tempfile.TemporaryDirectory() as tmp:
-        # ALL FIVE shipped multi-block cases, each read from disk (#140). #129 ran
+        # EVERY shipped multi-block case, each read from disk (#140). #129 ran
         # the O-grid and the H-grid; the case it did not run was the one with the
         # worst figures by two orders, which is the whole reason for the table.
         outs, stems = {}, {}
@@ -1040,7 +1049,7 @@ def main() -> int:
         check("every shipped case produced a report and a quads run for the "
               f"checks below to read (missing: {missing})", not missing)
 
-        # --- 17. THE TABLE IS THE SHIPPED SET, read off `config/` (#153) ------
+        # --- 19. THE TABLE IS THE SHIPPED SET, read off `config/` (#153) ------
         # #140's claim is "EVERY shipped case's three figures are PINNED", and
         # until this check nothing held it: `CASES` was a hand-kept list, so a new
         # `config/multiblock_*.dat` joined the family with no row, no pin and no
@@ -1051,11 +1060,11 @@ def main() -> int:
         # that walked through the gap while it was open.
         shipped = sorted(os.path.basename(f)[:-4] for f in
                          glob.glob(os.path.join(_REPO, "config", "multiblock_*.dat")))
-        check(f"17. the shipped multi-block configs are exactly the ones this table "
+        check(f"19. the shipped multi-block configs are exactly the ones this table "
               f"pins, read off `config/` rather than from the table itself — so a "
               f"NEW one cannot ship with its three figures un-pinned ({shipped})",
               shipped == sorted(c[1] for c in CASES))
-        check(f"17. ...and every one of them has a figure pin AND a band pin, so a "
+        check(f"19. ...and every one of them has a figure pin AND a band pin, so a "
               f"row cannot be added to `CASES` while its numbers stay unwritten "
               f"({sorted(set(c[0] for c in CASES) - (set(PINS) & set(BAND_PINS)))})",
               set(c[0] for c in CASES) <= (set(PINS) & set(BAND_PINS)))

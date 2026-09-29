@@ -570,7 +570,12 @@ def main() -> int:
               and abs(iv[k] / iv[k - 1] - 1.0) < 1e-6)
 
         # ── 10. the seam survives the default sweeps ────────────────────────
+        # READ BEFORE THE MESSAGE IS BUILT, never inside it. An f-string evaluates
+        # its fields before the condition beside it, so `{sm.group(1)}` on a run
+        # with no `HYBMESH_MB_SMOOTH` line raises rather than failing the check —
+        # a crash scored as silence, which is a class this repo has met before.
         sm = re.search(r"HYBMESH_MB_SMOOTH .*?moved=(\d+) moved_shared=(\d+)", out20)
+        moved, moved_shared = (sm.group(1), sm.group(2)) if sm else (None, None)
         after = seam_nodes(stem20, seam_r, facet_sagitta)
         worst_after = max(off_ring(p, seam_r) for p in after)
         check(f"10. the 96 seam nodes are still on the middle ring after the "
@@ -578,11 +583,10 @@ def main() -> int:
               f"edge is frozen — the freeze #151 had to widen after those sweeps "
               f"pulled a declared curve off itself",
               len(after) == 96 and worst_after <= facet_sagitta)
-        check(f"10. ...and the run says so: {sm.group(1)} movable nodes of 4704, of "
-              f"which {sm.group(2)} on a shared edge — the eight radials, and none "
+        check(f"10. ...and the run says so: {moved} movable nodes of 4704, of "
+              f"which {moved_shared} on a shared edge — the eight radials, and none "
               f"of the four seams",
-              sm is not None and int(sm.group(1)) == 4416
-              and int(sm.group(2)) == 184)
+              (moved, moved_shared) == ("4416", "184"))
 
         # ── 11. #94's advice reaches the body and NOT the seam ──────────────
         warns = sample_rate_warns(out20)

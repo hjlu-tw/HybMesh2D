@@ -25,12 +25,14 @@ these files are documentation a user runs, and an edit to one has to be visible
 from a gate.
 
 SINCE #114 GROUP 13 ALSO DRIVES THE OTHER FOUR — every shipped multi-block config
-no other gate owns a ``base_config`` for, so all of them are exercised for the wall
-warning's floor. That group ENUMERATES them from ``config/`` rather than from a list,
-which is what caught #153's two-ring O-grid arriving as a sixth; they have no gate of
-their own to import from (nothing else in the tree runs them), so they enter
-through ``shipped_config`` — the ONE retargeter since #126, in
-``mb_shipped_config``, which this file used to own a third copy of. What each of them can and cannot see is in
+this file does not import a ``base_config`` for, so all of them are exercised for the
+wall warning's floor. That group ENUMERATES them from ``config/`` rather than from a
+list, which is what caught #153's two-ring O-grid arriving as a sixth. They enter
+through ``shipped_config`` — the ONE retargeter since #126, in ``mb_shipped_config``,
+which this file used to own a third copy of. (Three of the four have no gate of their
+own anywhere; the two-ring does, and this file still calls the seam rather than that
+gate's wrapper, because importing a sixth module for a call that takes no per-gate
+argument buys nothing and couples two gates that ask different questions.) What each of them can and cannot see is in
 the blind spots, per config: the floor-revert injection reaches NONE of them, and
 saying so is half of what this widening bought. (BOTH numbers in that sentence are
 GATED figures since #116 and #153: this line said 12 while the code, the numbered list

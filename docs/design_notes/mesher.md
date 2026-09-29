@@ -4153,16 +4153,24 @@ NO C++ CHANGE, which is the strongest thing this case says about #151's design.
   and #150's out-of-scope list keeps the two-ring C-grid — where that extent varies by
   an order around the section — out of this batch. Nothing here measures the shape where
   the split is supposed to pay.
-- **A BOOKKEEPING NOTE FOR THE NEXT TICKET.** This change left
-  `.claude/rules/mesher-multiblock.md` with **3 characters** of headroom against its
-  60,000 budget, and its two-ring block only fits because a set of justification-only
-  measurements were dropped from it (style rule 6: keep a measurement that constrains a
-  decision, drop one that only justifies it) — every one of them already stated in THIS
-  note, checked by grep before the deletion and not after. Two stale figures in that
-  file's blind-spot list were corrected in the same pass: the golden comparator's
-  multi-block share, written as "six of nineteen" beside an "all ten multi-block cases"
-  two bullets down, is eleven of twenty. The next rule that file gains needs the TWELFTH
-  rule file, on #85's and #137's precedent.
+- **THE RULE FILE NEEDED THE TWELFTH FILE, AND THE FIRST ATTEMPT TRIED NOT TO.**
+  `.claude/rules/mesher-multiblock.md` had 197 characters of slack when this ticket
+  arrived. The first draft funded its 1.6k two-ring block by trimming thirteen passages
+  out of the rest of the file — down to **3 characters** of slack — which
+  `docs/agents/rule-file-style.md` refuses in as many words: "when a rule file runs out
+  of budget the answer is a SPLIT, not a harder compression". A review axis is what sent
+  that back, and it was right about more than the rule: two of the thirteen trims cut
+  measurements that CONSTRAIN rather than justify (the shipped C-grid's
+  3.143570 / 0.000998606 quotient and its 26th-wake-node negative control at 3003.344 —
+  the numbers that tell the next agent which document value to move). Every trim was
+  reverted and the QUALITY REPORT was relocated instead, into
+  `.claude/rules/mesher-quality.md`: 15,625 characters of rules plus two blind spots, the
+  two sections verbatim, **314 identifiers in and 314 out**, no gate filename lost. It is
+  a different question and the moved text already said so — it is why `MbQuality` is its
+  own module — which is what made the cut obvious once compression was off the table.
+  Two stale figures in the blind-spot list were corrected in the same pass: the golden
+  comparator's multi-block share, written as "six of nineteen" beside an "all ten
+  multi-block cases" two bullets down, is eleven of twenty.
 
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
