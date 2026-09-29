@@ -555,5 +555,12 @@ else:
 print()
 if failures:
     print(f"FAILED {len(failures)} check(s)")
-    sys.exit(1)
-print("All checks passed.")
+# `os._exit` because Qt's teardown under the offscreen platform crashes on a machine
+# with no GPU, AFTER every check has printed PASS — measured on CI run 36506672624
+# (`Segmentation fault (core dumped)` … `FAIL test_topology_repair.py (exit 139)`,
+# with `All checks passed.` in the captured output above it), where `run_all.sh` read
+# that crash as a failing test. The same reason 70 other scripts here end this way
+# (measured 2026-09-29). It skips stdout flushing, hence the explicit flush.
+print("All checks passed." if not failures else "", flush=True)
+sys.stdout.flush()
+os._exit(1 if failures else 0)

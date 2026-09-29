@@ -559,5 +559,14 @@ check(f"15d. ...and redo re-applies it, in the model AND in the widget the user 
 print()
 if failures:
     print(f"FAILED {len(failures)} check(s)")
-    sys.exit(1)
-print("All checks passed.")
+# `os._exit` because Qt's teardown under the offscreen platform crashes on a machine
+# with no GPU, AFTER every check has printed PASS, and `run_all.sh` reads that crash as
+# a failing test. This file has not crashed; `test_topology_repair.py`, which builds the
+# same `MeshConfigPanel` and the same `AppController`, did on CI run 36506672624
+# (`Segmentation fault (core dumped)` … `exit 139`, with `All checks passed.` in the
+# captured output above it) — so the difference between the two is luck, not structure.
+# The same reason 70 other scripts here end this way (measured 2026-09-29). It skips
+# stdout flushing, hence the explicit flush.
+print("All checks passed." if not failures else "", flush=True)
+sys.stdout.flush()
+os._exit(1 if failures else 0)
