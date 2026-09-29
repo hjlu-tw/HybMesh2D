@@ -4924,6 +4924,28 @@ int main() {
                   + r.error + ")");
         }
 
+        // ── SIDE ARITY, the fourth kind-gated behaviour, RE-CHECKED ────────
+        //
+        // The other three are measured below off the filled result; this one is a
+        // refusal, so it needs its own document. #150 asks a review to re-check
+        // all four rather than take them from the spec, and the first draft of
+        // this group measured three — the gap the Spec axis found. `arcWall` is a
+        // ONE-block document, so turning its south into a following interface
+        // makes an interior line a side of exactly one block: refused for its
+        // KIND, with the path source changing nothing about the arithmetic.
+        {
+            const std::string oneSided =
+                swap1(arcWall(), R"("kind": "wall", "count": 5, "binding")",
+                      R"("kind": "interface", "count": 5, "follows")");
+            MbResult r = hybmesh::buildMultiBlock(oneSided, arc, MbParams{});
+            CHECK(!r.ok && mentions(r.error, "'s'")
+                      && mentions(r.error, "side of 1 block")
+                      && mentions(r.error, "exactly two"),
+                  "58. a FOLLOWING interface that is a side of only one block is refused "
+                  "on its KIND, exactly as a chord interface is — a path source changes "
+                  "no arity (got: " + r.error + ")");
+        }
+
         // ── the four kind-gated behaviours, unchanged ───────────────────────
         //
         // This is the property #150's spec asks a review to RE-CHECK rather than
@@ -5055,6 +5077,96 @@ int main() {
               "58. a 'follows' does not count as a declared boundary condition: the "
               "run still says every boundary edge is on the config default ("
               + std::to_string(noBind) + ")");
+    }
+
+    // ── 59. THERE IS NO FOUR-BLOCK LIMIT, and the rule file used to say there
+    //        was (#151) ────────────────────────────────────────────────────
+    //
+    // `.claude/rules/mesher-multiblock.md` carried "nothing exceeds four blocks"
+    // in its "what welding cannot express" bullet from #53 until #151. No such
+    // limit exists anywhere on this path — what is true is the ARITY rule beside
+    // it, that a shared edge is a side of exactly two blocks, which that sentence
+    // was written far too widely for.
+    //
+    // GATED RATHER THAN QUOTED. #151's first draft corrected the sentence against
+    // a HAND run of a nine-block strip whose document was never checked in, which
+    // is this repo's own "rule files assert unchecked tree facts" class re-entered
+    // inside the fix for it. The strip is built here instead, so the correction
+    // has a test behind it and a future block-count limit turns this red rather
+    // than making a rule file quietly wrong again.
+    //
+    //   t0 ─n0─ t1 ─n1─ t2 ... t9          k_i = [s_i, v_(i+1), n_i, v_i]
+    //   │       │       │                  v0 and v9 are walls; v1..v8 interfaces
+    //   v0  k0  v1  k1  v2 ...
+    //   │       │       │
+    //   b0 ─s0─ b1 ─s1─ b2 ... b9
+    {
+        const int kBlocks = 9;
+        std::string doc = "{\n  \"format_version\": 1,\n  \"corners\": [";
+        for (int i = 0; i <= kBlocks; ++i) {
+            for (const char* row : {"b", "t"}) {
+                doc += (i == 0 && row[0] == 'b') ? "\n    " : ",\n    ";
+                doc += std::string("{\"id\": \"") + row + std::to_string(i)
+                     + "\", \"kind\": \"free\", \"xy\": [" + std::to_string(i) + ".0, "
+                     + (row[0] == 'b' ? "0.0" : "1.0") + "]}";
+            }
+        }
+        doc += "\n  ],\n  \"edges\": [";
+        for (int i = 0; i < kBlocks; ++i) {
+            doc += (i ? ",\n    " : "\n    ");
+            doc += "{\"id\": \"s" + std::to_string(i) + "\", \"corners\": [\"b"
+                 + std::to_string(i) + "\", \"b" + std::to_string(i + 1)
+                 + "\"], \"kind\": \"wall\", \"count\": 4}";
+            doc += ",\n    {\"id\": \"n" + std::to_string(i) + "\", \"corners\": [\"t"
+                 + std::to_string(i) + "\", \"t" + std::to_string(i + 1)
+                 + "\"], \"kind\": \"wall\"}";
+        }
+        for (int i = 0; i <= kBlocks; ++i) {
+            // Only the two ENDS are walls; the eight lines between the blocks are
+            // interfaces, so this is eight welds in a row and not nine islands.
+            const bool endWall = (i == 0 || i == kBlocks);
+            doc += ",\n    {\"id\": \"v" + std::to_string(i) + "\", \"corners\": [\"b"
+                 + std::to_string(i) + "\", \"t" + std::to_string(i) + "\"], \"kind\": \""
+                 + (endWall ? "wall" : "interface") + "\"";
+            if (i == 0) doc += ", \"count\": 5";
+            doc += "}";
+        }
+        doc += "\n  ],\n  \"blocks\": [";
+        for (int i = 0; i < kBlocks; ++i) {
+            doc += (i ? ",\n    " : "\n    ");
+            doc += "{\"id\": \"k" + std::to_string(i) + "\", \"edges\": [\"s"
+                 + std::to_string(i) + "\", \"v" + std::to_string(i + 1) + "\", \"n"
+                 + std::to_string(i) + "\", \"v" + std::to_string(i) + "\"]}";
+        }
+        doc += "\n  ]\n}";
+
+        MbResult r = build(doc);
+        CHECK(r.ok, "59. a NINE-block strip fills, so nothing on this path stops at "
+                    "four (err: " + r.error + ")");
+        CHECK(r.blocks.size() == static_cast<size_t>(kBlocks),
+              "59. ...as nine blocks (" + std::to_string(r.blocks.size()) + ")");
+        CHECK(r.sharedEdges.size() == static_cast<size_t>(kBlocks - 1),
+              "59. ...welded along the eight interior lines between them, every one of "
+              "them a shared edge two blocks name ("
+              + std::to_string(r.sharedEdges.size()) + ")");
+        // WELDED, not merely filled: nine unwelded 4x5 blocks would need 9 * 20 =
+        // 180 nodes, and the strip needs 20 + 8 * 15 = 140 because each interior
+        // line's five nodes are allocated ONCE.
+        CHECK(r.nodes.size() == 140,
+              "59. ...over 140 nodes and not the 180 nine unwelded blocks would need, "
+              "so the count itself is the welding (" + std::to_string(r.nodes.size())
+              + ")");
+        size_t inverted = 0;
+        for (const auto& c : r.cells) {
+            if (c.nodeIds.size() < 3) { ++inverted; continue; }
+            const Point2D a = r.nodes[static_cast<size_t>(c.nodeIds[0])],
+                          b = r.nodes[static_cast<size_t>(c.nodeIds[1])],
+                          d = r.nodes[static_cast<size_t>(c.nodeIds[2])];
+            if ((b - a).cross(d - a) <= 0.0) ++inverted;
+        }
+        CHECK(!r.cells.empty() && inverted == 0,
+              "59. ...and not one of its " + std::to_string(r.cells.size())
+              + " cells is inverted (" + std::to_string(inverted) + ")");
     }
 
     return hybmesh::test::report("test_multiblock");

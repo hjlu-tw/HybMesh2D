@@ -476,8 +476,9 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   instead), and a block welded to ITSELF is inexpressible — right for a transfinite fill, but an
   O-grid seam cannot be one edge. (#55's O-grid is four blocks in a RING for that reason; its
   wrap-around class is `test_multiblock.cpp` 33.) **CORRECTED 2026-09-29 (#151): it also said
-  "nothing exceeds four blocks" and no such limit exists** — a nine-block strip meshes at exit 0
-  and `ogrid_splits` admits 64. What is true is the ARITY rule one line up, written far too widely.
+  "nothing exceeds four blocks" and no such limit exists** — a nine-block strip fills
+  (`tests/cpp/test_multiblock.cpp` 59, GATED rather than quoted) and `ogrid_splits` admits 64.
+  What is true is the ARITY rule one line up, written far too widely.
 
 **A circular O-GRID: curved arcs, a ring that CLOSES, and a wall spacing SOLVED for** (still the
 one pure entry point; the law is `tools/PreProcessor/include/Spacing.hpp`; #55). **Full rationale,

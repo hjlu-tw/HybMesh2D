@@ -1742,8 +1742,11 @@ reach the solver.
   and it had been gated since 2026-08-28. What #55 actually added there is a geometry
   worth binding to: two circles, shipped with their sidecars. The remaining gap is a
   curved INTERFACE, which #53 refused by name and which this ticket did NOT need: a
-  single-ring O-grid has no interior line that should be curved. It stays refused, and
-  the refusal still names the work it waits for.
+  single-ring O-grid has no interior line that should be curved. It stayed refused, and
+  the refusal named the work it was waiting for. **SUPERSEDED 2026-09-29 by #151**, which
+  is that work: `follows` declares the path without the boundary condition, and the
+  refusal quoted here was rewritten to name it. See "AN INTERIOR LINE THAT FOLLOWS A
+  CURVE" below.
 - **THE DEFAULT DISTRIBUTION LAW IS `tanh`, and the reason is structural rather than
   aesthetic.** An edge's node count can be decided FOR it by propagation from elsewhere
   in the topology, so the law must absorb a count it did not choose. `tanh` is written in
@@ -1933,7 +1936,9 @@ reach the solver.
 - **Blind spots, named.** Nothing projects onto an ANALYTIC curve, so "follows the circle"
   is measured against the polyline's own vertices and the 0.08% residue is that faceting.
   A curved INTERFACE is still undeclarable, so the shipped O-grid is a single ring rather
-  than a boundary-layer ring inside a far-field ring. The two-sided stretching function
+  than a boundary-layer ring inside a far-field ring — **SUPERSEDED 2026-09-29 by #151**
+  for the first half only: `follows` makes one declarable, and the shipped O-grid is
+  STILL a single ring (#153 owns the two-ring case). The two-sided stretching function
   with different heights at each end does not exist. And the arc-length blending's
   magnitude was measured out of tree: no gate re-measures the 6927%, only its consequence.
 
@@ -4034,18 +4039,24 @@ statement with the condition half removed.
 
 **"NOTHING EXCEEDS FOUR BLOCKS" WAS NEVER TRUE** (#151, measured 2026-09-29).
 `.claude/rules/mesher-multiblock.md` carried that sentence in its "what welding cannot
-express" bullet since #53. No such limit exists anywhere in the mesher: a hand-written
-nine-block strip (one row of blocks, eight shared interfaces) meshes at exit 0 with 0
-inverted cells over 216 cells and 140 vertices, and the GUI O-grid FAMILY's
+express" bullet since #53. No such limit exists anywhere in the mesher: a nine-block
+strip (one row of blocks, eight shared interfaces) fills with 9 blocks, 8 shared edges,
+140 nodes — not the 180 nine unwelded blocks would need — and 0 inverted cells, and
+the GUI O-grid FAMILY's
 `ogrid_splits` field admits up to 64, its own gate projecting a four-segment body split
 three ways into TWELVE blocks (`tools/PreProcessor/tests/test_topology_ogrid.py`,
 `SPREAD`). What the sentence appears to have been groping at is the ARITY rule beside it
 — a shared edge is a side of exactly two blocks — which is true and is written one line
 up. **The ticket that raised this said "sixteen blocks"; the gate's own widest case is
 TWELVE**, and it projects those documents rather than meshing them, so the nine-block
-strip above is what actually answers the question. Corrected in the rule file in the same
-change as the code, which is the point: a rule-file sentence the tree contradicts talks
-the next ticket out of work it could have done.
+strip above is what actually answers the question. **AND IT IS GATED, NOT QUOTED**: the
+first draft of this correction measured the strip by HAND and checked its document in
+nowhere, which is this repo's own "a rule file asserts an unchecked tree fact" class
+re-entered inside the fix for it — the Spec review is what caught that. The strip is
+built in `tests/cpp/test_multiblock.cpp` check 59 instead, so a future block-count limit
+turns a gate red rather than making a rule file quietly wrong again. Corrected in the
+rule file in the same change as the code, which is the point: a rule-file sentence the
+tree contradicts talks the next ticket out of work it could have done.
 
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.

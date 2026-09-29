@@ -851,10 +851,11 @@ std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
 
 // The points along one edge, including both end corners.
 //
-// `path` is the polyline the edge RUNS ALONG. For an unbound edge that is just
-// its two corners, so this is a straight chord and every expression below
-// reduces to exactly the arithmetic this function had before geometry binding —
-// measured rather than assumed, by the golden set's pre-binding cases.
+// `path` is the polyline the edge RUNS ALONG. For an edge that declares NEITHER
+// key — no `binding`, no `follows` — that is just its two corners, so this is a
+// straight chord and every expression below reduces to exactly the arithmetic
+// this function had before geometry binding — measured rather than assumed, by
+// the golden set's pre-binding cases.
 //
 // For a BOUND edge the path is the source segment's own points between its two
 // corners, which is what makes "this edge lies on that segment" true instead of
@@ -929,10 +930,11 @@ std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& p
     return pts;
 }
 
-// ── A BOUND EDGE's SAMPLE RATE AGAINST ITS OWN POLYLINE (#94) ─────────────
+// ── AN EDGE's SAMPLE RATE AGAINST THE POLYLINE IT LIES ON (#94, #151) ────
 //
-// A bound edge places its nodes by ARC LENGTH along the stored polyline, so when
-// its node count and that polyline's facet count are not commensurate,
+// An edge with a PATH — a bound wall or a following interior line, the two keys
+// being one statement apart — places its nodes by ARC LENGTH along the stored
+// polyline, so when its count and that polyline's facet count are not commensurate,
 // consecutive nodes span different numbers of facets and the polygon the edge
 // actually meshes has IRREGULAR corners. Nothing is wrong with the declaration
 // and nothing errors — the mesh is simply worse than the same declaration on a
@@ -2314,10 +2316,10 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     }
 
     // THE POLYLINE EACH EDGE RUNS ALONG, resolved for every edge BEFORE any of
-    // them is filled. For an unbound edge that is the chord between its two
-    // corners; for a bound one it is the stretch of its source segment the edge
-    // covers, which is what makes "this edge lies on that segment" true rather
-    // than merely declared.
+    // them is filled. For an edge with NO path it is the chord between its two
+    // corners; for one with a path — a bound wall or a following interior line —
+    // it is the stretch of its source segment the edge covers, which is what
+    // makes "this edge lies on that segment" true rather than merely declared.
     //
     // A PRE-PASS and not part of the fill loop below, because #94's advice is
     // about an EQUIVALENCE CLASS and cannot be derived one edge at a time: the
