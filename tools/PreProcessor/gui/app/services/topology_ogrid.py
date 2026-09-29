@@ -103,6 +103,13 @@ class Plan:
     body_segs: tuple[int, ...] = ()
     far_segs: tuple[int, ...] = ()
     ccw: bool = True
+    #: Field-spec rows this plan's own configuration has made INERT — a control the
+    #: panel must grey out because nothing reads it any more (#149). ALWAYS EMPTY
+    #: here, and declared rather than left off: the O-grid has no mode in which one
+    #: of its parameters stops deciding something, and saying so is what lets the
+    #: panel ask every binding family the same question instead of naming the one
+    #: that answers yes.
+    inert_rows: tuple[str, ...] = ()
 
     @property
     def aspect(self) -> float:

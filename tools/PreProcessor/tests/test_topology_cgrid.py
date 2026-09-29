@@ -127,6 +127,32 @@ the exit code, not from a count of FAIL lines.
      ``test_topology_panel.py`` check 13g goes red, which is the right split: the
      capture is the panel's, and the family never reads a widget.
 
+#149's REVIEW ROUND, 2026-09-29, same harness. Both axes found the same mislabelled
+check (18i's "not a closed loop" case fed the two-segment aerofoil and reached the
+COUNT refusal, leaving `resolve_far`'s closed-loop branch reached by nothing), which
+is this file's own recurring finding one more time: a check narrower than its label.
+
+  Y.  the zero-area half of the ring measurement deleted -> exit 1, check 18f2.
+      INERT before that check existed, which is how the defect got in: `signed_area`
+      answers 0.0 both for a ring enclosing nothing and for one whose corners cannot
+      be placed, and its own docstring says a caller must report that rather than
+      read a DIRECTION off it. `<= 0.0` told the user to redraw a degenerate outline
+      backwards AND left the no-length refusal below it unreachable. Two fixtures
+      now reach it (`far-flat`, `far-zero`).
+  Y2. the whole pre-review ORDER put back — direction measured before the corners
+      are placed -> exit 1, check 18f2. The negative control for the fix itself.
+  Z.  the resolve half of `held_bindings` dropped -> exit 1, checks 10c and 18g, one
+      per list: the shared spine really is what names the edge for BOTH.
+  AA. the closed-loop refusal removed -> exit 1, check 18i, which now feeds a
+      six-segment outline that does not close instead of one the count refuses.
+  W.  an `INERT_WHEN_BOUND` entry naming no field-spec row -> `test_topology_param_
+      specs.py` check 10b. W2, naming ANOTHER family's row -> the same check. A name
+      that is no row greys nothing, and the control goes on looking live.
+  X.  the greying dropped from `_refresh_topology_detach` -> `test_topology_panel.py`
+      check 13h2. That loop is the ONE owner of a topology row's enabled state: the
+      first version of this greyed the rows in `_refresh_topology_counts` and was
+      silently undone by the detach refresh on every keystroke.
+
   THE FIRST RUN OF THIS HARNESS WAS WRONG TWICE, and both corrections are in the tree
   rather than in this comment. (i) Apple's python3 caches bytecode OUTSIDE the tree
   (``~/Library/Caches/com.apple.python``) and validates it by ``(mtime, size)``, so a
@@ -265,6 +291,19 @@ FIX = {
                                    ["outlet"] * 6, cw=True),
     "far-rot": write_cgrid_farfield(os.path.join(_T, "ffrot"), [5, 2, 9, 4, 1, 8],
                                     ["outlet"] * 6, rotate=1),
+    # SIX segments and still not a loop: the outlet side stops a quarter short, so
+    # the closed-loop refusal is reached by an outline the segment count accepts.
+    "far-open": write_cgrid_farfield(os.path.join(_T, "ffopen"), [5, 2, 9, 4, 1, 8],
+                                     ["outlet"] * 6, closed=False),
+    # THE TWO SHAPES `signed_area` ANSWERS 0.0 FOR, which its own docstring says a
+    # caller must tell from a DIRECTION rather than reading one off: a closed
+    # six-segment outline enclosing NO AREA, and one with a span of no length. Both
+    # were answered "you drew it clockwise, redraw it the other way round" before
+    # #149's review, and the no-length refusal below them was unreachable.
+    "far-flat": write_cgrid_farfield(os.path.join(_T, "ffflat"), [5, 2, 9, 4, 1, 8],
+                                     ["outlet"] * 6, flat=True),
+    "far-zero": write_cgrid_farfield(os.path.join(_T, "ffzero"), [5, 2, 9, 4, 1, 8],
+                                     ["outlet"] * 6, zero_seg=True),
 }
 
 SPREAD = [
@@ -709,21 +748,61 @@ check("18d. a far field cut into other than SIX segments is refused by name — 
       "own — with the six-segment outline as the negative control: "
       + ("; ".join(_bad_counts) if _bad_counts else "five and seven both refused"),
       not _bad_counts and not _pf.problem)
-_pw, _cw2 = context("unit", extra=[FIX["far-cw"]])
+
+
+def invisible_to_bindings(fixname):
+    """Every BINDING question answered YES about the far field ``fixname``.
+
+    The claim 18e and 18f rest on, ASSERTED rather than asserted-about: under both
+    of those outlines every stored id resolves, every side lies on its own segment
+    and the list walks the outline's own order — so the four checks this package
+    already had all pass, and only the new measurement refuses. A label saying
+    "nothing but a measurement could see it" and an assert grepping a sentence are
+    not the same statement; this is the gap between them.
+    """
+    path, ctx = context("unit", extra=[FIX[fixname]])
+    g = ctx.geometry(FIX[fixname])
+    held, why, edge = cs.held_bindings(ctx, g, "", cs.FAR_ROLE, cs.far_edge_at)
+    order = cs.order_problem(cs.FAR_ROLE, g, held, 1, cs.far_edge_at)[1]
+    cover = _ogb.cover_problem(cs.FAR_ROLE, g, held, 1, cs.far_edge_at)[1]
+    return (path, ctx, len(held) == cs.FAR_SEGMENTS and not why and not edge
+            and not order and not cover)
+
+
+_pw, _cw2, _blind_cw = invisible_to_bindings("far-cw")
 _why_cw = cg.plan(model(_pw, cgrid_far_geom=FIX["far-cw"]), _cw2).problem or ""
 check(f"18e. a far field drawn the OTHER WAY ROUND is refused, and nothing but a "
-      f"measurement could see it: every id still resolves, every side still lies on "
-      f"its own segment, and the mesher would answer with a folded grid rather than "
-      f"a refusal ({_why_cw[:120]!r})",
-      "CLOCKWISE" in _why_cw and "other direction" in _why_cw)
-_pr, _cr = context("unit", extra=[FIX["far-rot"]])
+      f"measurement could see it — every id resolves, every side lies on its own "
+      f"segment and the list walks the outline's own order, so parse, resolve, "
+      f"order and cover all pass ({_blind_cw}) and the mesher would answer with a "
+      f"folded grid rather than a refusal ({_why_cw[:110]!r})",
+      _blind_cw and "CLOCKWISE" in _why_cw and "other direction" in _why_cw)
+_pr, _cr, _blind_rot = invisible_to_bindings("far-rot")
 _why_rot = cg.plan(model(_pr, cgrid_far_geom=FIX["far-rot"]), _cr).problem or ""
-check(f"18f. ...and so is one drawn STARTING AT THE NEXT JOINT ALONG, which is the "
-      f"same kind of invisible: the refusal names where the nose corner has to sit "
-      f"and which order the six sides run in ({_why_rot[:150]!r})",
-      "furthest-upstream corner" in _why_rot
+check(f"18f. ...and so is one drawn STARTING AT THE NEXT JOINT ALONG, invisible to "
+      f"the same four ({_blind_rot}): the refusal names where the nose corner has to "
+      f"sit and which order the six sides run in ({_why_rot[:140]!r})",
+      _blind_rot and "furthest-upstream corner" in _why_rot
       and f"position {cs.FAR_NOSE_POS}" in _why_rot
       and cs.FAR_EDGES[0] in _why_rot)
+_degen = []
+for _why, _fx, _want in (
+        ("a closed six-segment outline enclosing NO AREA", "far-flat",
+         "enclose no area"),
+        ("one of whose spans has no length", "far-zero",
+         "has a segment with no length")):
+    _pd, _cd = context("unit", extra=[FIX[_fx]])
+    _gd = cg.plan(model(_pd, cgrid_far_geom=FIX[_fx]), _cd).problem or ""
+    if _want not in _gd:
+        _degen.append(f"{_why}: got {_gd[:90]!r}")
+check("18f2. a far field `signed_area` answers 0.0 for is refused for WHAT IT IS, "
+      "not read as a DIRECTION — its own docstring says a caller must report that "
+      "as a refusal rather than a winding, and both of these were told to 'redraw "
+      "the far field in the other direction' until the corners were placed before "
+      "the ring was measured: "
+      + ("; ".join(_degen) if _degen else "both named for what they are"),
+      not _degen)
+
 _brk = model(_f6, cgrid_far_geom=FIX["far6"], cgrid_far_segs="5, 2, 9, 4, 1, 99")
 _pbf = cg.plan(_brk, _cf)
 _rowsf = tm.broken_bindings(_brk, _cf)
@@ -749,8 +828,11 @@ _fcases = [
     ("a far field this mesh does not load",
      model(_f6, cgrid_far_geom=os.path.join(_T, "never_drawn_ff.dat")), _cf,
      "not one of this mesh's geometries"),
-    ("a far field that is not a closed loop", model(_f6, cgrid_far_geom=_f6), _cf,
-     "exactly 6 segments"),
+    ("a far field cut into six but not CLOSED", model(_f6,
+                                                     cgrid_far_geom=FIX["far-open"]),
+     context("unit", extra=[FIX["far-open"]])[1], "is not a closed loop"),
+    ("a far field that is not the shape at all (the section itself)",
+     model(_f6, cgrid_far_geom=_f6), _cf, "exactly 6 segments"),
     ("a binding token that is not a segment id",
      model(_f6, cgrid_far_geom=FIX["far6"], cgrid_far_segs="5,x"), _cf,
      "is not a segment id"),
@@ -878,8 +960,10 @@ else:
               f"dominated by the far field, which is the half the two documents "
               f"deliberately disagree about",
               bool(_worst) and _worst < 1.2)
-        check(f"14d. ...and the shipped document's own far field is what carries the "
-              f"second boundary name the template cannot ({names2} against {names})",
+        check(f"14d. ...and the shipped document's own DRAWN far field is what "
+              f"carries the second boundary name the GENERATED path cannot "
+              f"({names2} against {names}). #149 is the template learning to bind "
+              f"one too, which is 14f below",
               names2 == ["farfield", "outlet", "wall"])
 
         # THE DRAWN FAR FIELD (#149), on the SAME section and the SAME binary, so
@@ -927,6 +1011,43 @@ else:
               f"({_worstb:.3f}x, {_bodyb}) — so the second path changes the boundary "
               f"names and the outer shape without moving the grid the user came for",
               bool(_worstb) and _worstb < 1.2)
+        # ALL FOUR BLOCKS, which is where #149's own Testing Decision said "this
+        # time the far field should agree too" — and the measurement says NO, so the
+        # prediction is CORRECTED here rather than quietly dropped. The two WAKE
+        # blocks come out IDENTICAL on the two template paths, because their far side
+        # is the outlet plane and the generated hexagon puts it exactly where the
+        # drawn D does; they sit off the shipped document by the WAKE NODE COUNT,
+        # which is this family's derivation and not the far field. The two BODY
+        # blocks move by 3% between the paths and end up NO CLOSER to the shipped
+        # grid than the generated path already was. So the per-block cell-shape
+        # median is BLIND to what drawing the far field changed; 14g's peak
+        # non-orthogonality is the figure that sees it.
+        _allb = {b: (_tb2.get(b), _t.get(b), _s2.get(b))
+                 for b in ("b_upper", "b_lower", "b_wake_up", "b_wake_lo")}
+        _wake_same = all(v[0] == v[1] for b, v in _allb.items()
+                         if b.startswith("b_wake"))
+        _wake_gap = max((max(v[0], v[2]) / min(v[0], v[2]))
+                        for b, v in _allb.items() if b.startswith("b_wake"))
+        _body_b = max((max(v[0], v[2]) / min(v[0], v[2]))
+                      for b, v in _allb.items() if b.startswith("b_") 
+                      and not b.startswith("b_wake"))
+        _body_g = max((max(v[1], v[2]) / min(v[1], v[2]))
+                      for b, v in _allb.items() if b.startswith("b_")
+                      and not b.startswith("b_wake"))
+        check(f"14h2. ...but over ALL FOUR blocks this ticket's own prediction that "
+              f"'the far field should agree too' is measured FALSE, and that is "
+              f"recorded rather than dropped: the two WAKE blocks are IDENTICAL on "
+              f"the two template paths ({_wake_same} — their far side is the outlet "
+              f"plane, which both documents put in the same place) and sit "
+              f"{_wake_gap:.3f}x off the shipped document's because of the WAKE NODE "
+              f"COUNT, while the two BODY blocks end up NO CLOSER to it bound "
+              f"({_body_b:.3f}x) than generated ({_body_g:.3f}x). The per-block "
+              f"cell-shape median cannot see what drawing the far field changed; "
+              f"14g's peak non-orthogonality is the figure that can ({_allb}, "
+              f"bound/generated/shipped)",
+              len(_allb) == 4 and all(all(v) for v in _allb.values())
+              and _wake_same and 1.1 < _wake_gap < 1.2
+              and abs(_body_b - _body_g) < 0.01)
 
         # The section's own conditions really do come off its segments.
         rc3, q3, names3, _ = run_mesher(

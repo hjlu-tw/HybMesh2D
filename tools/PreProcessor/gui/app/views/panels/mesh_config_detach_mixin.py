@@ -120,7 +120,7 @@ class MeshConfigDetachMixin:
         self._topo_detach.reattach_requested.connect(self._on_topology_reattach)
         self.sec_topology.add_widget(self._topo_detach)
 
-    def _refresh_topology_detach(self, model, cfg=None):
+    def _refresh_topology_detach(self, model, cfg=None, inert=()):
         """Show the state, and make the template rows read-only when detached.
 
         Called from ``_refresh_topology_counts``, the one place that already holds a
@@ -133,11 +133,20 @@ class MeshConfigDetachMixin:
         editable panel whose edits no longer take effect is a control that does
         nothing; the parameters are kept on screen to say where the file came from,
         so they must look like a record and not like an input.
+
+        ``inert`` is the SECOND reason a topology row can be grey (#149): a family
+        that reports rows its own configuration has stopped reading — the C-grid's
+        two far-field lengths once a far field is DRAWN. It arrives here rather than
+        being greyed where it is computed, because a row's enabled state needs ONE
+        owner: this loop runs last on every refresh, so a second one greying rows
+        before it would simply be undone, silently, which is exactly what happened
+        when #149 first wrote one. Two reasons, one loop, one `and`.
         """
         box = getattr(self, "_topo_detach", None)
         if box is None:
             return
         detached = model.is_detached()
+        inert = set(inert)
         for spec in TOPOLOGY_SPECS:
             # A row whose read-only-ness IS its enabled state is never re-enabled:
             # that is the `bool` kind, which has no `setReadOnly`, so enabling it
@@ -146,7 +155,8 @@ class MeshConfigDetachMixin:
             # first spelling and read as "skip topo_detached" the long way round.
             if spec.kind == "bool" and spec.opts.get("readonly"):
                 continue
-            set_spec_row_enabled(self, spec.attr, not detached)
+            set_spec_row_enabled(self, spec.attr,
+                                 not detached and spec.attr not in inert)
         box.show_state(has_family=model.has_family(), detached=detached,
                        summary=topology_detach.summary(model, cfg))
 

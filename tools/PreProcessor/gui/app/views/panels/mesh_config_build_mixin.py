@@ -242,6 +242,14 @@ class MeshConfigBuildMixin(SpecRowsMixin):
                 lbl.setText(f"X: {', '.join(str(v) for v in xc)}    "
                             f"Y: {', '.join(str(v) for v in yc)}"
                             f"    ({len(xc)}x{len(yc)} blocks)")
+        # A CONTROL THAT DECIDES NOTHING IS GREYED OUT, AND THE READ-OUT SAYS WHY
+        # (#149). Which rows those are is the PLAN's answer (`inert_rows`), asked of
+        # every binding family rather than of the one that answers yes today, so a
+        # third family needs no edit here — the same shape `Family.binds` has one
+        # line up. The greying itself is `_refresh_topology_detach`'s, below: a row's
+        # enabled state has ONE owner, and a second loop here was undone by that one
+        # on every refresh.
+        inert = set()
         for attr, fam_name, planner in (
                 ("topo_ogrid_derived", topology_ogrid.FAMILY, topology_ogrid.plan),
                 ("topo_cgrid_derived", topology_cgrid.FAMILY, topology_cgrid.plan)):
@@ -251,7 +259,9 @@ class MeshConfigBuildMixin(SpecRowsMixin):
             if model.family != fam_name:
                 lbl.setText("—  (no template selected)")
             else:
-                lbl.setText("\n".join(planner(model, ctx).lines()))
+                p = planner(model, ctx)
+                lbl.setText("\n".join(p.lines()))
+                inert |= set(p.inert_rows)
         # HERE rather than in its own traversal, because this is the one place that
         # already holds both the model read back from the widgets and the context for
         # this case — and it runs on every template keystroke and every set_config,
@@ -268,7 +278,7 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         # FILE the run now reads, which is a mesh-configuration field and not a
         # binding context — and `None` there is honest, since a refresh with no
         # config cannot know the path.
-        self._refresh_topology_detach(model, cfg)
+        self._refresh_topology_detach(model, cfg, inert)
 
     def _build_sizing_section(self):
         # ── 2. General Sizing ─────────────────────────────────────────────

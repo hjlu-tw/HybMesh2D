@@ -208,6 +208,47 @@ check("10. every captured binding row is declared read-only, so which edges bind
       "stays the template's decision: "
       + (", ".join(bad) + " are editable" if bad else "all read-only"), not bad)
 
+# ── 10b. a row a family can make INERT is a row of this table (#149) ──────
+# The third silent failure this table's own gate exists for. A family may report
+# that its own configuration has stopped reading one of its parameters, and the
+# panel then greys that row out — so a name that is not a row greys NOTHING and the
+# control goes on looking live, which is the control-that-does-nothing check 3
+# catches for a row no family reads, reached from the other side. Derived from the
+# FAMILY MODULES by the same `ast` walk, so a new declaration is covered with no
+# edit here.
+_INERT_SUFFIX = "_rows"
+_inert = {}
+for _f in tm.FAMILIES:
+    _src = open(module_path(sys.modules[_f.build.__module__]), encoding="utf-8").read()
+    _tree = ast.parse(_src)
+    for _node in ast.walk(_tree):
+        # A module-level tuple of row names assigned to an UPPER_CASE name and read
+        # by the family's own `inert_rows`. Both halves matter: the constant alone
+        # could be dead, and `inert_rows` alone could be assigned a literal.
+        if not (isinstance(_node, ast.Assign) and len(_node.targets) == 1
+                and isinstance(_node.targets[0], ast.Name)
+                and _node.targets[0].id.isupper()
+                and isinstance(_node.value, ast.Tuple)):
+            continue
+        vals = [e.value for e in _node.value.elts
+                if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        if vals and len(vals) == len(_node.value.elts) \
+                and all(v.startswith("topo_") for v in vals) \
+                and f"inert_rows = {_node.targets[0].id}" in _src:
+            _inert[f"{_f.name}.{_node.targets[0].id}"] = vals
+_bad_inert = [f"{k}: {v} is not a row" for k, vals in _inert.items()
+              for v in vals if v not in _by_attr]
+_bad_inert += [f"{k}: {v} is not a {k.split('.')[0]} parameter"
+               for k, vals in _inert.items() for v in vals
+               if _by_attr.get(v) is not None
+               and not (_by_attr[v].model_name or "").startswith(
+                   next(f.prefix for f in tm.FAMILIES if f.name == k.split(".")[0]))]
+check(f"10b. every row a family declares it can make INERT is a row of this table, "
+      f"and is one of that family's OWN parameters — a name that is no row greys "
+      f"nothing, and the control goes on looking live ({_inert}): "
+      + ("; ".join(_bad_inert) if _bad_inert else "all resolve"),
+      bool(_inert) and not _bad_inert)
+
 # ── 11. what a family reads from the CONTEXT is declared too ───────────────
 # The mirror of check 2, one layer out, added by #139's review. A family may read a
 # physical quantity from the RUN rather than from the model — #133's decision that a

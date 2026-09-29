@@ -24,9 +24,7 @@ import math
 from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError
-from app.services.topology_ogrid_binding import (
-    cover_problem, order_problem, parse_binding,
-)
+from app.services.topology_ogrid_binding import order_problem, parse_binding
 
 #: How many surface segments a section the C-grid can wrap is split into: the upper
 #: and the lower, meeting at the trailing edge. THREE is the blunt section, whose
@@ -89,6 +87,32 @@ class Section:
         return self.up_seg == self.te_seg
 
 
+def held_bindings(ctx, g, segs_text: str, who: str, edge_at) -> tuple:
+    """``(ids, problem, broken edge)`` — the stored list, parsed AND resolved.
+
+    The ONE owner of "parse the string, then resolve every id against the geometry,
+    IN THAT ORDER, naming the edge" for this family's two lists. Both readers had
+    their own copy of those six lines and the order within them is #138's rule, not
+    a convenience: a list that is short because one id stopped resolving must be
+    answered with the EDGE that stopped resolving, not with a sentence about how
+    many ids there are — which names no edge and sends the user to the wrong
+    geometry. Two copies of an ordering rule is two chances to get the order wrong.
+
+    ``edge_at`` maps a POSITION in the stored list to the ONE edge id a refusal
+    about that position names, which is the only thing the two lists differ in:
+    :func:`far_edge_at` and :func:`section_edge_at`.
+    """
+    held, why = parse_binding(segs_text, g.seg_ids, who)
+    if why:
+        return (), why, ""
+    for pos, sid in enumerate(held):
+        try:
+            ctx.resolve(edge_at(pos), g.spelling, sid)
+        except BindingError as exc:
+            return (), str(exc), exc.edge
+    return tuple(held), "", ""
+
+
 def resolve_section(ctx, geom_name: str, segs_text: str) -> tuple:
     """``(geometry, Section, problem, broken edge)`` for the named, bound section.
 
@@ -131,21 +155,15 @@ def resolve_section(ctx, geom_name: str, segs_text: str) -> tuple:
             f"{len(g.seg_ids)} "
             f"({', '.join(str(s) for s in g.seg_ids) or 'none'})."), ""
 
-    held, why = parse_binding(segs_text, g.seg_ids, SECTION_ROLE)
-    if why:
-        return None, None, why, ""
     # The edge a resolve refusal names is the one the stored POSITION would become on
     # a section drawn the way the CAD stage draws one (upper surface first). Which
     # bound segment IS the upper is decided below, from coordinates — and that
     # decision needs both spans, which is exactly what a broken binding does not
     # have. `topology_cgrid.broken_bindings` reports both surface edges for the same
     # reason.
-    for pos, sid in enumerate(held):
-        try:
-            ctx.resolve(SURFACE_EDGES[min(pos, len(SURFACE_EDGES) - 1)],
-                        g.spelling, sid)
-        except BindingError as exc:
-            return None, None, str(exc), exc.edge
+    held, why, edge = held_bindings(ctx, g, segs_text, SECTION_ROLE, section_edge_at)
+    if why:
+        return None, None, why, edge
     if set(held) != set(g.seg_ids) or len(held) != SHARP_SEGMENTS:
         return None, None, (
             f"the stored binding names segment(s) "
@@ -242,8 +260,11 @@ def outside_point(ring, g):
     how it is tested.
     """
     ring = list(ring)
-    if len(ring) < 3:
-        return None
+    # NO short-ring guard. One that returned None would report a degenerate outline
+    # as CONTAINING the section, which is the one direction this check must not fail
+    # in; with none, a ring of fewer than three points contains nothing and the
+    # caller refuses. Unreachable from either caller today (five corners and six
+    # polylines), and shaped so that it staying unreachable is not load bearing.
     for sp in g.spans.values():
         for pt in sp.points:
             x, y = pt
@@ -257,6 +278,20 @@ def outside_point(ring, g):
             if not hit:
                 return pt
     return None
+
+
+def section_edge_at(pos: int) -> str:
+    """The edge a stored SECTION position names, for a refusal about that position.
+
+    The section is drawn the way the CAD stage draws one — upper surface first — so
+    position 0 is ``af_up`` and position 1 ``af_lo``; anything past the end clamps,
+    because a list longer than the section has is refused on its length one line
+    later and the refusal still has to name something. NOT the same question as
+    `topology_cgrid.broken_bindings`, which reports BOTH edges for one broken
+    position: there the two spans are missing, so which is the upper cannot be
+    measured. Here the position is all that is being described.
+    """
+    return SURFACE_EDGES[min(pos, len(SURFACE_EDGES) - 1)]
 
 
 def far_edge_at(i: int) -> str:
@@ -318,19 +353,9 @@ def resolve_far(ctx, geom_name: str, segs_text: str) -> tuple:
             f"{FAR_SEGMENTS}, or clear the row to generate the far field from the "
             f"two lengths instead."), ""
 
-    held, why = parse_binding(segs_text, g.seg_ids, FAR_ROLE)
+    held, why, edge = held_bindings(ctx, g, segs_text, FAR_ROLE, far_edge_at)
     if why:
-        return None, (), why, ""
-    # EVERY BINDING RESOLVED, AND NAMED BY ITS EDGE, BEFORE any question about how
-    # many there are — #138's rule, which the section reader beside this one follows
-    # too: a list one id short of covering the outline is short BECAUSE of the id
-    # that stopped resolving, and answering "this does not bind all six" there names
-    # no edge and sends the user to look at the wrong thing.
-    for pos, sid in enumerate(held):
-        try:
-            ctx.resolve(far_edge_at(pos), g.spelling, sid)
-        except BindingError as exc:
-            return None, (), str(exc), exc.edge
+        return None, (), why, edge
     if len(held) != FAR_SEGMENTS or set(held) != set(g.seg_ids):
         return None, (), (
             f"the stored binding names segment(s) "
@@ -338,13 +363,36 @@ def resolve_far(ctx, geom_name: str, segs_text: str) -> tuple:
             f"carries {', '.join(str(s) for s in g.seg_ids)}. A C-grid binds ALL "
             f"{FAR_SEGMENTS} sides of its far field — every segment of it is one "
             f"block side."), ""
+    # ORDER ONLY, and `cover_problem` is NOT asked here — which is stated rather
+    # than left to be discovered. The check above forces the binding to be a whole
+    # PERMUTATION of the outline's six segments, and `order_problem` then leaves
+    # only its six ROTATIONS; every rotation of a full permutation covers the
+    # outline by construction, so the cover check cannot fire. Measured over all
+    # 720 permutations of a six-segment outline: 714 refused on order, 6 accepted,
+    # 0 reaching cover. The O-grid needs it because its binding may legally be a
+    # SUBSET of a longer list; this one may not.
     edge, why = order_problem(FAR_ROLE, g, held, 1, far_edge_at)
-    if not why:
-        edge, why = cover_problem(FAR_ROLE, g, held, 1, far_edge_at)
     if why:
         return None, (), why, edge
 
-    if g.signed_area(held, [0.0] * FAR_SEGMENTS) <= 0.0:
+    # THE CORNERS ARE PLACED BEFORE THE RING IS MEASURED, because `signed_area`
+    # answers 0.0 both for a ring that encloses nothing and for one whose corners
+    # could not be placed — its own docstring says the caller must report that as a
+    # refusal rather than reading it as a direction. Asking about the direction
+    # first told the user to redraw a degenerate outline backwards, and left the
+    # no-length refusal below it unreachable.
+    xs = []
+    for sid in held:
+        pt = g.spans[sid].point_at(0.0)
+        if pt is None:
+            return None, (), (f"'{g.spelling}' has a segment with no length, so its "
+                              f"corners cannot be placed."), ""
+        xs.append(pt[0])
+    area = g.signed_area(held, [0.0] * FAR_SEGMENTS)
+    if area == 0.0:
+        return None, (), (f"the six corners of '{g.spelling}' enclose no area — "
+                          f"check that it is the closed outline it looks like."), ""
+    if area < 0.0:
         return None, (), (
             f"'{g.spelling}' runs its six segments CLOCKWISE, and the C's blocks are "
             f"declared counter-clockwise — every radial edge would cross its own "
@@ -357,13 +405,6 @@ def resolve_far(ctx, geom_name: str, segs_text: str) -> tuple:
     # position FAR_NOSE_POS. Measured rather than assumed, and a TIE is refused
     # rather than resolved: two joints the same distance upstream cannot say which
     # of them is the nose.
-    xs = []
-    for sid in held:
-        pt = g.spans[sid].point_at(0.0)
-        if pt is None:
-            return None, (), (f"'{g.spelling}' has a segment with no length, so its "
-                              f"corners cannot be placed."), ""
-        xs.append(pt[0])
     lo = min(xs)
     if xs.count(lo) > 1:
         return None, (), (

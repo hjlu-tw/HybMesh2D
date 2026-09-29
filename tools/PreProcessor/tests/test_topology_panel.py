@@ -439,14 +439,35 @@ _cg13.add_geom_file(_AF)
 _cg13.add_geom_file(_FF_SHIP)
 panel.set_config(_cg13)
 panel.topo_cgrid_far_geom.setText(_FF_SHIP)
+import inspect  # noqa: E402
+
+from app.services import topology_model as _tm  # noqa: E402
+
+_cap_src = inspect.getsource(type(panel)._capture_topology_binding)
+# THE THREE SHAPES A PER-FAMILY EDIT TAKES, rather than the bare family word: a
+# model attribute (`.cgrid_body_segs`), a field-spec row (`topo_cgrid_far_geom`) and
+# a member of the family's own module (`topology_cgrid.FAMILY`). The bare word would
+# fire on `topology_ogrid_binding`, which is not a family: it is the ONE parser of
+# the stored binding format, living in the module where that format was written, and
+# this package's rules already say the panel asks it.
+_named = sorted(
+    f"{f.name}:{shape}" for f in _tm.FAMILIES
+    for shape in (f".{f.prefix}", f"topo_{f.prefix}", f"topology_{f.name}.")
+    if shape in _cap_src)
 check(f"13g. naming the C-grid's optional FAR-FIELD geometry captures its segment "
-      f"ids through the same table-driven wiring the O-grid's two rows use, with no "
-      f"per-family edit in the panel ({panel.topo_cgrid_far_segs.text()!r}), and the "
-      f"row is read-only like the other three",
+      f"ids through the same table-driven wiring the O-grid's two rows use "
+      f"({panel.topo_cgrid_far_segs.text()!r}), and the row is read-only like the "
+      f"other three",
       [t.strip() for t in panel.topo_cgrid_far_segs.text().split(",")]
       == ["0", "1", "2", "3", "4", "5"]
       and panel.topo_cgrid_far_segs.isReadOnly()
       and panel.topo_cgrid_body_segs.isReadOnly())
+check(f"13g2. ...and 'no per-family edit in the panel' is READ OFF THE SOURCE rather "
+      f"than claimed: `_capture_topology_binding` names no family at all, so a "
+      f"fourth binding row pair is a `BINDING_ROWS` entry and nothing else "
+      f"(families named in its body: {_named or 'none'})",
+      not _named
+      and "BINDING_ROWS" in inspect.getsource(type(panel)._build_topology_section))
 _shown13 = panel.topo_cgrid_derived.text()
 check(f"13h. ...and the read-out switches to the BOUND sentence as soon as it is "
       f"named, so the user learns which of the two far fields they are on — and "
@@ -454,12 +475,31 @@ check(f"13h. ...and the read-out switches to the BOUND sentence as soon as it is
       f"solver does ({_shown13.splitlines()[-1][:120]!r})",
       "BOUND" in _shown13 and "INERT" in _shown13
       and "BC_GEOM" not in _shown13)
+check(f"13h2. ...and the two lengths it made inert are GREYED OUT rather than left "
+      f"looking live, which is what 'stop pretending to decide something' asks for "
+      f"(wake enabled={panel.topo_cgrid_wake_length.isEnabled()}, radius "
+      f"enabled={panel.topo_cgrid_far_radius.isEnabled()}, target cell "
+      f"{panel.topo_cgrid_cell.isEnabled()} as the control) — and which rows those "
+      f"are is the PLAN's answer, not a family named in the panel "
+      f"({list(_cg.INERT_WHEN_BOUND)})",
+      not panel.topo_cgrid_wake_length.isEnabled()
+      and not panel.topo_cgrid_far_radius.isEnabled()
+      and panel.topo_cgrid_cell.isEnabled()
+      and set(_cg.INERT_WHEN_BOUND) == {"topo_cgrid_wake_length",
+                                        "topo_cgrid_far_radius"})
+check("13h3. ...while a row whose enabled state is owned by its OWN declaration is "
+      "left alone: #139's read-only `topo_detached` read-out is disabled at build "
+      "time because a QCheckBox has no setReadOnly, and a loop that re-enabled "
+      "every row would hand it back as a tick box",
+      not panel.topo_detached.isEnabled())
 panel.topo_cgrid_far_geom.setText("")
 check(f"13i. ...and clearing it goes back to the GENERATED far field, which is the "
       f"default and not a degraded state "
       f"({panel.topo_cgrid_derived.text().splitlines()[-1][:80]!r})",
       "BC_GEOM" in panel.topo_cgrid_derived.text()
-      and "INERT" not in panel.topo_cgrid_derived.text())
+      and "INERT" not in panel.topo_cgrid_derived.text()
+      and panel.topo_cgrid_wake_length.isEnabled()
+      and panel.topo_cgrid_far_radius.isEnabled())
 
 # ── 14. the O-grid parameters round-trip too ───────────────────────────
 c14 = cfg_for(MESH_MODE_MULTIBLOCK, family="ogrid", ogrid_body_geom=_B,

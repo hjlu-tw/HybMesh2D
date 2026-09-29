@@ -3188,9 +3188,19 @@ the proof of (injection V: remove the pair, and the PANEL gate goes red while th
 green, which is the right split — the capture is the panel's and the family never reads a widget).
 One shared function did change shape: `order_problem` and `cover_problem` now take an edge-naming
 CALLABLE instead of a prefix string, because the C-grid's far-field ring has six edges with six
-NAMES rather than a prefix and an index. The alternative was a second copy of the mesher's cover
+NAMES rather than a prefix and an index. The alternative was a second copy of the mesher's order
 rule differing only in an f-string, which is exactly the shape `topology_counts.py` was extracted
 from these two families to stop one ticket earlier.
+
+**The Standards review corrected that sentence, and it is worth keeping the correction.** The
+commit said "one copy of the mesher's COVER rule, not two", and `cover_problem` is never reached
+from this family at all: the far field's binding must be a whole PERMUTATION of its six segments,
+`order_problem` then leaves only its six rotations, and every rotation of a permutation covers.
+Measured over all 720 permutations of a six-segment outline — 714 refused on order, 6 accepted, 0
+reaching cover. The call was removed and the reason written at the site; what the callable pays
+for is `order_problem`, which the O-grid and the C-grid genuinely share. The O-grid still needs
+`cover_problem` because its binding may legally be a SUBSET of a longer list. A refactor justified
+by a dead call is a refactor justified by nothing, even when the refactor itself is right.
 
 **WHAT IS THIS FAMILY'S OWN IS THE PAIR OF MEASUREMENTS NOTHING ELSE COULD MAKE.** A valid O-grid
 binding is a rotation of the geometry's segment list and the ring has no first segment (#138); this
@@ -3209,15 +3219,51 @@ than resolved, by the same rule that refuses a section whose two joints are the 
 downstream. Each is the ONLY check its own injection reddens (L and M), which is the evidence that
 nothing else was ever going to see them.
 
+**"Nothing but a measurement could see it" was a LABEL before it was an assert**, which the
+Standards review named: checks 18e and 18f said all four binding questions pass under those two
+outlines and grepped only the refusal sentence. They now run the four — parse, resolve, order,
+cover — against each fixture and assert that every one of them passes, so the claim the two checks
+exist on is the thing they measure.
+
+**AND THE WINDING MEASUREMENT WAS WRONG IN A WAY ONLY THE RULE COULD SHOW.** `GeomBinding.
+signed_area` answers 0.0 for TWO things — a ring enclosing nothing, and one whose corners could not
+be placed — and its own docstring says the caller must report that "as a refusal rather than
+treating as a direction". The O-grid's `plan` obeys it; #149's first draft wrote `<= 0.0` and told
+the user to redraw a degenerate outline BACKWARDS, with the consequence that its own "has a segment
+with no length" refusal twelve lines below was unreachable. The corners are now placed first, a
+zero area is its own sentence, and only a NEGATIVE area is a direction. Two fixtures reach it — a
+closed six-segment outline that walks out along the wake line and back (zero area, every corner
+placeable) and one whose last side is a single point on the first corner (a span with no length) —
+and injection Y2, the pre-review order put back, is the negative control. This is the review
+finding that mattered most: it was not reachable by any test the ticket asked for, and nothing in
+the diff would ever have gone red on it.
+
 **The nose-position rule is not a theorem and is stated as a rule.** It is true of every C-grid far
 field this repo has — the shipped `cgrid_farfield.dat` included, which is what the gate binds — and
 a far field whose leftmost corner is not its nose is refused by name rather than meshed wrongly.
 That is the safe direction and it is a refusal the user cannot argue with; it is in the blind-spot
 list below rather than defended.
 
-**The two lengths go inert, and saying so is the requirement rather than a courtesy.** A control
-that silently decides nothing is the failure `test_topology_param_specs.py` exists for, reached by
-another route, so the read-out names it. Two smaller consequences fell out of that and are worth
+**The two lengths go inert, and saying so turned out not to be enough.** A control that silently
+decides nothing is the failure `test_topology_param_specs.py` exists for, reached by another route,
+so the read-out names it — and the Spec review read the ticket's story 4 ("stop PRETENDING to
+decide something … rather than sitting there as controls that do nothing") against a panel whose
+two spin boxes were still editable, and called the letter met and the story not. It is right: the
+Implementation Decision says the read-out "must SAY so, not merely stop using them", and "not
+merely" adds to not-using rather than licensing it. The rows are now greyed as well, and three
+things about HOW are the part worth keeping:
+
+* **Which rows go grey is the PLAN's answer**, `inert_rows`, declared on both binding families'
+  plans — the O-grid's always empty, and saying so out loud is what lets the panel ask every
+  binding family the same question instead of naming the one that answers yes.
+* **The row names are held against the field-spec table** (`test_topology_param_specs.py` check
+  10b, derived from the family modules by the same `ast` walk checks 1-3 use). A name that is no
+  row greys nothing and the control goes on looking live, which is check 3's failure from the
+  other side.
+* **The greying has ONE owner.** The first version greyed the rows in `_refresh_topology_counts`,
+  and `_refresh_topology_detach` — which has decided a topology row's enabled state since #139 —
+  ran afterwards on every refresh and set them all back. Green gate, dead feature, no error
+  anywhere. The two reasons a topology row can be grey are now one loop and one `and`. Two smaller consequences fell out of that and are worth
 recording because both could have gone the lazy way. The zero-check on the two lengths is SKIPPED
 when they are inert — refusing "the wake length must be greater than zero" about a control that
 decides nothing is a refusal the user cannot act on. And the wake and radial SPANS are measured off
@@ -3268,7 +3314,34 @@ IDENTICAL across the two paths rather than merely bounded.
   is what proved the first version of that check inert rather than producing such a fixture.
 * **The bound path is measured on ONE far-field shape** — the shipped `cgrid_farfield.dat` and the
   fixture that reproduces its six corners. The refusal spread is wide (five, seven, clockwise,
-  rotated, broken id, malformed list, short list); the ACCEPTED spread is one shape.
+  rotated, open, flat, zero-length span, broken id, malformed list, short list); the ACCEPTED
+  spread is one shape.
+* **The per-block cell-shape median cannot see the far field at all**, which is measured in 14h2
+  and is the correction below rather than a limitation of this ticket.
+
+##### The ticket's own prediction, corrected by measurement
+
+#149's Testing Decision 3 reads: *"the mesh from the bound path is compared with the shipped
+hand-written C-grid's the way check 14c2 already does it … and this time the far field should agree
+too, so the whole-mesh figures become comparable instead of being dominated by a difference the
+documents intend."* Half of that is true and the half that is not is the more useful half.
+
+Check 14h2 measures all four blocks on all three documents:
+
+| block | template BOUND | template GENERATED | shipped |
+|---|---|---|---|
+| `b_upper` / `b_lower` | 3.637 | 3.745 | 3.692 |
+| `b_wake_up` / `b_wake_lo` | 8.922 | 8.922 | 10.107 |
+
+The two WAKE blocks come out IDENTICAL on the two template paths, because their far side is the
+outlet plane and the generated hexagon puts it exactly where the drawn D does; they sit 1.133x off
+the shipped document because of the WAKE NODE COUNT, which is this family's own derivation. The two
+BODY blocks move by 3% between the paths and end up **no closer** to the shipped grid bound
+(1.015x) than generated (1.014x). So drawing the far field did not make the cell-shape medians
+agree, and was never going to: the median is blind to the difference, and the peak
+non-orthogonality (48.6° -> 31.5°, against the shipped 29.9°) is the only whole-mesh figure that
+sees it. The ticket predicted the wrong instrument; the check now says so rather than asserting a
+bound that happens to hold.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

@@ -195,7 +195,8 @@ def write_airfoil(stem, seg_ids, bcs, n=195, designation="0012", chord=1.0,
 
 
 def write_cgrid_farfield(stem, seg_ids, bcs, te_xy=(1.0, 0.0), x_le=0.0,
-                         wake_len=19.0, radius=10.0, arc=40, cw=False, rotate=0):
+                         wake_len=19.0, radius=10.0, arc=40, cw=False, rotate=0,
+                         closed=True, flat=False, zero_seg=False):
     """A DRAWN C-grid far field: the shipped ``cgrid_farfield.dat``'s own shape (#149).
 
     Six corners at exactly where ``topology_cgrid_section.far_corners`` generates
@@ -215,6 +216,19 @@ def write_cgrid_farfield(stem, seg_ids, bcs, te_xy=(1.0, 0.0), x_le=0.0,
     the two things a binding cannot see (every id still resolves, every side still
     lies on its own segment) and the mesher would answer with a folded grid rather
     than a refusal.
+
+    ``closed=False`` leaves the last side short of the first corner, so the loop does
+    NOT close: the outlet is a gap rather than a boundary. A C-grid's outer boundary
+    closes, and this is what lets that refusal be reached by a six-segment outline
+    rather than only by one the segment count already refuses.
+
+    ``flat`` and ``zero_seg`` are the two shapes ``GeomBinding.signed_area`` answers
+    0.0 for, and its docstring says a caller must tell them from a DIRECTION rather
+    than reading one off them. ``flat`` walks straight out along the wake line and
+    straight back, so the outline CLOSES, every corner places, and the ring encloses
+    nothing. ``zero_seg`` gives the last side a single point sitting on the first
+    corner, so one span has no length and no corner can be placed for it. Six
+    segments either way, so both reach the ring measurement rather than the count.
     """
     x_te, y0 = te_xy
     x_out = x_te + wake_len
@@ -243,25 +257,38 @@ def write_cgrid_farfield(stem, seg_ids, bcs, te_xy=(1.0, 0.0), x_le=0.0,
     if cw:
         # The same loop walked the other way from the same first point, so every
         # joint is still a joint and only the ORDER reverses: wk, fl, f3, f2, f1, fu.
-        flat = [p for run in runs for p in run]
-        runs = _regroup([flat[0]] + flat[:0:-1],
+        walk = [p for run in runs for p in run]
+        runs = _regroup([walk[0]] + walk[:0:-1],
                         [len(r) for r in reversed(runs)])
     if rotate:
         # The same loop STARTED at a later joint. Every id still resolves and every
         # side still lies on its own segment; what moves is which joint is `wk`.
-        flat = [p for run in runs for p in run]
+        walk = [p for run in runs for p in run]
         cut = sum(len(r) for r in runs[:rotate % len(runs)])
-        runs = _regroup(flat[cut:] + flat[:cut],
+        runs = _regroup(walk[cut:] + walk[:cut],
                         [len(r) for r in _shift(runs, rotate)])
     if len(seg_ids) != len(runs):
         runs = _equal_chunks([p for run in runs for p in run], len(seg_ids))
 
+    if flat:
+        # Out along the wake line and back: closed, six segments, zero area.
+        out_pts = line((x_le - radius, y0), (x_out, y0), 60)
+        runs = [out_pts[k * 10:(k + 1) * 10] for k in range(3)]
+        back = line((x_out, y0), (x_le - radius, y0), 60)
+        runs += [back[k * 20:(k + 1) * 20] for k in range(3)]
+    if not closed:
+        # A gap of a quarter of the whole outline, so no coincidence tolerance can
+        # read the two ends as one point.
+        runs[-1] = runs[-1][:max(1, len(runs[-1]) // 4)]
+    if zero_seg:
+        runs[-1] = [runs[0][0]]
     pts, ids = [], []
     for sid, run in zip(seg_ids, runs):
         pts += run
         ids += [sid] * len(run)
-    pts.append(pts[0])
-    ids.append(seg_ids[0])
+    if closed:
+        pts.append(pts[0])
+        ids.append(seg_ids[0])
     with open(stem + ".dat", "w", encoding="utf-8") as f:
         for x, y in pts:
             f.write(f"{x:.12f} {y:.12f}\n")

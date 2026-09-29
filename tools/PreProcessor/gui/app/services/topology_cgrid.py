@@ -67,6 +67,12 @@ from app.services.topology_ogrid_binding import parse_binding
 #: The template's own name for the family, as stored in the project file.
 FAMILY = "cgrid"
 
+#: The field-spec rows the BOUND far field makes inert — the two physical lengths
+#: the GENERATED one is placed from. Spelled once, here, because the read-out names
+#: them in prose and the panel greys them out, and two spellings of "which controls
+#: stopped deciding" is how one of them comes to name a row the other does not.
+INERT_WHEN_BOUND = ("topo_cgrid_wake_length", "topo_cgrid_far_radius")
+
 #: The cell-to-cell expansion the wake and radial derivations grow at. NOT a tuned
 #: constant: it is the red line of this repo's own quality ruler
 #: (``tools/scripts/visualize_dat.py --quality``: green < 1.05, orange 1.05-1.2, red
@@ -131,6 +137,16 @@ class Plan:
     #: Empty on the generated path.
     far_geom: str = ""
     far_segs: tuple = ()
+    #: Field-spec rows this plan's own configuration has made INERT (#149). On the
+    #: BOUND path the two lengths decide nothing, and the panel greys them out:
+    #: saying so in the read-out is necessary and was measured not to be
+    #: sufficient — a live-looking spin box that changes no mesh is the
+    #: control-that-does-nothing `tests/test_topology_param_specs.py` exists for,
+    #: reached by another route. The names are FIELD-SPEC ROW attributes rather
+    #: than model fields, because it is the widget that has to go grey, and they
+    #: are declared HERE rather than in the panel so a third family needs no view
+    #: edit. Held against the table by `tests/test_topology_param_specs.py`.
+    inert_rows: tuple = ()
 
     def lines(self) -> list:
         """The derivation, as the read-out shows it — RESULT AND WORKING, not result.
@@ -170,7 +186,8 @@ class Plan:
              f"an outlet, the D a far field. The wake length and far-field radius "
              f"above are INERT on this path: the wake spans "
              f"{self.wake_span:.4g} and the radial {self.radial_span:.4g} because "
-             f"that is where you drew them"
+             f"that is where you drew them — so 'Wake Length' and 'Far-Field "
+             f"Radius' above are greyed out"
              if self.far_bound else
              "far field: GENERATED from the two lengths, so its six sides carry the "
              "run's BC_GEOM; the section's two carry the conditions on its own CAD "
@@ -202,6 +219,7 @@ def plan(model, ctx) -> Plan:
     p.far_bound = fg is not None
     if p.far_bound:
         p.far_geom = fg.spelling
+        p.inert_rows = INERT_WHEN_BOUND
 
     cell = float(model.cgrid_cell)
     p.te_cell = float(model.cgrid_te_cell)
@@ -398,18 +416,43 @@ def build(model, ctx=None) -> dict:
             "blocks": blocks}
 
 
+def _section_edges(_pos: int) -> tuple:
+    """BOTH surface edges, whichever position broke — and that is not over-reporting.
+
+    Which bound segment is the upper surface is measured from the two spans, so with
+    one of them missing the family cannot say which of ``af_up`` and ``af_lo`` the
+    broken id would have become. Repairing the position repairs both. Named rather
+    than written inline as a lambda that ignores its argument, so the table below
+    reads as two answers to one question.
+    """
+    return SURFACE_EDGES
+
+
+def _far_edges(pos: int) -> tuple:
+    """The ONE side that lies on the far-field segment bound at ``pos``.
+
+    On the far field the position IS the side, where on the section it is not.
+    """
+    return (far_edge_at(pos),)
+
+
+#: Which stored list is which, as ``(model field, geometry field, role, position ->
+#: the edges that position darkens)``. `topology_ogrid_binding.BINDING_LISTS`'s own
+#: shape, carrying an edge answer instead of an edge PREFIX because this family's
+#: two lists number their edges differently — and declared here rather than written
+#: inline at the one loop that walks it, so a reader asking "which lists does the
+#: C-grid bind?" has one place to look, as they do next door.
+BINDING_LISTS = (
+    ("cgrid_body_segs", "cgrid_body_geom", SECTION_ROLE, _section_edges),
+    ("cgrid_far_segs", "cgrid_far_geom", FAR_ROLE, _far_edges),
+)
+
+
 def broken_bindings(model, ctx) -> tuple:
     """Every stored id this family holds that its geometries no longer carry (#138).
 
     THE COMPLEMENT OF `plan`'s REFUSAL, NOT A SECOND COPY OF IT — the O-grid's rule,
     and the panel asks the registry rather than asking a family by name.
-
-    BOTH surface edges are named for one broken SECTION position, and that is not
-    over-reporting: which bound segment is the upper surface is measured from the two
-    spans, so with one of them missing the family cannot say which of `af_up` and
-    `af_lo` the broken id would have become. Repairing the position repairs both. The
-    far field's positions (#149) name ONE edge each, because there the position IS
-    the side: `FAR_EDGES[k]` lies on the segment bound at k.
 
     A blank far-field row is the GENERATED path, which binds nothing and so can break
     nothing — the same sentence `parse_binding` already writes for a blank list,
@@ -418,11 +461,7 @@ def broken_bindings(model, ctx) -> tuple:
     if ctx is None:
         return ()
     out = []
-    for field_name, geom_field, who, edges_at in (
-            ("cgrid_body_segs", "cgrid_body_geom", SECTION_ROLE,
-             lambda _pos: SURFACE_EDGES),
-            ("cgrid_far_segs", "cgrid_far_geom", FAR_ROLE,
-             lambda pos: (far_edge_at(pos),))):
+    for field_name, geom_field, who, edges_at in BINDING_LISTS:
         g = ctx.geometry(getattr(model, geom_field, ""))
         if g is None or not g.seg_ids:
             continue

@@ -339,9 +339,15 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
   `FAR_CORNERS` and `FAR_EDGES` are the shipped document's own six, spelled ONCE in
   `topology_cgrid_section` by the rule `SECTION_ROLE` states, and position k of the stored list is
   corner k and side k. **The far field must be cut into exactly SIX segments** — one per block side,
-  which is what makes each side's condition readable off its own — and `order_problem` /
-  `cover_problem` say the rest, taking an edge-naming CALLABLE since #149 so the mesher's cover rule
-  is not copied per family (`edges_by_prefix` for the O-grid, `far_edge_at` here). Measured through
+  which is what makes each side's condition readable off its own — and `order_problem` says the
+  rest, taking an edge-naming CALLABLE since #149 (`edges_by_prefix` for the O-grid, `far_edge_at`
+  here) so a family that names its ring edges rather than numbering them needs no second copy of
+  it. **`cover_problem` is NOT asked here, and that is stated at the call site rather than left to
+  be discovered**: requiring the binding to be a whole PERMUTATION of the six leaves only its six
+  rotations once `order_problem` has run, and every rotation of a permutation covers — measured
+  over all 720 permutations (714 refused on order, 6 accepted, 0 reaching cover). The O-grid needs
+  it because its binding may legally be a SUBSET of a longer list; this one may not. Measured
+  through
   the real mesher: the SAME three boundary names the shipped hand-written document exports, at 1.05x
   its peak non-orthogonality where the generated path is 1.63x, with the cell count and the grid at
   the section unmoved. Gate: `tests/test_topology_cgrid.py` checks 18-18i and 14f-14h, with the
@@ -352,13 +358,36 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
   one's does — corner `wk` is the outlet point level with the wake — so the furthest-UPSTREAM joint
   must sit at `FAR_NOSE_POS`, and the six corners must wind counter-clockwise. Neither is visible to
   any binding check: under both, every id resolves, every side lies on its own segment, and order
-  and cover pass — the mesher then FOLDS the four blocks rather than refusing them, which is this
-  package's own worst outcome. Injection-held one joint each way (checks 18e, 18f, each the ONLY
-  check its mutation reddens). A TIE for furthest-upstream is refused rather than resolved.
-- **THE TWO LENGTHS GO INERT ON THE BOUND PATH, AND THE READ-OUT SAYS SO.** A control that silently
-  decides nothing is the failure `tests/test_topology_param_specs.py` exists for, reached by another
-  route, so the last read-out line names the bound geometry, its six segments and the word INERT —
-  and the two spans the wake and radial counts derive from are MEASURED off the placed corners on
+  and cover pass — ASSERTED in the gate rather than claimed in a label (check 18e's own
+  `invisible_to_bindings`) — and the mesher then FOLDS the four blocks rather than refusing them,
+  which is this package's own worst outcome. Injection-held one joint each way (checks 18e, 18f,
+  each the ONLY check its mutation reddens). A TIE for furthest-upstream is refused rather than
+  resolved.
+- **THE CORNERS ARE PLACED BEFORE THE RING IS MEASURED, because `signed_area` ANSWERS 0.0 FOR TWO
+  DIFFERENT THINGS.** Its own docstring says so — a ring enclosing nothing, or one whose corners
+  could not be placed — and that the caller must report that as a REFUSAL rather than read a
+  direction off it; the O-grid's `plan` obeys it and #149's first draft did not, telling the user
+  to redraw a degenerate outline backwards and leaving its own no-length refusal unreachable
+  underneath. Gate: check 18f2, over both shapes (`far-flat`, `far-zero`), with the pre-review
+  order put back as the negative control.
+- **THE TWO LISTS PARSE AND RESOLVE THROUGH ONE FUNCTION**, `held_bindings` — parse the string,
+  then resolve every id, IN THAT ORDER, naming the edge. The order is #138's rule and not a
+  convenience, so two copies of it is two chances to get it wrong; what the two lists differ in is
+  only which edge a POSITION names (`section_edge_at`, `far_edge_at`). Gate: injection Z reddens
+  one check per list.
+- **THE TWO LENGTHS GO INERT ON THE BOUND PATH: THE READ-OUT SAYS SO AND THE ROWS GO GREY.** A
+  control that silently decides nothing is the failure `tests/test_topology_param_specs.py` exists
+  for, reached by another route, so the last read-out line names the bound geometry, its six
+  segments and the word INERT — and saying it was measured NOT to be enough on its own, the two
+  spin boxes having stayed editable. **WHICH rows are inert is the PLAN's answer** (`inert_rows`,
+  declared on BOTH binding families' plans so the panel asks every one of them rather than naming
+  the one that answers yes; the O-grid's is always empty and says so), and the row names are held
+  against the field-spec table by `test_topology_param_specs.py` check 10b — a name that is no row
+  greys nothing. **THE GREYING ITSELF HAS ONE OWNER**, `_refresh_topology_detach`'s loop, which
+  already decided a topology row's enabled state for #139 and now takes both reasons: a second loop
+  in `_refresh_topology_counts` was silently undone by it on every keystroke, which is what shipped
+  first. Gate: `tests/test_topology_panel.py` 13h2 (greyed, with the target cell as the control) and
+  13h3 (a row whose read-only-ness IS its enabled state is left alone). And the two spans the wake and radial counts derive from are MEASURED off the placed corners on
   BOTH paths (they are the two parameters by construction on the generated one), so the derivation
   has one owner rather than a second reading. The zero-check on the two lengths is skipped when they
   are inert: a refusal the user cannot act on is not a refusal. Gate: checks 18c, 18c2.
