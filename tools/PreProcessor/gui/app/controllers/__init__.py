@@ -39,6 +39,7 @@ from app.controllers.stl3d_fit_ctrl import Stl3dFitControllerMixin
 from app.controllers.session_load_ctrl import SessionLoadControllerMixin
 from app.controllers.session_tabs_ctrl import SessionTabsControllerMixin
 from app.controllers.extrude_ctrl import ExtrudeControllerMixin
+from app.controllers.offset_geom_ctrl import OffsetGeomControllerMixin
 from app.controllers.pipeline_ctrl import PipelineControllerMixin
 from app.controllers.pipeline_io_ctrl import PipelineIoControllerMixin
 from app.controllers.signal_wiring_ctrl import SignalWiringMixin
@@ -69,7 +70,7 @@ __all__ = [
     "PostprocessControllerMixin", "SurfaceSourceControllerMixin",
     "Stl3dControllerMixin", "Stl3dFitControllerMixin",
     "SessionLoadControllerMixin", "SessionTabsControllerMixin",
-    "ExtrudeControllerMixin",
+    "ExtrudeControllerMixin", "OffsetGeomControllerMixin",
     "PipelineControllerMixin", "PipelineIoControllerMixin",
     "SignalWiringMixin", "LifecycleControllerMixin",
 ]

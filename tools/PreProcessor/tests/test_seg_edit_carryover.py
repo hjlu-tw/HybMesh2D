@@ -370,23 +370,45 @@ by_id = {sg.id: sg for sg in loaded}
 check(by_id[2].grow_bl is False and by_id[2].bc == "inlet",
       "6. a saved-then-reloaded workspace payload still carries both facts")
 
-_writers = {
-    "app/models/project.py": "the resampler config",
-    "app/controllers/session_io_ctrl.py": "the .hws workspace",
-    "app/models/pipeline_config.py": "the pipeline script",
-}
-for rel, what in _writers.items():
-    tree = ast.parse(open(os.path.join(_GUI, rel), encoding="utf-8").read())
-    # By AST like everything else here: a comprehension whose element is a
-    # `<x>.to_dict()` call. The substring version this replaced tested three
-    # spellings of which the first subsumed the other two.
-    found = any(
+# All three project files reach `SegmentModel.to_dict()`, but since #152 only ONE
+# of them spells the comprehension: the `.hws` workspace's `project_config` and the
+# pipeline script's `cads` entry held the identical seven keys written out by hand,
+# and both now go through `ProjectModel.to_state_dict`. So what is asserted is
+# REACHING the one serialiser, not repeating it — a per-module comprehension check
+# would now be a check against the collapse rather than against the defect, and
+# would pass again the moment somebody re-duplicated the dict.
+def _has_to_dict_comprehension(tree) -> bool:
+    """A comprehension whose element is a `<x>.to_dict()` call.
+
+    By AST like everything else here. The substring version this replaced tested
+    three spellings of which the first subsumed the other two."""
+    return any(
         isinstance(n, (ast.ListComp, ast.GeneratorExp))
         and isinstance(n.elt, ast.Call)
         and isinstance(n.elt.func, ast.Attribute)
         and n.elt.func.attr == "to_dict"
         for n in ast.walk(tree))
-    check(found, f"6. {what} serialises segments through to_dict() ({rel})")
+
+
+def _calls(tree, name: str) -> bool:
+    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+               and n.func.attr == name for n in ast.walk(tree))
+
+
+_trees = {rel: ast.parse(open(os.path.join(_GUI, rel), encoding="utf-8").read())
+          for rel in ("app/models/project.py",
+                      "app/controllers/session_io_ctrl.py",
+                      "app/models/pipeline_config.py")}
+check(_has_to_dict_comprehension(_trees["app/models/project.py"]),
+      "6. the ONE serialiser (app/models/project.py) builds the segment list "
+      "through SegmentModel.to_dict()")
+for rel, what in (("app/controllers/session_io_ctrl.py", "the .hws workspace"),
+                  ("app/models/pipeline_config.py", "the pipeline script")):
+    reaches = (_calls(_trees[rel], "to_state_dict")
+               or _has_to_dict_comprehension(_trees[rel]))
+    check(reaches,
+          f"6. {what} reaches it — through to_state_dict(), or by serialising "
+          f"the segments itself ({rel})")
 
 # ── 7. the removed compensation is really gone ────────────────────────────────
 _GONE = ("snapshot_seg_edits", "restore_seg_edits", "describe_seg_edit_restore")

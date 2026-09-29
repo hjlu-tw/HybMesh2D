@@ -408,6 +408,7 @@ class PipelineConfig:
             "global_spline": cad.get("global_spline", False),
             "transform": cad.get("transform"),
             "segments": cad.get("segments", []),
+            "derived_from": cad.get("derived_from"),
         }
         pm.load_from_config(cfg)
         return pm
@@ -480,16 +481,11 @@ class PipelineConfig:
     # ------------------------------------------------------------------ #
     @staticmethod
     def cad_section(project_model: ProjectModel) -> dict:
-        """One ProjectModel -> a ``cads`` entry."""
-        return {
-            "input_file": project_model.input_file,
-            "output_file": project_model.output_file,
-            "closed_mode": project_model.closed_mode,
-            "is_closed": project_model.is_closed,
-            "global_spline": project_model.global_spline,
-            "transform": copy.deepcopy(project_model.transform),
-            "segments": [s.to_dict() for s in project_model.segments],
-        }
+        """One ProjectModel -> a ``cads`` entry.
+
+        The same seven keys the ``.hws`` workspace writes, from the same
+        serialiser — see ``ProjectModel.to_state_dict``."""
+        return project_model.to_state_dict()
 
     @classmethod
     def from_configs(cls, name: str, project_model: ProjectModel | list | None,

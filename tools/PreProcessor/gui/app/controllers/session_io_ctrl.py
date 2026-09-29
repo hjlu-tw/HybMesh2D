@@ -79,7 +79,6 @@ class SessionIOControllerMixin:
         write it there (``services/case_workspace``). One builder, so an exported
         workspace can never describe less than a saved one.
         """
-        import copy
 
         # Reject non-finite coordinates up front with a clear, named error.
         # Standard JSON has no NaN/Infinity literal, so writing them produces a
@@ -99,17 +98,10 @@ class SessionIOControllerMixin:
 
         sessions_data = []
         for session in self.sessions:
-            segments_data = [seg.to_dict() for seg in session.project_model.segments]
-
-            project_config = {
-                "input_file": session.project_model.input_file,
-                "output_file": session.project_model.output_file,
-                "closed_mode": session.project_model.closed_mode,
-                "is_closed": session.project_model.is_closed,
-                "segments": segments_data,
-                "global_spline": session.project_model.global_spline,
-                "transform": copy.deepcopy(session.project_model.transform) if session.project_model.transform else None
-            }
+            # The ONE serialiser the pipeline script's cads entry uses too, so a
+            # field added to the model cannot reach one project file and not the
+            # other (#152).
+            project_config = session.project_model.to_state_dict()
 
             session_dict = {
                 "file_path": session.file_path,
@@ -212,6 +204,7 @@ class SessionIOControllerMixin:
         import json
         import numpy as np
         from app.models.session import GeometrySession
+        from app.models.derived_geometry import DerivedOffset
         from app.models.segment import SegmentModel
         from app.models.vtk_mesh import VTKMesh
         from app.models.project import _legacy_closed_mode
@@ -327,6 +320,8 @@ class SessionIOControllerMixin:
             session.project_model.is_closed = pconf.get("is_closed", True)
             session.project_model.global_spline = pconf.get("global_spline", False)
             session.project_model.transform = pconf.get("transform", None)
+            session.project_model.derived_from = DerivedOffset.from_dict(
+                pconf.get("derived_from"))
 
             session.project_model.segments = []
             for sj in pconf.get("segments", []):

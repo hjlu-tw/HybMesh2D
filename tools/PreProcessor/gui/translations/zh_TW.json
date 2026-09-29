@@ -72,6 +72,12 @@
     "Merge selected end-to-end curve edges into one closed polygon (clears the 'boundary not closed' warning)": "將選取的首尾相接曲線邊合併為一個閉合多邊形（會清除「邊界未閉合」警告）",
     "Boundary Condition...": "邊界條件…",
     "Extrude to STL...": "擠出為 STL…",
+
+    "Offset Geometry...": "偏移幾何…",
+    "Derive a new geometry a physical distance from this one, segmented exactly as its source": "由此幾何沿法線偏移一段實體距離，產生一個分段與來源完全相同的新幾何",
+    "Regenerate Offset": "重新產生偏移",
+    "Re-derive this offset geometry from the source it records, after editing that source": "在編輯來源幾何後，依其記錄的來源重新推導此偏移幾何",
+
     "Run the PreProcessor and preview geometry / boundary conditions": "執行前處理器並預覽幾何／邊界條件",
 
     "Generate Mesh": "產生網格",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json
 import copy
+from app.models.derived_geometry import DerivedOffset
 from app.models.segment import SegmentModel
 
 # Bump when the exported JSON config schema changes in a backward-incompatible
@@ -46,6 +47,12 @@ class ProjectModel:
         self.length_unit: str = "m"
         self.length_unit_metres: float = 1.0   # only for length_unit == "custom"
         self.length_unit_name: str = ""
+
+        # Where this geometry came from, when it was DERIVED from another one
+        # rather than drawn or imported (#152). Data, not a live link: the offset
+        # is regenerated when the user asks, never on a source edit. See
+        # app/models/derived_geometry.py.
+        self.derived_from: DerivedOffset | None = None
 
     # ── Segment management ────────────────────────────────────────────────
 
@@ -286,6 +293,29 @@ class ProjectModel:
 
     # ── JSON I/O ──────────────────────────────────────────────────────────
 
+    def to_state_dict(self) -> dict:
+        """This model's authored state, as the dict BOTH project files carry.
+
+        The ``.hws`` workspace's ``project_config`` section and the pipeline
+        script's ``cads`` entry held the identical seven keys, each written out by
+        hand in its own module — so a field added to the model reached one file or
+        the other depending on who remembered. #152 collapsed them here, which is
+        why a derived geometry's record arrives in both by construction. The
+        READ sides stay separate: the workspace preserves segment ids where
+        ``load_from_config`` renumbers them, and that is a real difference."""
+        return {
+            "input_file": self.input_file,
+            "output_file": self.output_file,
+            "closed_mode": self.closed_mode,
+            "is_closed": self.is_closed,
+            "global_spline": self.global_spline,
+            "transform": copy.deepcopy(self.transform),
+            "segments": [s.to_dict() for s in self.segments],
+            "derived_from": (self.derived_from.to_dict()
+                             if self.derived_from is not None else None),
+        }
+
+
     @staticmethod
     def migrate_config(config: dict) -> dict:
         """Upgrade an older config dict to the current CONFIG_FORMAT_VERSION.
@@ -333,6 +363,7 @@ class ProjectModel:
         except (TypeError, ValueError):
             self.length_unit_metres = 1.0
         self.length_unit_name = str(config.get("length_unit_name", "") or "")
+        self.derived_from = DerivedOffset.from_dict(config.get("derived_from"))
 
         self.segments = []
         for i, sj in enumerate(config.get("segments", [])):
@@ -366,6 +397,8 @@ class ProjectModel:
             config["global_spline"] = True
         if self.transform:
             config["transform"] = copy.deepcopy(self.transform)
+        if self.derived_from is not None:
+            config["derived_from"] = self.derived_from.to_dict()
         # Transient, run-specific keys (e.g. preview_markers) that should not be
         # persisted to user-saved configs.
         if extra:

@@ -148,6 +148,15 @@ class MainWindowMenuMixin:
         add(cad_menu, self.tr("Extrude to STL..."), controller.extrude_active_to_stl,
             mode=self._MODE_CAD)
         cad_menu.addSeparator()
+        add(cad_menu, self.tr("Offset Geometry..."),
+            controller.offset_active_geometry, mode=self._MODE_CAD,
+            tip=self.tr("Derive a new geometry a physical distance from this one, "
+                        "segmented exactly as its source"))
+        add(cad_menu, self.tr("Regenerate Offset"),
+            controller.regenerate_offset_geometry, mode=self._MODE_CAD,
+            tip=self.tr("Re-derive this offset geometry from the source it "
+                        "records, after editing that source"))
+        cad_menu.addSeparator()
         add(cad_menu, self.tr("Join Edges into Polygon"), controller.join_selected_edges_to_polygon,
             mode=self._MODE_CAD,
             tip=self.tr("Merge selected end-to-end curve edges into one closed polygon "

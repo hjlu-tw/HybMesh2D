@@ -571,6 +571,89 @@ and an inject-build-restore-build cycle finishes inside one second, so the mutat
 header was never compiled and a real bite looked exactly like a check that does not
 bite. The same shape as this repo's `__pycache__` restore trap, in another language.
 
+**A CURVE OFFSET FROM ONE THE USER ALREADY DREW** (#152, parent #150;
+`app/services/geometry_offset.py`, `app/models/derived_geometry.py`,
+`app/views/offset_dialog.py`, `app/commands/derived_cmds.py`,
+`app/controllers/offset_geom_ctrl.py`). A ring of cells between a body and its far field
+needs a curve partway between them for the ring's outer edge to attach to. For a circle a
+user could draw a second circle; for an aerofoil — the case the mesher is meant to be good
+at — nobody is going to hand-draw a curve offset from the section, so the seam and the
+curve it follows had to land together or neither would be usable.
+
+**WHY IT IS A DERIVED GEOMETRY IN THE CAD STAGE AND NOT SOMETHING A TEMPLATE WRITES.** The
+rule that a topology template writes no geometry survives intact; the precedent is the
+optionally-drawn far field, where the template binds to an outline the user has rather than
+generating one. That is the decision that keeps binding, repair, resampling, staging and
+stable segment ids untouched. It is stored as an ordinary discrete geometry — one point
+array with the same segment index ranges as its source — so it needs no new curve type in
+the GUI and, the half that matters more, none in the resampler: the GUI/C++ shape-parity
+surface does not grow a third entry beyond `circle`, `polygon` and `naca4`.
+
+**SEGMENT-FOR-SEGMENT IDENTITY IS BY CONSTRUCTION.** The offset array has the source's
+length, the source's point order, the source's `split_indices` and a deep copy of its file
+segments. Anything that pairs two outlines segment-for-segment is therefore satisfied
+without the user re-segmenting anything, and a stable segment id on the offset means the
+same thing as the id it mirrors. Re-segmenting the result instead would be a second answer
+to a question the source has already answered, and two answers drift — the failure class
+`services/topology_binding.py` exists about, one layer down.
+
+**THE VERTEX DIRECTION IS THE MITER, AND THE CIRCLE TEST STATES BOTH NUMBERS.** At a vertex
+whose two adjacent edge normals are `na` and `nb`, the point lying on BOTH offset lines is
+`p + d*(na + nb)/(1 + na·nb)`; its direction is the angle bisector and its length is
+`1/cos(half the turn)`. So a polygon inscribed in a circle of radius `r` comes back
+inscribed in `r + d/cos(pi/n)` — measured at n = 720, `1.1000009519369884` for r = 1,
+d = 0.1, which is `r + d` to 9.5e-7 and exact to 2.2e-16 against the miter radius. The
+gate asserts BOTH, because a check that only asserted "r + d to a tolerance" would pass on
+a law wrong by less than that tolerance. The alternative — moving each vertex `d` along the
+UNIT bisector — would give `r + d` exactly and is WRONG: it puts every offset EDGE nearer
+than `d` to its source edge, and a physical distance from a wall is a statement about the
+edges, not about the vertices.
+
+**A FOLD IS REFUSED, NOT TRIMMED, AND THE REASON IS THIS OBJECT'S OWN PROPERTY.** A trimmed
+offset is a different curve from the one asked for, and — the part specific to here — a
+trimmed curve has FEWER POINTS than its source, which breaks the one property the object
+exists for. "Try something smaller" is not advice; a number is. Two things count as
+folding and they are found differently. A LOCAL fold (an offset edge reversing relative to
+its source edge — the concave-radius overrun) has an ANALYTIC bound: the offset edge vector
+is `L*u + d*(mb - ma)`, so it reverses at `d = L / -((mb - ma)·u)` and the smallest such
+`d` over the edges is the limit, O(N) and no search. A GLOBAL crossing (two non-adjacent
+offset edges crossing while every edge kept its direction — a horseshoe whose mouth closes
+up) is found by an all-pairs proper-segment-intersection sweep and its bound is BISECTED,
+24 halvings keeping the known-good end of the bracket so the number reported is always
+feasible. Measured on the shipped gate's horseshoe (outer r = 1, inner r = 0.6, mouth at
+±20°): the local bound is 0.5998 and the real limit is 0.1611, so a gate that only knew the
+local bound would have produced a self-crossing curve and called it fine.
+
+**Named blind spot: the crossing sweep is skipped above `CROSSING_MAX_POINTS` (4000).** It
+is O(N²), and a refusal path that takes a minute is its own defect; a CAD outline this repo
+resamples is two or three orders of magnitude below the cap. The gate pins the constant so
+the exemption cannot be widened silently, and nothing drives a geometry that big.
+
+**THE RECORD IS DATA, AND REGENERATION IS AN ACTION.** Not a snapshot with no record (a
+source edit would leave the ring silently wrong, which is the stage-to-stage staleness class
+this repo already gates in four other places) and not a live recomputation (that would add
+an implicit write to every geometry edit path, and would have to be reconciled with global
+undo and with the outline re-fit before it could be trusted). `DerivedOffset` carries the
+source's DISPLAY NAME — the only identity a drawn, never-saved geometry has, and the thing a
+refusal must print to be actionable — its path when it has one, and the signed distance.
+
+**AND CARRYING IT THROUGH THE PROJECT ROUND TRIP COLLAPSED A DUPLICATED SERIALISER.** The
+`.hws` workspace's `project_config` section and the pipeline script's `cads` entry held the
+identical seven keys, each written out by hand in its own module, so a field added to the
+model reached one file or the other depending on who remembered. Both now go through
+`ProjectModel.to_state_dict()`. The READ sides stay separate and that is deliberate: the
+workspace preserves segment ids where `load_from_config` renumbers them. The collapse also
+paid for itself against the file-length standard — `models/pipeline_config.py` 524 -> 520
+and `controllers/session_io_ctrl.py` 508 -> 503, both pins LOWERED rather than raised,
+which is the only direction a pin may move.
+
+**A REGENERATION WHOSE SOURCE IS GONE IS REFUSED BY NAME.** The source is looked for among
+the OPEN sessions, by display name and then by path, because the thing being offset is the
+geometry as it is NOW — a source edited but not yet exported lives only in its session. It
+is never resolved to whatever is nearest; the gate leaves a DECOY tab whose points would be
+visible in the result if it had been, which is how a fallback like that would otherwise pass
+every check that only looked at the refusal.
+
 **And the per-tool drawing tables left the canvas for `services/canvas_tools.py`.** How
 many points a tool collects (`DRAW_NPTS`) and what it asks for next (`DRAW_HINTS` /
 `draw_hint`) were a class constant and a nine-branch if-chain inside
@@ -1421,7 +1504,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (5 of 281, worst 524) is DERIVED
+The status figure the instruction files print about this standard (5 of 286, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —

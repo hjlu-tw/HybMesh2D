@@ -4,6 +4,9 @@ paths:
   - tools/PreProcessor/gui/app/services/edge_edit*
   - tools/PreProcessor/gui/app/services/shape_refit*
   - tools/PreProcessor/gui/app/services/naca_airfoil*
+  - tools/PreProcessor/gui/app/services/geometry_offset*
+  - tools/PreProcessor/gui/app/models/derived_geometry*
+  - tools/PreProcessor/gui/app/views/offset_dialog*
   - tools/PreProcessor/gui/app/services/canvas_tools*
   - tools/PreProcessor/gui/app/models/shape_spec*
   - tools/PreProcessor/gui/app/commands/**
@@ -34,7 +37,9 @@ where `_edit_in_progress()` still is — plus the four controllers that open, co
 (`add_airfoil_parts`), `views/panels/edge_props_shape_build_mixin.py` and
 `views/panels/edge_props_panel.py` (the shape stack's host and the combo row, whose OWN
 rules are `.claude/rules/gui-panels-config.md`'s), `views/shape_dialog.py`,
-`controllers/signal_wiring_ctrl.py` (the shape-tool menu). **The two RESAMPLER files are
+`controllers/signal_wiring_ctrl.py` (the shape-tool menu). For the offset block (#152):
+`controllers/offset_geom_ctrl.py`, which is the whole CAD-stage half of it and sits under no
+glob here. **The two RESAMPLER files are
 reached by this file's own last two globs, deliberately rather than by inheritance**: the
 first draft of this paragraph ASSERTED that `.claude/rules/mesher.md`'s `src/**` and
 `include/**` match a path nested under `tools/PreProcessor/`, and one observation of that
@@ -184,6 +189,57 @@ Gated by `tests/test_naca_airfoil_parity.py` (64 checks, 17 recorded injections)
 Blind spots: in those two gates' docstrings and in `docs/design_notes/gui.md` — this
 file has no `## Named blind spots` section, which is where its header sends every other
 rule in it.
+
+**AN OFFSET GEOMETRY IS DERIVED, AND ITS LAW HAS EXACTLY ONE OWNER**
+(`services/geometry_offset.py`, Qt-free + numpy; `models/derived_geometry.py`;
+`views/offset_dialog.py`; `commands/derived_cmds.py`; `controllers/offset_geom_ctrl.py`;
+#152, parent #150). What comes back is an ORDINARY discrete geometry — no new
+`curve_type` in the GUI and none in the resampler, so the shape-parity surface does not
+grow.
+- **`offset_points(points, distance, closed)` is the only place the law lives.** The
+  canvas preview and the thing that writes the geometry call it, so they cannot produce
+  different curves. Nothing may re-derive a normal, a bisector or a fold bound elsewhere.
+- **The result has the SOURCE'S LENGTH and the source's point order**, which is what makes
+  the source's split indices index it and mean the same thing. The derived session takes
+  the source's `split_indices` and a DEEP COPY of its file segments, so segment ids,
+  boundaries and per-segment facts (`bc`, `grow_bl`) are the source's by construction —
+  never re-segmented, which would be a second answer to a question the source has already
+  answered.
+- **The vertex direction is the MITER, which is the bisector**: `(na + nb) / (1 + na·nb)`,
+  so a polygon inscribed in `r` comes back inscribed in `r + d/cos(pi/n)`. Moving each
+  vertex `d` along the UNIT bisector would give `r + d` exactly and put every offset EDGE
+  nearer than `d` to its source edge, which is not what a distance from a wall means.
+- **The closure flag is the CALLER'S** (`ProjectModel.is_closed`, already resolved): a
+  closed outline wraps and both ends get a bisector, an open one takes the end edge's own
+  normal. Never re-derived inside the service.
+- **The side is a signed distance, and "outward" comes from the stored WINDING** for a
+  closed outline — the shoelace area is measured and the normals flipped — so a body
+  imported either way round answers to the same sign. An open polyline has no inside, so
+  positive is the RIGHT of travel, stated rather than inferred.
+- **A fold is REFUSED, never trimmed, and the refusal carries a number that works.** A
+  trimmed offset has fewer points than its source, which breaks the one property this
+  object exists for. `OffsetRefused.max_distance` is SIGNED and feasible, so feeding it
+  straight back in succeeds; the local (edge-reversal) bound is analytic, the global
+  (crossing) bound is bisected, and the bisection keeps the known-good end of its bracket.
+- **Only the DISCRETE geometry is offset.** A source with no points is refused by name and
+  pointed at Convert to Discrete, rather than silently offsetting nothing.
+- **The record is DATA and regeneration is an ACTION.** `ProjectModel.derived_from` is
+  carried by `to_state_dict()` — the ONE serialiser both the `.hws` `project_config` and
+  the pipeline script's `cads` entry now use, so a field added to the model cannot reach
+  one project file and not the other. Never a live recomputation on a source edit, which
+  would put an implicit write into every geometry edit path and would have to be reconciled
+  with global undo and the outline re-fit first.
+- **Regeneration resolves its source among the OPEN sessions, by display name then by
+  path**, because the thing being offset is the geometry as it is now. A record whose
+  source is not open is refused NAMING it — never skipped, and never resolved to whatever
+  is nearest. It re-mirrors the source's segmentation as well as its points, in ONE undo
+  step (`RegenerateOffsetCmd`).
+Gated by `tests/test_geometry_offset.py` (26 checks, 9 recorded injections) and
+`tests/test_offset_geometry_gui.py` (39 checks, 12 recorded injections, through the real
+`AppController`). Three of those 21 were INERT or CRASHED on their first run and the
+gates were changed to reach them — a recorded injection that was never re-run is a claim,
+not a measurement. Blind spots: in those two gates' docstrings and in
+`docs/design_notes/gui.md`.
 
 **The per-tool shape-drawing tables are `services/canvas_tools.py`'s, not the canvas
 mixin's** (`DRAW_NPTS`, `DRAW_HINTS`, `draw_hint`). How many points a tool collects and
