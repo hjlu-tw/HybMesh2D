@@ -4767,6 +4767,31 @@ int main() {
 
     // ── 58. AN INTERIOR LINE THAT FOLLOWS A CURVE (#151) ───────────────────
     //
+    // ELEVEN HAND INJECTIONS, run 2026-09-29 against this group AND against
+    // `tests/test_multiblock_follows_surface.py`, with BOTH gates' EXIT CODES read
+    // rather than only their FAIL-line counts — a mutation that crashes a gate
+    // scores as silence otherwise. A C++ test cannot mutate the implementation it
+    // linked against, so these are HAND runs and that distinction must not be
+    // blurred. Each deletes exactly one thing and rebuilds:
+    //   I1  the follows-on-wall check            -> C++ 3 FAIL, surface 1
+    //   I2  the binding-on-interior check        -> C++ 7 FAIL, surface 2
+    //   I3  the both-keys refusal                -> C++ 3 FAIL, surface 1
+    //   I4  `follows` no longer feeds the path   -> C++ 7 FAIL, surface 6
+    //   I5  the BC half resolved for a follows   -> C++ 1 FAIL, surface 0
+    //   I5b ...and carried into `edgeBc`         -> C++ 1 FAIL, surface 0
+    //   I6  the path source unpublished          -> C++ 2 FAIL, surface 5
+    //   I7  the smoother's freeze removed        -> C++ 1 FAIL, surface 4
+    //   I8  the sample-rate advice gated on the key -> C++ 1 FAIL, surface 1
+    //   I9  the corner-on-segment check skipped  -> C++ 12 FAIL, surface 3
+    //   I10 unknown keys accepted inside follows -> C++ 3 FAIL, surface 0
+    // I5 CAME BACK INERT ON ITS FIRST SHAPE and is why the unlabelled-segment pair
+    // below exists: setting `Attached::carriesBc` alone changes nothing a caller
+    // can see, because the condition only ever reaches the export through
+    // `addBoundary`, which the KIND already gates. The pair reaches the other side
+    // of that branch instead — the warning a bound edge gets over an unlabelled
+    // segment, which a following edge must not. I10's surface run is 0 by design:
+    // object-shape strictness is this gate's, not the surface gate's.
+    //
     // `follows` is `binding` with the boundary-condition half removed: the same
     // object, accepted on an interior line and refused on a wall, feeding the SAME
     // path resolution and reaching none of the four behaviours the KIND decides.
@@ -4969,6 +4994,31 @@ int main() {
         CHECK(plainSaid == 0,
               "58. ...and not on the chord version, which has no polyline to be "
               "measured against (" + std::to_string(plainSaid) + ")");
+
+        // AND THE HALF THAT MAKES THAT FALSIFIABLE. The two checks above cannot
+        // see a following edge that DID take its segment's condition, because the
+        // condition only ever reaches the export through `addBoundary`, which the
+        // kind already gates — an injection setting `carriesBc` on a following
+        // edge came back INERT on both of them. What CAN see it is the warning on
+        // the other side of that branch: a BOUND edge whose segment carries no
+        // label is told it fell back to the config default, and a following edge
+        // must not be, because it asked for no condition at all.
+        const std::vector<hybmesh::MbGeometry> bare{arcGeom(10, 0.2, "arc.dat", "")};
+        MbResult fbare = hybmesh::buildMultiBlock(arcStack(follow), bare, MbParams{});
+        MbResult bbare = hybmesh::buildMultiBlock(arcWall(), bare, MbParams{});
+        size_t fSaid = 0, bSaid = 0;
+        for (const auto& w : fbare.warnings)
+            if (mentions(w, "carries no boundary condition label")) ++fSaid;
+        for (const auto& w : bbare.warnings)
+            if (mentions(w, "carries no boundary condition label")) ++bSaid;
+        CHECK(fbare.ok && fSaid == 0,
+              "58. a FOLLOWING edge over an unlabelled segment is told nothing about "
+              "boundary conditions — it asked for none (" + std::to_string(fSaid)
+              + ", err: " + fbare.error + ")");
+        CHECK(bbare.ok && bSaid == 1,
+              "58. ...while a BOUND wall over the SAME unlabelled segment still is, so "
+              "the silence above is the key and not a missing warning ("
+              + std::to_string(bSaid) + ", err: " + bbare.error + ")");
 
         // ── THE SMOOTHER LEAVES A DECLARED CURVE WHERE IT WAS ──────────────
         //

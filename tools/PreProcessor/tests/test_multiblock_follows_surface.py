@@ -53,6 +53,17 @@ What this pins down:
      once naming both, and a following edge whose corner is not on the segment.
      All exit 8 with the machine-readable line, and all export NOTHING.
 
+EVERY NEW REFUSAL IS EXERCISED BY INJECTION, run 2026-09-29 against this gate and
+``tests/cpp/test_multiblock.cpp`` 58 together, with BOTH EXIT CODES read and not
+only the FAIL-line counts -- a mutation that crashes a gate scores as silence
+otherwise. The eleven are enumerated with their counts in check 58's own comment,
+which is where they belong: a C++ test cannot mutate the implementation it linked
+against, so they are HAND runs of the whole tree. What this file adds to that
+record is which of them it SEES -- I4 (the path), I6 (the report), I7 (the
+smoother) and I9 (the corner check) redden it hardest, at 6, 5, 4 and 3 checks;
+I5/I5b and I10 redden it NOT AT ALL, the BC half and the object-shape strictness
+being questions only the pure gate can ask.
+
 BLIND SPOTS, named:
 
   * Nothing here drives the SOLVER. This fixture is a synthetic two-block box with
