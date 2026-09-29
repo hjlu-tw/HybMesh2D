@@ -193,19 +193,43 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               model="cgrid_body_segs", group=GROUP, modes=_MB,
               opts=dict(placeholder="(both of the section's surfaces)",
                         readonly=True)),
+    FieldSpec("topo_cgrid_far_geom", "path", "Far-Field Geometry",
+              "OPTIONAL, and blank is the default. Blank GENERATES the far field "
+              "from the two lengths below as six straight sides, which carry the "
+              "run's BC_GEOM because a generated corner belongs to no geometry. "
+              "Naming a geometry binds those six sides to it instead — so the two "
+              "outlet halves can carry an 'outlet' of their own and the D a "
+              "'farfield', read off its own segments. It must be a closed outline "
+              "cut into exactly SIX segments, one per block side, running "
+              "counter-clockwise from the outlet point level with the wake: the "
+              "upper outlet half, the upper far field, the two nose sides, the "
+              "lower far field, the lower outlet half. Anything else is refused by "
+              "name. The two lengths below are INERT once this is set.",
+              model="cgrid_far_geom", group=GROUP, modes=_MB,
+              opts=dict(caption="Select far-field geometry",
+                        filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_cgrid_far_segs", "text", "Bound Far Segments",
+              "The far field's bound segment ids. Same rule as the aerofoil's: "
+              "READ-ONLY, captured when you name the geometry above, and stored as "
+              "the CAD segment's STABLE IDs.",
+              model="cgrid_far_segs", group=GROUP, modes=_MB,
+              opts=dict(placeholder="(the far field is generated)", readonly=True)),
     FieldSpec("topo_cgrid_wake_length", "sci", "Wake Length",
               "How far downstream of the trailing edge the outlet plane sits. The "
               "wake cut runs the whole of it, and it is the length the two wake "
               "blocks are as long as. A PHYSICAL length: the node count it implies "
-              "is derived and shown below.",
+              "is derived and shown below. INERT once a Far-Field Geometry is "
+              "named — the wake then spans as far as you drew it, and the read-out "
+              "says so.",
               model="cgrid_wake_length", group=GROUP, modes=_MB,
               opts=dict(lo=1e-12, hi=1e9)),
     FieldSpec("topo_cgrid_far_radius", "sci", "Far-Field Radius",
               "How far out the far field reaches, measured ahead of the leading "
-              "edge and above and below the trailing edge. The far field is "
-              "GENERATED from this and the wake length rather than drawn, so its "
-              "six sides are straight and carry the run's BC_GEOM; the section's "
-              "own two carry the conditions on its CAD segments.",
+              "edge and above and below the trailing edge. With Far-Field Geometry "
+              "blank the far field is GENERATED from this and the wake length, so "
+              "its six sides are straight and carry the run's BC_GEOM; the "
+              "section's own two carry the conditions on its CAD segments. INERT "
+              "once a far field is named.",
               model="cgrid_far_radius", group=GROUP, modes=_MB,
               opts=dict(lo=1e-12, hi=1e9)),
     FieldSpec("topo_cgrid_cell", "sci", "Target Cell Edge",
@@ -262,7 +286,8 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
 #: segment row to be READ-ONLY.
 BINDING_ROWS = (("topo_ogrid_body_geom", "topo_ogrid_body_segs"),
                 ("topo_ogrid_far_geom", "topo_ogrid_far_segs"),
-                ("topo_cgrid_body_geom", "topo_cgrid_body_segs"))
+                ("topo_cgrid_body_geom", "topo_cgrid_body_segs"),
+                ("topo_cgrid_far_geom", "topo_cgrid_far_segs"))
 
 #: Rows that author the model's STATE rather than a family's parameter: which family
 #: is selected, and whether it still generates the document (#139). Declared rather

@@ -192,3 +192,107 @@ def write_airfoil(stem, seg_ids, bcs, n=195, designation="0012", chord=1.0,
             f.write(f"{s} {1 if s != prev else 0}\n")
             prev = s
     return stem + ".dat"
+
+
+def write_cgrid_farfield(stem, seg_ids, bcs, te_xy=(1.0, 0.0), x_le=0.0,
+                         wake_len=19.0, radius=10.0, arc=40, cw=False, rotate=0):
+    """A DRAWN C-grid far field: the shipped ``cgrid_farfield.dat``'s own shape (#149).
+
+    Six corners at exactly where ``topology_cgrid_section.far_corners`` generates
+    them, so the drawn path and the generated path can be compared on the same
+    geometry rather than on two shapes that merely look alike — and the sides
+    between them are the shipped document's: straight from the outlet to the
+    trailing-edge station, then a SEMICIRCULAR nose, which is the half where a
+    generated hexagon and a drawn D differ.
+
+    ``seg_ids`` decides how many segments the outline is cut into as well as what
+    they are called. SIX is the shape a C-grid binds, one per block side, and every
+    other count is the refusal the family owes the user: for those the whole closed
+    polyline is split into equal contiguous chunks instead, which is what a far
+    field segmented by hand rather than for this template looks like.
+
+    ``cw`` reverses the winding and ``rotate`` starts the outline at a later joint —
+    the two things a binding cannot see (every id still resolves, every side still
+    lies on its own segment) and the mesher would answer with a folded grid rather
+    than a refusal.
+    """
+    x_te, y0 = te_xy
+    x_out = x_te + wake_len
+    corners = [(x_out, y0), (x_out, y0 + radius), (x_te, y0 + radius),
+               (x_le - radius, y0), (x_te, y0 - radius), (x_out, y0 - radius)]
+
+    def line(a, b, n):
+        return [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n)
+                for k in range(n)]
+
+    def nose(a0, a1, n):
+        """Quarter arc of the nose semicircle, centred at the leading-edge station."""
+        return [(x_le + radius * math.cos(a0 + (a1 - a0) * k / n),
+                 y0 + radius * math.sin(a0 + (a1 - a0) * k / n))
+                for k in range(n)]
+
+    runs = [
+        line(corners[0], corners[1], 20),
+        line(corners[1], corners[2], 40),
+        line(corners[2], (x_le, y0 + radius), 5) + nose(math.pi / 2, math.pi, arc),
+        nose(math.pi, 3 * math.pi / 2, arc) + line((x_le, y0 - radius),
+                                                   corners[4], 5),
+        line(corners[4], corners[5], 40),
+        line(corners[5], corners[0], 20),
+    ]
+    if cw:
+        # The same loop walked the other way from the same first point, so every
+        # joint is still a joint and only the ORDER reverses: wk, fl, f3, f2, f1, fu.
+        flat = [p for run in runs for p in run]
+        runs = _regroup([flat[0]] + flat[:0:-1],
+                        [len(r) for r in reversed(runs)])
+    if rotate:
+        # The same loop STARTED at a later joint. Every id still resolves and every
+        # side still lies on its own segment; what moves is which joint is `wk`.
+        flat = [p for run in runs for p in run]
+        cut = sum(len(r) for r in runs[:rotate % len(runs)])
+        runs = _regroup(flat[cut:] + flat[:cut],
+                        [len(r) for r in _shift(runs, rotate)])
+    if len(seg_ids) != len(runs):
+        runs = _equal_chunks([p for run in runs for p in run], len(seg_ids))
+
+    pts, ids = [], []
+    for sid, run in zip(seg_ids, runs):
+        pts += run
+        ids += [sid] * len(run)
+    pts.append(pts[0])
+    ids.append(seg_ids[0])
+    with open(stem + ".dat", "w", encoding="utf-8") as f:
+        for x, y in pts:
+            f.write(f"{x:.12f} {y:.12f}\n")
+    with open(stem + ".dat.meta", "w", encoding="utf-8") as f:
+        f.write("HYBMESH_META 2\n")
+        f.write(f"COUNT {len(pts)}\n")
+        f.write("NPIECES 0\n")
+        f.write(f"NSEGMENTS {len(seg_ids)}\n")
+        for sid, bc in zip(seg_ids, bcs):
+            f.write(f"{sid} {bc} line\n")
+        f.write(f"POINTS {len(pts)}\n")
+        prev = object()
+        for s in ids:
+            f.write(f"{s} {1 if s != prev else 0}\n")
+            prev = s
+    return stem + ".dat"
+
+
+def _shift(runs, k):
+    return runs[k % len(runs):] + runs[:k % len(runs)]
+
+
+def _regroup(flat, sizes):
+    out, at = [], 0
+    for n in sizes:
+        out.append(flat[at:at + n])
+        at += n
+    return out
+
+
+def _equal_chunks(flat, n):
+    step = len(flat) / float(n)
+    return [flat[int(round(k * step)):int(round((k + 1) * step))]
+            for k in range(n)]

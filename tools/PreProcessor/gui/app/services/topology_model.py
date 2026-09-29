@@ -88,18 +88,26 @@ class TopologyModel:
     # 2 cannot be one the user means.
     ogrid_radial_count: int = 0
 
-    # ── C-grid (#148) ────────────────────────────────────────────────────────
-    # ONE bound geometry, the aerofoil, stored as stable segment ids by the rule
-    # the O-grid's rows above state. The far field is NOT drawn here: it is
-    # GENERATED from the two lengths below as six free corners, which is what
-    # #148's own demo asks for and what makes those six sides carry the run's
-    # BC_GEOM rather than conditions of their own.
+    # ── C-grid (#148, #149) ──────────────────────────────────────────────────
+    # ONE bound geometry is REQUIRED, the aerofoil, stored as stable segment ids
+    # by the rule the O-grid's rows above state.
     cgrid_body_geom: str = ""
     cgrid_body_segs: str = ""
-    # The two physical lengths the far field is placed from: how far downstream
-    # the outlet plane is from the trailing edge, and how far out the D reaches.
-    # The defaults are the shipped hand-written C-grid's own figures for a unit
-    # chord, so "accept the defaults and generate" reproduces its corners exactly.
+    # The far field is OPTIONALLY DRAWN (#149), the way the O-grid's always is.
+    # BLANK IS THE DEFAULT AND IS NOT A DEGRADED STATE: the far field is then
+    # GENERATED from the two lengths below as six free corners, which is what
+    # #148's own demo asks for and what makes those six sides carry the run's
+    # BC_GEOM rather than conditions of their own. Naming a geometry cut into six
+    # segments binds the six sides to it instead, at which point the outlet
+    # halves can carry an `outlet` of their own and the two lengths below decide
+    # nothing — which the read-out says rather than leaving them to look live.
+    cgrid_far_geom: str = ""
+    cgrid_far_segs: str = ""
+    # The two physical lengths the GENERATED far field is placed from: how far
+    # downstream the outlet plane is from the trailing edge, and how far out the D
+    # reaches. The defaults are the shipped hand-written C-grid's own figures for a
+    # unit chord, so "accept the defaults and generate" reproduces its corners
+    # exactly.
     cgrid_wake_length: float = 19.0
     cgrid_far_radius: float = 10.0
     cgrid_cell: float = 0.02

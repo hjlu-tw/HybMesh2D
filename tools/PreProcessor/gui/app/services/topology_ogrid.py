@@ -52,7 +52,7 @@ from dataclasses import dataclass
 from app.services.topology_binding import BindingError
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid_binding import (
-    BINDING_LISTS, cover_problem, order_problem, parse_binding,
+    BINDING_LISTS, cover_problem, edges_by_prefix, order_problem, parse_binding,
 )
 
 #: The template's own name for the family, as stored in the project file.
@@ -261,9 +261,10 @@ def plan(model, ctx) -> Plan:
     # Both ANSWER with the edge, rather than this loop recovering it from the
     # sentence they wrote — the shape `BindingError` above already uses.
     for who, g, segs, prefix in lists:
-        edge, why = order_problem(who, g, segs, splits, prefix)
+        namer = edges_by_prefix(prefix)
+        edge, why = order_problem(who, g, segs, splits, namer)
         if not why:
-            edge, why = cover_problem(who, g, segs, splits, prefix)
+            edge, why = cover_problem(who, g, segs, splits, namer)
         if why:
             p.problem = why
             p.broken_edge = edge

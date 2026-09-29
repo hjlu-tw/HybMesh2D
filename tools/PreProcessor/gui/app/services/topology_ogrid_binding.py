@@ -74,6 +74,20 @@ def format_binding(ids) -> str:
     return ", ".join(str(int(v)) for v in ids)
 
 
+def edges_by_prefix(prefix: str):
+    """``ring position -> edge id`` for a family that numbers its ring edges.
+
+    The O-grid's own naming rule, as a CALLABLE, so the two checks below can name
+    the edge they are about without knowing how a family spells one. #149 needed
+    that: the C-grid's far-field ring has six edges with six NAMES
+    (``e_out_up``, ``e_ff_up``, ...) rather than a prefix and an index, and the
+    alternative was a second copy of `order_problem` and `cover_problem` differing
+    only in an f-string — two copies of the mesher's own rule, which is the shape
+    `topology_counts` was taken out of these two families to stop.
+    """
+    return lambda i: f"{prefix}{i}"
+
+
 def repair_binding(order, pos: int, seg: int) -> str:
     """The binding that puts segment ``seg`` at ring position ``pos`` (#138).
 
@@ -104,7 +118,7 @@ def repair_binding(order, pos: int, seg: int) -> str:
     return format_binding(order[k:] + order[:k])
 
 
-def cover_problem(who: str, g, segs, splits: int, prefix: str) -> tuple:
+def cover_problem(who: str, g, segs, splits: int, edge_at) -> tuple:
     """``(edge, problem)`` when a binding does not COVER the outline it wraps.
 
     THE MESHER'S OWN RULE, MOVED FORWARD TO WHERE THE USER CAN ACT ON IT. A bound
@@ -133,7 +147,7 @@ def cover_problem(who: str, g, segs, splits: int, prefix: str) -> tuple:
         if pos[(k + 1) % n] == (pos[k] + 1) % m:
             continue
         missing = g.seg_ids[(pos[k] + 1) % m]
-        edge = f"{prefix}{k * splits + splits - 1}"
+        edge = edge_at(k * splits + splits - 1)
         return edge, (f"the {who} binding runs segment {segs[(k + 1) % n]} straight after "
                 f"segment {segs[k]}, but '{g.spelling}' has segment {missing} "
                 f"between them — so edge '{edge}' would have to span two source "
@@ -187,14 +201,15 @@ def broken_bindings(model, ctx) -> tuple:
             if s in g.spans:
                 continue
             base = pos * splits
+            edge_at = edges_by_prefix(prefix)
             out.append(BrokenBinding(
                 field=field, who=who, geom=g.spelling, seg=s, pos=pos,
-                edges=tuple(f"{prefix}{base + j}" for j in range(splits)),
+                edges=tuple(edge_at(base + j) for j in range(splits)),
                 choices=tuple(g.seg_ids)))
     return tuple(out)
 
 
-def order_problem(who: str, g, segs, splits: int, prefix: str) -> tuple:
+def order_problem(who: str, g, segs, splits: int, edge_at) -> tuple:
     """``(edge, problem)`` when a binding list does not WALK the geometry's own order.
 
     THE EDGE IS RETURNED, NOT RECOVERED FROM THE SENTENCE. `plan` used to do
@@ -233,7 +248,7 @@ def order_problem(who: str, g, segs, splits: int, prefix: str) -> tuple:
         return "", ""
     k = descents[0]
     a, b = segs[k], segs[(k + 1) % n]
-    edge = f"{prefix}{((k + 1) * splits) % (n * splits)}"
+    edge = edge_at(((k + 1) * splits) % (n * splits))
     return edge, (f"the {who} binding walks segment {b} after segment {a}, but "
             f"'{g.spelling}' runs them the other way round — edge '{edge}' would "
             f"cross the ring. A binding must follow the geometry's own order; a "

@@ -3145,10 +3145,9 @@ that #138's review had to find the hard way for the repair flags.
 
 ##### Named blind spots
 
-* **The far field's six sides carry one boundary name, and nothing here can make that better.** It
-  is a consequence of generating rather than drawing, measured in check 14d as "one name where the
-  shipped document has two". A user who needs an outlet distinct from the far field has no route
-  through this template at all — not a degraded one, none.
+* **The far field's six sides carry one boundary name.** CLOSED for the user by #149 above, and
+  kept for the GENERATED path because that is what generating means. Measured in check 14b2 as
+  "one patch name where the shipped document has two".
 * **Check 14c's bound is a FACTOR against the shipped case's own number**, so it moves if the
   shipped case changes. It bounds the cost of the hexagon; it is not a quality target, and 48.6
   degrees is not asserted to be good.
@@ -3162,6 +3161,114 @@ that #138's review had to find the hard way for the repair flags.
   contains a NACA 0012 and is refused by nothing here, while being a far field in name only. The
   check exists to stop blocks folding, and it is stated as that rather than as a sanity bound.
 
+
+#### THE C-GRID'S FAR FIELD IS OPTIONALLY DRAWN (#149, parent #146)
+
+The blind spot #148 left, closed on the same page it was written: *"A user who needs an outlet
+distinct from the far field has no route through this template at all — not a degraded one,
+none."* Both axes of #148's review reported it independently, and the Spec axis called that
+ticket's criterion 3 *"partial as written"* because six of the eight `kind:"wall"` edges bound to
+nothing. **What it cost was never a mesh — the generated hexagon meshes, and at the section it IS
+the shipped grid (14c2, 1.014x) — it was the `.bnd`**: `farfield`, `wall` against the shipped
+hand-written document's `farfield`, `outlet`, `wall`. That is the difference between a grid you can
+look at and a grid you can solve on.
+
+**BLANK STAYS THE DEFAULT, AND IS NOT A DEGRADED STATE.** #148's own demo is "pick the family,
+accept the defaults, generate", and making the bound path the default would break it, so
+`cgrid_far_geom` is empty on a fresh model and the generated far field is not deprecated. What the
+read-out has to do is tell the user WHICH of the two they are on before the solver does, which is
+its last line either way — `GENERATED … so its six sides carry the run's BC_GEOM`, or `BOUND to
+'<file>' over its 6 segments … the wake length and far-field radius above are INERT on this path`.
+
+**The ticket's claim was that this adds no mechanism, and it held more cleanly than #148's did.**
+The stable-id binding, the capture keyed by which file, the refusal naming the edge, the repair
+dropdown and the projection funnel all took the second far field with no edit at all — the panel
+gained one entry in `BINDING_ROWS` and nothing else, which `test_topology_panel.py` check 13g is
+the proof of (injection V: remove the pair, and the PANEL gate goes red while the family gate stays
+green, which is the right split — the capture is the panel's and the family never reads a widget).
+One shared function did change shape: `order_problem` and `cover_problem` now take an edge-naming
+CALLABLE instead of a prefix string, because the C-grid's far-field ring has six edges with six
+NAMES rather than a prefix and an index. The alternative was a second copy of the mesher's cover
+rule differing only in an f-string, which is exactly the shape `topology_counts.py` was extracted
+from these two families to stop one ticket earlier.
+
+**WHAT IS THIS FAMILY'S OWN IS THE PAIR OF MEASUREMENTS NOTHING ELSE COULD MAKE.** A valid O-grid
+binding is a rotation of the geometry's segment list and the ring has no first segment (#138); this
+ring DOES have one, because corner `wk` is the outlet point level with the wake and the wake cut
+ends on it. So two things that are invisible to every binding check are binding information here:
+
+* **which way the outline WINDS** — a far field drawn clockwise resolves every id, lies every side
+  on its own segment, and passes both `order_problem` and `cover_problem`; and
+* **which joint it STARTS at** — a far field drawn starting one joint along does the same.
+
+Under either, the mesher does not refuse: it FOLDS the four blocks and reports inverted cells,
+which is this package's own worst outcome reached by a new route. Both are therefore measured — the
+signed area of the six bound corners, and the position of the furthest-UPSTREAM joint, which is
+`f2` by construction and must sit at `FAR_NOSE_POS`. A TIE for furthest-upstream is refused rather
+than resolved, by the same rule that refuses a section whose two joints are the same distance
+downstream. Each is the ONLY check its own injection reddens (L and M), which is the evidence that
+nothing else was ever going to see them.
+
+**The nose-position rule is not a theorem and is stated as a rule.** It is true of every C-grid far
+field this repo has — the shipped `cgrid_farfield.dat` included, which is what the gate binds — and
+a far field whose leftmost corner is not its nose is refused by name rather than meshed wrongly.
+That is the safe direction and it is a refusal the user cannot argue with; it is in the blind-spot
+list below rather than defended.
+
+**The two lengths go inert, and saying so is the requirement rather than a courtesy.** A control
+that silently decides nothing is the failure `test_topology_param_specs.py` exists for, reached by
+another route, so the read-out names it. Two smaller consequences fell out of that and are worth
+recording because both could have gone the lazy way. The zero-check on the two lengths is SKIPPED
+when they are inert — refusing "the wake length must be greater than zero" about a control that
+decides nothing is a refusal the user cannot act on. And the wake and radial SPANS are measured off
+the placed corners on BOTH paths rather than read back from the parameters: on the generated path
+the two are the parameters by construction (`far_corners` puts `wk` a wake length downstream and
+`f1` a radius above), so this is one owner rather than a second derivation, and on the bound path
+the counts are derived from the distance the grid actually has to cross. Injection P — reading the
+spans back from the parameters — reddens check 18c ALONE and NOT 18c2, which corrects the
+prediction written first: the fixture's drawn far field sits exactly where the two lengths would
+generate one, so the numbers agree and only the absurd-lengths document tells them apart.
+
+**Containment is tested on the DRAWN polyline, not on the corner chords**, and that distinction
+was nearly shipped untested. A drawn D curves OUTWARD between its joints — 1.137x the enclosed area
+over 210 points against 6 — so a chord ring would refuse a section sitting comfortably inside the
+shape the user drew, while the generated hexagon's sides ARE its chords and need no such care.
+Injection U's FIRST version was INERT: the aerofoil sits well inside either ring, so replacing
+`drawn_ring` with the six corners changed nothing any check could see. The fix was not a cleverer
+fixture but a check that measures the two rings apart DIRECTLY (18c3, the enclosed areas), which is
+this repo's own recurring finding — a check wider in words than in assert stays inert, and hoping a
+fixture will fall between two answers is how one stays that way.
+
+**What the second path actually buys, through the real binary.** Same section, same binary, the
+shipped far-field geometry:
+
+| | cells | peak non-orthogonality | `.bnd` names |
+|---|---|---|---|
+| shipped hand-written | 11,520 | 29.9° | `farfield`, `outlet`, `wall` |
+| template, GENERATED | 14,784 | 48.6° (1.63x) | `farfield`, `wall` |
+| template, BOUND (#149) | 14,784 | 31.5° (1.05x) | `farfield`, `outlet`, `wall` |
+
+**That table corrects how #148's own figure was being read.** Check 14c reported "1.28x the cells
+at 1.63x the peak" as one sentence about one cause; the cell count does not move between the two
+template paths at all, because the counts are this family's own derivation and #149 does not touch
+them. Only the second figure was ever the far field. Check 14g says so, and asserts the cell count
+IDENTICAL across the two paths rather than merely bounded.
+
+##### Named blind spots
+
+* **Nothing here writes the far-field geometry for the user.** #133's "the template writes no
+  geometry" stands, so the bound path needs a six-segment closed outline drawn in the CAD stage,
+  running counter-clockwise from the outlet point level with the wake. The refusals name that
+  order; nothing offers to produce it, and #149 put a generator explicitly out of scope.
+* **The rotation refusal rests on the nose being the furthest-upstream joint.** See above: a rule,
+  not a theorem, and the direction it errs in is the safe one.
+* **Nothing measures a far field drawn with a nose the mesher would mesh but the chord ring would
+  refuse.** Check 18c3 measures the two rings apart by area, which is why `drawn_ring` exists; it
+  does not exhibit a section that falls between them, and the attempt to build one (injection U)
+  is what proved the first version of that check inert rather than producing such a fixture.
+* **The bound path is measured on ONE far-field shape** — the shipped `cgrid_farfield.dat` and the
+  fixture that reproduces its six corners. The refusal spread is wide (five, seven, clockwise,
+  rotated, broken id, malformed list, short list); the ACCEPTED spread is one shape.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

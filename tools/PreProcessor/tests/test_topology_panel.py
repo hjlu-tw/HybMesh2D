@@ -426,6 +426,41 @@ check("13f. the two binding rows are READ-ONLY, because #133 decides which edges
       panel.topo_ogrid_body_segs.isReadOnly()
       and panel.topo_ogrid_far_segs.isReadOnly())
 
+# ── 13g. ...and a FOURTH binding row pair needed no edit here (#149) ──────
+# The C-grid's optional far field is the whole of what #149 adds to the panel: a row
+# pair in `BINDING_ROWS`. If the capture had been spelled per family rather than
+# walked off that table, this would need a wiring edit — which is exactly the cost
+# #137 moved out of the view, and this is the first entry added since to prove it.
+_FF_SHIP = os.path.join(_REPO, "examples", "geometries", "cgrid_farfield.dat")
+_cg13 = cfg_for(MESH_MODE_MULTIBLOCK, family="cgrid",
+                cgrid_body_geom=_AF)
+_cg13.bl_initial_thickness = 1e-3
+_cg13.add_geom_file(_AF)
+_cg13.add_geom_file(_FF_SHIP)
+panel.set_config(_cg13)
+panel.topo_cgrid_far_geom.setText(_FF_SHIP)
+check(f"13g. naming the C-grid's optional FAR-FIELD geometry captures its segment "
+      f"ids through the same table-driven wiring the O-grid's two rows use, with no "
+      f"per-family edit in the panel ({panel.topo_cgrid_far_segs.text()!r}), and the "
+      f"row is read-only like the other three",
+      [t.strip() for t in panel.topo_cgrid_far_segs.text().split(",")]
+      == ["0", "1", "2", "3", "4", "5"]
+      and panel.topo_cgrid_far_segs.isReadOnly()
+      and panel.topo_cgrid_body_segs.isReadOnly())
+_shown13 = panel.topo_cgrid_derived.text()
+check(f"13h. ...and the read-out switches to the BOUND sentence as soon as it is "
+      f"named, so the user learns which of the two far fields they are on — and "
+      f"that the two lengths above have stopped deciding anything — before the "
+      f"solver does ({_shown13.splitlines()[-1][:120]!r})",
+      "BOUND" in _shown13 and "INERT" in _shown13
+      and "BC_GEOM" not in _shown13)
+panel.topo_cgrid_far_geom.setText("")
+check(f"13i. ...and clearing it goes back to the GENERATED far field, which is the "
+      f"default and not a degraded state "
+      f"({panel.topo_cgrid_derived.text().splitlines()[-1][:80]!r})",
+      "BC_GEOM" in panel.topo_cgrid_derived.text()
+      and "INERT" not in panel.topo_cgrid_derived.text())
+
 # ── 14. the O-grid parameters round-trip too ───────────────────────────
 c14 = cfg_for(MESH_MODE_MULTIBLOCK, family="ogrid", ogrid_body_geom=_B,
               ogrid_far_geom=_F, ogrid_body_segs="5, 11", ogrid_far_segs="3,1",

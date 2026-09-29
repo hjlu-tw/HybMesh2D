@@ -51,12 +51,15 @@ it (#139).
 """
 from __future__ import annotations
 
+import math
+import os
 from dataclasses import dataclass, field
 
 from app.services.topology_binding import BindingError, BrokenBinding
 from app.services.topology_cgrid_section import (
-    SECTION_ROLE, SURFACE_EDGES, Section, far_corners, outside_point,
-    resolve_section,
+    FAR_CORNERS, FAR_EDGES, FAR_ROLE, SECTION_ROLE, SURFACE_EDGES, Section,
+    drawn_ring, far_corners, far_edge_at, generated_ring, outside_point,
+    resolve_far, resolve_section,
 )
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid_binding import parse_binding
@@ -113,10 +116,21 @@ class Plan:
     #: derived count is a number the panel presents as the derivation's answer and is
     #: not; the O-grid's review named it, and this read-out says so too.
     clamped: bool = False
-    #: The six generated far-field corners, ``{id: (x, y)}``. Empty until the
-    #: parameters are good enough to place them, never ``None``, so a caller that
-    #: asks a refused plan for them gets nothing rather than an AttributeError.
+    #: The six far-field corners, ``{id: (x, y)}`` — GENERATED from the two
+    #: lengths or read off the drawn geometry, whichever path this plan is on.
+    #: Empty until the parameters are good enough to place them, never ``None``,
+    #: so a caller that asks a refused plan for them gets nothing rather than an
+    #: AttributeError.
     far: dict = field(default_factory=dict)
+    #: True when the far field is DRAWN and bound rather than generated (#149).
+    #: The two paths differ in ONE thing the user can see — a bound side carries
+    #: the condition on its own CAD segment, a generated one carries the run's
+    #: ``BC_GEOM`` — so the read-out says which of the two it is describing.
+    far_bound: bool = False
+    #: The far field's spelling and its six bound segment ids, in ring order.
+    #: Empty on the generated path.
+    far_geom: str = ""
+    far_segs: tuple = ()
 
     def lines(self) -> list:
         """The derivation, as the read-out shows it — RESULT AND WORKING, not result.
@@ -148,9 +162,19 @@ class Plan:
                         else " — this run declares no BL_INITIAL_THICKNESS") + ")"))
             + (f" — CLAMPED at {MAX_COUNT}, so the first cell you asked for is not "
                f"reachable at this growth" if self.clamped else ""),
-            "far field: GENERATED from the two lengths, so its six sides carry the "
-            "run's BC_GEOM; the section's two carry the conditions on its own CAD "
-            "segments",
+            (f"far field: BOUND to "
+             f"'{os.path.basename(self.far_geom) or self.far_geom}' over its "
+             f"{len(self.far_segs)} "
+             f"segments ({', '.join(str(s) for s in self.far_segs)}), so each of "
+             f"its sides carries that geometry's own condition — the outlet halves "
+             f"an outlet, the D a far field. The wake length and far-field radius "
+             f"above are INERT on this path: the wake spans "
+             f"{self.wake_span:.4g} and the radial {self.radial_span:.4g} because "
+             f"that is where you drew them"
+             if self.far_bound else
+             "far field: GENERATED from the two lengths, so its six sides carry the "
+             "run's BC_GEOM; the section's two carry the conditions on its own CAD "
+             "segments"),
         ]
 
 
@@ -171,27 +195,60 @@ def plan(model, ctx) -> Plan:
     if g is None:
         return p
 
+    fg, p.far_segs, p.problem, p.broken_edge = resolve_far(
+        ctx, model.cgrid_far_geom, model.cgrid_far_segs)
+    if p.problem:
+        return p
+    p.far_bound = fg is not None
+    if p.far_bound:
+        p.far_geom = fg.spelling
+
     cell = float(model.cgrid_cell)
     p.te_cell = float(model.cgrid_te_cell)
-    p.wake_span = float(model.cgrid_wake_length)
-    p.radial_span = float(model.cgrid_far_radius)
-    for what, value in (("target cell edge", cell),
-                        ("trailing-edge cell length", p.te_cell),
-                        ("wake length", p.wake_span),
-                        ("far-field radius", p.radial_span)):
+    checks = [("target cell edge", cell), ("trailing-edge cell length", p.te_cell)]
+    if not p.far_bound:
+        # THE TWO LENGTHS ARE ONLY A QUESTION ON THE GENERATED PATH. Once a far
+        # field is drawn they decide nothing, so refusing a zero in one of them
+        # would be a refusal the user cannot act on and cannot see the point of —
+        # the read-out's last line says they are inert instead.
+        checks += [("wake length", float(model.cgrid_wake_length)),
+                   ("far-field radius", float(model.cgrid_far_radius))]
+    for what, value in checks:
         if value <= 0.0:
             p.problem = f"the {what} must be greater than zero."
             return p
 
-    p.far = far_corners(p.section.te_xy, p.section.le_xy[0], p.wake_span,
-                        p.radial_span)
-    out = outside_point(p.far, g)
+    if p.far_bound:
+        p.far = {cid: fg.spans[sid].point_at(0.0)
+                 for cid, sid in zip(FAR_CORNERS, p.far_segs)}
+        ring = drawn_ring(fg)
+        where = f"the far field you drew as '{p.far_geom}'"
+    else:
+        p.far = far_corners(p.section.te_xy, p.section.le_xy[0],
+                            float(model.cgrid_wake_length),
+                            float(model.cgrid_far_radius))
+        ring = generated_ring(p.far)
+        where = (f"the far field a wake length of "
+                 f"{float(model.cgrid_wake_length):.4g} and a radius of "
+                 f"{float(model.cgrid_far_radius):.4g} generate")
+    out = outside_point(ring, g)
     if out is not None:
         p.problem = (f"the section reaches ({out[0]:.4g}, {out[1]:.4g}), which is "
-                     f"outside the far field a wake length of {p.wake_span:.4g} and "
-                     f"a radius of {p.radial_span:.4g} generate. Raise the far-field "
-                     f"radius.")
+                     f"outside {where}. "
+                     + ("Draw the far field larger, or clear its row to generate "
+                        "one from the two lengths above." if p.far_bound
+                        else "Raise the far-field radius."))
         return p
+
+    # THE TWO SPANS ARE MEASURED OFF THE PLACED CORNERS, on BOTH paths, so the wake
+    # and radial derivations read the distance the grid actually has to cross rather
+    # than a parameter that may no longer decide it. On the generated path the two
+    # are the parameters by construction — `far_corners` puts `wk` a wake length
+    # downstream of the trailing edge and `f1` a radius above it — which is what
+    # makes this one owner rather than a second derivation.
+    te = p.section.te_xy
+    p.wake_span = math.dist(te, p.far["wk"])
+    p.radial_span = math.dist(te, p.far["f1"])
 
     p.up_nodes = wall_count(p.section.up_len, cell)
     p.lo_nodes = wall_count(p.section.lo_len, cell)
@@ -227,6 +284,9 @@ def build(model, ctx=None) -> dict:
             f"the C-grid template cannot build a document: {p.problem}",
             edge=p.broken_edge)
     g = ctx.geometry(model.cgrid_body_geom)
+    # ONE lookup for the two places the far field is written — the corners and the
+    # six bindings — so they cannot end up describing different geometries.
+    fg = ctx.geometry(model.cgrid_far_geom) if p.far_bound else None
     ds = p.te_cell
 
     corners = [
@@ -237,8 +297,21 @@ def build(model, ctx=None) -> dict:
          "seg": p.section.te_seg, "t": 0.0},
         {"id": "le", "kind": "on_geometry", "geom": g.spelling,
          "seg": p.section.le_seg, "t": 0.0},
-    ] + [{"id": k, "kind": "free", "xy": [xy[0], xy[1]]}
-         for k, xy in p.far.items()]
+    ]
+    # THE FAR FIELD IS EITHER DRAWN OR GENERATED, and that is the ONE branch #149
+    # adds: a bound corner is the t = 0 of its own source segment (so the side
+    # leaving it carries that segment's condition) where a generated one is a free
+    # coordinate belonging to no geometry (so every side carries the run's
+    # BC_GEOM). Nothing else about the document changes — same six ids, same six
+    # edges, same four blocks, same spacing.
+    if p.far_bound:
+        corners += [{"id": cid, "kind": "on_geometry", "geom": fg.spelling,
+                     "seg": ctx.resolve(far_edge_at(k), fg.spelling, sid),
+                     "t": 0.0}
+                    for k, (cid, sid) in enumerate(zip(FAR_CORNERS, p.far_segs))]
+    else:
+        corners += [{"id": k, "kind": "free", "xy": [xy[0], xy[1]]}
+                    for k, xy in p.far.items()]
 
     # The surface edges are declared in their OWN segment's direction: the one
     # leaving the trailing edge runs te -> le, the other le -> te. Which of the two
@@ -300,6 +373,17 @@ def build(model, ctx=None) -> dict:
         {"id": "e_out_lo", "corners": ["wk", "fl"], "kind": "wall",
          "spacing": {"wall_ends": "start"}},
     ]
+    if p.far_bound:
+        # ONE side per source segment, in the order `FAR_EDGES` declares — which is
+        # the order `resolve_far` has already proved the drawn outline runs them in,
+        # so this is a write of what was measured rather than a second reading of it.
+        _seg = dict(zip(FAR_EDGES, p.far_segs))
+        for e in edges:
+            if e["id"] in _seg:
+                e["binding"] = {"geom": fg.spelling,
+                                "seg": ctx.resolve(e["id"], fg.spelling,
+                                                   _seg[e["id"]])}
+
     # [south, east, north, west] = [radial in, far-field side, radial out, body
     # side]. The wake cut is the WEST of both wake blocks.
     blocks = [
@@ -315,30 +399,41 @@ def build(model, ctx=None) -> dict:
 
 
 def broken_bindings(model, ctx) -> tuple:
-    """Every stored id this family holds that its section no longer carries (#138).
+    """Every stored id this family holds that its geometries no longer carry (#138).
 
     THE COMPLEMENT OF `plan`'s REFUSAL, NOT A SECOND COPY OF IT — the O-grid's rule,
     and the panel asks the registry rather than asking a family by name.
 
-    BOTH surface edges are named for one broken position, and that is not
+    BOTH surface edges are named for one broken SECTION position, and that is not
     over-reporting: which bound segment is the upper surface is measured from the two
     spans, so with one of them missing the family cannot say which of `af_up` and
-    `af_lo` the broken id would have become. Repairing the position repairs both.
+    `af_lo` the broken id would have become. Repairing the position repairs both. The
+    far field's positions (#149) name ONE edge each, because there the position IS
+    the side: `FAR_EDGES[k]` lies on the segment bound at k.
+
+    A blank far-field row is the GENERATED path, which binds nothing and so can break
+    nothing — the same sentence `parse_binding` already writes for a blank list,
+    reached one step earlier.
     """
     if ctx is None:
         return ()
-    g = ctx.geometry(getattr(model, "cgrid_body_geom", ""))
-    if g is None or not g.seg_ids:
-        return ()
-    held, why = parse_binding(getattr(model, "cgrid_body_segs", ""), (),
-                              SECTION_ROLE)
-    if why or not held:
-        # A blank list adopts the section's own segments and so cannot be broken; a
-        # malformed one is refused as a whole string and is not a position a dropdown
-        # could re-point.
-        return ()
-    return tuple(BrokenBinding(field="cgrid_body_segs", who=SECTION_ROLE,
-                               geom=g.spelling, seg=s, pos=pos,
-                               edges=SURFACE_EDGES,
-                               choices=tuple(g.seg_ids))
-                 for pos, s in enumerate(held) if s not in g.spans)
+    out = []
+    for field_name, geom_field, who, edges_at in (
+            ("cgrid_body_segs", "cgrid_body_geom", SECTION_ROLE,
+             lambda _pos: SURFACE_EDGES),
+            ("cgrid_far_segs", "cgrid_far_geom", FAR_ROLE,
+             lambda pos: (far_edge_at(pos),))):
+        g = ctx.geometry(getattr(model, geom_field, ""))
+        if g is None or not g.seg_ids:
+            continue
+        held, why = parse_binding(getattr(model, field_name, ""), (), who)
+        if why or not held:
+            # A blank list adopts the geometry's own segments and so cannot be
+            # broken; a malformed one is refused as a whole string and is not a
+            # position a dropdown could re-point.
+            continue
+        out += [BrokenBinding(field=field_name, who=who, geom=g.spelling, seg=s,
+                              pos=pos, edges=edges_at(pos),
+                              choices=tuple(g.seg_ids))
+                for pos, s in enumerate(held) if s not in g.spans]
+    return tuple(out)

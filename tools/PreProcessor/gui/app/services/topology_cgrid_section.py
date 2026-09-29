@@ -24,7 +24,9 @@ import math
 from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError
-from app.services.topology_ogrid_binding import parse_binding
+from app.services.topology_ogrid_binding import (
+    cover_problem, order_problem, parse_binding,
+)
 
 #: How many surface segments a section the C-grid can wrap is split into: the upper
 #: and the lower, meeting at the trailing edge. THREE is the blunt section, whose
@@ -39,6 +41,24 @@ BLUNT_SEGMENTS = 3
 #: repair rows the family reports and the ids ``build`` emits all read them from here.
 SECTION_ROLE = "aerofoil"
 SURFACE_EDGES = ("af_up", "af_lo")
+
+#: The same rule for the OPTIONALLY DRAWN far field (#149): its role word, its six
+#: corner ids and its six edge ids, in the order the six block sides run — counter-
+#: clockwise from the outlet point level with the wake. ONE spelling, and it is the
+#: shipped hand-written document's own (``examples/topology/cgrid_naca0012.json``),
+#: so "the template reproduces the target" stays a comparison of like with like.
+#: ``FAR_CORNERS[k]`` is the t = 0 of the bound segment at position k and
+#: ``FAR_EDGES[k]`` is the side that lies on it.
+FAR_ROLE = "far field"
+FAR_CORNERS = ("wk", "fu", "f1", "f2", "f3", "fl")
+FAR_EDGES = ("e_out_up", "e_ff_up", "e_ff_nose_up", "e_ff_nose_lo", "e_ff_lo",
+             "e_out_lo")
+#: How many segments a far field the C-grid can bind is cut into — one per block
+#: side, which is what makes each side's boundary condition readable off its own.
+FAR_SEGMENTS = len(FAR_EDGES)
+#: Which corner is dead ahead of the nose, and therefore the furthest UPSTREAM.
+#: What :func:`resolve_far` measures the ring's starting joint against.
+FAR_NOSE_POS = FAR_CORNERS.index("f2")
 
 
 @dataclass(frozen=True)
@@ -186,8 +206,29 @@ def far_corners(te_xy, x_le: float, wake_len: float, radius: float) -> dict:
             "f3": (x_te, y0 - radius), "fl": (x_out, y0 - radius)}
 
 
-def outside_point(far: dict, g):
-    """The first point of ``g`` the far field ``far`` does not contain, or ``None``.
+def generated_ring(far: dict) -> list:
+    """The GENERATED far field's outline, as the polygon :func:`outside_point` tests.
+
+    ``wk`` is left out because it lies ON the outlet plane between ``fu`` and
+    ``fl``; the five remaining corners bound exactly the same region.
+    """
+    return [far[k] for k in ("fu", "f1", "f2", "f3", "fl")]
+
+
+def drawn_ring(g) -> list:
+    """A DRAWN far field's outline, as the polygon :func:`outside_point` tests (#149).
+
+    Its own POLYLINES rather than the six corner chords, which is the whole
+    difference between the two paths: a drawn D curves OUTWARD between its joints,
+    so a chord ring would refuse a section that sits comfortably inside the shape
+    the user actually drew. The generated hexagon has no such gap — its sides ARE
+    the chords — which is why :func:`generated_ring` above is the corners.
+    """
+    return [pt for sid in g.seg_ids for pt in g.spans[sid].points[:-1]]
+
+
+def outside_point(ring, g):
+    """The first point of ``g`` the outline ``ring`` does not contain, or ``None``.
 
     THE SECTION HAS TO BE INSIDE ITS FAR FIELD, and it is checked by walking the
     section's own points rather than by a rule of thumb about chords: a radius that is
@@ -195,10 +236,14 @@ def outside_point(far: dict, g):
     degrees, and a section poking through its own far field produces blocks that fold
     rather than a refusal the user can read.
 
-    ``wk`` is left out of the ring because it lies ON the outlet plane between ``fu``
-    and ``fl``; the five remaining corners bound exactly the same region.
+    ``ring`` is a closed polygon as a list of points, so the same containment test
+    serves the generated hexagon and the drawn D — the two differ in what the ring
+    IS, which is :func:`generated_ring`'s and :func:`drawn_ring`'s answer, not in
+    how it is tested.
     """
-    ring = [far[k] for k in ("fu", "f1", "f2", "f3", "fl")]
+    ring = list(ring)
+    if len(ring) < 3:
+        return None
     for sp in g.spans.values():
         for pt in sp.points:
             x, y = pt
@@ -212,3 +257,128 @@ def outside_point(far: dict, g):
             if not hit:
                 return pt
     return None
+
+
+def far_edge_at(i: int) -> str:
+    """``ring position -> edge id`` for the far field, :func:`edges_by_prefix`'s peer.
+
+    The far-field ring's six edges have six NAMES rather than a prefix and an index,
+    which is the whole reason ``order_problem`` and ``cover_problem`` take a callable
+    since #149: the mesher's cover rule is one rule and a second copy of it differing
+    only in an f-string is how two refusals about one list come to disagree.
+    """
+    return FAR_EDGES[i % len(FAR_EDGES)]
+
+
+def resolve_far(ctx, geom_name: str, segs_text: str) -> tuple:
+    """``(geometry, segment ids, problem, broken edge)`` for a DRAWN far field (#149).
+
+    ``(None, (), "", "")`` for a blank name, which is not a refusal: the far field is
+    then GENERATED from the two lengths, which is #148's default and stays it. The
+    caller tells the two apart by the geometry, not by the sentence.
+
+    THE REFUSALS ARE THE O-GRID'S, ASKED ABOUT SIX NAMED EDGES. Everything here that
+    is not the segment COUNT is ``parse_binding``, ``ctx.resolve``, ``order_problem``
+    and ``cover_problem`` — the same four this package already has, which is what
+    makes a drawn far field a branch rather than a mechanism. What is this family's
+    own is the last pair: the six block sides run from the outlet point level with
+    the wake, counter-clockwise, so the ring's WINDING and WHERE IT STARTS are both
+    binding information and both are MEASURED rather than trusted. Without them a
+    far field drawn the other way round, or drawn starting at another joint, binds a
+    rotation in which every id still resolves and every side still lies on its own
+    segment — and the mesher then folds the four blocks instead of refusing them,
+    which is this package's own worst outcome (a mesh that runs and is wrong).
+    """
+    name = str(geom_name or "").strip()
+    if not name:
+        return None, (), "", ""
+    g = ctx.geometry(name)
+    if g is None:
+        return None, (), (f"the far-field geometry '{name}' is not one of this "
+                          f"mesh's geometries. It loads: "
+                          f"{', '.join(ctx.names()) or '(nothing)'}. Clear the row "
+                          f"to generate the far field from the two lengths "
+                          f"instead."), ""
+    if not g.spans:
+        return None, (), (f"the far-field geometry '{g.spelling}' carries no "
+                          f"per-segment data, so there is nothing to bind to. That "
+                          f"comes from the '.meta' sidecar the PreProcessor writes "
+                          f"beside the .dat; re-export it from the CAD stage."), ""
+    if not g.closed:
+        return None, (), (f"the far-field geometry '{g.spelling}' is not a closed "
+                          f"loop, and a C-grid's outer boundary closes: the two "
+                          f"outlet halves and the D between them."), ""
+    if len(g.seg_ids) != FAR_SEGMENTS:
+        return None, (), (
+            f"a C-grid's far field is cut into exactly {FAR_SEGMENTS} segments, one "
+            f"per block side — the two outlet halves either side of the wake and "
+            f"the four of the D ({', '.join(FAR_EDGES)}) — and '{g.spelling}' "
+            f"carries {len(g.seg_ids)} "
+            f"({', '.join(str(s) for s in g.seg_ids) or 'none'}). Split it into "
+            f"{FAR_SEGMENTS}, or clear the row to generate the far field from the "
+            f"two lengths instead."), ""
+
+    held, why = parse_binding(segs_text, g.seg_ids, FAR_ROLE)
+    if why:
+        return None, (), why, ""
+    # EVERY BINDING RESOLVED, AND NAMED BY ITS EDGE, BEFORE any question about how
+    # many there are — #138's rule, which the section reader beside this one follows
+    # too: a list one id short of covering the outline is short BECAUSE of the id
+    # that stopped resolving, and answering "this does not bind all six" there names
+    # no edge and sends the user to look at the wrong thing.
+    for pos, sid in enumerate(held):
+        try:
+            ctx.resolve(far_edge_at(pos), g.spelling, sid)
+        except BindingError as exc:
+            return None, (), str(exc), exc.edge
+    if len(held) != FAR_SEGMENTS or set(held) != set(g.seg_ids):
+        return None, (), (
+            f"the stored binding names segment(s) "
+            f"{', '.join(str(s) for s in held) or 'none'} while '{g.spelling}' "
+            f"carries {', '.join(str(s) for s in g.seg_ids)}. A C-grid binds ALL "
+            f"{FAR_SEGMENTS} sides of its far field — every segment of it is one "
+            f"block side."), ""
+    edge, why = order_problem(FAR_ROLE, g, held, 1, far_edge_at)
+    if not why:
+        edge, why = cover_problem(FAR_ROLE, g, held, 1, far_edge_at)
+    if why:
+        return None, (), why, edge
+
+    if g.signed_area(held, [0.0] * FAR_SEGMENTS) <= 0.0:
+        return None, (), (
+            f"'{g.spelling}' runs its six segments CLOCKWISE, and the C's blocks are "
+            f"declared counter-clockwise — every radial edge would cross its own "
+            f"block. Redraw the far field in the other direction."), ""
+
+    # WHERE THE RING STARTS IS BINDING INFORMATION HERE, unlike the O-grid's, whose
+    # ring has no first segment. Corner `wk` is the outlet point level with the
+    # wake and is position 0 by construction, so the joint dead ahead of the nose
+    # — the far field's furthest-UPSTREAM one, which is what `f2` is — has to be
+    # position FAR_NOSE_POS. Measured rather than assumed, and a TIE is refused
+    # rather than resolved: two joints the same distance upstream cannot say which
+    # of them is the nose.
+    xs = []
+    for sid in held:
+        pt = g.spans[sid].point_at(0.0)
+        if pt is None:
+            return None, (), (f"'{g.spelling}' has a segment with no length, so its "
+                              f"corners cannot be placed."), ""
+        xs.append(pt[0])
+    lo = min(xs)
+    if xs.count(lo) > 1:
+        return None, (), (
+            f"'{g.spelling}' has two corners the same distance upstream "
+            f"(x = {lo:.4g}), so there is no telling which one is dead ahead of the "
+            f"nose. A C-grid's far field has ONE furthest-upstream corner, and it is "
+            f"where the two halves of the D meet."), ""
+    at = xs.index(lo)
+    if at != FAR_NOSE_POS:
+        return None, (), (
+            f"'{g.spelling}' puts its furthest-upstream corner (x = {lo:.4g}) at "
+            f"segment {held[at]}, position {at} of its outline, where a C-grid needs "
+            f"it at position {FAR_NOSE_POS}. The six sides run counter-clockwise "
+            f"from the OUTLET POINT LEVEL WITH THE WAKE: "
+            f"{', '.join(FAR_EDGES)}. Redraw the far field starting there, or "
+            f"re-point the binding so segment {held[at]} lands at position "
+            f"{FAR_NOSE_POS}."), ""
+    return g, tuple(held), "", ""

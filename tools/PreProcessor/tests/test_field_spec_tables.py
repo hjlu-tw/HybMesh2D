@@ -998,6 +998,8 @@ MODE_SPECS_WITHOUT_KEY = {
                           "radial derivation; authors nothing",
     "topo_cgrid_body_geom": "as topo_ogrid_body_geom",
     "topo_cgrid_body_segs": "as topo_ogrid_body_geom",
+    "topo_cgrid_far_geom": "as topo_ogrid_body_geom",
+    "topo_cgrid_far_segs": "as topo_ogrid_body_geom",
     "topo_cgrid_wake_length": "as topo_ogrid_body_geom",
     "topo_cgrid_far_radius": "as topo_ogrid_body_geom",
     "topo_cgrid_cell": "as topo_ogrid_body_geom",
