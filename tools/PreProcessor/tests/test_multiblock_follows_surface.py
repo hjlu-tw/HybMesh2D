@@ -10,7 +10,7 @@ disk becomes one conforming grid on disk, with the seam ON the curve in the
 exported file and no patch for it in the ``.bnd``.
 
 THE FIXTURE IS CHECKED IN, and it is the smallest thing that says something the
-five shipped documents cannot: ``examples/topology/curved_seam_blocks.json``, two
+five shipped documents could when it landed: ``examples/topology/curved_seam_blocks.json``, two
 blocks stacked on one shared line, with ``examples/geometries/arc_seam.dat`` — a
 40-facet circular arc from (0, 0) to (2, 0) bulging to (1, 0.5), so the curve sits
 0.5 off the chord between the seam's two corners. That is not a refinement: with

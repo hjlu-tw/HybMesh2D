@@ -5,7 +5,7 @@ There is no production code behind this gate. The thing under test is a SEAM:
 ``mb_shipped_config.shipped_config`` is the only implementation in this tree of
 "read the shipped ``.dat``, repoint its paths at this checkout, retarget its
 output at ``@STEM@``, raise by name when a rewrite stops landing", and every gate
-that drives one of the five shipped multi-block configs goes through it.
+that drives a shipped multi-block config goes through it.
 
 IT WAS THREE COPIES UNTIL #126. ``base_config`` in the C-grid surface gate,
 ``base_config`` in the O-grid's and ``shipped_config`` in the smoothing gate were
@@ -105,7 +105,7 @@ Known blind spots, stated rather than pretended away:
     MESHER then reads what the accessor returned: every caller writes that text to
     a temp `.dat` and runs the binary on it, and nothing here follows it that far.
     The surface gates are what cover that, on their own configs.
- d. Nothing here reads the five shipped configs for MEANING. A config edited into
+ d. Nothing here reads the shipped configs for MEANING. A config edited into
     something that retargets cleanly and meshes into nonsense passes this gate and
     fails the surface gate that drives it, which is the right place for it.
 """
@@ -439,6 +439,7 @@ def behaviour_checks():
     import test_multiblock_cgrid_surface as cgrid
     import test_multiblock_ogrid_surface as ogrid
     import test_multiblock_smooth_surface as smooth
+    import test_multiblock_tworing_surface as tworing
 
     # ── 2. the edit is visible from the gate that drives the config ─────────
     #
@@ -456,6 +457,12 @@ def behaviour_checks():
          lambda: smooth.shipped_config("multiblock_cavity")),
         ("multiblock_hgrid", "test_multiblock_smooth_surface.py drives it directly",
          lambda: smooth.shipped_config("multiblock_hgrid")),
+        # #153's two-ring O-grid, the sixth. Its OWN gate's wrapper rather than the
+        # smoothing gate's direct call, for the reason the C-grid and O-grid rows
+        # give: an accessor here must be what the gate that OWNS the case calls,
+        # and both of that case's drivers go through this seam.
+        ("multiblock_tworing", "test_multiblock_tworing_surface.py::base_config",
+         tworing.base_config),
     ]
     with tempfile.TemporaryDirectory() as tmp:
         for i, (name, who, fn) in enumerate(accessors):
@@ -477,6 +484,11 @@ def behaviour_checks():
         repoints = [
             ("multiblock_cgrid", "cgrid_naca0012.json", cgrid.base_config),
             ("multiblock_ogrid", "ogrid_circle.json", ogrid.base_config),
+            # #153. Its `base_config` asserts the very property this group gates —
+            # "BOTH ARGUMENTS DEFAULT TO NOTHING rather than to this file's `_TOPO`
+            # and `_GEOM`" — in its own docstring, which is a claim and not a check
+            # until it appears here. Spec review found the gap.
+            ("multiblock_tworing", "tworing_ogrid.json", tworing.base_config),
         ]
         other = "examples/topology/hgrid_blocks.json"
         for i, (name, shipped, fn) in enumerate(repoints):

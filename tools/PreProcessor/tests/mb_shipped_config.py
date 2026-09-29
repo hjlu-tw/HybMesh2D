@@ -25,7 +25,7 @@ RETARGETED BY KEY, NOT BY A LIST OF NEEDLES. The two ``base_config``s each
 carried a list of path substrings and raised when one stopped appearing; the
 smoothing gate's copy read the KEY instead, which is the only form that can
 retarget a config it was not written for. Keying is what let one function serve
-five shipped configs, and the needle lists' guarantee survives as something
+every shipped config, and the needle lists' guarantee survives as something
 stronger: a supplied retarget whose key is not in the file raises, so a caller's
 argument can no more go silently inert than a needle could.
 
@@ -53,8 +53,8 @@ Known blind spots, stated rather than pretended away:
     feature ``.claude/rules/mesher.md`` describes) has a value that is a path PLUS
     tokens. This module takes the whole remainder as the path, so such a line
     raises as "does not exist" rather than being retargeted. Loud and wrong beats
-    quiet and wrong, but it IS wrong: none of the five shipped multi-block configs
-    uses one today, and the first that does will land here.
+    quiet and wrong, but it IS wrong: no shipped multi-block config uses one today,
+    and the first that does will land here.
  b. The unknown-key sweep asks whether a value resolves to a file IN THIS
     CHECKOUT. A relative path that happens not to exist — a typo, or an output
     directory that has not been created — resolves to nothing and passes through

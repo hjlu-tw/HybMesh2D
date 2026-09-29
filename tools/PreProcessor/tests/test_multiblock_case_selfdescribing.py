@@ -7,7 +7,7 @@ mesh parameter file are all copied into ``grid/cad/`` and indexed in
 ``SOURCES.txt`` (``services/case_sources``, ``.claude/rules/pipeline-case.md``).
 In ``MESH_MODE 1`` that rule had a hole in exactly the place it exists to cover:
 **the topology document decides the mesh as much as the geometry does** — and two
-of this repo's five shipped topology cases (``config/multiblock_square.dat``,
+of this repo's shipped topology cases (``config/multiblock_square.dat``,
 ``multiblock_hgrid.dat``) declare every corner themselves and name no ``GEOM_FILE``
 at all, so the topology is the *only* input there is — and nothing staged it. A
 case meshed this way was a folder full of evidence with the one file that shaped

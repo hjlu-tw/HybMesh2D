@@ -390,7 +390,7 @@ BLIND SPOTS, named rather than papered over:
     nothing re-derives it from the mesh it is applied to. A mesh an order denser
     has a higher noise floor, and the first symptom would be the same false
     warning on a case nobody has run yet. Groups 12 and 13 pin BOTH ends on the
-    five shipped configs — they cannot speak for a mesh that is not in the tree.
+    shipped configs — they cannot speak for a mesh that is not in the tree.
   * AND THE UPPER END IS PINNED AT 5.90e-6, NOT AT 1e-9. What catches a floor set
     too HIGH is a real warning going silent, so the whole band between the chosen
     1e-9 and the lowest real warning in the tree — 3.77 orders — is a raise nothing
@@ -1514,7 +1514,7 @@ def main() -> int:
         wo20 = wall_height_warns(outo20)
         check(f"12. the shipped O-GRID keeps all four of its wall warnings at the "
               f"default, none of them being anywhere near the floor — the second "
-              f"of the five shipped configs to carry acceptance criterion 2 "
+              f"shipped config to carry acceptance criterion 2 "
               f"({ {k: round(v[0], 6) for k, v in wo20.items()} })",
               len(wo20) == 4
               and all(v[0] > 100.0 * floor_pct for v in wo20.values()))

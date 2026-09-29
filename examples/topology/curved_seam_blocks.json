@@ -1,8 +1,9 @@
 // TWO BLOCKS SHARING ONE CURVED INTERIOR LINE (issue #151) — the smallest
 // topology that says something no earlier example could.
 //
-// The five shipped documents beside this one have interior lines, and every one
-// of them is a straight CHORD between its two declared corners. That was not a
+// The five shipped documents beside this one when it landed have interior lines,
+// and every one of them is a straight CHORD between its two declared corners.
+// (#153 then shipped the sixth, whose four seams are the first that are not.) That was not a
 // choice: the only key that made an edge follow a source segment was `binding`,
 // and a `binding` also supplies a boundary condition, which is meaningless on a
 // line in the middle of the fluid — so it was refused on an interface and on a

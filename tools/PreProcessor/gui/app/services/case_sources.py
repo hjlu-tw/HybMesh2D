@@ -10,7 +10,7 @@ renamed or deleted while the case sat there looking complete. Six months later
 So the sources are copied in beside the grid, under ``grid/<SOURCE_DIR_NAME>/``.
 "Source" means every file the run READ, not only the drawn ones: a ``MESH_MODE 1``
 case is shaped by its block topology document as much as by its geometry, and two
-of this repo's five shipped topology cases have no geometry at all — see
+of this repo's shipped topology cases have no geometry at all — see
 :func:`mesh_input_paths`.
 
 Four rules keep the copy honest:

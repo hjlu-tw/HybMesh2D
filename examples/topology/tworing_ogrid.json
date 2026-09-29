@@ -50,11 +50,16 @@
 // = 49 across, against the single ring's 96 x 49: the same 4704 vertices, the same
 // 9216 triangles, the same 192 boundary edges, in eight blocks instead of four.
 // That is what makes the comparison in docs/design_notes/mesher.md a measurement
-// rather than an impression — and that comparison, run 2026-09-29, goes BOTH ways:
-// this mesh holds its wall spacing better and has the better cell shape, its
-// non-orthogonality is identical to every digit, and its worst wall-normal
-// EXPANSION RATIO is worse (1.258 against 1.185). Read it before preferring this
-// topology to the simpler one.
+// rather than an impression — and that comparison, run 2026-09-29, goes BOTH ways.
+// AT THE DEFAULT 20 SWEEPS, which is what the config beside this file produces
+// because it carries no MB_SMOOTH_ITERS line: this mesh holds its wall spacing
+// better (0.0000% against 0.0371%, and the single ring's four wall-height warnings
+// are gone), its cell shape is better at median and p95, its non-orthogonality is
+// identical to every digit — and its worst wall-normal EXPANSION RATIO is worse,
+// 1.596 against 1.397. UNSMOOTHED the same four read the other way round on the
+// wall spacing (0.0171% against 0.0036%) and the expansion ratio is 1.258 against
+// 1.185. Both caps, because no single one makes the sentence true. Read the note
+// before preferring this topology to the simpler one.
 //
 // Each block's i runs OUTWARD (its south and north are the two radials) and its j
 // runs ANTICLOCKWISE (its west is the inner arc, its east the outer one), which is

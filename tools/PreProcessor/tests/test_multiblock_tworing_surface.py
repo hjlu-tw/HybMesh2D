@@ -58,8 +58,10 @@ What this pins down:
      the comparison below would be an impression.
   9. THE COMPARISON, on the three quantities #153 names plus the one that moved.
      Measured here rather than quoted, at the shipped default of 20 sweeps AND with the
-     smoother off — both tables of the design note's write-up, so no direction of the
-     comparison is gated only at the cap that flatters it.
+     smoother off — BOTH tables of the design note's write-up, including the
+     expansion-ratio row at the default, which is the cap a user's own run produces and
+     the reading that disfavours this case hardest. Gating only the unsmoothed one would
+     be gating the flattering half of the number the ticket exists to publish.
  10. The seam SURVIVES the default sweeps: the smoother reports it frozen, and the
      96 nodes are still on the middle ring in the exported file. #151's check 3
      made this claim about a two-block fixture; this is it on eight blocks.
@@ -534,6 +536,16 @@ def main() -> int:
               f"declared here and merely inherited there",
               q20.get("wall_first_cell_worst_rel")
               < sq20.get("wall_first_cell_worst_rel"))
+        wa = [m.group(1) for m in re.finditer(
+            r"wall edge '(\w+)'[^\n]*could not hold the first cell height", out20)]
+        wa_s = [m.group(1) for m in re.finditer(
+            r"wall edge '(\w+)'[^\n]*could not hold the first cell height", sout20)]
+        check(f"9. ...and the run SAYS so: the single ring's four far-field arcs "
+              f"warn that the control function could not hold their declared first "
+              f"cell ({wa_s}) and this case warns about none ({wa}), because its "
+              f"outer ring DECLARES that spacing instead of inheriting whatever one "
+              f"law happened to finish at",
+              sorted(wa_s) == ["o0", "o1", "o2", "o3"] and not wa)
         check(f"9. the CELL SHAPE is better at the median and at p95 and the same at "
               f"the max: {q20.get('quad_midline_ratio_median'):.4f} / "
               f"{q20.get('quad_midline_ratio_p95'):.4f} against "
@@ -547,6 +559,8 @@ def main() -> int:
               and abs(q20.get("quad_midline_ratio_max")
                       - sq20.get("quad_midline_ratio_max")) < 0.01)
         rr, sr = ratios(intervals(xs)), ratios(intervals(sxs))
+        rr20, sr20 = ratios(intervals(ray_nodes(stem20))), \
+            ratios(intervals(ray_nodes(sstem20)))
         check(f"9. AND THE ONE #150 EXPECTED TO WIN ON GOES THE OTHER WAY. The "
               f"worst wall-normal expansion ratio is {max(rr):.4f} here against "
               f"{max(sr):.4f} on the single ring, unsmoothed: two laws each "
@@ -554,6 +568,15 @@ def main() -> int:
               f"problem than one law spanning the whole of it in 48. Recorded as "
               f"the deliverable rather than tuned away — #153's own criterion",
               max(rr) > max(sr))
+        check(f"9. ...AND WORSE AGAIN AT THE CAP A USER ACTUALLY RUNS, which is the "
+              f"reading that must not be left un-gated: neither shipped config "
+              f"carries an MB_SMOOTH_ITERS line, so the default 20 sweeps give "
+              f"{max(rr20):.4f} here against {max(sr20):.4f}, and the worst "
+              f"CONTRACTION {min(rr20):.4f} against {min(sr20):.4f}. The seam is "
+              f"FROZEN while each ring relaxes toward uniformity on its own side of "
+              f"it, so the cost the sweeps add lands on this case harder",
+              max(rr20) > max(sr20) and min(rr20) < min(sr20)
+              and max(rr20) > max(rr) and max(sr20) > max(sr))
         check(f"9. ...and the same three quantities UNSMOOTHED, so the design note's "
               f"second table is gated and not only quoted: wall spacing "
               f"{q00.get('wall_first_cell_worst_rel'):.6f} against "

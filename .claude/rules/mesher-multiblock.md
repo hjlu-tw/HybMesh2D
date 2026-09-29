@@ -433,7 +433,7 @@ hand-drawn concentric `circle_seam.dat`.
 - Gated by `tests/test_multiblock_tworing_surface.py` (11 groups on the SHIPPED files, reusing
   #53's conformity measure) and the `mb_tworing` golden case over all three exported files. The
   dated solver acceptance run is in that file's docstring.
-  Why: `docs/design_notes/mesher.md`, "A TWO-RING O-GRID, MEASURED AGAINST THE SINGLE".
+  Why: `docs/design_notes/mesher.md`, "A TWO-RING O-GRID, MEASURED AGAINST THE SINGLE RING".
 
 **The BLOCK ID is written to the VTK as a cell field, and it is OPTIONAL** (`Element::blockId`
 in `include/Mesh.hpp`, the `CELL_DATA` section in `src/Mesh.cpp::exportVTK`, filled by the

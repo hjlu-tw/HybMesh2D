@@ -4,7 +4,7 @@ A PURE FUNCTION of ``(model, context)``, like the H-grid and the O-grid beside i
 Qt, no mesher, no canvas, no filesystem. What it adds to the O-grid is not a mechanism
 (it reuses the registry, the stable-id bindings, the projection funnel and the canvas
 skeleton unchanged) but the two STRUCTURES that made
-``examples/topology/cgrid_naca0012.json`` the hardest of the five shipped documents to
+``examples/topology/cgrid_naca0012.json`` the hardest of the shipped documents to
 have typed by hand:
 
   1. THE WAKE IS ONE ``cut`` EDGE, and it is the WEST of BOTH wake blocks. It is not a

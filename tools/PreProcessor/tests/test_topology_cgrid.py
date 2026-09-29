@@ -5,7 +5,7 @@ The H-grid proved the chain from a parameter form to a mesh; the O-grid added th
 BINDING and the refusal when one breaks. This family adds no third mechanism — it is
 a registry entry, a field-spec table and a function — and what it has to be measured
 on is therefore not the machinery but the two STRUCTURES that made
-``examples/topology/cgrid_naca0012.json`` the hardest of the five shipped documents to
+``examples/topology/cgrid_naca0012.json`` the hardest of the shipped documents to
 have typed by hand:
 
   * the wake is ONE ``cut`` edge that is the WEST of BOTH wake blocks, and

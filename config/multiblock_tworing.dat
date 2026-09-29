@@ -17,9 +17,10 @@
 #
 # THE BUDGET IS THE SINGLE RING'S, EXACTLY — 4704 vertices, 9216 triangles, 192
 # boundary edges — which is what makes the two meshes comparable. The comparison is
-# in docs/design_notes/mesher.md and it goes BOTH ways: a better-held wall spacing
-# and a better cell shape here, an identical non-orthogonality, and a WORSE worst
-# wall-normal expansion ratio. Read it before preferring this to the simpler one.
+# in docs/design_notes/mesher.md and it goes BOTH ways. At the default 20 sweeps
+# THIS file produces: a better-held wall spacing, a better cell shape, an identical
+# non-orthogonality, and a WORSE worst wall-normal expansion ratio (1.596 against
+# 1.397; 1.258 against 1.185 unsmoothed). Read it before preferring this topology.
 # ==============================================================================
 
 MESH_MODE 1
