@@ -28,10 +28,13 @@ for t in "${scripts[@]}"; do
     else
         # Report the exit code, not just "FAIL". A test whose own checks all pass
         # can still exit non-zero — Qt's teardown under the offscreen platform
-        # crashes on a machine with no GPU, which is why 41 of these scripts end
-        # in os._exit(). Without the code, that case reads as a failing assertion
-        # and sends you looking in the wrong place; 139 says "signal 11 at exit"
-        # at a glance.
+        # crashes on a machine with no GPU, which is why every script here that
+        # builds a QApplication ends in os._exit(), gated by
+        # test_qt_teardown_exit.py. Without the code, that case reads as a failing
+        # assertion and sends you looking in the wrong place; 139 says "signal 11
+        # at exit" at a glance. That gate exists because this comment did not
+        # enforce itself: it said 41 scripts, six others still ended in sys.exit,
+        # and one of them took CI down on run 36506672624.
         echo "FAIL  $t (exit $?)"
         sed 's/^/    | /' /tmp/hybmesh_test.$$.log | tail -20
         fail=$((fail + 1))

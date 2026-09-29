@@ -619,8 +619,9 @@ if failures:
     print(f"FAILED {len(failures)} check(s)")
 # `os._exit` because Qt's teardown under the offscreen platform crashes on a
 # machine with no GPU and `run_all.sh` would read that as a failing assertion —
-# the same reason 70 other scripts here end this way (measured 2026-09-29; this
-# comment said 41 when it was written, and nothing re-measures it). It skips stdout
+# the house ending for every script here that builds a QApplication, gated by
+# `test_qt_teardown_exit.py` — which exists because this comment used to carry the
+# count itself, said 41, and went stale without anything noticing. It skips stdout
 # flushing, hence the explicit flush.
 print("All checks passed." if not failures else "", flush=True)
 sys.stdout.flush()

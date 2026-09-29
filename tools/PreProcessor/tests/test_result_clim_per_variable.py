@@ -373,7 +373,12 @@ if _FAILS:
     for m in _FAILS:
         print("  - " + m)
     _wd.cancel()
+    sys.stdout.flush()
     os._exit(1)
 print("OK  all checks passed")
 _wd.cancel()
+# `os._exit` skips the flushing a normal exit does, and `run_all.sh` redirects stdout
+# to a file — without this the verdict lines above never reach the log it prints on
+# failure (measured: the last line of this file's redirected output was a PASS row).
+sys.stdout.flush()
 os._exit(0)

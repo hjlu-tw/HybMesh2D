@@ -122,4 +122,12 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    _rc = main()
+    # `os._exit` so Qt's teardown never runs: under the offscreen platform on a
+    # machine with no GPU it can segfault AFTER the last check has printed PASS,
+    # and `run_all.sh` reads that exit 139 as a failing test (measured on CI run
+    # 36506672624). The house ending for every script here that builds a
+    # QApplication — gated by `test_qt_teardown_exit.py`. It skips stdout
+    # flushing, hence the explicit flush.
+    sys.stdout.flush()
+    os._exit(_rc)

@@ -990,6 +990,11 @@ if _FAILS:
     print(f"\nRESULT: {len(_FAILS)} FAILED")
     for m in _FAILS:
         print("  - " + m)
+    sys.stdout.flush()
     os._exit(1)
 print("\nRESULT: ALL PASS")
+# `os._exit` skips the flushing a normal exit does, and `run_all.sh` redirects stdout
+# to a file — without this the verdict lines above never reach the log it prints on
+# failure (measured: the last line of this file's redirected output was a PASS row).
+sys.stdout.flush()
 os._exit(0)

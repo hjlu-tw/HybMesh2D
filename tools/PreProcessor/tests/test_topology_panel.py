@@ -565,8 +565,8 @@ if failures:
 # same `MeshConfigPanel` and the same `AppController`, did on CI run 36506672624
 # (`Segmentation fault (core dumped)` … `exit 139`, with `All checks passed.` in the
 # captured output above it) — so the difference between the two is luck, not structure.
-# The same reason 70 other scripts here end this way (measured 2026-09-29). It skips
-# stdout flushing, hence the explicit flush.
+# The house ending for every script here that builds a QApplication — gated by
+# `test_qt_teardown_exit.py`. It skips stdout flushing, hence the explicit flush.
 print("All checks passed." if not failures else "", flush=True)
 sys.stdout.flush()
 os._exit(1 if failures else 0)

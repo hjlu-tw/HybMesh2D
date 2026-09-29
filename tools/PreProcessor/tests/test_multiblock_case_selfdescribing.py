@@ -452,4 +452,8 @@ for m in _FAILS:
     print("  FAILED: " + m)
 # os._exit: Qt's offscreen teardown segfaults on a machine with no GPU, which
 # run_all.sh would report as a failing assertion.
+# `os._exit` skips the flushing a normal exit does, and `run_all.sh` redirects stdout
+# to a file — without this the verdict lines above never reach the log it prints on
+# failure (measured: the last line of this file's redirected output was a PASS row).
+sys.stdout.flush()
 os._exit(1 if _FAILS else 0)

@@ -235,6 +235,12 @@ check(any("initial thickness" in e and "used by" not in e
 
 if _FAILS:
     print(f"\nRESULT: {len(_FAILS)} FAILED", flush=True)
-    sys.exit(1)
-print("\nRESULT: ALL PASS", flush=True)
-sys.exit(0)
+else:
+    print("\nRESULT: ALL PASS", flush=True)
+# `os._exit` so Qt's teardown never runs: under the offscreen platform on a machine
+# with no GPU it can segfault AFTER the last check has printed PASS, and `run_all.sh`
+# reads that exit 139 as a failing test (measured on CI run 36506672624). The house
+# ending for every script here that builds a QApplication — gated by
+# `test_qt_teardown_exit.py`. It skips stdout flushing, hence the explicit flush.
+sys.stdout.flush()
+os._exit(1 if _FAILS else 0)

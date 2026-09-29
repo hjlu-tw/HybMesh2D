@@ -586,4 +586,10 @@ check(all(b for _m, _en, _n, b in ur_states),
       "15. ...so check 14's disabled <=> reason binding holds in the fallback too")
 
 print(("\nRESULT: " + ("ALL PASS" if not _FAILS else f"{len(_FAILS)} FAIL")), flush=True)
-sys.exit(1 if _FAILS else 0)
+# `os._exit` so Qt's teardown never runs: under the offscreen platform on a machine
+# with no GPU it can segfault AFTER the last check has printed PASS, and `run_all.sh`
+# reads that exit 139 as a failing test (measured on CI run 36506672624). The house
+# ending for every script here that builds a QApplication — gated by
+# `test_qt_teardown_exit.py`. It skips stdout flushing, hence the explicit flush.
+sys.stdout.flush()
+os._exit(1 if _FAILS else 0)
