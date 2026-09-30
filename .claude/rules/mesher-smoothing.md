@@ -484,6 +484,13 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
   pretty enough yet" blocking a release — held until the last kernel landed. Kept here as a
   specimen rather than deleted.
   Why: `docs/design_notes/mesher.md`, "THE BASELINE BECOMES A GATE".
+- **GROUP 14's FUSE IS STILL WORDS, AND A SENTENCE WITH NO DOWNWARD VERB ESCAPES IT** (#156).
+  The JOIN matches a family — a downward verb (`lower`/`reduce`/`decrease`/…) applied to the cap
+  in one sentence, un-negated — rather than three literals, which an injection walked past; and
+  the two branches' advice halves must be byte-identical from `Raising MB_SMOOTH_ITERS` onward,
+  which catches anything reworded THERE. Neither reaches false advice phrased without a downward
+  verb and placed in the OBSERVATION half ("stop at sweep N", "sweep N is the grid you want"). The
+  measured half of the check is what has no wording at all, and it is what a reader should trust.
 - **GROUP 14 COMPARES NON-ORTHOGONALITY AND NOTHING ELSE** (#156). The cell-shape metric and the
   wall first-cell height are read in its tables but are not in any assert, and on the two circle
   O-grids the wall figure moves the OTHER way from the angles. A change that improved

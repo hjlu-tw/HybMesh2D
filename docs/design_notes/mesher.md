@@ -4410,11 +4410,30 @@ descending at 20 (`best_sweep` 20), which is the `else` branch.
   1`) is WRONG on the committed kernel — that run diverges and rolls back, which is how the
   first draft failed.
 
-- **TWO INJECTIONS, both biting, 2026-09-30.** (A) Restoring the old sentence reddens the
-  JOIN on exactly the two ruler-sighted cases and leaves the two blind ones green — the gate
-  is scoped to what it can actually see. (B) Making `best_sweep` print `smoothSweeps`, so the
-  advised cap collapses onto the default, reddens both strict angle comparisons at +0.0000
-  deg. So the string half and the measurement half are each live.
+- **FOUR INJECTIONS, 2026-09-30, and the THIRD is the one that changed the gate.**
+  (A) Restoring the old sentence reddens the JOIN on exactly the two ruler-sighted cases and
+  leaves the two blind ones green — the gate is scoped to what it can actually see. (B) Making
+  `best_sweep` print `smoothSweeps`, so the advised cap collapses onto the default, reddens both
+  strict angle comparisons at +0.0000 deg. So the string half and the measurement half are each
+  live. (C) Drifting ONE digit of the C-grid row in this note (9.030e-04 -> 9.031e-04) reddens
+  the derivation check for this file and names the row, which is what makes three hand-copied
+  homes safe to have. **(D) came back INERT and the gate had to grow.** The deleted advice
+  REWORDED — "Reduce the cap to that sweep number for a better grid", placed in the OBSERVATION
+  half where the branch-equality check cannot see it — left all of group 14 green: the fuse was
+  three string literals and this was none of them. So the fuse became a sentence FAMILY (a
+  downward verb applied to the cap, un-negated; the negation exemption exists because the
+  shipped correction says "do NOT lower the cap back to that sweep" and would otherwise match
+  its own defect), and D then reddens the JOIN on both ruler-sighted cases. The two fuses have
+  COMPLEMENTARY coverage and both are kept: the old sentence's "Lower it to at most that sweep"
+  names neither the cap nor the key, so the family misses it and the literal catches it.
+- **THE SPEC REVIEW IS WHAT FOUND THE FIRST DRAFT'S THREE WEAKNESSES**, and they are recorded
+  because two of them were in the fix rather than in the code: the table hand-copied into three
+  homes with nothing comparing them (closed by the derivation check, injection C); the JOIN's
+  fuse being a literal list (closed by the family, injection D — and only PARTLY, see the rule
+  file's blind spot); and the blind pair being an exemption nothing measured, so a case that
+  stopped tying would have gone on being exempt silently (closed by asserting the tie itself).
+  A fourth, `q_adv["nonortho_max_deg"]` read with `[]` where `check` does not abort, would have
+  turned an unparsed banner into a traceback instead of a red check.
 
 Blind spots, named:
 

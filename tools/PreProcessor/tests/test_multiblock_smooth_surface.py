@@ -471,6 +471,7 @@ true rank is not stated in its place, is in `docs/design_notes/mesher.md`.
 """
 import collections
 import glob
+import io
 import math
 import os
 import re
@@ -1845,16 +1846,39 @@ def main() -> int:
                   >= q_def.get("nonortho_max_deg", 0)
                   and q_adv.get("nonortho_mean_deg", -1)
                   >= q_def.get("nonortho_mean_deg", 0))
+        # READ WITH `.get`, NEVER WITH `[]`. `check` records a failure and carries
+        # on, so a KeyError here would kill the run at the first unparsed banner
+        # instead of reddening one check — turning a diagnosis into a traceback.
+        # The sentinels are chosen so a MISSING figure fails rather than passes:
+        # `nan` compares false against everything, so `advised > default` is false
+        # and the check goes red.
+        def angles(q):
+            return (q.get("nonortho_max_deg", float("nan")),
+                    q.get("nonortho_mean_deg", float("nan")))
+
         for name in ("C-GRID", "TWO-RING OFFSET"):
-            _, q_def, q_adv, _ = verdicts[name]
+            (dmax, dmean), (amax, amean) = angles(verdicts[name].default), \
+                angles(verdicts[name].advised)
             check(f"14. and on the {name}, where the ruler is NOT blind, the advised "
                   f"sweep is STRICTLY worse on both angles — so a gate that only "
                   f"compared strings would have shipped the old sentence again "
-                  f"(max +{q_adv['nonortho_max_deg'] - q_def['nonortho_max_deg']:.4f} "
-                  f"deg, mean "
-                  f"+{q_adv['nonortho_mean_deg'] - q_def['nonortho_mean_deg']:.4f} deg)",
-                  q_adv["nonortho_max_deg"] > q_def["nonortho_max_deg"]
-                  and q_adv["nonortho_mean_deg"] > q_def["nonortho_mean_deg"])
+                  f"(max +{amax - dmax:.4f} deg, mean +{amean - dmean:.4f} deg)",
+                  amax > dmax and amean > dmean)
+        # THE BLIND PAIR IS PINNED, NOT ASSUMED. The two checks above EXEMPT the two
+        # circle O-grids, and an exemption nothing measures is a claim: if those cases
+        # ever stopped tying, the strict comparison would simply go on not being asked
+        # of them and nobody would learn that the ruler had opened its eyes. So the tie
+        # itself is asserted, and this check is what sends the next reader back to the
+        # exemption rather than letting it stand unexamined.
+        for name in ("O-GRID", "TWO-RING"):
+            (dmax, dmean), (amax, amean) = angles(verdicts[name].default), \
+                angles(verdicts[name].advised)
+            check(f"14. ...while the {name} is EXACTLY TIED on both angles, which is "
+                  f"what earns it the exemption above — the ruler cannot see this "
+                  f"mesh change at all, and a case that stops tying must come back "
+                  f"here to be re-decided (max {amax:.6f} vs {dmax:.6f}, mean "
+                  f"{amean:.6f} vs {dmean:.6f})",
+                  amax == dmax and amean == dmean)
         # AND THE SENTENCE ITSELF, on the shipped cases rather than on the
         # synthetic notch the C++ check 49 drives. Both halves: the observation
         # survives, the false conclusion is gone, and the instrument is named on
@@ -1867,6 +1891,16 @@ def main() -> int:
                   and "an ITERATE rather than a solution" in out_d
                   and "PARTLY-SOLVED one" in out_d
                   and "inverted-cell count stays 0" in out_d)
+        _ADVICE = "Raising MB_SMOOTH_ITERS"
+
+        def cap_warning(out_):
+            """The one capped-solve warning line of a run, or "" if there is not
+            exactly one. Read as a LINE because the two halves this group compares
+            are positions within one sentence, not separate log records."""
+            hit = [l for l in out_.splitlines()
+                   if "the elliptic smoother stopped at its cap of" in l]
+            return hit[0] if len(hit) == 1 else ""
+
         # THE COUPLING, which is the check this group exists for. The two halves
         # above are each falsifiable on their own — the strings by an edit to the
         # warning, the angles by a change to the kernel — and NEITHER of them is
@@ -1882,19 +1916,136 @@ def main() -> int:
         # path has already rolled back to the best iterate, so it names what the run
         # did. Listing it would redden this check on blessed advice the day a shipped
         # curved case diverges, which is a false positive waiting rather than a guard.
+        # THE FUSE IS A SENTENCE FAMILY, NOT THREE LITERALS. Three literals is what
+        # the first draft used, and an injection walked straight past it: the deleted
+        # advice REWORDED as "Reduce the cap to that sweep number for a better grid",
+        # placed in the observation half where the tail equality below cannot see it,
+        # left every check in this group green. So what is matched is the SHAPE of the
+        # claim — a downward verb applied to the cap, in one sentence — and the
+        # exemption is a NEGATION, because "do NOT lower the cap back to that sweep"
+        # is the correction itself and must not read as the defect.
+        _DOWN = re.compile(
+            r"[^.]*\b(lower|lowering|reduce|reducing|decrease|decreasing|drop|"
+            r"dropping|cut|shorten|shortening)\b[^.]*\b(cap|MB_SMOOTH_ITERS)\b[^.]*\.",
+            re.I)
+        _NEG = re.compile(r"\b(not|never|n't|rather than|instead of)\b", re.I)
+
+        def steers_down(text):
+            """Sentences in `text` telling the reader a LOWER cap is the better one.
+
+            A negated sentence is not one of them: the correction #156 shipped says
+            "do NOT lower the cap back to that sweep", which matches the verb and is
+            the opposite of the claim. Matching the verb alone would make the fix
+            indistinguishable from the defect it replaced.
+            """
+            return [m.group(0).strip() for m in _DOWN.finditer(text)
+                    if not _NEG.search(m.group(0))]
+
         steer = ("Lower it to at most that sweep", "makes this mesh worse",
                  "a higher cap is a worse mesh")
         for name, out_d, _ in curved:
-            _, q_def, q_adv, _ = verdicts[name]
-            said = [t for t in steer if t in out_d]
-            worse = (q_adv["nonortho_max_deg"] > q_def["nonortho_max_deg"]
-                     or q_adv["nonortho_mean_deg"] > q_def["nonortho_mean_deg"])
+            (dmax, dmean), (amax, amean) = angles(verdicts[name].default), \
+                angles(verdicts[name].advised)
+            said = ([t for t in steer if t in out_d]
+                    + steers_down(cap_warning(out_d)))
+            worse = amax > dmax or amean > dmean
             check(f"14. ...and NOTHING in the {name}'s output steers the user at the "
                   f"residual's best sweep while this same run measures that sweep to "
                   f"be the worse mesh — the JOIN, which is what actually shipped "
                   f"wrong (steering phrases found {said}; that sweep measured worse: "
                   f"{worse})",
                   not (said and worse))
+        # AND THE FUSE ABOVE IS A PHRASE LIST, WHICH THE SAME ADVICE REWORDED WALKS
+        # STRAIGHT PAST. "Reduce the cap to sweep N" is the deleted sentence in other
+        # words and `steer` would never see it. What CANNOT be reworded past is the
+        # rule itself, so the rule is asserted structurally instead of by blacklist:
+        # **the two branches must be byte-identical from the advice onward.** They
+        # differ in what they OBSERVE — the turned one names the best residual and its
+        # sweep — and from `Raising MB_SMOOTH_ITERS` to the end of the warning there is
+        # ONE sentence serving both, because the fold bounds the cap either way. Any
+        # advice added to, removed from or reworded in ONE branch reddens this, whatever
+        # its wording.
+        #
+        # THE FALLING BRANCH IS THE SHIPPED H-GRID (`hg`, run by group 13 at the default
+        # cap), which is the only shipped case that reaches the cap still at its best.
+        # Square and cavity CONVERGE and print no cap warning at all, so there is no
+        # third case to take this from.
+        fall = cap_warning(hg)
+        check(f"14. the shipped H-GRID is the FALLING branch at the default cap, so "
+              f"the two branches can be compared against each other on real runs "
+              f"(best sweep {smooth_line(hg).get('best_sweep')} of "
+              f"{smooth_line(hg).get('sweeps')}, residual "
+              f"{smooth_line(hg).get('residual')} vs best "
+              f"{smooth_line(hg).get('best_residual')})",
+              bool(fall) and _ADVICE in fall
+              and smooth_line(hg).get("residual")
+              <= smooth_line(hg).get("best_residual", -1)
+              and smooth_line(hg).get("sweeps") == 20)
+        for name, out_d, _ in curved:
+            turn = cap_warning(out_d)
+            same = (bool(turn) and bool(fall)
+                    and turn[turn.index(_ADVICE):] == fall[fall.index(_ADVICE):]
+                    if _ADVICE in turn and _ADVICE in fall else False)
+            check(f"14. ...and the {name}'s TURNED warning is byte-identical to it "
+                  f"from `{_ADVICE}` onward — the rule stated as an equality rather "
+                  f"than as a blacklist, so the deleted sentence REWORDED reddens this "
+                  f"too (advice tails equal: {same})",
+                  same)
+            check(f"14. ...while the two branches really do differ BEFORE it, so the "
+                  f"equality above is a shared advice half and not two identical "
+                  f"warnings ({name} observes its best residual, the H-grid does not)",
+                  bool(turn) and _ADVICE in turn
+                  and turn[:turn.index(_ADVICE)] != fall[:fall.index(_ADVICE)]
+                  and "ALREADY ABOVE the best" in turn[:turn.index(_ADVICE)]
+                  and "ALREADY ABOVE the best" not in fall[:fall.index(_ADVICE)])
+
+        # ── THE TABLE IN ITS THREE HOMES, DERIVED RATHER THAN REMEMBERED ────
+        #
+        # #156's acceptance asks that the four cases' residual / best / at-sweep
+        # figures be "recorded where a reader meets the rule, and DERIVED rather than
+        # remembered if `--sync` can reach them". `--sync` CANNOT: it rewrites what
+        # the instruction files state about THEMSELVES and never runs the mesher. That
+        # left the same four rows hand-copied into three files — the rule file, the
+        # design note and `src/MultiBlock.cpp`'s own comment — which is this repo's
+        # "fixed in N of M homes" class waiting to happen, and the spec review said so.
+        #
+        # SO THE GATE DOES WHAT `--sync` CANNOT. It already ran all four cases; here it
+        # formats what it measured exactly as each file renders it and requires the
+        # string to be there. A figure that drifts in ANY of the three reddens, naming
+        # the file and the row.
+        #
+        # WHITESPACE IS NORMALISED FIRST, because a triple WRAPS: the rule file breaks
+        # `tworing_offset`'s across two lines and `src/MultiBlock.cpp` comments every
+        # line with `//`. That is the same trap `docs/agents/rule-file-style.md` records
+        # for anchors — an un-normalised search reports a preserved figure as a lost one,
+        # and a false positive is indistinguishable from a real drift.
+        def _flat(path, strip_slashes=False):
+            txt = io.open(os.path.join(_REPO, path), encoding="utf-8").read()
+            if strip_slashes:
+                txt = re.sub(r"(?m)^\s*//", " ", txt)
+            return re.sub(r"\s+", " ", txt)
+
+        homes = [
+            (".claude/rules/mesher-smoothing.md", _flat(".claude/rules/mesher-smoothing.md"),
+             "%s / %s / %d"),
+            ("docs/design_notes/mesher.md", _flat("docs/design_notes/mesher.md"),
+             "| %s | %s | %d |"),
+            ("src/MultiBlock.cpp", _flat("src/MultiBlock.cpp", strip_slashes=True),
+             "%s / %s / %d"),
+        ]
+        for path, flat, shape in homes:
+            missing = {}
+            for name in sorted(table):
+                v = table[name]
+                want = shape % ("%.3e" % v.residual, "%.3e" % v.best, v.best_sweep)
+                if want not in flat:
+                    missing[name] = want
+            check(f"14. {path} states this run's OWN residual / best / at-sweep for "
+                  f"all four shipped curved cases, so the table a reader meets there "
+                  f"is DERIVED by this gate rather than remembered — `--sync` cannot "
+                  f"reach these, and three hand-copied homes is how a figure goes "
+                  f"stale in two of them (missing: {missing or 'none'})",
+                  not missing)
 
     print()
     if failures:
