@@ -1762,9 +1762,10 @@ def main() -> int:
         # Every other check in this file that reads the cap warning compares a
         # STRING. That is the right gate for "the sentence #83 replaced is gone",
         # and it is the wrong one for "the sentence is TRUE" — which is how the
-        # `pastBest` branch shipped for four tickets saying "raising
-        # MB_SMOOTH_ITERS makes this mesh worse, not more converged. Lower it to at
-        # most that sweep." The class the design notes call "a gate that did not
+        # `pastBest` branch shipped from #82 (`8b605a4`, where it was introduced) to
+        # #156 saying "raising MB_SMOOTH_ITERS makes this mesh worse, not more
+        # converged. Lower it to at most that sweep." The class the notes call "a
+        # gate that did not
         # measure its claim": a statement about the MESH concluded from a quantity
         # that only describes the ITERATION.
         #
