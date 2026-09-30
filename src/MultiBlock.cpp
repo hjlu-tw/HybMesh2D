@@ -1792,8 +1792,14 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
                      "a solution. That is a fact about the ITERATION and not about the "
                      "mesh — do NOT lower the cap back to that sweep, which on every "
                      "shipped curved case is a measurably worse grid. "
+                   // NOT "still FALLING": this branch is `residual <= best`, which a
+                   // PLATEAU satisfies as well as a descent (the tie keeps the EARLIER
+                   // sweep as `best_sweep`, since the best is recorded on first
+                   // reaching it). Saying "falling" there would assert more than the
+                   // comparison supports — the same shape of overclaim #156 is about.
                    : std::string(
-                     "Its residual is still FALLING, so the solve has more to give. "))
+                     "Its residual is AT the best this solve reached, so the iteration "
+                     "has not turned and the solve has more to give. "))
             + "Raising MB_SMOOTH_ITERS takes it further and the declared wall "
               "height is held while it does. What bounds it is stability, not "
               "the kernel's limit: this point iteration lags its coefficients "
