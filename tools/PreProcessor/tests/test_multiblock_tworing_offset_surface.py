@@ -606,7 +606,9 @@ def main() -> int:
     u1, u2 = rows["unsmoothed"][0], rows["unsmoothed"][1]
     check("10f. UNSMOOTHED the wall reading REVERSES: the arc-length rule that "
           "places a following edge's nodes does not put them normal-opposite the "
-          "body's on a body of varying curvature, and 20 sweeps are what repair it",
+          "body's on a body of varying curvature, so the interior radial is a "
+          "TILTED CHORD longer than the ring is thick and the fill scales the "
+          "first cell with it — 20 sweeps are what repair it",
           u1["wall_first_cell_worst_rel"] > 10.0 * u2["wall_first_cell_worst_rel"])
 
     print("\n%d checks failed" % len(failures))

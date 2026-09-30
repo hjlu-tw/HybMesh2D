@@ -4225,11 +4225,21 @@ distance of **+0.25**. It needed no C++ change either.
   a bound wall from coming apart. Equal arc on the body corresponds to equal arc on its
   constant-distance offset only where `1 + d·κ` is constant — that is, on a circle. On
   anything else the seam node at arc fraction `t` is not the one the body node at `t`
-  sees along its normal, the radial tilts, and the first cell measured normal to the wall
-  is off before anything smooths it. **It cannot be fixed by resampling either geometry**,
-  and it gets WORSE as the ring gets thinner (measured at the same 24 intervals:
-  0.103051 at d = 0.05, 0.092325 at 0.10, 0.083931 at 0.15, 0.070625 at 0.25), because
-  the first row sits a smaller fraction of the way across a shorter blend. The shipped
+  sees along its normal, so the interior radial line between them is a TILTED CHORD and
+  is LONGER than `d`. **That length is the whole of the error, and this sentence used to
+  name a measurement nothing takes** (#155's research note, `docs/research/`): the figure
+  is `MbQuality`'s, and `src/MbQuality.cpp` measures the first grid step as
+  `|node(k,1) - node(k,0)|` — the step's own length, never a perpendicular distance to the
+  wall. The fill scales the first cell with the radial it sits on, so a radial 7.09% long
+  gives a first cell 7.09% high. Measured on the shipped files at equal arc fraction, the
+  wall-to-seam chord runs **0.250000 .. 0.267724** against `d = 0.25`, and that 0.070897
+  is the 0.070625 the run reports, to the difference between a continuum and the mesh's 24
+  stations. Steiner checks the same arithmetic from the other side: the offset quarter is
+  0.998240 where `L + d·π/2` is 0.998220.
+  **It cannot be fixed by resampling either geometry**, and it gets WORSE as the ring gets
+  thinner (measured at the same 24 intervals: 0.103051 at d = 0.05, 0.092325 at 0.10,
+  0.083931 at 0.15, 0.070625 at 0.25) — the stretch is a RATIO, so a fixed absolute
+  mismatch is a larger fraction of a shorter radial. The shipped
   default's 20 sweeps take it to 0.000000 — better than the single ring's 0.000389 — so
   what a user gets is the top table, and the bottom one is what they would get by turning
   the smoother off on this case.

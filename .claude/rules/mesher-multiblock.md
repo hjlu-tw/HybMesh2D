@@ -475,10 +475,15 @@ two halves meet, and the case the batch exists for.
   against them. Unsmoothed the wall reading REVERSES — **0.070625 against 0.003779** — and the
   reason is the composition rather than either half: `follows` places a node by ARC LENGTH (#151's
   deliberate reuse), and on a body of varying curvature equal arc on the body is not equal arc on
-  its constant-distance offset, so the two rings' nodes are not normal-opposite and the first cell
-  is off before the smoother repairs it. **Equal arc corresponds to equal arc only where
-  `1 + d·κ` is constant, i.e. on a circle** — so this cannot be fixed by resampling either
-  geometry, and it is a property of the pair and not of this case's numbers.
+  its constant-distance offset, so the two rings' nodes are not normal-opposite, the interior
+  radial between them is a TILTED CHORD longer than `d`, and the fill scales the first cell with
+  it. **The stretch IS the error**: 0.250000 .. 0.267724 against `d = 0.25` on the shipped files,
+  and that 7.09% is the reported 7.06%. Do not read the figure as a perpendicular distance —
+  `src/MbQuality.cpp` measures `|node(k,1) - node(k,0)|`, the first grid step's own length.
+  **Equal arc corresponds to equal arc only where `1 + d·κ` is constant, i.e. on a circle** — so
+  this cannot be fixed by resampling either geometry, and it is a property of the pair and not of
+  this case's numbers. Why, with the primary sources and the three sizes of fix:
+  `docs/research/arc-length-correspondence-on-an-offset-ring.md`.
 - Gated by `tests/test_multiblock_tworing_offset_surface.py` (10 groups on the SHIPPED files,
   which re-derives the committed offset through the REAL service rather than trusting it, and
   reuses #53's conformity measure) and the `mb_tworing_offset` golden case over all three exported
