@@ -3581,22 +3581,38 @@ segment pairing holds by construction (#152 returns one point per source point),
 CHECKED, not assumed, and the mismatch refusal names the seam AND the action; the far field's own
 mismatch names the far field and NOT the action, since nothing offsets a far field.
 
-**`splits` IS A QUALITY PARAMETER HERE, WHICH IT IS NOT ON THE O-GRID, AND THE READ-OUT SAYS SO.**
-`ogrid_splits` means "how many equal-arc blocks each source segment becomes" and has no stated
-effect on accuracy. On this family it has one, and the ticket did not say so — the research note
-`docs/research/arc-length-correspondence-on-an-offset-ring.md` (`683e862`) did. `follows` places a
-node by arc length, and equal arc on a body corresponds to equal arc on its constant-distance
-offset only where `1 + d·κ` is constant, i.e. on a circle. The error is INTERIOR to each declared
-edge — the `m*` corners sit at the same point indices as the `b*` corners, so they ARE
-normal-correspondent by construction — so declaring more corners shrinks it QUADRATICALLY, at no
-code cost. Measured at a fixed 96 nodes around a 2:1 ellipse:
+**MORE CORNERS IS A QUALITY KNOB HERE, WHICH IT IS NOT ON THE O-GRID — AND THE FIRST DRAFT NAMED
+THE WRONG WAY OF ADDING THEM.** `ogrid_splits` means "how many equal-arc blocks each source segment
+becomes" and has no stated effect on accuracy. On this family more corners have one, and the ticket
+did not say so — the research note `docs/research/arc-length-correspondence-on-an-offset-ring.md`
+(`683e862`) did, with a table: 0.070625 worst unsmoothed wall first cell at 4 edges per ring,
+0.018242 at 8, 0.002102 at 16, on a 2:1 ellipse at a fixed 96 nodes around. This family's read-out
+**quoted it for `splits`**, which is a different action, and the Spec review measured the
+difference.
 
-| edges per ring | 4 | 6 | 8 | 12 | 16 | 24 |
-|---|---|---|---|---|---|---|
-| worst wall first cell, unsmoothed | 0.070625 | 0.035103 | 0.018242 | 0.005694 | 0.002102 | 0.000264 |
+The mechanism is why. `follows` places a node by arc length, and equal arc on a body corresponds to
+equal arc on its constant-distance offset only where `1 + d·κ` is constant, i.e. on a circle. A
+corner at a SOURCE-SEGMENT boundary is exempt — the `m*` corners sit at the same POINT INDEX as the
+`b*` corners, so they are normal-correspondent by construction — which is what the research note
+measured. A corner a `splits` puts in is NOT: it sits at equal arc FRACTION of each, and on a body
+of varying curvature that is a different point. Re-measured here through the real mesher,
+unsmoothed, at the same 96 nodes around:
 
-The family ships a knob whose most useful property would otherwise be undocumented, so the last
-three lines of the read-out carry it, and check 12b is what stops them being deleted.
+| edges per ring | 4 | 8 | 16 |
+|---|---|---|---|
+| via more SOURCE segments | 7.06% | 1.82% | 0.21% |
+| via `tworing_splits` | 7.06% | 2.67% | 1.03% |
+| inner-radial length spread | 0.020% | 6.27% | 6.27% |
+
+The two agree at 4 because at one split per segment they ARE the same document. After that the
+panel was promising 0.21% where it delivers 1.03% — a 5x overclaim on the knob it was recommending.
+The read-out now names BOTH ladders and says which is which, the field-spec help carries the same
+two rows, and **check 24 re-measures both ladders through the real mesher** with 24b requiring the
+read-out to quote what it just measured and 24c measuring the chord spread that is the mechanism.
+
+That last part is the transferable finding. Check 12b asserted the sentence was PRESENT — that the
+read-out mentioned arc length, and quadratic shrink, and smoothing — and a present sentence whose
+claim is false passes it every time. A gate over a claim has to measure the claim.
 
 **THE UNSMOOTHED NUMBER IS A PROPERTY OF AN INITIAL GUESS, WHICH IS A BETTER REASON THAN THE ONE
 #155 GAVE.** The ticket's Further Notes say the fix "would be a correspondence rule the mesher does
@@ -3651,13 +3667,28 @@ missing from an O-grid summary that looked complete. `Family.reads_context` is w
 `test_topology_param_specs.py` check 11 holds the declaration in both directions, and check 17b
 asserts it reaches the summary.
 
-**AND A THIRD COPY OF `broken_bindings` WAS NOT WRITTEN.** The O-grid's and the C-grid's were the
-same twelve lines with only the `edges` expression differing; a third would have been the shape
-`topology_counts` was taken out of those two families to stop. `broken_in_lists(model, ctx, lists)`
-now holds the walk in `topology_ogrid_binding.py` — which is de facto that package's shared
-binding-list module rather than the O-grid's private one — and `ring_edges(prefix, splits)` holds
-the "one stored position is `splits` block edges" answer beside it. What stays with each family is
-which lists it binds and how it names one edge of them.
+**THREE COPIES WERE NOT WRITTEN, AND THE REVIEW FOUND THE ONE THAT ALREADY HAD BEEN.** The first
+draft shared `broken_in_lists` and stopped there; the Standards axis then named three more shapes
+that a fourth family had duplicated, and one of them had already drifted in the edit that made it.
+
+| shape | was | is |
+|---|---|---|
+| the `broken_bindings` walk | written twice (O-grid, C-grid) | `topology_ogrid_binding.broken_in_lists`, with `ring_edges(prefix, splits)` and `broken_in_ring_lists(model, ctx, lists, splits)` for the two families that number their ring edges — each family's own `broken_bindings` is now one line |
+| resolve, then order, then cover | written twice, comments included | `topology_ogrid_binding.ring_binding_problem(ctx, lists, splits)`, which also owns the PARAGRAPH saying why that order is the rule |
+| the four questions asked of a bound outline | written THREE times | `topology_binding.outline_problem(ctx, role, name, g, what=, closed_note=)` |
+
+The third is the one worth the sentence. The O-grid, the C-grid's section reader and the new family
+each spelled the same cascade — is there a name, does this mesh load it, does it carry per-segment
+data, is it a closed loop — with the middle two messages verbatim identical. The two-ring copy
+**dropped the `It loads: …` list** from the second refusal, which is the only part of that sentence
+a user can act on. Nothing failed; no gate asserts on that clause. That is exactly what a copied
+message is for: it is wrong only once it drifts, and it drifted in the edit that made it. The two
+clauses that really are the family's — the noun it binds (`shape` / `section`) and why it needs a
+closed loop — are parameters, and everything else is identical by construction now.
+
+`topology_ogrid_binding.py` is therefore de facto the package's shared binding-list module rather
+than the O-grid's private one. Its name is left alone; renaming it would churn four importers to
+say what its docstring already says.
 
 ##### Named blind spots
 

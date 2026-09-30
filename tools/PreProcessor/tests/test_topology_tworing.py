@@ -118,6 +118,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -341,11 +343,12 @@ check(f"12. the derivation read-out shows RESULT AND WORKING — both counts wit
       f"ring crosses ({len(_lines)} lines)",
       not _p.problem and "DERIVED" in _text and "BL_INITIAL_THICKNESS" in _text
       and "ds_start" in _text and "inner:" in _text and "outer:" in _text)
-check("12b. ...and it says what `splits` COSTS AND BUYS, which is this family's own "
-      "property and not the O-grid's: arc-length correspondence, the quadratic "
-      "shrink, and that the default smoothing repairs it",
-      "arc" in _text.lower() and "quadratic" in _text.lower()
-      and "smoothing" in _text.lower())
+check("12b. ...and it says what MORE CORNERS costs and buys, which is this family's "
+      "own property and not the O-grid's — arc-length correspondence, and that the "
+      "default smoothing repairs it — naming BOTH ways of adding them, because they "
+      "are not equally good and check 24 measures the difference",
+      "arc" in _text.lower() and "smoothing" in _text.lower()
+      and "SOURCE segments" in _text and "Splits Per Segment" in _text)
 check("12c. ...and it says the seam's label reaches NOTHING, rather than leaving the "
       "user to go and read the .bnd (user story 8)",
       "reaches" in _text and "no face" in _text)
@@ -765,7 +768,6 @@ else:
         topo = tm.project(_def, conf, ctx)
         pd, stemd, outd = run(tmp, "defaults", shipped_config(
             SHIPPED["circle"]["case"], paths={"MESH_TOPOLOGY_FILE": topo}))
-        import re
         mm = re.search(r"Inverted cells\s*:\s*(\d+) of (\d+)", outd)
         check(f"23. the two-ring family's DEFAULTS on a shipped geometry run the real "
               f"mesher to exit 0 with zero inverted cells "
@@ -781,6 +783,111 @@ else:
               f"'seam' — an interior line is not a boundary, and this is where a user "
               f"would otherwise have to go and check ({names})",
               names == ["farfield", "wall"])
+
+        # ── 24. the read-out's own QUALITY claim, RE-MEASURED ────────────────
+        # #155's research note measured one ladder and this family's first draft
+        # quoted it for the other. The Spec review measured `splits` itself and the
+        # two are different, so the panel promised 0.21% where it delivers 1.03%.
+        # Both ladders are now re-measured HERE, on the shipped ellipse at a fixed 96
+        # nodes around, so the sentence the panel shows cannot go stale: a cell of
+        # `quarter / 24` gives n_theta = 96 at EVERY splits, which is what makes the
+        # two ladders comparable at all.
+        _ELL = SHIPPED["ellipse"]
+        _CELL96 = 0.605521 / 24.0
+
+        def wall_worst(geom_dir, geoms, splits, tag):
+            """The worst wall first-cell error the real mesher reports, unsmoothed."""
+            ctx2 = tb.context_for_config(Cfg(geoms))
+            mdl2 = model(*geoms, tworing_cell=_CELL96, tworing_splits=splits,
+                         tworing_radial_inner=25, tworing_radial_outer=25)
+            pl = tw.plan(mdl2, ctx2)
+            if pl.problem:
+                return None, 0, pl.problem
+            topo2 = tm.project(mdl2, os.path.join(geom_dir, tag + ".conf.dat"), ctx2)
+            pr, st, out2 = run(geom_dir, tag, shipped_config(
+                _ELL["case"], paths={"MESH_TOPOLOGY_FILE": topo2},
+                dirs={"GEOM_FILE": geom_dir}), NO_SMOOTH)
+            m2 = re.search(r"Wall first cell\s*:\s*worst ([0-9.]+)% off", out2)
+            return (float(m2.group(1)) if m2 and pr.returncode == 0 else None,
+                    pl.blocks, pl.n_theta)
+
+        def resegmented(pieces):
+            """The three shipped ellipse outlines, each source segment cut `pieces`
+            ways AT THE SAME POINT INDICES on all three — what a user re-segmenting
+            in the CAD stage does, and the reason those corners pair point for point.
+            """
+            d = tempfile.mkdtemp(dir=tmp)
+            out2 = []
+            for n in _ELL["geoms"]:
+                for ext in ("", ".meta"):
+                    shutil.copy(os.path.join(_GEOM, n + ext),
+                                os.path.join(d, n + ext))
+                out2.append(os.path.join(d, n))
+            if pieces > 1:
+                for g in out2:
+                    for old in (4, 3, 2, 1):
+                        split_segment_in_meta(
+                            g, old, [old * 10 + j for j in range(pieces)])
+            return d, out2
+
+        _ship = [os.path.join(_GEOM, g) for g in _ELL["geoms"]]
+        _by_splits, _by_segments = {}, {}
+        for _k, _sp in ((4, 1), (8, 2), (16, 4)):
+            _d = tempfile.mkdtemp(dir=tmp)
+            for _n in _ELL["geoms"]:
+                for _e in ("", ".meta"):
+                    shutil.copy(os.path.join(_GEOM, _n + _e),
+                                os.path.join(_d, _n + _e))
+            _by_splits[_k] = wall_worst(
+                _d, [os.path.join(_d, n) for n in _ELL["geoms"]], _sp, "sp%d" % _k)[0]
+            _dd, _gg = resegmented(_sp)
+            _by_segments[_k] = wall_worst(_dd, _gg, 1, "sg%d" % _k)[0]
+        check(f"24. RE-SEGMENTING beats SPLITTING, which is what the read-out says and "
+              f"what the first draft got backwards. Worst unsmoothed wall first cell "
+              f"on the shipped ellipse at 96 nodes around, by edges per ring — more "
+              f"SOURCE segments: {_by_segments}; more SPLITS: {_by_splits}. Both start "
+              f"at the same 4-edge number, because at one split per segment they ARE "
+              f"the same document",
+              all(v is not None for v in
+                  list(_by_splits.values()) + list(_by_segments.values()))
+              and abs(_by_splits[4] - _by_segments[4]) < 1e-9
+              and _by_segments[8] < _by_splits[8]
+              and _by_segments[16] < _by_splits[16])
+        check("24b. ...and the read-out quotes the numbers this check just measured, "
+              "to 2 decimals, in both ladders — so the sentence the panel shows "
+              "cannot go stale while the gate stays green",
+              all(f"{v:.2f}%" in _text
+                  for v in list(_by_segments.values()) + list(_by_splits.values())))
+        def chord_spread(geoms, splits):
+            """How much the ring's inner radials differ in length, as a ratio.
+
+            The MECHANISM, measured rather than argued: a corner at a source-segment
+            boundary sits at the same POINT INDEX on the body and on its offset, so
+            every radial is the ring's thickness; a corner a `splits` put in the
+            middle sits at equal arc FRACTION of each, which on a body of varying
+            curvature is a different point — and the fill scales the first cell with
+            the radial it grows along.
+            """
+            ctx2 = tb.context_for_config(Cfg(geoms))
+            pl = tw.plan(model(*geoms, tworing_cell=_CELL96, tworing_splits=splits,
+                               tworing_radial_inner=25, tworing_radial_outer=25), ctx2)
+            gb, gm = ctx2.geometry(geoms[0]), ctx2.geometry(geoms[1])
+            ch = []
+            for (bs, bt), (ms, mt) in zip(tw._ring(pl.body_segs, splits),
+                                          tw._ring(pl.seam_segs, splits)):
+                a2, b2 = gb.spans[bs].point_at(bt), gm.spans[ms].point_at(mt)
+                ch.append(((a2[0] - b2[0]) ** 2 + (a2[1] - b2[1]) ** 2) ** 0.5)
+            return max(ch) / min(ch) - 1.0
+
+        _sp_spread = chord_spread(_ship, 4)
+        _sg_spread = chord_spread(resegmented(4)[1], 1)
+        check(f"24c. ...and the MECHANISM is the corner chords, measured rather than "
+              f"argued: at 16 edges per ring the inner radials differ by "
+              f"{_sp_spread * 100:.3f}% when the corners come from SPLITS and "
+              f"{_sg_spread * 100:.3f}% when they come from SOURCE SEGMENTS, because "
+              f"a segment boundary sits at the same POINT INDEX on the body and its "
+              f"offset while a split sits at equal arc FRACTION of each",
+              _sg_spread < 0.001 < _sp_spread)
 
 print()
 if failures:

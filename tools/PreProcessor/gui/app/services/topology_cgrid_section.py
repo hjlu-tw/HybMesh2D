@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from app.services.topology_binding import BindingError
+from app.services.topology_binding import BindingError, outline_problem
 from app.services.topology_ogrid_binding import order_problem, parse_binding
 
 #: How many surface segments a section the C-grid can wrap is split into: the upper
@@ -122,24 +122,15 @@ def resolve_section(ctx, geom_name: str, segs_text: str) -> tuple:
     from the leading one.
     """
     name = str(geom_name or "").strip()
-    if not name:
-        return None, None, ("name the aerofoil geometry — this family binds to a "
-                            "section from the CAD stage and writes none of its "
-                            "own."), ""
-    g = ctx.geometry(name)
-    if g is None:
-        return None, None, (f"the aerofoil geometry '{name}' is not one of this "
-                            f"mesh's geometries. It loads: "
-                            f"{', '.join(ctx.names()) or '(nothing)'}."), ""
-    if not g.spans:
-        return None, None, (f"the aerofoil geometry '{g.spelling}' carries no "
-                            f"per-segment data, so there is nothing to bind to. That "
-                            f"comes from the '.meta' sidecar the PreProcessor writes "
-                            f"beside the .dat; re-export it from the CAD stage."), ""
-    if not g.closed:
-        return None, None, (f"the aerofoil geometry '{g.spelling}' is not a closed "
-                            f"loop, so its upper and lower surfaces do not meet at a "
-                            f"trailing edge."), ""
+    g = ctx.geometry(name) if name else None
+    # The four questions every binding family asks, in ONE place since #155's review
+    # found a third copy of them that had dropped a clause. What is this family's own
+    # is the noun it binds and why it needs a closed loop.
+    why = outline_problem(ctx, SECTION_ROLE, name, g, what="section",
+                          closed_note="so its upper and lower surfaces do not meet "
+                                      "at a trailing edge.")
+    if why:
+        return None, None, why, ""
     if len(g.seg_ids) == BLUNT_SEGMENTS:
         return None, None, (
             f"'{g.spelling}' carries {BLUNT_SEGMENTS} segments. A section drawn with "

@@ -49,14 +49,18 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from app.services.topology_binding import BindingError
+from app.services.topology_binding import BindingError, outline_problem
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid_binding import (
-    BINDING_LISTS, cover_problem, edges_by_prefix, order_problem, parse_binding,
+    BINDING_LISTS, parse_binding, ring_binding_problem,
 )
 
 #: The template's own name for the family, as stored in the project file.
 FAMILY = "ogrid"
+
+#: Why this family needs a closed outline, for the shared four-question cascade
+#: (`topology_binding.outline_problem`). The one clause of it that is the O-grid's own.
+CLOSED_NOTE = "and an O-grid is a ring around a closed body."
 
 #: The smallest ring the mesher will accept, MEASURED rather than reasoned. Its
 #: block-orientation test takes the signed area of the corner CHORD ring, and with
@@ -200,24 +204,9 @@ def plan(model, ctx) -> Plan:
     far = ctx.geometry(model.ogrid_far_geom)
     for role, name, g in (("body", model.ogrid_body_geom, body),
                           ("far field", model.ogrid_far_geom, far)):
-        if not str(name or "").strip():
-            p.problem = (f"name the {role} geometry — this family binds to a shape "
-                         f"from the CAD stage and writes none of its own.")
-            return p
-        if g is None:
-            p.problem = (f"the {role} geometry '{name}' is not one of this mesh's "
-                         f"geometries. It loads: "
-                         f"{', '.join(ctx.names()) or '(nothing)'}.")
-            return p
-        if not g.spans:
-            p.problem = (f"the {role} geometry '{g.spelling}' carries no per-segment "
-                         f"data, so there is nothing to bind to. That comes from the "
-                         f"'.meta' sidecar the PreProcessor writes beside the .dat; "
-                         f"re-export it from the CAD stage.")
-            return p
-        if not g.closed:
-            p.problem = (f"the {role} geometry '{g.spelling}' is not a closed loop, "
-                         f"and an O-grid is a ring around a closed body.")
+        why = outline_problem(ctx, role, name, g, closed_note=CLOSED_NOTE)
+        if why:
+            p.problem = why
             return p
 
     # `BINDING_LISTS` names each list's ROLE, and it is the only spelling: this
@@ -234,48 +223,16 @@ def plan(model, ctx) -> Plan:
         return p
     splits = max(1, int(model.ogrid_splits))
 
-    # EVERY BINDING RESOLVED, AND NAMED BY ITS EDGE — BEFORE any question about
-    # counts. Through `ctx.resolve` rather than through a second `s in g.spans` test
-    # here, so the refusal has ONE author: the sentence the panel shows while the
-    # user types, the message `build` raises and the `edge` the repair panel (#138)
-    # flags are all that one call's. The edge id is spelled the same way `build`
-    # spells it below — the wall of ring position k is `w{k}`, and the stored
-    # position i is ring position i*splits — which is what makes "the broken edge is
-    # named" name something the user can find.
-    #
-    # BEFORE the one-to-one pairing check, which #138 moved it in front of: after
-    # repairing one list a CAD split had lengthened, the two lists differ in length
-    # BECAUSE of the binding still broken in the other, and answering "these counts
-    # do not match" there names no edge and sends the user to look at the wrong
-    # geometry. Each list is walked against its own ring, so neither depends on the
-    # other's length.
-    # ONE list of the two lists, built from `BINDING_LISTS` so the role word and the
-    # edge prefix travel together rather than being retyped per loop.
+    # Resolve, then order, then cover — every list before any question about counts.
+    # `ring_binding_problem` is the ONE owner of that walk and of the reason it is in
+    # that order; the family's answer is only WHICH lists and how it names an edge.
+    # The edge id it names is the one `build` spells below — the wall of ring position
+    # k is `w{k}`, and the stored position i is ring position i*splits.
     lists = tuple((row[0], g, segs, row[3]) for row, g, segs in
                   zip(BINDING_LISTS, (body, far), (p.body_segs, p.far_segs)))
-    for _who, g, segs, prefix in lists:
-        try:
-            for i, sid in enumerate(segs):
-                ctx.resolve(f"{prefix}{i * splits}", g.spelling, sid)
-        except BindingError as exc:
-            p.problem = str(exc)
-            p.broken_edge = exc.edge
-            return p
-
-    # ...in the ORDER the geometry runs them, which resolving each id one at a time
-    # cannot see (every id in a swapped list still resolves), and COVERING it, which
-    # the order check cannot see either (every id in a subset walks the right way).
-    # Both ANSWER with the edge, rather than this loop recovering it from the
-    # sentence they wrote — the shape `BindingError` above already uses.
-    for who, g, segs, prefix in lists:
-        namer = edges_by_prefix(prefix)
-        edge, why = order_problem(who, g, segs, splits, namer)
-        if not why:
-            edge, why = cover_problem(who, g, segs, splits, namer)
-        if why:
-            p.problem = why
-            p.broken_edge = edge
-            return p
+    p.broken_edge, p.problem = ring_binding_problem(ctx, lists, splits)
+    if p.problem:
+        return p
 
     if len(p.body_segs) != len(p.far_segs):
         p.problem = (f"the body binds {len(p.body_segs)} source segment(s) and the "

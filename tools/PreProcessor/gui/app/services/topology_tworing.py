@@ -47,12 +47,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services.topology_binding import BindingError
+from app.services.topology_binding import BindingError, outline_problem
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid import MIN_BLOCKS, radial_law
 from app.services.topology_ogrid_binding import (
-    broken_in_lists, cover_problem, edges_by_prefix, order_problem, parse_binding,
-    ring_edges,
+    broken_in_ring_lists, parse_binding, ring_binding_problem,
 )
 from app.services.topology_spacing import last_interval
 
@@ -65,12 +64,20 @@ FAMILY = "tworing"
 #: menus is the defect #138 fixed for "far field".
 OFFSET_ACTION = "CAD ▸ Offset Geometry…"
 
+#: Why this family needs three closed outlines, for the shared four-question cascade
+#: (`topology_binding.outline_problem`). The one clause of it that is this family's own.
+CLOSED_NOTE = "and every ring of a two-ring O-grid is a loop around a closed body."
+
+#: The middle ring's role word, spelled once because the one refusal that names
+#: :data:`OFFSET_ACTION` has to know which of the three lists it is about.
+SEAM_ROLE = "seam"
+
 #: Which stored list is which, as ``(role, model field, geometry field, edge prefix)``
 #: — ``topology_ogrid_binding.BINDING_LISTS``'s own shape with a THIRD entry. The role
 #: word is what every refusal and every repair row names, so a user with two broken
 #: rings can tell which geometry each is about.
 BINDING_LISTS = (("body", "tworing_body_segs", "tworing_body_geom", "w"),
-                 ("seam", "tworing_seam_segs", "tworing_seam_geom", "s"),
+                 (SEAM_ROLE, "tworing_seam_segs", "tworing_seam_geom", "s"),
                  ("far field", "tworing_far_segs", "tworing_far_geom", "o"))
 
 
@@ -142,15 +149,23 @@ class Plan:
             + (" (overridden)" if self.outer_overridden
                else " (derived: q from that seam spacing)")
             + (f" — CLAMPED at {MAX_COUNT}" if self.outer_clamped else ""),
-            # SPLITS IS A QUALITY PARAMETER HERE, which it is not on the O-grid, and
-            # the read-out says so because nothing else would. Measured on a 2:1
-            # ellipse at 96 nodes around (#155's research note): the worst unsmoothed
-            # wall first-cell error is 7.06% at 4 edges per ring, 1.82% at 8, 0.21% at
-            # 16 and 0.03% at 24.
-            f"splits: {self.blocks} edges per ring — the seam's nodes track the body's "
-            f"by ARC LENGTH, which puts them normal-opposite only on a circle, so more "
-            f"edges shrink the wall-spacing error quadratically. Unsmoothed only: the "
-            f"default 20 smoothing sweeps repair it.",
+            # MORE CORNERS IS A QUALITY KNOB HERE, which it is not on the O-grid —
+            # but WHICH way of adding them matters, and the read-out says so because
+            # nothing else would. #155's research note measured the RE-SEGMENTING
+            # ladder and this family's first draft quoted it for `splits`; the Spec
+            # review measured `splits` itself and the two ladders are different. Both
+            # are on a 2:1 ellipse at 96 nodes around, unsmoothed, worst wall first
+            # cell. Gate: `test_topology_tworing.py` check 24 re-measures both.
+            f"corners: {self.blocks} edges per ring. The seam's nodes track the body's "
+            f"by ARC LENGTH, so the two rings are normal-opposite only on a circle, "
+            f"and the wall's first cell is out by that much before smoothing.",
+            "  · cutting the body AND the seam into more SOURCE segments, at the same "
+            "points, shrinks it fastest — 7.06% → 1.82% → 0.21% at 4, 8 and 16 "
+            "segments per ring, because those corners pair point for point.",
+            "  · raising Splits Per Segment helps LESS — 7.06% → 2.67% → 1.03% at the "
+            "same 4, 8 and 16 — because a split corner sits at equal arc FRACTION and "
+            "inherits the error. Unsmoothed only: the default 20 smoothing sweeps "
+            "repair either to 0.000000.",
             f"seam BC: its {self.blocks} edges FOLLOW '{self.seam_geom}' as interfaces "
             f"and export no face, so whatever you labelled those segments reaches "
             f"nothing.",
@@ -165,35 +180,6 @@ def _ring(segs, splits: int) -> list:
 def _corner(g, seg: int, t: float):
     sp = g.spans.get(seg)
     return None if sp is None else sp.point_at(t)
-
-
-def _geom_problem(role: str, name: str, g) -> str:
-    """The sentence for a named geometry that cannot serve as one of the three rings.
-
-    ONE function for all three, so the seam is held to the same standard as the body
-    and the far field rather than to a looser one written separately. What the seam
-    does not share is the BLANK case: it is the geometry a user is most likely not to
-    have, and the refusal names the CAD action that makes one.
-    """
-    if not str(name or "").strip():
-        if role == "seam":
-            return (f"name the seam geometry — the middle ring the two rings meet on. "
-                    f"This family writes no geometry of its own, so draw one or make "
-                    f"it with {OFFSET_ACTION}, which offsets the body by a distance "
-                    f"and pairs segment for segment with it.")
-        return (f"name the {role} geometry — this family binds to a shape from the "
-                f"CAD stage and writes none of its own.")
-    if g is None:
-        return f"the {role} geometry '{name}' is not one of this mesh's geometries."
-    if not g.spans:
-        return (f"the {role} geometry '{g.spelling}' carries no per-segment data, so "
-                f"there is nothing to bind to. That comes from the '.meta' sidecar "
-                f"the PreProcessor writes beside the .dat; re-export it from the CAD "
-                f"stage.")
-    if not g.closed:
-        return (f"the {role} geometry '{g.spelling}' is not a closed loop, and every "
-                f"ring of a two-ring O-grid is a loop around a closed body.")
-    return ""
 
 
 def plan(model, ctx) -> Plan:
@@ -212,7 +198,15 @@ def plan(model, ctx) -> Plan:
     names = (model.tworing_body_geom, model.tworing_seam_geom, model.tworing_far_geom)
     gs = [ctx.geometry(n) for n in names]
     for (role, _f, _gf, _pre), name, g in zip(BINDING_LISTS, names, gs):
-        why = _geom_problem(role, name, g)
+        why = outline_problem(ctx, role, name, g, closed_note=CLOSED_NOTE)
+        # THE SEAM'S BLANK CASE IS THIS FAMILY'S OWN, and is the only one of the
+        # twelve refusals in that cascade that is: it is the geometry a user is most
+        # likely not to have, and the answer is a CAD action rather than a correction.
+        if why and role == SEAM_ROLE and not str(name or "").strip():
+            why = (f"name the seam geometry — the middle ring the two rings meet on. "
+                   f"This family writes no geometry of its own, so draw one or make "
+                   f"it with {OFFSET_ACTION}, which offsets the body by a distance "
+                   f"and pairs segment for segment with it.")
         if why:
             p.problem = why
             return p
@@ -235,27 +229,16 @@ def plan(model, ctx) -> Plan:
     p.body_segs, p.seam_segs, p.far_segs = held
     splits = max(1, int(model.tworing_splits))
 
-    # EVERY BINDING RESOLVED AND NAMED BY ITS EDGE, before any question about counts —
-    # the O-grid's ordering rule and for its reason: with one list repaired and another
-    # still broken the three differ in length BECAUSE of the broken one, and "the body
-    # binds 5 and the seam 4" names no edge and points at the wrong geometry.
+    # Resolve, then order, then cover — every list before any question about counts.
+    # `ring_binding_problem` is the ONE owner of that walk and of the reason it is in
+    # that order, which matters more here than on the O-grid: with THREE lists, a
+    # length complaint raised before the resolve would name no edge and point at any
+    # of three geometries.
     lists = tuple((row[0], g, segs, row[3])
                   for row, g, segs in zip(BINDING_LISTS, gs, held))
-    for _who, g, segs, prefix in lists:
-        try:
-            for i, sid in enumerate(segs):
-                ctx.resolve(f"{prefix}{i * splits}", g.spelling, sid)
-        except BindingError as exc:
-            p.problem, p.broken_edge = str(exc), exc.edge
-            return p
-    for who, g, segs, prefix in lists:
-        namer = edges_by_prefix(prefix)
-        edge, why = order_problem(who, g, segs, splits, namer)
-        if not why:
-            edge, why = cover_problem(who, g, segs, splits, namer)
-        if why:
-            p.problem, p.broken_edge = why, edge
-            return p
+    p.broken_edge, p.problem = ring_binding_problem(ctx, lists, splits)
+    if p.problem:
+        return p
 
     # PAIRED SEGMENT FOR SEGMENT, all three, and the SEAM's mismatch names the action
     # that makes one that pairs — which is this family's whole answer to #150's "a
@@ -442,16 +425,10 @@ def build(model, ctx=None) -> dict:
 
 
 def broken_bindings(model, ctx) -> tuple:
-    """This family's THREE lists, walked by ``broken_in_lists``.
+    """This family's THREE lists, walked by :func:`broken_in_ring_lists`.
 
     All three, and each row NAMING which — a user whose CAD edit broke the body and
     the seam at once cannot tell two unlabelled rows apart. The role words are
-    :data:`BINDING_LISTS`'s, which is also where the refusals above take them from.
+    :data:`BINDING_LISTS`'s, which is also where every refusal above takes its noun.
     """
-    try:
-        splits = max(1, int(model.tworing_splits))
-    except (TypeError, ValueError):
-        splits = 1
-    return broken_in_lists(model, ctx, tuple(
-        (field, geom_field, who, ring_edges(prefix, splits))
-        for who, field, geom_field, prefix in BINDING_LISTS))
+    return broken_in_ring_lists(model, ctx, BINDING_LISTS, model.tworing_splits)

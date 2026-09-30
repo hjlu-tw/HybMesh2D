@@ -16,9 +16,8 @@ CANVAS", "THE O-GRID BINDS TO THE CAD", "THE BROKEN BINDING IS REPAIRED FROM THE
 TOPOLOGY DETACHES INTO A FILE", "THE C-GRID WRAPS A DRAWN AEROFOIL", "THE C-GRID'S FAR
 FIELD IS OPTIONALLY DRAWN" and "THE TWO-RING O-GRID IS A FAMILY". Read
 the matching section before overruling a rule here; when a rule changes, update BOTH.
-**AND THIS FILE IS NOW NEARLY FULL** — #155 left it under 1,000 characters of its 60,000, which is
-the state `gui-panels-config.md` was in when this file was taken out of it. The next block here is
-a new rule file, not a squeeze; `docs/agents/rule-file-style.md` refuses the compression.
+**AND THIS FILE IS FULL**: the next block here is a new rule file, not a squeeze — #85, #137 and
+#153's precedent, and `docs/agents/rule-file-style.md` refuses the compression.
 
 **THE ELEVENTH RULE FILE, AND THE SECOND TAKEN BECAUSE ONE WAS FULL.** These four blocks (#134,
 #135, #136, #137) lived in `.claude/rules/gui-panels-config.md` until #137's review, which left
@@ -457,65 +456,60 @@ blind spot).
 
 - **THE DELIVERABLE IS ONE NUMBER, NOT THE TWELVE CORNERS.** Both shipped hand-written documents
   (`tworing_ogrid.json`, `tworing_offset.json`) declare the outer ring's first cell as a literal
-  `ds_start` read off a run, and both say in their own comments that changing the inner ring's
-  count, its span or `BL_INITIAL_THICKNESS` makes it wrong and the seam shows. Nothing recomputed
-  it. The family SOLVES it, from the chord of edge `ri0`, the inner radial count and the run's
-  first cell — so a stale number nothing errors on becomes unreachable. Gate:
+  `ds_start` read off a run and both warn in their own comments that changing the inner count, the
+  seam or `BL_INITIAL_THICKNESS` makes it wrong and the seam shows. Nothing recomputed it. The
+  family SOLVES it, from the chord of `ri0`, the inner radial count and the run's first cell, so a
+  stale number nothing errors on becomes unreachable. Gate:
   `tests/test_topology_tworing.py` checks 10, 10b, 19, 22.
 - **THE LENGTH IS THE `ri0` CHORD, NEVER THE AREA-EQUIVALENT SPAN.** The radial COUNTS come from
-  the three outlines' equivalent radii, which is the O-grid's idealisation and is good enough to
-  pick a count; `ds_start` is solved from the chord the mesher actually distributes nodes along.
-  On the shipped ellipse the two are 0.2500509 and 0.2630905, 5% apart. Gate: check 19b, and
-  injection B, which reddened six checks on BOTH shapes — the circle is not blind to it either,
-  its equivalent radii being 0.49994 and 0.99999.
-- **ONE `ds_start` SERVES THE WHOLE RING, taken at position 0, and the alternative is BETTER.** A
-  per-edge value — each outer radial continuing its own inner one — would be strictly more
-  continuous on a body that is not a circle (the ellipse's four inner radials span
-  0.2500008..0.2500509). It is not taken because it would stop the family reproducing the two
-  documents it exists to replace, which is the ticket's own strongest claim. Stated as a finding
-  with its measurement (check 21b), not discovered later.
+  the equivalent radii, the O-grid's idealisation and good enough to pick a count; `ds_start` is
+  solved from the chord the mesher distributes nodes along. On the shipped ellipse the two are
+  0.2500509 and 0.2630905, 5% apart. Gate: check 19b.
+- **ONE `ds_start` SERVES THE WHOLE RING, taken at position 0, and the ALTERNATIVE IS BETTER.** A
+  per-edge value — each outer radial continuing its own inner one — is strictly more continuous on
+  a body that is not a circle (the ellipse's inner radials span 0.2500008..0.2500509). Not taken,
+  because it would stop the family reproducing the two documents it exists to replace. Stated as a
+  finding with its measurement (check 21b), not discovered later.
 - **`services/topology_spacing.py` IS A SECOND HOME FOR THE MESHER'S ONE-SIDED TANH LAW AND SAYS
   SO** — `tanhStartPos`, `solveClusterDelta` and `generateTanhStart` from
   `tools/PreProcessor/include/Spacing.hpp`, the bracket cap and the iteration count included,
   because a bisection stopping elsewhere answers a different delta and the digits that move are
   the seam. **THE PARITY IS MEASURED ON A MESH, NEVER BY DIFFING TWO FORMULAE**: check 22 runs the
-  family's own output through the real mesher unsmoothed at inner 17 / outer 31 — a count NEITHER
-  shipped document uses — and requires the cell out of the seam to equal the cell into it
-  (1.000000000), with the key-removed document as the negative control (3.15x). Check 19 is the
-  cheaper half and needs no binary: the derived number must equal the literal each shipped
-  document was told, which was itself read off a real run.
+  family's output through the real mesher unsmoothed at inner 17 / outer 31 — a count NEITHER
+  shipped document uses — and requires the cell out of the seam to equal the cell into it, with the
+  key-removed document as the control. Check 19 is the cheaper half and needs no binary: the
+  derived number must equal the literal each document was told, itself read off a real run.
 - **THE FAMILY WRITES NO GEOMETRY, WHICH IS #150's OWN QUESTION ANSWERED: THE RULE HOLDS.** A
-  `follows` edge cannot attach to a generated corner — it needs a real geometry with a segment id
-  and a polyline — so a generated seam would be a written FILE with no stable-id scheme, no
-  sidecar and no place in the project round trip. The seam is the user's, normally made with
-  **CAD ▸ Offset Geometry…** (#152), and the family REFUSES by name when it is absent or does not
-  pair, with the refusal naming that menu action. `OFFSET_ACTION` is the ONE spelling of it, the
-  rule #138 bought when two refusals about one list hyphenated "far field" differently. **The seam
-  may NOT be assumed to be an offset**: an offset pairs by construction, a hand-drawn one (#153's
-  circle) does not, so the pairing is checked. Gate: checks 13, 13b, 13c.
-- **TWO RADIAL EQUIVALENCE CLASSES, AND NO BLOCK HOLDS ONE OF EACH.** That separation is the whole
-  point of the split: the law holding the wall's first cell answers to the wall and the one
-  reaching the far field answers to the far field. Derived in the gate from the MESHER's
-  propagation rules (`tests/topology_doc_invariants.py::count_classes`, extracted by this ticket),
-  never from the builder's idea of them. Gate: check 8. Removing a SEED does not move the
-  partition — `one_seed_per_class` is what sees that, measured.
-- **EVERY outer radial carries `ds_start`; every inner one declares its body end a wall end.**
-  Spacing does not propagate along a count class, only counts do. Gate: check 9, and injection D,
-  which is also how check 22's own weakness is known — the +x ray it walks runs along `ro0`, so a
-  key present there and missing elsewhere is invisible to it.
-- **`tworing_splits` IS A QUALITY PARAMETER, WHICH `ogrid_splits` IS NOT, AND THE READ-OUT SAYS
-  SO.** `follows` places a node by arc length, and equal arc on a body matches equal arc on its
-  constant-distance offset only where `1 + d·κ` is constant — i.e. on a circle. The error is
-  INTERIOR to each declared edge (the `m*` corners sit at the same point indices as the `b*`
-  corners), so more corners shrink it QUADRATICALLY at no code cost: 7.06% worst unsmoothed wall
-  first cell at 4 edges per ring, 0.21% at 16, on a 2:1 ellipse at 96 nodes around. A knob whose
-  most useful property is undocumented is the failure `test_topology_param_specs.py` exists for,
-  reached by another route. Gate: check 12b.
+  `follows` edge cannot attach to a generated corner, so a generated seam would be a written FILE
+  with no stable-id scheme and no place in the project round trip. The seam is the user's, normally
+  made with **CAD ▸ Offset Geometry…** (#152), and the family REFUSES by name when it is absent or
+  does not pair, naming that menu action — `OFFSET_ACTION` is its ONE spelling. **The seam may NOT
+  be assumed to be an offset**: an offset pairs by construction, a hand-drawn one (#153's circle)
+  does not, so the pairing is checked. Gate: checks 13, 13b, 13c.
+  Why: docs/design_notes/gui.md, "at a cost of one user action"
+- **TWO RADIAL EQUIVALENCE CLASSES, AND NO BLOCK HOLDS ONE OF EACH** — the law holding the wall's
+  first cell answers to the wall and the one reaching the far field answers to the far field, which
+  is the whole point of the split. Derived in the gate from the MESHER's propagation rules
+  (`tests/topology_doc_invariants.py::count_classes`, extracted by this ticket), never from the
+  builder's idea of them. Gate: check 8 — which does NOT see a missing SEED, that being
+  `one_seed_per_class`'s, measured.
+- **EVERY outer radial carries `ds_start`; every inner one declares its body end a wall end** —
+  spacing does not propagate along a count class, only counts do. Gate: check 9.
+- **MORE CORNERS IS A QUALITY KNOB HERE, WHICH IT IS NOT ON THE O-GRID — AND WHICH WAY OF ADDING
+  THEM MATTERS.** `follows` places a node by arc length, which matches the body's only where
+  `1 + d·κ` is constant, i.e. on a circle. A corner at a SOURCE-SEGMENT boundary is EXEMPT (same
+  POINT INDEX on both), so re-segmenting shrinks the error fast — 7.06% → 1.82% → 0.21% worst
+  unsmoothed wall first cell at 4, 8 and 16 edges per ring on a 2:1 ellipse. A corner a `splits`
+  puts in is NOT (equal arc FRACTION of each), so the same ladder reads 7.06% → 2.67% → 1.03% and
+  the corner chords spread 6.27% against 0.02%. **The read-out must name BOTH ladders**, and the
+  gate re-measures both: check 24, with 24b requiring the read-out to quote what it measured and
+  24c the chord spread. A check asserting a sentence is PRESENT is not one asserting its claim is
+  TRUE, and 12b alone was the first.
+  Why: docs/design_notes/gui.md, "quoted it for `splits`"
 - **THE ARC-LENGTH COST IS INHERITED DELIBERATELY, AND THE READ-OUT MUST NOT PROMISE OTHERWISE.**
   Thompson, Warsi & Mastin Ch. VI §2F frames the algebraic grid as the INITIAL GUESS for an
-  elliptic solve that repairs exactly this; `MbControl` already runs it, which is why 20 sweeps
-  take 0.070625 to 0.000000. So the unsmoothed number is correct rather than merely acceptable,
-  and a correspondence rule is a separate ticket (#157's Hermite fill is the described option).
+  elliptic solve that repairs exactly this, and `MbControl` already runs it — 20 sweeps take
+  0.070625 to 0.000000. A correspondence rule is a separate ticket (#157's Hermite fill).
 - **`broken_bindings` COVERS ALL THREE GEOMETRIES AND EVERY ROW NAMES WHICH.** A user whose CAD
   edit broke the body and the seam at once cannot tell two unlabelled rows apart. The role words
   live in `BINDING_LISTS` and every refusal takes its noun from there. The repair panel needed NO
@@ -523,11 +517,13 @@ blind spot).
   whose repair loop ALWAYS TAKES THE TOP ROW: a repair rebuilds the rows from inside the combo's
   own signal, so a positional loop silently skips the second broken binding, which is what this
   gate's first draft did.
-- **THE `broken_bindings` WALK HAS ONE OWNER**, `topology_ogrid_binding.broken_in_lists`, with
-  `ring_edges(prefix, splits)` beside it. The O-grid's and the C-grid's were the same twelve lines
-  differing only in the `edges` expression; a third copy is the shape `topology_counts` was taken
-  out of those two families to stop. What stays with each family is which lists it binds and how
-  it names one edge of them.
+- **THREE WALKS HAVE ONE OWNER, not one**, and what stays with each family is only which lists it
+  binds and how it names an edge of them: `topology_ogrid_binding.broken_in_lists` /
+  `broken_in_ring_lists` (the broken-position walk), `ring_binding_problem` (resolve, then order,
+  then cover — which also owns the paragraph saying why that order is the rule), and
+  `topology_binding.outline_problem` (the four questions asked of a bound outline, written THREE
+  times before #155 and already drifted: the newest copy had dropped the `It loads:` list from its
+  second refusal, which nothing gates).
 
 Why, and every measurement: `docs/design_notes/gui.md`, "THE TWO-RING O-GRID IS A FAMILY, AND THE
 ONE NUMBER IS DERIVED".
@@ -624,6 +620,11 @@ ONE NUMBER IS DERIVED".
 Why, and every measurement: `docs/design_notes/gui.md`, "THE BLOCK SKELETON ON THE CANVAS".
 
 ## Named blind spots
+
+- **The two-ring family's seam-continuity check walks ONE radial line** (`test_topology_tworing.py`
+  check 22, the `+x` ray), so a `ds_start` present on `ro0` and missing from the other outer
+  radials is invisible to it — measured by that file's injection D, which left it green. The
+  node-for-node reproduction is what covers the rest, and only on the two shipped parameter sets.
 
 Consolidated here rather than trailing the rules they belong to, so a coverage claim can be checked
 against one list — the shape `gui-panels-config.md` uses, and these six came from it with #137.

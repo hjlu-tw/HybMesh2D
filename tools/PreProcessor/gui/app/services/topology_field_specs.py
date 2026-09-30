@@ -315,13 +315,17 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
                         readonly=True)),
     FieldSpec("topo_tworing_splits", "int", "Splits Per Segment",
               "How many equal-arc blocks each source segment becomes, in BOTH "
-              "rings. It is a QUALITY knob here and not only a block count: the "
-              "seam's nodes track the body's by ARC LENGTH, which makes the two "
-              "rings' nodes normal-opposite only on a circle, and declaring more "
-              "corners shrinks the resulting wall-spacing error quadratically. "
-              "Measured on a 2:1 ellipse at 96 nodes around: 7.06% worst unsmoothed "
-              "error at 4 edges per ring, 0.21% at 16. The default smoothing "
-              "repairs it; the read-out says so.",
+              "rings. It is a QUALITY knob here and not only a block count — the "
+              "seam's nodes track the body's by ARC LENGTH, so the two rings are "
+              "normal-opposite only on a circle and the wall's first cell is out by "
+              "that much before smoothing — but it is the WEAKER of the two ways to "
+              "add corners, and the read-out says which. Measured on a 2:1 ellipse "
+              "at 96 nodes around, unsmoothed: raising this takes the worst error "
+              "7.06% -> 2.67% -> 1.03% at 4, 8 and 16 edges per ring, where cutting "
+              "the body AND the seam into that many SOURCE segments takes it "
+              "7.06% -> 1.82% -> 0.21%. A split corner sits at equal arc FRACTION "
+              "and inherits the error; a segment boundary pairs point for point. "
+              "The default smoothing repairs either.",
               model="tworing_splits", group=GROUP, modes=_MB,
               opts=dict(lo=1, hi=64)),
     FieldSpec("topo_tworing_cell", "sci", "Target Cell Edge",

@@ -293,6 +293,41 @@ class BindingContext:
         return seg
 
 
+def outline_problem(ctx, role: str, name: str, g, what: str = "shape",
+                    closed_note: str = "") -> str:
+    """Why the geometry ``name`` cannot serve as a bound OUTLINE, or ``""``.
+
+    THE FOUR QUESTIONS EVERY BINDING FAMILY ASKS, IN THE ORDER THE USER CAN ACT ON
+    THEM: is there a name, does this mesh load it, does it carry per-segment data,
+    is it a closed loop. All three binding families spelled the cascade themselves
+    — and the third copy (#155) silently dropped the ``It loads:`` list from the
+    second refusal, which is the only part of that sentence a user can act on.
+    That is what a third copy of a message is for: it is wrong only once it drifts,
+    and it drifted in the edit that made it.
+
+    ``what`` and ``closed_note`` are the two clauses that are genuinely the
+    family's: the O-grid binds a *shape* and needs a closed loop because a ring
+    goes round a closed body, the C-grid binds a *section* and needs one because
+    its two surfaces have to meet at a trailing edge. Everything else is identical
+    and is now identical by construction.
+    """
+    name = str(name or "").strip()
+    if not name:
+        return (f"name the {role} geometry — this family binds to a {what} from the "
+                f"CAD stage and writes none of its own.")
+    if g is None:
+        return (f"the {role} geometry '{name}' is not one of this mesh's geometries. "
+                f"It loads: {', '.join(ctx.names()) or '(nothing)'}.")
+    if not g.spans:
+        return (f"the {role} geometry '{g.spelling}' carries no per-segment data, so "
+                f"there is nothing to bind to. That comes from the '.meta' sidecar "
+                f"the PreProcessor writes beside the .dat; re-export it from the CAD "
+                f"stage.")
+    if not g.closed:
+        return f"the {role} geometry '{g.spelling}' is not a closed loop, {closed_note}"
+    return ""
+
+
 # ── building one from a mesh configuration ──────────────────────────────────
 
 #: canonical path -> (stamp, GeomBinding). CAPPED, because the geometry rows are

@@ -17,7 +17,7 @@ geometry, with every id still resolving and nothing to say so.
 """
 from __future__ import annotations
 
-from app.services.topology_binding import BrokenBinding
+from app.services.topology_binding import BindingError, BrokenBinding
 
 
 def parse_binding(text: str, fallback, who: str = "binding") -> tuple:
@@ -142,6 +142,69 @@ def broken_in_lists(model, ctx, lists) -> tuple:
     return tuple(out)
 
 
+def broken_in_ring_lists(model, ctx, lists, splits) -> tuple:
+    """:func:`broken_in_lists` for a family whose ring lists carry an edge PREFIX.
+
+    ``lists`` is ``((role, model field, geometry field, edge prefix), ...)`` — the
+    shape the O-grid's and the two-ring family's :data:`BINDING_LISTS` both use, and
+    the ONE place it is adapted to the ``edges_at`` callable
+    :func:`broken_in_lists` takes. Two families had written that adaptation, and the
+    ``splits`` coercion above it, twice; the C-grid names its six sides rather than
+    numbering them and so calls :func:`broken_in_lists` directly.
+
+    ``splits`` is coerced HERE rather than at each family: a half-typed spin box is
+    not an error, and a family that raised on one would take the repair panel down
+    at the moment it is most needed.
+    """
+    try:
+        n = max(1, int(splits))
+    except (TypeError, ValueError):
+        n = 1
+    return broken_in_lists(model, ctx, tuple(
+        (field, geom_field, who, ring_edges(prefix, n))
+        for who, field, geom_field, prefix in lists))
+
+
+def ring_binding_problem(ctx, lists, splits: int) -> tuple:
+    """``(edge, problem)`` for every ring list of a family, IN THE ORDER THAT MATTERS.
+
+    ``lists`` is ``((role, geometry, stored ids, edge prefix), ...)``. Three
+    questions, and the order is the rule rather than a convenience:
+
+      1. every stored id RESOLVES, naming the edge — through ``ctx.resolve`` rather
+         than a second ``s in g.spans`` test, so the sentence the panel shows while
+         the user types, the message ``build`` raises and the edge the repair panel
+         flags all have ONE author;
+      2. the list walks the geometry's own ORDER (:func:`order_problem`) — which
+         resolving one id at a time cannot see, since every id in a swapped list
+         still resolves;
+      3. and it COVERS the outline (:func:`cover_problem`) — which the order check
+         cannot see either, since every id in a subset walks the right way.
+
+    EVERY LIST IS RESOLVED BEFORE ANY IS ASKED ABOUT ORDER, and that is #138's rule:
+    with one list repaired and another still broken the lists differ in length
+    BECAUSE of the broken one, and a length complaint names no edge and sends the
+    user to the wrong geometry.
+
+    Shared since #155, which would otherwise have been a second copy of the walk AND
+    of the paragraph above — the shape ``topology_counts`` was extracted to stop.
+    """
+    for _who, g, segs, prefix in lists:
+        try:
+            for i, sid in enumerate(segs):
+                ctx.resolve(f"{prefix}{i * splits}", g.spelling, sid)
+        except BindingError as exc:
+            return exc.edge, str(exc)
+    for who, g, segs, prefix in lists:
+        namer = edges_by_prefix(prefix)
+        edge, why = order_problem(who, g, segs, splits, namer)
+        if not why:
+            edge, why = cover_problem(who, g, segs, splits, namer)
+        if why:
+            return edge, why
+    return "", ""
+
+
 def repair_binding(order, pos: int, seg: int) -> str:
     """The binding that puts segment ``seg`` at ring position ``pos`` (#138).
 
@@ -219,20 +282,12 @@ BINDING_LISTS = (("body", "ogrid_body_segs", "ogrid_body_geom", "w"),
 
 
 def broken_bindings(model, ctx) -> tuple:
-    """The O-grid's two lists, walked by :func:`broken_in_lists`.
+    """The O-grid's two lists, walked by :func:`broken_in_ring_lists`.
 
-    What stays HERE is the family's own answers — which two lists it binds
-    (:data:`BINDING_LISTS`) and that a stored position becomes ``ogrid_splits``
-    ring edges — and nothing else; the walk itself is shared with the C-grid and
-    the two-ring family since #155.
+    What stays HERE is the family's own answer — which two lists it binds
+    (:data:`BINDING_LISTS`) — and nothing else.
     """
-    try:
-        splits = max(1, int(model.ogrid_splits))
-    except (TypeError, ValueError):
-        splits = 1
-    return broken_in_lists(model, ctx, tuple(
-        (field, geom_field, who, ring_edges(prefix, splits))
-        for who, field, geom_field, prefix in BINDING_LISTS))
+    return broken_in_ring_lists(model, ctx, BINDING_LISTS, model.ogrid_splits)
 
 
 def order_problem(who: str, g, segs, splits: int, edge_at) -> tuple:
