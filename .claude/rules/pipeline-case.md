@@ -103,10 +103,17 @@ the schema and the stage logic.
   - **`from_workspace_dict` carries the record**, which it did not: it copied seven of
     `ProjectModel.to_state_dict`'s keys by hand and dropped the eighth, so a `.hws` holding an
     offset became a script that could not produce one.
-  Gated by `tests/test_pipeline_derived_geometry.py` (9 groups through the REAL binaries plus six
-  injections, each re-running the gate as a CHILD so the harness's EXIT CODE is read and not only
-  its FAIL count, with a named negative control). The mesher-side case it exists for is
-  `.claude/rules/mesher-multiblock.md`'s two-ring offset O-grid.
+  - **The two hosts DISPOSE of the same refusal differently, and that is the shape #137 already
+    took.** The runner RAISES — it is about to mesh, and meshing one geometry short is the defect.
+    The GUI's script loader NAMES it and goes on, because loading is the opposite moment: a user
+    who cannot open the script is left with an error and a JSON document they were never meant to
+    edit. It names the entry from `DerivedGeometryError.index` and says PLURAL, because
+    `materialise_all` stops at the first refusal and every derived entry after it is underived too.
+  Gated by `tests/test_pipeline_derived_geometry.py` (9 groups through the REAL binaries plus
+  seven injections, each re-running the gate as a CHILD so the harness's EXIT CODE is read and not
+  only its FAIL count, with a NAMED negative control — `none`, because a child launched with an
+  empty injection string re-runs the suite and forks forever). The mesher-side case it exists for
+  is `.claude/rules/mesher-multiblock.md`'s two-ring offset O-grid.
   Why: `docs/design_notes/pipeline.md`, "A GEOMETRY THE SCRIPT DERIVES".
 - **Producing a phi field is not the same as wiring one up** (`services/ib_handoff.py`, Qt-free):
   `link_phi_to_solver()` is the one owner and all three hosts call it. STL3d writes a *Tecplot*
@@ -473,9 +480,13 @@ the schema and the stage logic.
   from what, so `stage_case_sources(..., origins=)` lets the caller replace that column with the
   RECORD — the distance, and the source body **by its own absolute path**, which is the one
   property of the column `case_sources_index.py` depends on. `pipeline_case_sources.derived_origins`
-  builds it from `derived_geoms.output_path` rather than from what the run happened to write, so
-  it can be computed without having run the derivation, and it never raises: a case that cannot
-  explain one of its files is worth having, failing a solve over the explanation is not.
+  builds it from `derived_geoms.output_path`, so the path it names and the path that was written
+  cannot come apart — and it is an AFTER-THE-RUN question asked as one: an entry counts only when
+  its `input_file` IS that path, which is what `materialise_all` leaves behind and what an
+  offset the user exported and then listed BY PATH does not have. A record alone would have given
+  that entry a "(derived)" line keyed to a file the case does not hold. It never raises: a case
+  that cannot explain one of its files is worth having, failing a solve over the explanation is
+  not.
   `SOURCES.txt` is the *only* index there is, so **`tools/scripts/case_sources_index.py`**
   reads them back to answer "if I change this CAD, which cases go stale?" (matching by
   `(st_dev, st_ino)`, then path, then substring; exit 1 on no match). `case_export` descends into

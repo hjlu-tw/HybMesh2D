@@ -536,8 +536,8 @@ captured with it on.
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against
 one list. #68 moved the first; #69 moved the rest; #89 split the list with the rules.
 **One blind spot that also covers this path is in `.claude/rules/mesher.md`'s list instead** —
-`golden_mesh.py` does not compare the `.bnd` `segm_no` column, and eleven of that comparator's
-twenty cases are multi-block. It is not duplicated here, because a blind spot living in two
+`golden_mesh.py` does not compare the `.bnd` `segm_no` column, and twelve of that comparator's
+twenty-one cases are multi-block. It is not duplicated here, because a blind spot living in two
 places is one that will only ever be updated in one; a reader of this file alone would not
 otherwise learn the hole exists.
 

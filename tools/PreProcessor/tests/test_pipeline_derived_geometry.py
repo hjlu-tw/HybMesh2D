@@ -59,10 +59,11 @@ NAMED BLIND SPOTS.
     ``tests/test_multiblock_tworing_offset_surface.py``'s docstring, in the
     convention this repo adopted after a change shipped broken behind green tests
     that never executed the solver.
-  * **Check 8 compares the POINTS, not the mesh.** Running the GUI's own Run All
-    needs a QThread chain and three subprocesses; what makes the two hosts agree
-    is that the curve is the same and the resample config is the same file, and
-    the first of those is what is measured here.
+  * **Check 8 does not run the GUI's own Run All.** 8b compares the curve bit for
+    bit and 8d meshes the GUI's points through the same chain and compares the
+    exported vertices, so what is left uncovered is the QThread SEQUENCING —
+    whether the GUI's chain feeds the stages the same things in the same order.
+    That is `tests/test_pipeline_stages.py`'s subject, not this gate's.
   * **The derivation is only ever exercised on a CLOSED outline.** The offset
     law's open-polyline end rule is ``test_geometry_offset.py``'s; nothing in the
     pipeline shape depends on it.
@@ -147,6 +148,8 @@ INJECTIONS = {
                      "refusing", ("7a",)),
     "no_source_guard": ("the missing-source-file guard", ("7b",)),
     "drop_origins": ("stage_case_sources' origins argument", ("4c", "4d")),
+    "origins_by_record": ("derived_origins' 'did this run write it?' test",
+                          ("4e",)),
     "drop_ws_key": ("from_workspace_dict's carry of the record", ("9",)),
     "fmt12": ("the %.10f parity constant", ("8c",)),
 }
@@ -174,6 +177,20 @@ def _inject(name):
         case_sources.stage_case_sources = (
             lambda srcs, grid, log=None, generated=(), origins=None:
             _real_stage(srcs, grid, generated=generated))
+    elif name == "origins_by_record":
+        import app.services.pipeline_case_sources as _pcs
+        _real_org = _pcs.derived_origins
+
+        def _by_record(pcfg, repo):
+            out = _real_org(pcfg, repo)
+            for i in pcfg.cad_indices():
+                rec = derived_geoms.record_for(pcfg.cad_at(i))
+                if rec is not None:
+                    out[derived_geoms.output_path(pcfg, repo, i)] = (
+                        "(derived) %s" % rec.describe())
+            return out
+        _pcs.derived_origins = _by_record
+        globals()["derived_origins"] = _by_record
     elif name == "drop_ws_key":
         _real_ws = PipelineConfig.from_workspace_dict.__func__
 
@@ -338,6 +355,16 @@ check("(derived) offset +0.25 from 'ellipse_body.dat'" in index,
 check(any(body_abs in ln and "(derived)" in ln for ln in index.splitlines()),
       "4d. naming the source body by its own absolute path, so the case index "
       "still answers 'what goes stale if I change this body?'")
+# An offset the user EXPORTED and then listed by path carries a record and was
+# derived by nobody, so `output_path` would name a file the case does not hold.
+# Without this the index would say "(derived)" for one such entry and not
+# another, keyed on nothing a reader could see.
+listed = shipped(os.path.join(tmp, "listed"))
+listed.cads[d_i]["input_file"] = base.resolve_input_file(_REPO, src_i)
+check(derived_geoms.record_for(listed.cad_at(d_i)) is not None
+      and not derived_origins(listed, _REPO),
+      "4e. an entry that carries a record AND names a file of its own gets NO "
+      "note — nothing derived it, so the column keeps the path it really has")
 
 # ── 5. the bindings survive a RE-RESAMPLE of the source ────────────────────
 coarse = shipped(os.path.join(tmp, "coarse"))
@@ -471,6 +498,32 @@ check(bool(dest) and os.path.exists(dest) and _A == _B,
       "8c. and the GUI writing those points back for the resampler reproduces "
       "the derived file byte for byte — which is what the %.10f in "
       "derived_geoms is for")
+
+# AND THE MESH, not only the curve. Driving the GUI's own Run All needs its
+# QThread chain and three subprocesses, which this gate does not build; what it
+# can do is take the points the GUI is holding, hand them to the same chain as an
+# ordinary geometry, and require the mesh to be the one the headless run wrote.
+# That closes the step between "the two hosts agree about the curve" and "the two
+# hosts produce the same mesh" — the criterion's own noun — while leaving the
+# QThread sequencing itself uncovered, which the blind-spot list says.
+gui_dat = os.path.join(tmp, "gui_points.dat")
+np.savetxt(gui_dat, gui_pts if gui_pts is not None else np.zeros((1, 2)),
+           fmt="%.10f")
+same = shipped(os.path.join(tmp, "guimesh"))
+same.cads[d_i] = dict(same.cads[d_i])
+same.cads[d_i].pop("derived_from", None)
+same.cads[d_i]["input_file"] = gui_dat
+same.mesh["output_filename"] = os.path.join(tmp, "gui_mesh.vtk")
+out8, _t8, err8 = run(same)
+first_vrt = os.path.join(tmp, "mesh.vrt")
+gui_vrt = os.path.join(tmp, "gui_mesh.vrt")
+check(err8 is None and os.path.exists(gui_vrt) and os.path.exists(first_vrt),
+      "8d. the points the GUI holds mesh through the same chain (%s)"
+      % (err8 or "ok"))
+check(os.path.exists(gui_vrt) and os.path.exists(first_vrt)
+      and open(gui_vrt, encoding="utf-8").read()
+      == open(first_vrt, encoding="utf-8").read(),
+      "8d. ...and the mesh is the headless run's, vertex for vertex")
 
 # ── 9. a workspace's record reaches the script ─────────────────────────────
 ws = {"format_version": 2, "sessions": [

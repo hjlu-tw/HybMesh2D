@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **40,691
-characters (40,927 bytes, 2026-09-30) ≈ 10k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **40,799
+characters (41,035 bytes, 2026-09-30) ≈ 10k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**41,500**, leaving 809 characters of slack — derived by a rule the gate states at that
+**41,500**, leaving 701 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -266,6 +266,9 @@ Invoked by `cd`-ing in rather than with `--test-dir`, which needs CMake >= 3.20 
 ```bash
 ./run.sh -conf config/multiblock_tworing.dat   # -> examples/topology/tworing_ogrid.json
 ```
+```bash
+./run.sh -conf config/multiblock_tworing_offset.dat  # -> examples/topology/tworing_offset.json
+```
 `MESH_MODE 1` fills a DECLARED block topology with structured quads and splits them
 to triangles; it uses Gmsh nowhere. The second case attaches its corners to a geometry by
 arc length and reads each wall's boundary condition off that geometry's source segments.
@@ -388,7 +391,7 @@ and its rationale with it. Nothing is ruled on here. The rationale for the GUI a
 - **`view_mesh_vtk.py`**: `<mesh.vtk> <out.png> [xmin xmax ymin ymax]` — draws a legacy-VTK mesh
 - **`generate_letters.py`**: Generates letter-shaped geometry files
 - **`case_sources_index.py`**: which solver cases were built from which geometry (reads every `results/solver/*/grid/cad/SOURCES.txt`). No argument lists every case; an argument (path or partial name) answers "if I change this CAD, which cases go stale?" and exits 1 when nothing matches.
-- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 20 mesher cases (~8 s), for proving
+- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 21 mesher cases (~8 s), for proving
   that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not
   byte-reproducible and node NUMBERING varies run to run — so it canonicalises by COORDINATE and
   reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits

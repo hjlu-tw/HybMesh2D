@@ -19,6 +19,7 @@ import os
 
 from app.models.pipeline_config import PipelineConfig
 from app.services import case_sources, derived_geoms
+from app.services.geom_path_identity import canonical_geom_path
 from app.services.logging_setup import get_logger
 
 _log = get_logger(__name__)
@@ -77,16 +78,27 @@ def derived_origins(pcfg: PipelineConfig, repo: str) -> dict:
     ABSOLUTE PATH, so ``tools/scripts/case_sources_index.py`` still answers
     "which cases go stale if I change this body?" with this one.
 
-    Computed from the same ``services/derived_geoms`` the run derived through,
-    and from ``output_path`` rather than from what the run happened to write, so
-    a caller can build it without having run the derivation. Never raises: a case
-    that cannot explain one of its files is worth having; failing a solve over
-    the explanation is not.
+    Computed from the same ``services/derived_geoms`` the run derived through, so
+    the path this names and the path that was written cannot come apart. It is
+    therefore an AFTER-THE-RUN question and is asked as one: an entry counts only
+    when its ``input_file`` IS the path `output_path` gives, which is what
+    ``materialise_all`` leaves behind and what an exported-then-listed offset does
+    not have. Never raises: a case that cannot explain one of its files is worth
+    having; failing a solve over the explanation is not.
     """
     out: dict = {}
     for i in pcfg.cad_indices():
         rec = derived_geoms.record_for(pcfg.cad_at(i))
         if rec is None:
+            continue
+        # THE ENTRY MUST NAME THE FILE THIS RUN WOULD HAVE DERIVED, which is what
+        # `materialise_all` leaves behind. A record alone is not enough: an entry
+        # carrying one AND naming a file of its own is an offset the user exported
+        # and then listed by path, so nothing derived it and `output_path` would
+        # name a file the case does not hold — a key matching nothing, and a
+        # SOURCES.txt line that says "derived" for one such entry and not another.
+        if canonical_geom_path(pcfg.cad_at(i).get("input_file", "")) != (
+                canonical_geom_path(derived_geoms.output_path(pcfg, repo, i))):
             continue
         try:
             src = pcfg.resolve_input_file(

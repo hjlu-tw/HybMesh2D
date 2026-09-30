@@ -178,18 +178,27 @@ class PipelineIoControllerMixin:
         # ordinary CAD entry to the loop below — which is the whole of #150's
         # decision, arriving at the one stage that could not honour it.
         try:
-            for i, dest in derived_geoms.materialise_all(pcfg, repo_root()):
-                self.log(f"[Pipeline] CAD entry {i + 1} is a derived geometry; "
-                         f"re-derived it from its recorded source -> {dest}")
+            derived_geoms.materialise_all(pcfg, repo_root(), self.log,
+                                          prefix="[Pipeline]")
         except DerivedGeometryError as e:
-            # Named and not skipped, the same rule CAD ▸ Regenerate Offset
-            # follows: the tab is missing either way, and a user who is told
-            # which source is absent can fix it.
+            # NAMED and not refused. The headless runner RAISES on the same error
+            # because it is about to mesh; loading a script is the opposite
+            # moment — the user needs to see the script in order to fix it, and
+            # refusing to open it would leave them with an error and a JSON
+            # document they were never meant to edit. The same two dispositions
+            # for one refusal that `mesh_config_io.save_config_to_file` and the
+            # case's own record already take, and for the same reason.
+            #
+            # The entry is named from `e.index`, and the sentence is PLURAL about
+            # what follows it: `materialise_all` stops at the first refusal, so
+            # every derived entry after this one is underived as well.
+            which = f"CAD entry {e.index + 1}" if e.index >= 0 else "a CAD entry"
             self.log(f"[Pipeline] [ERROR] {e}")
             report_warning(self.main_window, "Load Pipeline Script", str(e),
-                           detail="That CAD entry has no geometry, so its "
-                                  "resample stage will be skipped and the mesh "
-                                  "will be one geometry short.")
+                           detail=f"{which} has no geometry, and any derived "
+                                  "entry after it was left underived too. Their "
+                                  "resample stages will be skipped and the mesh "
+                                  "will be short of those geometries.")
 
         # CAD: each cads entry is a PreProcessor config — reuse the JSON loader,
         # which opens one session (tab) per entry.

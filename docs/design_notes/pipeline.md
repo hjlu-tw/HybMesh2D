@@ -79,18 +79,35 @@ curve; `to_state_dict` exists precisely to stop that and the READ side is not ab
     'ellipse_body.dat' <- /abs/path/to/ellipse_body.dat`. The source's ABSOLUTE path stays in the
     column deliberately: that is the one property `tools/scripts/case_sources_index.py` reads, so
     "which cases go stale if I change this body?" still answers with this one. `derived_origins`
-    is computed from `derived_geoms.output_path` rather than from what the run wrote, so a caller
-    can build it without having run the derivation, and it never raises — a case that cannot
-    explain one of its files is worth having, failing a solve over the explanation is not.
+    is computed from `derived_geoms.output_path`, so what it names and what was written cannot come
+    apart — and it asks an AFTER-THE-RUN question as one. An entry counts only when its
+    `input_file` IS that path. Keying on the record alone looked equivalent and is not: an offset a
+    user exported and then listed BY PATH carries a record and was derived by nobody, so it would
+    have got a "(derived)" line keyed to a file the case does not hold, and the index would have
+    read "derived" for one such entry and a bare path for another with nothing visible deciding
+    which. It never raises — a case that cannot explain one of its files is worth having, failing a
+    solve over the explanation is not.
   - **What was NOT changed, and deliberately**: `cad_skip`, which still answers about the entry as
     it stands (by the time it is asked, a derived entry names a file); `case_sources_for`, whose
     two-value return is untouched so no existing caller had to learn a third; and the GUI's own Run
     All, which does not regenerate an open offset session — a session already holds its points, and
     silently re-deriving them at run time would be the implicit write #150 rules out, wearing a
     different hat.
+  - **The two hosts dispose of the same refusal differently, and that asymmetry is #137's, not a
+    new one.** `run_pipeline` raises: it is about to mesh, and a mesh one geometry short is the
+    defect this module exists to close. `_apply_pipeline_config` names it and goes on: loading a
+    script is the opposite moment, and refusing to open one leaves the user holding an error and a
+    JSON document they were never meant to edit — the same argument #138 makes for repairing a
+    broken binding in the panel rather than in the file. The GUI's message names the entry from
+    `DerivedGeometryError.index` (which is what that field is for) and is PLURAL about what follows
+    it, because `materialise_all` stops at the first refusal.
   - Gated by `tests/test_pipeline_derived_geometry.py`: nine groups through the REAL resampler and
-    mesher, plus six injections that each re-run the gate as a CHILD PROCESS so the harness's exit
-    code is read and not only its FAIL-line count. Two things that gate had to learn, both
+    mesher, plus seven injections that each re-run the gate as a CHILD PROCESS so the harness's exit
+    code is read and not only its FAIL-line count. Check 8 is in two halves on purpose: 8b compares
+    the CURVE the two hosts hold bit for bit, and 8d hands the GUI's points to the same chain and
+    compares the exported vertices against the headless run's — so "the same script produces the
+    same mesh" is measured on a mesh and not only on its input. What stays uncovered is the GUI's
+    QThread SEQUENCING, which is `tests/test_pipeline_stages.py`'s subject. Two things that gate had to learn, both
     measured: the checks below an injected-away derivation must not CRASH (the first version did
     `made[0][1]` and died at check 2, so `no_derive` turned exactly one check red and the
     twenty-three it should have turned red were never reached — a mutation scoring as silence);

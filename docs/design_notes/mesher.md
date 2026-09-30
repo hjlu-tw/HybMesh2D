@@ -4170,7 +4170,8 @@ NO C++ CHANGE, which is the strongest thing this case says about #151's design.
   own module — which is what made the cut obvious once compression was off the table.
   Two stale figures in the blind-spot list were corrected in the same pass: the golden
   comparator's multi-block share, written as "six of nineteen" beside an "all ten
-  multi-block cases" two bullets down, is eleven of twenty.
+  multi-block cases" two bullets down, was eleven of twenty at that commit (#154 took it
+  to twelve of twenty-one, and the live figure is in the rule file, not here).
 
 **AN OFFSET-DERIVED MIDDLE RING, AND WHAT ARC LENGTH COSTS** (#154, parent #150,
 measured 2026-09-30). #153's own blind-spot list said its comparison was ONE body at ONE

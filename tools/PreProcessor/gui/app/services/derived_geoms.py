@@ -62,9 +62,13 @@ from app.services.logging_setup import get_logger
 
 _log = get_logger(__name__)
 
-__all__ = ["DerivedGeometryError", "DERIVED_DIR", "record_for", "needs_derivation",
-           "source_index", "source_points", "output_path", "materialise",
-           "materialise_all"]
+#: Exactly the names something outside this module calls. `DERIVED_DIR` and
+#: `materialise` are public and deliberately NOT here: the first is a path fact
+#: this module owns and the second is `materialise_all`'s singular, and a name in
+#: `__all__` claims a caller it does not have — the stale-claim class this repo
+#: has a gate about.
+__all__ = ["DerivedGeometryError", "record_for", "needs_derivation",
+           "source_index", "source_points", "output_path", "materialise_all"]
 
 #: Where a materialised curve lands, under the repo's generated-artifact tree.
 #: NOT beside the source geometry: the source is a project asset a user owns and
@@ -183,15 +187,19 @@ def materialise(pcfg, repo: str, index: int) -> str:
     """Derive the entry at ``index`` onto disk and return the path written.
 
     The closure flag is the SOURCE's, resolved through the source's own
-    :class:`~app.models.project.ProjectModel` rather than guessed here: the
-    offset law's two ends depend on it, and a second answer to "is this outline
-    closed" is a second curve.
+    :class:`~app.models.project.ProjectModel` rather than guessed here.
     """
     src = source_index(pcfg, repo, index)
     rec = record_for(pcfg.cad_at(index))
     path = pcfg.resolve_input_file(repo, src)
     pts = source_points(path, index, rec)
-    closed = pcfg.build_project_model(repo, "", src).resolve_closure(pts)
+    # Through the SOURCE's own model rather than a closure test here: the offset
+    # law's two ends depend on the flag and a second answer to "is this outline
+    # closed" is a second curve. Two hops rather than a `PipelineConfig.closure_for`
+    # that would hide them — that file is PINNED at 520 lines in
+    # `tests/test_file_length.py`, and this is not what to spend the pin on.
+    src_model = pcfg.build_project_model(repo, "", src)
+    closed = src_model.resolve_closure(pts)
     try:
         out = offset_points(pts, rec.distance, closed)
     except (OffsetRefused, ValueError) as e:
@@ -208,7 +216,7 @@ def materialise(pcfg, repo: str, index: int) -> str:
     return dest
 
 
-def materialise_all(pcfg, repo: str, log=None) -> list:
+def materialise_all(pcfg, repo: str, log=None, prefix: str = "[CAD]") -> list:
     """Produce every derived geometry this run needs, in ``cads`` order.
 
     Sets each entry's ``input_file`` to the file written, so everything that
@@ -216,9 +224,18 @@ def materialise_all(pcfg, repo: str, log=None) -> list:
     own record of what it was built from — treats the curve as the ordinary
     geometry #150 decided it should be, with no second code path anywhere.
 
+    THE SENTENCE IS WRITTEN HERE AND NOT BY THE CALLERS. Both hosts report the
+    same fact about the same action, and two copies of one sentence is how the two
+    come to say different things about it; ``prefix`` is the only part that
+    legitimately differs, because it names which of the host's own stages the line
+    belongs to.
+
     Returns ``[(index, path), ...]``. Raises :class:`DerivedGeometryError`: a run
     that quietly drops a geometry meshes something the user did not ask for, and
-    on a two-ring case the geometry it drops is the seam.
+    on a two-ring case the geometry it drops is the seam. It stops at the FIRST
+    refusal, so a later derived entry is left underived too — which is why
+    :class:`DerivedGeometryError` carries ``index`` and why a caller that keeps
+    going has to say so.
     """
     made = []
     for i in pcfg.cad_indices():
@@ -230,6 +247,6 @@ def materialise_all(pcfg, repo: str, log=None) -> list:
         rec = record_for(pcfg.cad_at(i))
         _log.debug("derived cads[%d] -> %s", i, dest)
         if log is not None:
-            log("[CAD] derived geometry %d/%d: %s -> %s"
-                % (i + 1, len(pcfg.cads), rec.describe(), dest))
+            log("%s derived geometry %d/%d: %s -> %s"
+                % (prefix, i + 1, len(pcfg.cads), rec.describe(), dest))
     return made
