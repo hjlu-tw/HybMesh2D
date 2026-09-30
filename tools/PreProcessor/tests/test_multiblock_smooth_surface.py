@@ -1580,14 +1580,21 @@ def main() -> int:
                            config=lambda: shipped_config("multiblock_cavity"))
         rc_hg, hg, _ = run(tmp, "hg114",
                            config=lambda: shipped_config("multiblock_hgrid"))
-        rc_tr, tr, _ = run(tmp, "tr153",
-                           config=lambda: shipped_config("multiblock_tworing"))
+        # RETARGETED ONCE, THEN REUSED. `shipped_config` is called exactly once per
+        # config in this file, and that is load bearing rather than tidy: check 7 of
+        # `test_instruction_budget.py` derives WHICH group drives each shipped config
+        # from the group of the first numbered check after its one retarget call, and
+        # refuses a config retargeted twice because the answer then has two values.
+        # Group 14 re-runs both of these at a different cap and takes the TEXT from
+        # here instead of calling the retargeter again.
+        cfg_tr = shipped_config("multiblock_tworing")
+        cfg_to = shipped_config("multiblock_tworing_offset")
+        rc_tr, tr, _ = run(tmp, "tr153", config=lambda: cfg_tr)
         # #154's case is here for the same reason #153's is: this group's own rule
         # is that a shipped config nothing drives cannot exist. What it adds is a
         # mesh whose middle ring is COMPUTED, so a change to the offset law that
         # left the mesher untouched would still have to keep this run at exit 0.
-        rc_to, to, _ = run(tmp, "to154",
-                           config=lambda: shipped_config("multiblock_tworing_offset"))
+        rc_to, to, _ = run(tmp, "to154", config=lambda: cfg_to)
         check(f"13. all five added configs EXIT 0 at the default cap, so the "
               f"banners the checks below parse describe a mesh that was actually "
               f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg}, tworing "
@@ -1784,10 +1791,10 @@ def main() -> int:
                            config=ogrid_config)),
             ("TWO-RING", tr,
              lambda k: run(tmp, "t156", "\nMB_SMOOTH_ITERS %d\n" % k,
-                           config=lambda: shipped_config("multiblock_tworing"))),
+                           config=lambda: cfg_tr)),
             ("TWO-RING OFFSET", to,
              lambda k: run(tmp, "to156", "\nMB_SMOOTH_ITERS %d\n" % k,
-                           config=lambda: shipped_config("multiblock_tworing_offset"))),
+                           config=lambda: cfg_to)),
         ]
         table, verdicts = {}, {}
         for name, out_d, at_cap in curved:

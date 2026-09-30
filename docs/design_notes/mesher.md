@@ -4287,6 +4287,138 @@ Blind spots, named:
     single-ring ellipse O-grid is not itself covered by anything, and if it regressed
     only this comparison would notice.
 
+**THE CAP ADVICE CONCLUDED ABOUT THE MESH FROM THE ITERATION** (#156, measured
+2026-09-30). The capped-solve warning has two branches, chosen on `pastBest` — whether the
+final residual is above the best the solve reached. The `else` branch was accurate and
+named the right instrument ("raise it only while the inverted-cell count stays 0"). The
+`pastBest` branch said "raising `MB_SMOOTH_ITERS` makes this mesh worse, not more
+converged. Lower it to at most that sweep", and **it is the branch that ships**: all four
+shipped CURVED cases take it at the default cap of 20, so the accurate sentence was the one
+nobody ever saw.
+
+| shipped config | final residual | best | at sweep |
+|---|---|---|---|
+| `multiblock_ogrid` | 4.545e-04 | 4.282e-04 | 2 |
+| `multiblock_cgrid` | 9.030e-04 | 8.536e-04 | 1 |
+| `multiblock_tworing` | 4.489e-04 | 4.206e-04 | 2 |
+| `multiblock_tworing_offset` | 4.847e-04 | 4.765e-04 | 4 |
+
+The three non-curved cases do not: `multiblock_square` and `multiblock_cavity` CONVERGE on
+sweep 1 (a rectangle is a fixed point of this solve), and `multiblock_hgrid` is still
+descending at 20 (`best_sweep` 20), which is the `else` branch.
+
+- **THE ADVICE POINTS AT A MEASURABLY WORSE MESH.** On
+  `config/multiblock_tworing_offset.dat`, varying only `MB_SMOOTH_ITERS`:
+
+  | sweeps | inverted | nonortho max | nonortho mean | wall first cell |
+  |---|---|---|---|---|
+  | 0 | 0 | 29.3518 | 9.9107 | 0.070625 |
+  | 2 | 0 | 29.2798 | 9.8656 | 0.000000 |
+  | **4** (what the advice names) | 0 | 29.2248 | 9.8208 | 0.000000 |
+  | 10 | 0 | 29.0708 | 9.6898 | 0.000000 |
+  | **20** (shipped default) | 0 | **28.7957** | **9.4818** | 0.000000 |
+  | 40 | 0 | 28.1728 | 9.1025 | 0.000000 |
+  | 60 | 0 | **27.5881** | **8.7661** | 0.000000 |
+  | 80 | **76** | 29.3775 | 8.4945 | 0.000000 |
+  | 100 | **108** | 40.2464 | 8.2599 | 0.000000 |
+
+  Non-orthogonality improves monotonically from sweep 2 through 60 **while the residual is
+  rising the whole way**, and the wall height is exactly 0.000000 from sweep 2 onwards.
+  Following the advice (20 -> 4) costs 0.43 deg of worst non-orthogonality and 0.34 deg of
+  mean and buys nothing. On the C-grid the same move (20 -> 1) costs **1.97 deg of max and
+  0.69 deg of mean**. **The residual is not a proxy for mesh quality here**, which is
+  exactly what the `else` branch already knew and the `pastBest` branch asserted the
+  opposite of.
+
+- **WHAT BOUNDS THE CAP IS THE FOLD, and it is bisected rather than bracketed.** #156's
+  ticket left it "between 40 and 100"; measured here it is between **60 and 80** on this
+  case — 0 inverted at 60, **76 at 80** with exit 9 and the mesh exported anyway under the
+  stated precedent. Nothing is silently wrong; the guard works. Only the advice was wrong.
+
+- **WHERE THE MONOTONICITY HOLDS, AND WHERE IT DOES NOT.** The ticket asked and nobody had
+  checked. Measured at caps 0/1/2/4/10/20/40:
+  * **C-grid: yes, on both angles**, 32.0441 -> 28.5509 max and 4.5619 -> 3.3876 mean,
+    every step an improvement. This is the strongest case for the fix.
+  * **H-grid: NO.** Max goes 3.0987, 3.2028 (worse), 3.1856, 3.1169, 2.8630, 2.8590,
+    2.8623 (worse again) and the mean wanders before falling. The fix is still right — the
+    H-grid takes the `else` branch anyway and is never given the advice — but the claim
+    "quality improves monotonically to 40" is a C-grid and two-ring-offset claim, not a
+    tree-wide one.
+  * **The two circle O-grids: EXACTLY FLAT.** `multiblock_ogrid` and `multiblock_tworing`
+    report 2.024972 deg max and 1.875000 deg mean at **every** cap from 0 to 40, to six
+    decimals. That is the limit of the RULER already recorded above as "THE O-GRID's FOLD
+    IS INVISIBLE TO NON-ORTHOGONALITY", not a smoother that did nothing, and on those two
+    the advice's target is a TIE on this figure. Their wall first-cell figure moves the
+    OTHER way by 0.003 percentage points (0.0341% at sweep 2 against 0.0371% at 20), so
+    "the advice is always worse" would be an overclaim and is not what is asserted.
+
+- **IT IS #82's DEFECT WITH THE SIGN FLIPPED, and the pair is worth more than either.** #82
+  shipped "raise `MB_SMOOTH_ITERS` to finish the solve" — advice its own tables contradicted,
+  since a converged plain Winslow solve is each block's harmonic map and holds no declared
+  wall height at all. The spec review caught it and the lesson recorded was: *whenever a knob
+  reports progress, check that the end of the progress bar is somewhere you want the user to
+  go.* Here the progress bar is the residual, it runs BACKWARDS, and the sentence concluded
+  from that that the destination is worse — which the tables again contradict. Same class as
+  "a gate that did not measure its claim": a statement about the MESH concluded from a
+  quantity that only describes the ITERATION.
+
+- **THE FIX IS A HOIST, NOT A REWORD.** The rising-residual OBSERVATION survives and still
+  says the mesh is a partly-solved iterate; the conclusion drawn from it is deleted; and the
+  `else` branch's instrument is lifted OUT of the ternary so it governs both. **The two
+  branches now differ in what they OBSERVE, not in what they ADVISE**, because the fold is
+  what bounds the cap either way.
+
+- **THREE SITES SAY "LOWER `MB_SMOOTH_ITERS`", AND ONLY TWO WERE THIS DEFECT.** Enumerated
+  rather than assumed, which is the "fixed in N of M homes" class:
+  1. `src/MultiBlock.cpp`'s capped warning — fixed.
+  2. `src/cli.cpp`'s `Converged` banner row, "NO — and PAST ITS BEST; the iteration has
+     turned, **so a higher cap is a worse mesh**" — the same false conclusion, in the line a
+     user reads FIRST, and fixed with it.
+  3. `src/MultiBlock.cpp`'s wall-height warning, "Lower `MB_SMOOTH_ITERS`, or declare a wall
+     spacing this block's far side can be reached from" — **examined and left alone.** It
+     advises on the quantity it just measured (that wall's own first-cell height, e.g.
+     0.000000% -> 0.000950% on the C-grid's `e_ff_up`), names no sweep, and lowering really
+     does improve that figure over the shipped range. A different claim from a different
+     instrument, so not this defect.
+  4. The DIVERGED path's "Lower `MB_SMOOTH_ITERS` to at most that number" — also left, and
+     for a measured reason rather than a distinction: it fires at 10x the best residual, by
+     which point the C-grid is far past the cap of 400 where it folds 184 cells, so "the
+     later ones are worse" is supported there; and that path has already ROLLED BACK to the
+     best iterate, so its sentence names what the run did rather than steering the next one.
+
+- **THE GATE ASSERTS THE JOIN, NOT EITHER HALF.** `test_multiblock_smooth_surface.py`
+  group 14 reads `best_sweep` off each shipped run — never written down — re-runs that case
+  at that cap and compares. Three layers: the advised sweep is **never better** on any of
+  the four; it is **strictly worse** on the two where the ruler is not blind; and, the check
+  this group exists for, **nothing in the output may steer at a sweep the same run measures
+  to be worse**. The first two are each falsifiable alone, and neither was what went wrong —
+  the sentence was well-formed English and the mesher was correct. The JOIN was the defect.
+  `tests/cpp/test_multiblock.cpp` check 49 asserts both branches carry the instrument, on a
+  turned-not-diverged cap **searched for rather than written down**: no synthetic document in
+  that file turns at a cap anybody could name, and the obvious guess (`rv.smoothBestSweep +
+  1`) is WRONG on the committed kernel — that run diverges and rolls back, which is how the
+  first draft failed.
+
+- **TWO INJECTIONS, both biting, 2026-09-30.** (A) Restoring the old sentence reddens the
+  JOIN on exactly the two ruler-sighted cases and leaves the two blind ones green — the gate
+  is scoped to what it can actually see. (B) Making `best_sweep` print `smoothSweeps`, so the
+  advised cap collapses onto the default, reddens both strict angle comparisons at +0.0000
+  deg. So the string half and the measurement half are each live.
+
+Blind spots, named:
+
+  * **The sweep sweep is ONE case.** `multiblock_tworing_offset` carries the table; the
+    C-grid carries a second, coarser confirmation at 0/1/2/4/10/20/40 and the H-grid a
+    counter-example. Nothing has been measured on a case this repo does not ship.
+  * **The gate compares NON-ORTHOGONALITY only.** The cell-shape metric and the wall
+    first-cell height are read in the table above but are not part of the assert, and on the
+    circle O-grids the wall figure moves the other way. A change that improved
+    non-orthogonality while wrecking cell shape would pass group 14 and be caught only by
+    the per-case pins next door.
+  * **The default of 20 is untouched and 60 is better on this one case.** Moving it needs
+    its own evidence across every shipped case, and the fold at 80 here is closer than the
+    C-grid's at 400 — the margin is not uniform.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

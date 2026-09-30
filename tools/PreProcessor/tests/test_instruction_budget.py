@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Twelve rule files now — 56,405 / 52,355 / 52,329 / 46,445 / 39,554 / 35,517 / 25,325 / 23,361 / 22,516 / 18,512 / 15,762 / 8,969  characters (pipeline-case, mesher-multiblock, gui-topology, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-handoff, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    Twelve rule files now — 56,405 / 52,355 / 52,329 / 49,368 / 39,554 / 35,517 / 25,325 / 23,361 / 22,516 / 18,512 / 15,762 / 8,969  characters (pipeline-case, mesher-multiblock, gui-topology, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-handoff, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 3,595 / 7,645 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    ten, which have 7,671 / 13,555 / 20,446 / 24,483 / 34,675 / 36,639 / 37,484 / 41,488 / 44,238 / 51,031. #76 spent 3,446 of
+    ten, which have 7,671 / 10,632 / 20,446 / 24,483 / 34,675 / 36,639 / 37,484 / 41,488 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -3535,7 +3535,11 @@ check(len(_hits) == 1 and "SEVEN" in _hits[0]
 # follow it down. A gate reading the count out of the sentence would pass here, and the
 # sentence would go on claiming a config nothing runs.
 inj = copy_world(world)
-_tr_call = '                           config=lambda: shipped_config("multiblock_tworing"))\n'
+# THE RETARGET IS AN ASSIGNMENT SINCE #156, not an inline `config=` argument: group 14
+# re-runs two of these configs at a second cap, and `_smooth_other_configs` refuses a
+# config retargeted twice, so the text is bound once in group 13 and reused. The fixture
+# tracks the call site rather than the shape it used to have.
+_tr_call = '        cfg_tr = shipped_config("multiblock_tworing")\n'
 assert inj["sources"][_SMOOTH].count(_tr_call) == 1, "injection fixture: retarget moved"
 inj["sources"][_SMOOTH] = inj["sources"][_SMOOTH].replace(_tr_call, "")
 check(_smooth_other_count(inj) == (_smooth_other_count(world)[0] - 1,)

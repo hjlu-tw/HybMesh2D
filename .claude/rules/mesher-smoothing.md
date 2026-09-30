@@ -205,11 +205,42 @@ attributable, and the one #85 deliberately spent.
   `MB_SMOOTH_DIVERGE_FACTOR` (10x) its best residual and **returns the BEST iterate, not the last**,
   publishing `smoothConverged`, `smoothDiverged` and that iterate's sweep. **Never hand back a
   truncated solve as though it had finished.**
-- **A CAP IS TWO SITUATIONS AND THE ADVICE MUST TELL THEM APART.** `smoothBestSweep` /
-  `smoothBestResidual` publish the smallest residual reached and when, recorded BEFORE either stop
-  is tested. Still FALLING has more to give; already ABOVE its best has TURNED, and both wear
-  `converged == false && diverged == false`. **The mesh at a cap is still the LAST iterate** — N
-  sweeps means N sweeps outside the diverged path — so the difference is SAID, not repaired.
+- **A CAP IS TWO SITUATIONS AND THEY DIFFER IN WHAT THEY OBSERVE, NOT IN WHAT THEY ADVISE**
+  (#82 split them, #156 corrected the split). `smoothBestSweep` / `smoothBestResidual` publish the
+  smallest residual reached and when, recorded BEFORE either stop is tested. Still FALLING has more
+  to give; already ABOVE its best has TURNED, and both wear `converged == false && diverged ==
+  false`. **The mesh at a cap is still the LAST iterate** — N sweeps means N sweeps outside the
+  diverged path — so the difference is SAID, not repaired.
+- **THE RESIDUAL DESCRIBES THE ITERATION, NEVER THE MESH, AND NOTHING MAY ADVISE FROM IT** (#156).
+  The turned branch used to say "raising `MB_SMOOTH_ITERS` makes this mesh worse, not more
+  converged. Lower it to at most that sweep." **All four shipped CURVED cases take that branch at
+  the default cap of 20**, so the accurate `else` branch beside it was the one nobody ever saw
+  (residual / best / at sweep, measured 2026-09-30: `ogrid` 4.545e-04 / 4.282e-04 / 2; `cgrid`
+  9.030e-04 / 8.536e-04 / 1; `tworing` 4.489e-04 / 4.206e-04 / 2; `tworing_offset` 4.847e-04 /
+  4.765e-04 / 4 — `square` and `cavity` CONVERGE on sweep 1, `hgrid` is still descending at 20).
+  Both halves of that sentence fail where they can be checked: not more converged (true), not worse
+  (FALSE). On `tworing_offset` non-orthogonality improves monotonically from sweep 2 through 60
+  while the residual rises the whole way, and 20 -> 4 costs 0.43 deg of max and 0.34 deg of mean;
+  on the C-grid 20 -> 1 costs 1.97 deg and 0.69 deg. **The OBSERVATION survives** — the iteration
+  is not settling, so the mesh is an ITERATE rather than a solution — **and the instrument is
+  hoisted out of the ternary** so the inverted-cell count governs both branches. The two other
+  sites that say "Lower `MB_SMOOTH_ITERS`" were enumerated and only one was this defect:
+  `src/cli.cpp`'s `Converged` row ("so a higher cap is a worse mesh") went with it; the wall-height
+  warning advises on the quantity it measures and stays; the DIVERGED path has already rolled back
+  to the best iterate and stays. `--sync` cannot reach any of these figures — it rewrites what the
+  instruction files state about THEMSELVES and does not run the mesher — so the table above is
+  dated, and what stops the property behind it going stale is the gate, which DERIVES it.
+- **THE GATE FOR IT ASSERTS THE JOIN, NOT EITHER HALF.**
+  `test_multiblock_smooth_surface.py` group 14 reads `best_sweep` off each shipped run, re-runs
+  that case at that cap and compares: the advised sweep is **never better** on any of the four,
+  **strictly worse** on the C-grid and `tworing_offset`, and — the load-bearing one — **nothing in
+  the output may steer at a sweep the same run measures to be worse**. The first two are each
+  falsifiable alone and neither was the defect: the sentence was well-formed English and the mesher
+  was correct. `tests/cpp/test_multiblock.cpp` check 49 asserts both branches carry the instrument,
+  on a turned-not-diverged cap SEARCHED for rather than named. **THE RULER IS BLIND ON TWO OF THE
+  FOUR** and the gate says so instead of averaging it away: the two circle O-grids sit at exactly
+  2.024972 deg max / 1.875000 deg mean at every cap from 0 to 40, and their wall first-cell figure
+  moves the OTHER way by 0.003 percentage points — so "always worse" would be an overclaim.
 - **"RAISE IT UNTIL IT CONVERGES" IS NO LONGER BAD ADVICE FOR #82's REASON, AND THE SENTENCE IS
   GONE.** That kernel's fixed point was each block's harmonic map, holding no declared height at all
   (3133% off on the C-grid); the controlled solve holds that wall to 0.10% at twenty sweeps and **a
