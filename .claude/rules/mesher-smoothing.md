@@ -219,7 +219,7 @@ attributable, and the one #85 deliberately spent.
   9.030e-04 / 8.536e-04 / 1; `tworing` 4.489e-04 / 4.206e-04 / 2; `tworing_offset` 4.847e-04 /
   4.765e-04 / 4 — `square` and `cavity` CONVERGE on sweep 1, `hgrid` is still descending at 20).
   Both halves of that sentence fail where they can be checked: not more converged (true), not worse
-  (FALSE). On `tworing_offset` non-orthogonality improves monotonically from sweep 2 through 60
+  (FALSE). On `tworing_offset` non-orthogonality improves at every cap SAMPLED from 2 through 60
   while the residual rises the whole way, and 20 -> 4 costs 0.43 deg of max and 0.34 deg of mean;
   on the C-grid 20 -> 1 costs 1.97 deg and 0.69 deg. **The OBSERVATION survives** — the iteration
   is not settling, so the mesh is an ITERATE rather than a solution — **and the instrument is

@@ -4322,8 +4322,11 @@ descending at 20 (`best_sweep` 20), which is the `else` branch.
   | 80 | **76** | 29.3775 | 8.4945 | 0.000000 |
   | 100 | **108** | 40.2464 | 8.2599 | 0.000000 |
 
-  Non-orthogonality improves monotonically from sweep 2 through 60 **while the residual is
-  rising the whole way**, and the wall height is exactly 0.000000 from sweep 2 onwards.
+  Non-orthogonality improves at every cap sampled from 2 through 60 **while the residual is
+  rising the whole way**, and the wall height is exactly 0.000000 from sweep 2 onwards. Sampled
+  at 0/2/4/10/20/40/60/80/100 and not swept, so "monotonic" is a statement about those nine caps
+  rather than about every intermediate sweep — the same reservation applies to the C-grid row
+  below.
   Following the advice (20 -> 4) costs 0.43 deg of worst non-orthogonality and 0.34 deg of
   mean and buys nothing. On the C-grid the same move (20 -> 1) costs **1.97 deg of max and
   0.69 deg of mean**. **The residual is not a proxy for mesh quality here**, which is

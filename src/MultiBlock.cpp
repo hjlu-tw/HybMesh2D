@@ -1695,15 +1695,17 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // THE CAP, and what it is honest to advise there. Two different situations wear
     // one flag, and telling them apart is #82's review finding: a solve still
     // DESCENDING has more to give, while one whose residual is already above the
-    // best it reached has TURNED. They differ in what they OBSERVE. **Since #156
-    // they no longer differ in what they ADVISE**, and that correction is the rest
-    // of this block.
+    // best it reached has TURNED. They differ in what they OBSERVE. SINCE #156 THEY
+    // NO LONGER DIFFER IN WHAT THEY ADVISE, and that correction is the rest of this
+    // block.
     //
     // #156: THE RESIDUAL DESCRIBES THE ITERATION, NOT THE MESH. The turned branch
     // used to conclude about the MESH from it — "raising MB_SMOOTH_ITERS makes this
     // mesh worse, not more converged. Lower it to at most that sweep." Measured
     // 2026-09-30 on config/multiblock_tworing_offset.dat, varying only the cap,
-    // with the residual rising monotonically from sweep 4 onwards:
+    // with the residual rising at every cap SAMPLED from sweep 4 onwards (4.765e-04,
+    // 4.801e-04, 4.847e-04, 4.879e-04 at 4, 10, 20 and 40 — sampled, not swept, so
+    // this is not a claim about every intermediate sweep):
     //
     //     cap   inverted   nonortho max   nonortho mean   wall first cell
     //       4          0        29.2248          9.8208          0.000000  <- advised
