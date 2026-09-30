@@ -580,14 +580,25 @@ user could draw a second circle; for an aerofoil — the case the mesher is mean
 at — nobody is going to hand-draw a curve offset from the section, so the seam and the
 curve it follows had to land together or neither would be usable.
 
-**THE ONE OWNER IS A PRECONDITION, NOT A COMPARISON — SAID THAT WAY ROUND ON PURPOSE.**
-#150's developer story asks for one Qt-free owner *"so that the canvas preview and the thing
-that writes the geometry cannot produce different curves"*. There is no preview: the dialog
-shows a distance and a side, and `offset_points` has exactly ONE caller. The first draft of
-the rule file and of the module docstring wrote the story's *reason* as though both callers
-existed, which is a claim the tree contradicts — the defect class #132 is about, arriving in
-the very ticket whose review found it. What is true is the precondition: the law has one
-home, and a preview, when one is drawn, calls it rather than approximating it.
+**THE ONE OWNER WAS A PRECONDITION IN #152 AND BECAME A COMPARISON IN #154.** #150's
+developer story asks for one Qt-free owner *"so that the canvas preview and the thing that
+writes the geometry cannot produce different curves"*. At #152 there was no preview — the
+dialog shows a distance and a side — and `offset_points` had exactly ONE caller. The first
+draft of the rule file and of the module docstring wrote the story's *reason* as though both
+callers existed, which is a claim the tree contradicted — the defect class #132 is about,
+arriving in the very ticket whose review found it. So #152 shipped the precondition: the law
+has one home, and a preview, when one is drawn, calls it rather than approximating it.
+
+**#154 gave it a real second caller, and it is not the preview.** `services/derived_geoms`
+produces the curve a pipeline script carries only the RECORD of, and BOTH hosts reach the law
+through it — `pipeline_runner` before its resample stage and `pipeline_io_ctrl` when a script
+is loaded. So "cannot produce different curves" is now a property of the code rather than a
+statement about a caller that does not exist yet, and `test_pipeline_derived_geometry.py`
+check 8b measures it: the GUI tab's points against the headless file, bit for bit. A canvas
+preview is still not among the callers. **Note which way this had to be corrected**: #152's
+error was a count that was too HIGH, and #154's was the same count left too LOW for one
+commit, in three homes at once. A count is a claim about the tree in both directions, and the
+useful habit is to re-read it rather than to carry it forward.
 
 **WHY IT IS A DERIVED GEOMETRY IN THE CAD STAGE AND NOT SOMETHING A TEMPLATE WRITES.** The
 rule that a topology template writes no geometry survives intact; the precedent is the

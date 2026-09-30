@@ -198,10 +198,16 @@ rule in it.
 grow.
 - **`offset_points(points, distance, closed)` is the only place the law lives.** Nothing
   may re-derive a normal, a bisector or a fold bound elsewhere, and a canvas preview —
-  there is NONE today, the function has one caller — must call it rather than approximate
-  it. Stated as the precondition it is: #150 asks for one owner "so that the canvas
-  preview and the thing that writes the geometry cannot produce different curves", and a
-  rule asserting a second caller the tree does not have is the defect class #132 is about.
+  there is still NONE — must call it rather than approximate it. **TWO callers since
+  #154**: the CAD-stage creation path here, and `services/derived_geoms`, which produces
+  the curve a pipeline script carries only the RECORD of. That second one is what makes
+  #150's "so that the canvas preview and the thing that writes the geometry cannot
+  produce different curves" a comparison rather than a precondition — both hosts reach
+  the law through it, so a script cannot open one curve in the GUI and another headless.
+  #152 could only state the precondition, and its first draft asserted a second caller
+  the tree did not have, which is the defect class #132 is about; the count is RE-READ
+  off the tree here rather than carried forward, because a stale count is that same
+  defect with the sign flipped.
   The winding is measured with `services/geometry_primitives.signed_area`, the ONE
   shoelace — `surface_sample` and `stl_extrude` re-export it rather than keeping copies.
 - **The result has the SOURCE'S LENGTH and the source's point order**, which is what makes

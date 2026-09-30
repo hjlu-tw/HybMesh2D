@@ -7,12 +7,17 @@ was no way to get that curve short of computing it outside the tool.
 
 THE OFFSET IS A PURE FUNCTION OF (points, distance, closed), AND NOTHING ELSE.
 #150's developer story asks for ONE owner "so that the canvas preview and the
-thing that writes the geometry cannot produce different curves". There is no
-preview today — :func:`offset_points` has exactly one caller, the CAD-stage
-creation path — so what this module delivers is the PRECONDITION for that, not the
-comparison: a preview, when one is drawn, calls this and nothing else. Stated that
-way round because a rule file asserting a second caller that does not exist is a
-claim the tree contradicts, which is a defect class this repo has tickets about.
+thing that writes the geometry cannot produce different curves". THERE ARE TWO
+CALLERS SINCE #154, and neither is the preview: the CAD-stage creation path
+(`controllers/offset_geom_ctrl`) and `services/derived_geoms`, which produces a
+curve a pipeline script describes by its RECORD rather than by a file. That
+second one is what makes the story's own comparison real for the first time —
+the headless runner and the GUI's script loader both reach the law through it,
+so the two hosts cannot open different curves. A canvas preview is still not
+among them, and when one is drawn it calls this and nothing else. Stated this
+way round, and re-counted rather than carried forward, because #152's draft of
+this paragraph asserted a second caller that did not exist and had to be
+reversed; a count that is merely old is the same defect with the sign flipped.
 It is the reason this is a service rather than a method on the controller that
 happens to need it. It is numpy-only: no Qt, gated by
 ``tests/test_qt_free_seam.py``'s ``services/`` sweep.
