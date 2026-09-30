@@ -4371,8 +4371,11 @@ descending at 20 (`best_sweep` 20), which is the `else` branch.
   branches now differ in what they OBSERVE, not in what they ADVISE**, because the fold is
   what bounds the cap either way.
 
-- **THREE SITES SAY "LOWER `MB_SMOOTH_ITERS`", AND ONLY TWO WERE THIS DEFECT.** Enumerated
-  rather than assumed, which is the "fixed in N of M homes" class:
+- **FOUR SITES STEER THE CAP, AND ONLY TWO WERE THIS DEFECT.** Enumerated rather than
+  assumed, which is the "fixed in N of M homes" class. Two of the four name the key
+  outright (`grep -n "Lower MB_SMOOTH_ITERS" src/*.cpp` finds items 3 and 4); the other
+  two steer with a pronoun or with a verdict, which is why grepping for the key alone
+  would have found the wrong pair:
   1. `src/MultiBlock.cpp`'s capped warning — fixed.
   2. `src/cli.cpp`'s `Converged` banner row, "NO — and PAST ITS BEST; the iteration has
      turned, **so a higher cap is a worse mesh**" — the same false conclusion, in the line a

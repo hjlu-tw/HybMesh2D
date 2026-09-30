@@ -469,6 +469,7 @@ widening survives: this file makes 20-odd mesher invocations, the C-grid at a ca
 configs in the repo were the affordable way to widen it. The rationale, and why the
 true rank is not stated in its place, is in `docs/design_notes/mesher.md`.
 """
+import collections
 import glob
 import math
 import os
@@ -1587,14 +1588,14 @@ def main() -> int:
         # refuses a config retargeted twice because the answer then has two values.
         # Group 14 re-runs both of these at a different cap and takes the TEXT from
         # here instead of calling the retargeter again.
-        cfg_tr = shipped_config("multiblock_tworing")
-        cfg_to = shipped_config("multiblock_tworing_offset")
-        rc_tr, tr, _ = run(tmp, "tr153", config=lambda: cfg_tr)
+        cfg_tworing = shipped_config("multiblock_tworing")
+        cfg_tworing_offset = shipped_config("multiblock_tworing_offset")
+        rc_tr, tr, _ = run(tmp, "tr153", config=lambda: cfg_tworing)
         # #154's case is here for the same reason #153's is: this group's own rule
         # is that a shipped config nothing drives cannot exist. What it adds is a
         # mesh whose middle ring is COMPUTED, so a change to the offset law that
         # left the mesher untouched would still have to keep this run at exit 0.
-        rc_to, to, _ = run(tmp, "to154", config=lambda: cfg_to)
+        rc_to, to, _ = run(tmp, "to154", config=lambda: cfg_tworing_offset)
         check(f"13. all five added configs EXIT 0 at the default cap, so the "
               f"banners the checks below parse describe a mesh that was actually "
               f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg}, tworing "
@@ -1792,20 +1793,25 @@ def main() -> int:
                            config=ogrid_config)),
             ("TWO-RING", tr,
              lambda k: run(tmp, "t156", "\nMB_SMOOTH_ITERS %d\n" % k,
-                           config=lambda: cfg_tr)),
+                           config=lambda: cfg_tworing)),
             ("TWO-RING OFFSET", to,
              lambda k: run(tmp, "to156", "\nMB_SMOOTH_ITERS %d\n" % k,
-                           config=lambda: cfg_to)),
+                           config=lambda: cfg_tworing_offset)),
         ]
+        # NAMED RATHER THAN POSITIONAL, because every assert below reads three or
+        # four fields out of these and `v[0] > v[1] and 0 < v[2] < v[3]` is a
+        # sentence nobody can check against the rule it is enforcing.
+        Solve = collections.namedtuple("Solve", "residual best best_sweep sweeps")
+        Pair = collections.namedtuple("Pair", "rc default advised solve")
         table, verdicts = {}, {}
         for name, out_d, at_cap in curved:
             sl, ql = smooth_line(out_d), qlines(out_d)
-            table[name] = (sl.get("residual"), sl.get("best_residual"),
-                           sl.get("best_sweep"), sl.get("sweeps"))
+            table[name] = Solve(sl.get("residual"), sl.get("best_residual"),
+                                sl.get("best_sweep"), sl.get("sweeps"))
             rc_a, out_a, _ = at_cap(int(sl.get("best_sweep", 0)))
             qa = qlines(out_a)
-            verdicts[name] = (rc_a, ql[0] if ql else {}, qa[0] if qa else {},
-                              smooth_line(out_a))
+            verdicts[name] = Pair(rc_a, ql[0] if ql else {}, qa[0] if qa else {},
+                                  smooth_line(out_a))
         # THE BRANCH ITSELF, measured rather than remembered. All four shipped
         # CURVED cases take `pastBest` at the shipped default of 20, which is what
         # made the accurate sentence the one nobody ever saw. `--sync` cannot reach
@@ -1816,15 +1822,15 @@ def main() -> int:
               f"residual, so the branch whose advice #156 corrected is the one every "
               f"one of them prints (residual, best, best sweep, sweeps: {table})",
               len(table) == 4
-              and all(v[0] is not None and v[1] is not None
-                      and v[0] > v[1] and 0 < v[2] < v[3] == 20
+              and all(v.residual is not None and v.best is not None
+                      and v.residual > v.best and 0 < v.best_sweep < v.sweeps == 20
                       for v in table.values()))
         for name, (rc_a, q_def, q_adv, sl_a) in sorted(verdicts.items()):
             check(f"14. the {name} run AT the sweep the old advice steered toward "
                   f"exports a mesh, so the comparison below is between two real "
                   f"grids (cap {sl_a.get('cap')}, rc {rc_a})",
                   rc_a == 0 and bool(q_def) and bool(q_adv)
-                  and sl_a.get("cap") == table[name][2])
+                  and sl_a.get("cap") == table[name].best_sweep)
             check(f"14. ...and NEITHER cap has folded a cell, so the difference "
                   f"between them is quality and not a broken mesh (default "
                   f"{q_def.get('inverted')}, advised {q_adv.get('inverted')})",
@@ -1870,8 +1876,14 @@ def main() -> int:
         # is not vacuous: its measured half is TRUE today on two of the four, which
         # means those two are guarded by the string half alone and an injection
         # putting the old sentence back reddens them.
+        # THE DIVERGED PATH'S OWN "Lower MB_SMOOTH_ITERS to at most that number" IS
+        # DELIBERATELY NOT IN THIS LIST. That sentence is supported — divergence
+        # fires at 10x the best residual, where the mesh really is folded, and that
+        # path has already rolled back to the best iterate, so it names what the run
+        # did. Listing it would redden this check on blessed advice the day a shipped
+        # curved case diverges, which is a false positive waiting rather than a guard.
         steer = ("Lower it to at most that sweep", "makes this mesh worse",
-                 "a higher cap is a worse mesh", "Lower it to at most that number")
+                 "a higher cap is a worse mesh")
         for name, out_d, _ in curved:
             _, q_def, q_adv, _ = verdicts[name]
             said = [t for t in steer if t in out_d]

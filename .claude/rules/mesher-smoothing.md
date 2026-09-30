@@ -212,6 +212,9 @@ attributable, and the one #85 deliberately spent.
   false`. **The mesh at a cap is still the LAST iterate** — N sweeps means N sweeps outside the
   diverged path — so the difference is SAID, not repaired.
 - **THE RESIDUAL DESCRIBES THE ITERATION, NEVER THE MESH, AND NOTHING MAY ADVISE FROM IT** (#156).
+  **SUPERSEDES #82:** its split of the cap into two branches stands, but the turned branch's advice
+  is deleted rather than kept beside the new one — the branches differ only in what they OBSERVE.
+  Why: `docs/design_notes/mesher.md`, "THE CAP ADVICE CONCLUDED ABOUT THE MESH FROM THE ITERATION".
   The turned branch used to say "raising `MB_SMOOTH_ITERS` makes this mesh worse, not more
   converged. Lower it to at most that sweep." **All four shipped CURVED cases take that branch at
   the default cap of 20**, so the accurate `else` branch beside it was the one nobody ever saw
@@ -223,11 +226,14 @@ attributable, and the one #85 deliberately spent.
   while the residual rises the whole way, and 20 -> 4 costs 0.43 deg of max and 0.34 deg of mean;
   on the C-grid 20 -> 1 costs 1.97 deg and 0.69 deg. **The OBSERVATION survives** — the iteration
   is not settling, so the mesh is an ITERATE rather than a solution — **and the instrument is
-  hoisted out of the ternary** so the inverted-cell count governs both branches. The two other
-  sites that say "Lower `MB_SMOOTH_ITERS`" were enumerated and only one was this defect:
-  `src/cli.cpp`'s `Converged` row ("so a higher cap is a worse mesh") went with it; the wall-height
-  warning advises on the quantity it measures and stays; the DIVERGED path has already rolled back
-  to the best iterate and stays. `--sync` cannot reach any of these figures — it rewrites what the
+  hoisted out of the ternary** so the inverted-cell count governs both branches. **FOUR SITES STEER
+  THE CAP AND ONLY TWO WERE THIS DEFECT**, enumerated rather than assumed: this warning, and
+  `src/cli.cpp`'s `Converged` row ("so a higher cap is a worse mesh"), which is the line a user
+  reads FIRST and went with it. The other two stay — the wall-height warning
+  (`src/MultiBlock.cpp`'s "Lower `MB_SMOOTH_ITERS`, or declare a wall spacing…") advises on the
+  quantity it just measured and names no sweep; the DIVERGED path fires at 10x the best residual,
+  where the mesh really is folded, and has already ROLLED BACK to the best iterate, so it names
+  what the run did rather than steering the next one. `--sync` cannot reach any of these figures — it rewrites what the
   instruction files state about THEMSELVES and does not run the mesher — so the table above is
   dated, and what stops the property behind it going stale is the gate, which DERIVES it.
 - **THE GATE FOR IT ASSERTS THE JOIN, NOT EITHER HALF.**
@@ -333,11 +339,14 @@ attributable, and the one #85 deliberately spent.
   order and the folded cells stay nearly rectangular. Only the inverted count sees it.
 - Gated by `tests/cpp/test_multiblock.cpp` 40-56 (7 injections from #81, 13 from #82, 14 from #83,
   11 from #84, dated in that file), `tools/PreProcessor/tests/test_multiblock_smooth_surface.py`
-  (13 groups: 1-12 on the SHIPPED C-grid AND O-grid, importing #53's own conformity measure rather
-  than re-inventing it, and #114's group 13 on the other three shipped configs — **that group
-  NUMBER is gated since #116**, derived from the checks following the three `shipped_config`
-  retargets by `tools/PreProcessor/tests/test_instruction_budget.py` check 7 and written into
-  that gate's head docstring by `--sync`, never by hand) and the
+  (groups 1-12 on the SHIPPED C-grid AND O-grid, importing #53's own conformity measure rather
+  than re-inventing it; #114's group 13 on the shipped configs no other gate owns; #156's group 14
+  on the cap advice — **the group NUMBER and the COUNT are gated since #116/#153**, derived from
+  the checks following each `shipped_config` retarget by
+  `tools/PreProcessor/tests/test_instruction_budget.py` check 7 and written into that gate's head
+  docstring by `--sync`, never by hand. **Read them THERE**: restating either here is a second,
+  hand-kept home, and this line carried "13 groups" and "three shipped configs" after both had
+  moved) and the
   `mb_cgrid_smooth` golden case, recaptured deliberately by #82, #83 and
   #84 — **the only one of the nineteen that moved any of the three times.**
   **AN INERT INJECTION IS ANSWERED WITH A CHECK OR A FIXTURE**: four of #83's needed a check, one
@@ -475,6 +484,15 @@ grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not dupl
   pretty enough yet" blocking a release — held until the last kernel landed. Kept here as a
   specimen rather than deleted.
   Why: `docs/design_notes/mesher.md`, "THE BASELINE BECOMES A GATE".
+- **GROUP 14 COMPARES NON-ORTHOGONALITY AND NOTHING ELSE** (#156). The cell-shape metric and the
+  wall first-cell height are read in its tables but are not in any assert, and on the two circle
+  O-grids the wall figure moves the OTHER way from the angles. A change that improved
+  non-orthogonality while wrecking cell shape passes group 14 and is caught only by the per-case
+  pins in `tools/PreProcessor/tests/test_multiblock_quality_gate.py`.
+- **THE CAP SWEEP BEHIND THAT RULE IS ONE CASE AND NINE SAMPLES** (#156). `multiblock_tworing_offset`
+  carries the table, the C-grid a coarser confirmation and the H-grid a counter-example; nothing is
+  measured on a case this repo does not ship, and "monotonic" is a claim about the caps SAMPLED
+  (0/2/4/10/20/40/60/80/100) rather than about every intermediate sweep.
 - **NOTHING CAN SEE THE SMOOTHING STAGE'S POSITION.** Injection Y — the whole sweep block moved
   past the split — is INERT, because every reader downstream of it is id-only today. The
   fill-then-smooth-then-split ordering is a design rule held by a comment, not by a gate. **Nor is
