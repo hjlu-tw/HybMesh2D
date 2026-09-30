@@ -4383,9 +4383,14 @@ descending at 20 (`best_sweep` 20), which is the `else` branch.
   3. `src/MultiBlock.cpp`'s wall-height warning, "Lower `MB_SMOOTH_ITERS`, or declare a wall
      spacing this block's far side can be reached from" — **examined and left alone.** It
      advises on the quantity it just measured (that wall's own first-cell height, e.g.
-     0.000000% -> 0.000950% on the C-grid's `e_ff_up`), names no sweep, and lowering really
-     does improve that figure over the shipped range. A different claim from a different
-     instrument, so not this defect.
+     0.000000% -> 0.000950% on the C-grid's `e_ff_up`) and names no sweep. **It is right
+     LOCALLY and not globally**, which is stated rather than glossed: the C-grid's mesh-wide
+     worst wall deviation runs 0.4368 / 0.1222 / 0.0968 / 0.0884 / 0.0871 / 0.0968 / 0.1111%
+     at caps 0 / 1 / 2 / 4 / 10 / 20 / 40, so lowering from the default 20 does improve it to
+     about 10 and then REVERSES, and lowering all the way to 0 is 4.5x worse than where it
+     started. A different claim from a different instrument, hedged ("or declare a wall
+     spacing…") rather than pointed at a sweep — so not this defect, and left alone
+     deliberately rather than by omission.
   4. The DIVERGED path's "Lower `MB_SMOOTH_ITERS` to at most that number" — also left, and
      for a measured reason rather than a distinction: it fires at 10x the best residual, by
      which point the C-grid is far past the cap of 400 where it folds 184 cells, so "the
