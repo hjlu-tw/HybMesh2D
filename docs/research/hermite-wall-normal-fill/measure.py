@@ -7,7 +7,8 @@ measures a fill that is NOT in the tree. Every variant but 0 needs
 ``prototype.patch`` applied and the binary rebuilt; without the patch the binary
 ignores ``HYBMESH_MB_FILL_HERMITE`` and every variant measures the linear fill,
 which is a silent wrong answer — so check that variant 0 and variant 1 differ
-before reading anything else.
+before reading anything else. A run that produces NO ``HYBMESH_MB_QUALITY`` line
+raises rather than being scored, for the reason ``inverted()`` states.
 
 Run (from the repo root)::
 
@@ -116,6 +117,25 @@ def run(case, cap, variant, workdir):
     return row
 
 
+def inverted(r):
+    """The run's inverted-cell count, and a RUN THAT DID NOT REPORT ONE IS AN ERROR.
+
+    Never a sentinel that reads as "clean". A mesher that crashed, refused the
+    topology or was built without the patch prints no ``HYBMESH_MB_QUALITY``
+    line at all, and scoring that silence as zero inverted cells would move a
+    reported first-fold cap later, or to ``None``, with no symptom anywhere —
+    the exact shape of CLAUDE.md's "never a broad `except` that discards".
+    """
+    q = r.get("q")
+    if q is None or "inverted" not in q:
+        raise RuntimeError(
+            "%s %s cap %d: exit %d and no HYBMESH_MB_QUALITY line. This run "
+            "measured nothing; it must not be scored as clean.\n%s"
+            % (r["case"], r["fill"], r["cap"], r["exit"],
+               r.get("stderr_tail", "")))
+    return q["inverted"]
+
+
 def first_inversion(case, variant, workdir, log):
     """The lowest cap whose EXPORTED mesh has an inverted cell.
 
@@ -129,7 +149,7 @@ def first_inversion(case, variant, workdir, log):
     for cap in LADDER:
         r = run(case, cap, variant, workdir)
         log(r)
-        if r.get("q", {}).get("inverted", -1.0) > 0:
+        if inverted(r) > 0:
             dirty = cap
             break
         clean = cap
@@ -139,7 +159,7 @@ def first_inversion(case, variant, workdir, log):
     for cap in range(clean + 1, dirty):
         r = run(case, cap, variant, workdir)
         log(r)
-        if r.get("q", {}).get("inverted", -1.0) > 0:
+        if inverted(r) > 0:
             return {"case": case, "fill": fill, "first_inverted_cap": cap,
                     "last_clean_cap": cap - 1, "scanned_from": clean + 1}
     return {"case": case, "fill": fill, "first_inverted_cap": dirty,
@@ -178,11 +198,14 @@ def measure(outdir, variant, cases, folds):
         for cap in CAPS:
             r = run(case, cap, variant, workdir)
             log(r)
-            q = r.get("q", {})
+            q = r.get("q")
+            if q is None:
+                raise RuntimeError(
+                    "%s %s cap %d: exit %d and no HYBMESH_MB_QUALITY line.\n%s"
+                    % (case, r["fill"], cap, r["exit"], r.get("stderr_tail", "")))
             print("%-16s %-8s cap %4d  exit %d  inv %6.0f  nomax %8.4f  wall %.6f"
-                  % (case, r["fill"], cap, r["exit"], q.get("inverted", -1),
-                     q.get("nonortho_max_deg", -1),
-                     q.get("wall_first_cell_worst_rel", -1)))
+                  % (case, r["fill"], cap, r["exit"], q["inverted"],
+                     q["nonortho_max_deg"], q["wall_first_cell_worst_rel"]))
             sys.stdout.flush()
         if folds:
             f = first_inversion(case, variant, workdir, log)

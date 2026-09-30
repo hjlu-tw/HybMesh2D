@@ -23,13 +23,24 @@ python3 docs/research/hermite-wall-normal-fill/measure.py --report /tmp/h
 
 The committed `rows.json` and `folds.json` beside the harness are the run this note is written
 from, so `--report docs/research/hermite-wall-normal-fill` prints the tables below without
-rebuilding anything.
+rebuilding anything. `evidence.txt` beside them holds the transcripts of the measurements that
+are NOT in those two files — the two golden comparisons and the conformity check — and names the
+two claims that are in neither.
 
 ## How to read the markers
 
 - **[V]** measured by me in this repo, or verified in a primary source I read myself.
 - **[I]** my own inference or derivation from a **[V]** fact. Stated as reasoning, not as fact.
 - **[2nd]** secondhand only. Treat as unconfirmed.
+
+**A [V] IS NOT THE SAME AS RE-DERIVABLE FROM WHAT IS COMMITTED, and a review was right to say
+so.** Every figure in §3 and in A1/A2/A3's tables comes out of `rows.json` / `folds.json` beside
+this file and can be reprinted with one command. Everything else marked **[V]** was measured in
+the session that wrote this note, and the transcripts are in
+`docs/research/hermite-wall-normal-fill/evidence.txt` — the two golden comparisons and the
+C-grid conformity measurement. **Two [V] claims are in NEITHER place and that file names them**:
+§2(a)'s pre-fix 0.024536, which was measured against a prototype `prototype.patch` no longer
+contains, and "visibly better round the nose", which is a judgement on two uncommitted renders.
 
 ---
 
@@ -82,12 +93,26 @@ variant 1 takes the maximum non-orthogonality of the two worst-angled shipped ca
 | `cgrid` | 29.895° → **10.946°** | 3.821° → **2.739°** |
 | `tworing_offset` | 28.796° → **25.989°** | 9.482° → **7.229°** |
 
-Everything else at that cap is small: `square` and `cavity` are **bit-identical** (the
-correction is algebraically zero wherever the linear blend already delivers the declared spacing
-in the declared direction, which is every rectangle, graded or not), and `hgrid`, `ogrid` and
-`tworing` move the *wrong* way by **+0.001°, +0.187° and +0.171°** of maximum non-orthogonality
-with their wall figures unchanged to six decimals. Cell shape moves by under 3.3% in either
-direction on every case.
+Everything else at that cap is small. `square` and `cavity` **do not move at all** — and that is
+the golden comparator's verdict rather than an inference from a four-decimal quality line:
+running it with the flag ON against the same `HEAD` baseline gives **15/21 SAME, 6 DIFF**, and
+the SAME set contains `mb_square`, `mb_square_quads`, `mb_graded`, `mb_bound`, `mb_cavity`,
+`mb_random` and all nine hybrid-path cases (`evidence.txt` §2). The six that DIFF are
+`mb_hgrid`, `mb_ogrid`, `mb_cgrid`, `mb_tworing`, `mb_tworing_offset` and `mb_cgrid_smooth` —
+**read those as NAMES only**: each also changes connectivity, and
+`.claude/rules/mesher-multiblock.md` says a deviation magnitude must not be read on a case whose
+node set changed membership.
+
+**The line between the two sets is not curved-against-straight**, which is the tempting reading
+and is the one I wrote first: `mb_hgrid` is straight-sided and moves. The correction is
+algebraically zero wherever the linear blend ALREADY delivers the declared spacing in the
+declared direction, and on a straight-sided block that needs the two FACING perpendicular edges
+to carry the same law as well. `hgrid`'s `h00` declares **1.504e-01** at one end and
+**2.000e-01** at the other, so it does not, and §2(c) is what that costs.
+
+Of the six, `hgrid`, `ogrid` and `tworing` move the *wrong* way by **+0.001°, +0.187° and
++0.171°** of maximum non-orthogonality, with their wall figures unchanged to six decimals. Cell
+shape moves by under 3.3% in either direction on every case.
 
 The C-grid's win is not a scoring artefact. Its mesh is visibly better round the nose, its
 inverted count is 0, and its `.cel` is still conforming — measured on both exports with
@@ -262,7 +287,10 @@ there, so at the shipped default the difference is 19 degrees.
 `tworing_offset` maximum, linear → hermite1: 0 **29.352 → 30.089**, 2 **29.280 → 29.422**, 5
 **29.198 → 28.528**, 10 **29.071 → 27.361**, 20 **28.796 → 25.989**, 40 **28.173 → 25.014**, 60
 **27.588 → 24.616**. Worse unsmoothed, better from sweep 5 to 60. Its **mean** is better at
-every cap measured, by 2.2 to 2.7 degrees.
+every cap measured, but by an amount that DECAYS and must not be quoted as a flat figure: 2.69,
+2.67, 2.65, 2.59, 2.48 and 2.25 degrees at caps 0, 1, 2, 5, 10 and 20, then 1.84, 1.50, 1.03 and
+0.49 at 40, 60, 100 and 200. Through the shipped default it is 2.2 to 2.7; past it the two fills
+converge, exactly as the maxima do.
 
 ### The circles are the negative control, and they fail it by 0.19° **[V]**
 
@@ -286,16 +314,20 @@ it moves exactly the way the hypothesis says it should:
 | linear | **40** | **28** | **8** | 0 | 0 |
 | hermite1 | **20** | **4** | **0** | 0 | 0 |
 
-**The Hermite fill halves the clip count at the first sweep and empties it two caps earlier.**
-The control really does have less to do, on the one case where it had anything to do at all —
-every other shipped case reports `clipped=0` at every cap through 20 under every fill.
+**The Hermite fill halves the clip count at the first sweep and reaches zero one sampled rung
+earlier** — at cap 5 against cap 10, on a ladder of 1, 2, 5, 10, 20, so "one rung" is all the
+sampling can say and the true crossing is somewhere in 3..5 against 6..10. The control really
+does have less to do, on the one case where it had anything to do at all: every other shipped
+case reports `clipped=0` at every cap through 20 under every fill.
 
-**And it buys nothing.** Up where the folds are, the saturation counts are the same to within a
-few cells: `tworing_offset` at cap 100 is **112 / 112 / 112** and at 200 **236 / 240 / 240**
-(linear / hermite1 / hermite2); `tworing` at cap 200 is **400 / 400 / 400**. The clip count
-falls faster early and lands in the same place late, and the first-inversion cap in A2 moves by
-at most nine sweeps. **The mechanism is confirmed and the consequence is not** — which is a
-stronger NO than "we could not see the mechanism".
+**And it buys nothing.** Up where the folds are, the clip counts — SOURCE TERMS that hit
+`MB_CONTROL_CLIP`, not cells; the inverted-cell counts at those same caps are 108 / 108 / 108,
+228 / 228 / 228 and 384 / 384 / 384 — are the same to within four: `tworing_offset` at cap 100
+is **112 / 112 / 112** and at 200 **236 / 240 / 240** (linear / hermite1 / hermite2); `tworing`
+at cap 200 is **400 / 400 / 400**. The clip count falls faster early and lands in the same place
+late, and the first-inversion cap in A2 moves by at most nine sweeps. **The mechanism is
+confirmed and the consequence is not** — which is a stronger NO than "we could not see the
+mechanism".
 
 The residuals say nothing either way, and by #156's rule they may not be read as a statement
 about the mesh: at cap 20, residual / best / best sweep, linear → hermite1 — `hgrid`
@@ -308,7 +340,8 @@ about the mesh: at cap 20, residual / best / best sweep, linear → hermite1 —
 - **A measurement table over every shipped config, at several caps, for both fills, including
   the first-inversion sweep** — §3 and A2, over three fills rather than two. **[V]**
 - **Does the mesh a user gets at the shipped default change, and in which direction, per case?**
-  `square` and `cavity` **not at all, bit for bit**. `hgrid` **negligibly worse** (max
+  `square` and `cavity` **not at all** — `SAME` under the golden comparator with the flag on,
+  along with `mb_square_quads`, `mb_graded`, `mb_bound` and `mb_random`. `hgrid` **negligibly worse** (max
   +0.001°, wall +0.6% relative on a 0.08% figure). `ogrid` and `tworing` **slightly worse**
   (max +0.19° and +0.17°, wall unchanged). `cgrid` **much better** (max −18.95°, mean −1.08°,
   wall 0.000968 → 0.001013, shape p95 −1.7%, shape median +3.3%). `tworing_offset` **better**
@@ -374,6 +407,10 @@ three instruction files and four gate docstrings — it would have to answer:
   is conforming, sane and visibly better round the nose; I did not localise *which* cells
   stopped being skew, so "the Hermite fill straightens the near-wall lines" is a plausible story
   and not a measurement. **[I]**
+- **Two [V] claims are in no committed artefact**, named in `evidence.txt` §4: §2(a)'s pre-fix
+  0.024536, whose prototype no longer exists, and "visibly better round the nose", whose two
+  renders are not committed. Everything else marked [V] is either in `rows.json` / `folds.json`
+  or transcribed in `evidence.txt`.
 - **Nothing here is gated.** The harness is not a test, nothing in CI runs it, and the numbers
   above go stale the moment the fill, the smoother or a shipped geometry changes. That is the
   same status `docs/research/`'s first note carries and is deliberate — but it means a reader in

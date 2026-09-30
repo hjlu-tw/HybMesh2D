@@ -1,0 +1,118 @@
+EVIDENCE FOR THE CLAIMS IN docs/research/hermite-wall-normal-fill.md THAT ARE NOT
+IN rows.json / folds.json
+================================================================================
+Recorded 2026-09-30 because a review pointed out, correctly, that several claims
+the note marks [V] were measured in the session that wrote it and could not be
+re-derived from anything committed beside it. These are the transcripts. They are
+a DATED QUOTATION, not a gate: nothing re-runs them.
+
+The baseline for both golden comparisons is a binary built from the commit this
+work started at (83c93ea), extracted with `git archive` into a scratch tree and
+captured with HYBMESH_GOLDEN_BIN pointing at it -- the protocol
+`.claude/rules/mesher.md` states for making a behaviour-preserving claim
+checkable at all. The comparing binary has prototype.patch APPLIED in both runs;
+only the environment variable differs.
+
+--------------------------------------------------------------------------------
+(1) WITH THE FLAG OFF THE PROTOTYPE CHANGES NOTHING
+    $ python3 tools/scripts/golden_mesh.py compare <baseline>
+--------------------------------------------------------------------------------
+SAME     duct_90  (worst coordinate deviation 0.000e+00)
+SAME     duct_85  (worst coordinate deviation 0.000e+00)
+SAME     duct_120  (worst coordinate deviation 0.000e+00)
+SAME     duct_90_bc  (worst coordinate deviation 0.000e+00)
+SAME     curved_duct  (worst coordinate deviation 0.000e+00)
+SAME     wedge_45  (worst coordinate deviation 0.000e+00)
+SAME     isolated_corner  (NO MESH on either side: rc=6 'no mesh produced'; no coordinates compared)
+SAME     naca0012  (worst coordinate deviation 0.000e+00)
+SAME     multi_30p30n  (worst coordinate deviation 0.000e+00)
+SAME     mb_square  (worst coordinate deviation 0.000e+00)
+SAME     mb_square_quads  (worst coordinate deviation 0.000e+00)
+SAME     mb_graded  (worst coordinate deviation 0.000e+00)
+SAME     mb_bound  (worst coordinate deviation 0.000e+00)
+SAME     mb_cavity  (worst coordinate deviation 0.000e+00)
+SAME     mb_hgrid  (worst coordinate deviation 0.000e+00)
+SAME     mb_ogrid  (worst coordinate deviation 0.000e+00)
+SAME     mb_cgrid  (worst coordinate deviation 0.000e+00)
+SAME     mb_tworing  (worst coordinate deviation 0.000e+00)
+SAME     mb_tworing_offset  (worst coordinate deviation 0.000e+00)
+SAME     mb_cgrid_smooth  (worst coordinate deviation 0.000e+00)
+SAME     mb_random  (worst coordinate deviation 0.000e+00)
+-------------------------------------------
+TOTAL: 21   SAME: 21   DIFF: 0
+OF THOSE, 1 matched a NO-MESH outcome rather than a mesh: ['isolated_corner']
+
+--------------------------------------------------------------------------------
+(2) WHICH SHIPPED CASES THE HERMITE FILL ACTUALLY MOVES
+    $ HYBMESH_MB_FILL_HERMITE=1 python3 tools/scripts/golden_mesh.py compare <baseline>
+
+    READ THE NAMES, NOT THE DEVIATION MAGNITUDES. Every DIFF row below also
+    reports a connectivity change, and `.claude/rules/mesher-multiblock.md` says
+    in as many words: "do not read its magnitude on a case whose node SET changed
+    membership" -- the figure is an artefact of zipping two sorted node lists
+    whose x-groups split, not a distance any node moved.
+SAME     duct_90  (worst coordinate deviation 0.000e+00)
+SAME     duct_85  (worst coordinate deviation 0.000e+00)
+SAME     duct_120  (worst coordinate deviation 0.000e+00)
+SAME     duct_90_bc  (worst coordinate deviation 0.000e+00)
+SAME     curved_duct  (worst coordinate deviation 0.000e+00)
+SAME     wedge_45  (worst coordinate deviation 0.000e+00)
+SAME     isolated_corner  (NO MESH on either side: rc=6 'no mesh produced'; no coordinates compared)
+SAME     naca0012  (worst coordinate deviation 0.000e+00)
+SAME     multi_30p30n  (worst coordinate deviation 0.000e+00)
+SAME     mb_square  (worst coordinate deviation 1.110e-16)
+SAME     mb_square_quads  (worst coordinate deviation 1.110e-16)
+SAME     mb_graded  (worst coordinate deviation 0.000e+00)
+SAME     mb_bound  (worst coordinate deviation 0.000e+00)
+SAME     mb_cavity  (worst coordinate deviation 0.000e+00)
+DIFF     mb_hgrid
+         | node coordinates differ (worst 1.000e+00 at canonical node 72: [1.4999999833464932, 1.3200050092200637] -> [1.5, 0.0])
+         | connectivity differs (59 cells only in ref, 59 only in new)
+         | STAR-CD connectivity differs (159 cells only in ref, 159 only in new) — this is the grid the solver reads, not the .vtk
+DIFF     mb_ogrid
+         | node coordinates differ (worst 2.000e+00 at canonical node 1113: [-0.5522710976582035, 4.1949401982452486] -> [-0.5510529422522088, -4.194125259712128])
+         | connectivity differs (4148 cells only in ref, 4148 only in new)
+         | STAR-CD connectivity differs (9216 cells only in ref, 9216 only in new) — this is the grid the solver reads, not the .vtk
+DIFF     mb_cgrid
+         | node coordinates differ (worst 2.000e+00 at canonical node 4497: [1.1175530978621873, -8.946329741061588] -> [1.1175386663218978, 8.946329759126197])
+         | connectivity differs (9979 cells only in ref, 9979 only in new)
+         | STAR-CD connectivity differs (11510 cells only in ref, 11510 only in new) — this is the grid the solver reads, not the .vtk
+DIFF     mb_tworing
+         | node coordinates differ (worst 9.562e-01 at canonical node 1551: [-0.4428231959094147, -6.756143813108125] -> [-0.44286542683853164, -0.2958789296306218])
+         | connectivity differs (976 cells only in ref, 976 only in new)
+         | STAR-CD connectivity differs (9216 cells only in ref, 9216 only in new) — this is the grid the solver reads, not the .vtk
+DIFF     mb_tworing_offset
+         | node coordinates differ (worst 2.000e+00 at canonical node 139: [-4.991047052349999, -7.4538954215867195] -> [-4.9881148936522655, 7.455825974952148])
+         | connectivity differs (6188 cells only in ref, 6188 only in new)
+         | STAR-CD connectivity differs (9216 cells only in ref, 9216 only in new) — this is the grid the solver reads, not the .vtk
+DIFF     mb_cgrid_smooth
+         | node coordinates differ (worst 1.998e+00 at canonical node 447: [-0.709999195296379, 7.886438892702656] -> [-0.5312199535345733, -7.898563978679247])
+         | connectivity differs (7096 cells only in ref, 7096 only in new)
+         | STAR-CD connectivity differs (7834 cells only in ref, 7834 only in new) — this is the grid the solver reads, not the .vtk
+SAME     mb_random  (worst coordinate deviation 0.000e+00)
+-------------------------------------------
+TOTAL: 21   SAME: 15   DIFF: 6
+OF THOSE, 1 matched a NO-MESH outcome rather than a mesh: ['isolated_corner']
+DIFFERED: ['mb_hgrid', 'mb_ogrid', 'mb_cgrid', 'mb_tworing', 'mb_tworing_offset', 'mb_cgrid_smooth']
+
+--------------------------------------------------------------------------------
+(3) THE HERMITE C-GRID IS STILL A CONFORMING GRID
+    Both exports at the shipped default cap of 20, measured with
+    tools/PreProcessor/tests/test_multiblock_weld_surface.py's own helpers
+    (c0 = linear fill, c1 = HYBMESH_MB_FILL_HERMITE=1).
+  c0 linear   nodes 5920  cells 11520  edges used by >2 cells 0  free edges 320  .bnd rows 320  free set == .bnd set True  connected components 1
+  c1 hermite1  nodes 5920  cells 11520  edges used by >2 cells 0  free edges 320  .bnd rows 320  free set == .bnd set True  connected components 1
+
+--------------------------------------------------------------------------------
+(4) WHAT IS *NOT* REPRODUCIBLE, AND IS SAID SO IN THE NOTE
+--------------------------------------------------------------------------------
+  * The pre-fix one-sided-tangent figure in the note's SS2(a) -- the O-grid's
+    unsmoothed wall first-cell error at 0.024536 -- was measured against a
+    version of the prototype that no longer exists, since prototype.patch
+    carries the fix. It is an in-session measurement and cannot be re-run from
+    anything here. Restoring it means reverting `mbWallTangents` to a one-sided
+    `wall[b] - wall[a]`.
+  * "Visibly better round the nose" is a judgement on two rendered PNGs
+    (tools/scripts/view_mesh_vtk.py over the window -0.3 1.3 -0.6 0.6). The
+    images are not committed. The conforming, non-inverted, quality-line half of
+    that sentence IS in (2), (3) and rows.json.

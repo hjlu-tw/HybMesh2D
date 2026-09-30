@@ -492,7 +492,13 @@ two halves meet, and the case the batch exists for.
     circle O-grids (202, 116). **What did move is an angle nobody was asking the fill about**:
     max non-orthogonality 28.7957 -> 25.9888 here and 29.8951 -> 10.9456 on the C-grid at the
     default, against +0.187 and +0.171 deg the WRONG way on the two circles, whose fill is
-    already exact. Nothing shipped changed to measure it (21/21 golden SAME with the flag off);
+    already exact. **Six of the 21 golden cases move** — 21/21 SAME with the flag off, 15/21 with
+    it on — and the line is NOT curved-against-straight, which is the tempting reading and is
+    wrong: `mb_hgrid` is straight-sided and DIFFs. The correction is algebraically zero wherever
+    the linear blend ALREADY delivers the declared spacing in the declared direction, which is
+    `mb_square`, `mb_square_quads`, `mb_graded`, `mb_bound`, `mb_cavity` and `mb_random` but not
+    the H-grid, whose `h00` declares 1.504e-01 at one end and 2.000e-01 at the other so its two
+    facing perpendicular edges carry different laws. Nothing shipped changed to measure any of it;
     the patch, the harness, the tables and the four things a feature ticket would have to answer
     first — starting with a solver run, which this has none of — are
     `docs/research/hermite-wall-normal-fill.md`.
