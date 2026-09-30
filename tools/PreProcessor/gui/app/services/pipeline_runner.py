@@ -20,10 +20,13 @@ import threading
 from app.models.mesh_config import MeshConfig
 from app.models.pipeline_config import PipelineConfig
 from app.services import (
-    ib_handoff, pipeline_stages, solver_case, stl3d_case,
+    derived_geoms, ib_handoff, pipeline_stages, solver_case, stl3d_case,
 )
+from app.services.derived_geoms import DerivedGeometryError
 from app.services.pipeline_bc_derive import derive_bc_definitions
-from app.services.pipeline_case_sources import case_sources_for
+from app.services.pipeline_case_sources import (
+    case_sources_for, derived_origins,
+)
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.services.case_files import CLI_RUN_TAG
 from app.services.mesh_modes import missing_mesh_input
@@ -345,7 +348,8 @@ def _run_solver(pcfg: PipelineConfig, repo: str, vtk: str, log,
 
     src_files, src_generated = case_sources_for(pcfg, repo, geoms, vtk)
     work_dir, grid_dir, input_in = solver_case.prepare_case_dir(
-        sc, log=log, sources=src_files, generated_sources=src_generated)
+        sc, log=log, sources=src_files, generated_sources=src_generated,
+        source_origins=derived_origins(pcfg, repo))
 
     # getPGrid: interactive, answers fed on stdin via para.in (run in grid_dir).
     para = os.path.join(grid_dir, "para.in")
@@ -394,6 +398,21 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
     logged)."""
     repo = repo_root()
     out = {"cad_out": "", "cad_outs": [], "phi": "", "vtk": "", "result": ""}
+
+    # A geometry the script DERIVES rather than names, produced first (#154).
+    # Before the plan, because an entry with no source file counts as skipped and
+    # would take the resample stage out of the numbering; and onto this run's own
+    # configuration object, so that everything after it — the resample, the mesh
+    # stage's geometry wiring and the case's record of what it was built from —
+    # sees the ordinary geometry #150 decided an offset should be, with no second
+    # code path anywhere. services/derived_geoms owns the rule and the refusals.
+    try:
+        derived_geoms.materialise_all(pcfg, repo, log)
+    except DerivedGeometryError as e:
+        # Never a skip: a run one geometry short meshes something the user did
+        # not ask for, and on a two-ring case the geometry it drops is the seam.
+        log(f"[CAD] [ERROR] {e}")
+        raise PipelineError(str(e)) from e
 
     # Decide the whole plan BEFORE running anything, so the "Stage i/N" labels
     # below count the stages that will actually execute. The denominator used to

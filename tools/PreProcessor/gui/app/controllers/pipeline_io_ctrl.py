@@ -12,8 +12,10 @@ import os
 from PyQt6.QtWidgets import QFileDialog
 
 from app.models.pipeline_config import PipelineConfig, PIPELINE_FORMAT_VERSION
+from app.services import derived_geoms
+from app.services.derived_geoms import DerivedGeometryError
 from app.services.geom_path_identity import stored_geom_path
-from app.utils import repo_root
+from app.utils import repo_root, report_warning
 
 from app.services.logging_setup import get_logger
 
@@ -155,7 +157,6 @@ class PipelineIoControllerMixin:
             pcfg = PipelineConfig.load_from_file(path)
         except Exception as e:
             self.log(f"[Pipeline] [ERROR] Failed to load script: {e}")
-            from app.utils import report_warning
             report_warning(self.main_window, "Load Pipeline Script Failed",
                            "The pipeline script could not be loaded.",
                            detail=str(e))
@@ -169,6 +170,26 @@ class PipelineIoControllerMixin:
         # any generated mesh and loaded results. Otherwise a partial script would
         # silently inherit leftover settings from whatever was already open.
         self.reset_all_state()
+
+        # A geometry the script DERIVES rather than names is produced first
+        # (#154), through the same services/derived_geoms the headless runner
+        # calls, so the two hosts open the same curve rather than each offsetting
+        # for themselves. After that an offset entry names a file and is an
+        # ordinary CAD entry to the loop below — which is the whole of #150's
+        # decision, arriving at the one stage that could not honour it.
+        try:
+            for i, dest in derived_geoms.materialise_all(pcfg, repo_root()):
+                self.log(f"[Pipeline] CAD entry {i + 1} is a derived geometry; "
+                         f"re-derived it from its recorded source -> {dest}")
+        except DerivedGeometryError as e:
+            # Named and not skipped, the same rule CAD ▸ Regenerate Offset
+            # follows: the tab is missing either way, and a user who is told
+            # which source is absent can fix it.
+            self.log(f"[Pipeline] [ERROR] {e}")
+            report_warning(self.main_window, "Load Pipeline Script", str(e),
+                           detail="That CAD entry has no geometry, so its "
+                                  "resample stage will be skipped and the mesh "
+                                  "will be one geometry short.")
 
         # CAD: each cads entry is a PreProcessor config — reuse the JSON loader,
         # which opens one session (tab) per entry.

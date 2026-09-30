@@ -323,7 +323,7 @@ def check(msg, cond):
 # hand-edited `.dat` whose `.meta` still describes the old point set is a mesh
 # with corners on the wrong segments and no error at all.
 
-def closed_polyline_meta(segs, bcs):
+def closed_polyline_meta(segs, bcs, first_id=0):
     """``(dat_text, meta_text)`` for a CLOSED polyline in numbered segments.
 
     THE ONE writer of this convention in this repo -- #55's ``write_circle`` next
@@ -345,18 +345,27 @@ def closed_polyline_meta(segs, bcs):
 
     ``segs`` is one list of points per segment, each INCLUDING both of its
     endpoints; consecutive segments therefore overlap by exactly one point.
+
+    ``first_id`` is where the segment NUMBERING starts, and 0 is only this
+    repo's hand-authored convention, not the chain's: the PreProcessor renumbers
+    a config's edges 1..N before every export (``ProjectModel.renumber_segments``),
+    so a resampled sidecar is ALWAYS 1-based. A geometry numbered from 0 therefore
+    describes something the CAD stage can never produce, and a topology bound to
+    it cannot survive its geometry being resampled — which is why #154's pair is
+    written with ``first_id=1`` and one document serves both its runs. The
+    default stays 0 so the geometries that shipped before it are unmoved.
     """
     pts, rows = [], []
     for s, seg in enumerate(segs):
         for j, p in enumerate(seg[:-1]):
             pts.append(p)
-            rows.append((s, 1 if j == 0 else 0))
+            rows.append((first_id + s, 1 if j == 0 else 0))
     pts.append(pts[0])
-    rows.append((0, 1))
+    rows.append((first_id, 1))
     dat = "".join("%.12f %.12f\n" % p for p in pts)
     meta = ["HYBMESH_META 2", "COUNT %d" % len(pts), "NPIECES 0",
             "NSEGMENTS %d" % len(segs)]
-    meta += ["%d %s line" % (s, bcs[s]) for s in range(len(segs))]
+    meta += ["%d %s line" % (first_id + s, bcs[s]) for s in range(len(segs))]
     meta += ["POINTS %d" % len(pts)]
     meta += ["%d %d" % r for r in rows]
     return dat, "\n".join(meta) + "\n"

@@ -24,7 +24,7 @@ own them rather than composed here — the same rule the golden comparator follo
 these files are documentation a user runs, and an edit to one has to be visible
 from a gate.
 
-SINCE #114 GROUP 13 ALSO DRIVES THE OTHER FOUR — every shipped multi-block config
+SINCE #114 GROUP 13 ALSO DRIVES THE OTHER FIVE — every shipped multi-block config
 this file does not import a ``base_config`` for, so all of them are exercised for the
 wall warning's floor. That group ENUMERATES them from ``config/`` rather than from a
 list, which is what caught #153's two-ring O-grid arriving as a sixth. They enter
@@ -1548,12 +1548,13 @@ def main() -> int:
         shipped = sorted(os.path.basename(f)[:-4] for f in
                          glob.glob(os.path.join(_REPO, "config", "multiblock_*.dat")))
         driven = ["multiblock_cavity", "multiblock_cgrid", "multiblock_hgrid",
-                  "multiblock_ogrid", "multiblock_square", "multiblock_tworing"]
+                  "multiblock_ogrid", "multiblock_square", "multiblock_tworing",
+                  "multiblock_tworing_offset"]
         check(f"13. the shipped multi-block configs are exactly the ones this file "
               f"drives, read off `config/` rather than from a list here — so a NEW "
               f"one cannot ship without a gate. That is not a hypothetical: #153's "
-              f"two-ring O-grid is the sixth, and this check is what sent it here "
-              f"({shipped})",
+              f"two-ring O-grid is the sixth and #154's offset-derived one the "
+              f"seventh, and this check is what sent both here ({shipped})",
               shipped == driven)
         # THE EXIT CODE IS READ, as it is for every other run in this file: a case
         # that folded and exited 9 still prints its banners, so a group that only
@@ -1566,11 +1567,17 @@ def main() -> int:
                            config=lambda: shipped_config("multiblock_hgrid"))
         rc_tr, tr, _ = run(tmp, "tr153",
                            config=lambda: shipped_config("multiblock_tworing"))
-        check(f"13. all four added configs EXIT 0 at the default cap, so the "
+        # #154's case is here for the same reason #153's is: this group's own rule
+        # is that a shipped config nothing drives cannot exist. What it adds is a
+        # mesh whose middle ring is COMPUTED, so a change to the offset law that
+        # left the mesher untouched would still have to keep this run at exit 0.
+        rc_to, to, _ = run(tmp, "to154",
+                           config=lambda: shipped_config("multiblock_tworing_offset"))
+        check(f"13. all five added configs EXIT 0 at the default cap, so the "
               f"banners the checks below parse describe a mesh that was actually "
               f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg}, tworing "
-              f"{rc_tr})",
-              (rc_sq, rc_cv, rc_hg, rc_tr) == (0, 0, 0, 0))
+              f"{rc_tr}, tworing_offset {rc_to})",
+              (rc_sq, rc_cv, rc_hg, rc_tr, rc_to) == (0, 0, 0, 0, 0))
         w_hg = wall_height_warns(hg)
         hg_before, hg_after = wall_banner(hg, before=True), wall_banner(hg)
         check(f"13. the shipped H-GRID's eight declared wall edges are all MEASURED "

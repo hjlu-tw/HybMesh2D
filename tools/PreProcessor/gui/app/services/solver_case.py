@@ -298,7 +298,7 @@ def stage_bc_def_companion(cfg: SolverConfig, grid_dir: str, work_dir: str,
 
 
 def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
-                     sources=(), generated_sources=(),
+                     sources=(), generated_sources=(), source_origins=None,
                      archive_prev: bool = False, clean=None):
     """Build ``results/solver/<name>/{work,grid,dll}``, stage getPGrid inputs,
     rename outputs, write ``input.in`` / ``.def``, and compile IBM DLLs.
@@ -308,6 +308,8 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     parameter file, which the GUI writes to a temp path it then deletes). Both
     land in ``grid/cad/`` (see ``services/case_sources``) so the case carries the
     geometry and the settings it describes, not only the mesh cut from them.
+    ``source_origins`` overrides what the index says a staged file came from, for
+    the one file whose path is not an answer — a geometry the run DERIVED.
 
     Mutates ``cfg`` in place (paths are rewritten to the staged locations, as the
     solver worker expects). Returns ``(work_dir, grid_dir, input_in_path)``.
@@ -426,7 +428,8 @@ def prepare_case_dir(cfg: SolverConfig, log=_noop, overwrite: bool = False,
     cfg.input_bnd_file = os.path.join(grid_dir, "input.bnd")
 
     # The geometry this grid was cut from, and the settings that cut it.
-    stage_case_sources(sources, grid_dir, log, generated=generated_sources)
+    stage_case_sources(sources, grid_dir, log, generated=generated_sources,
+                       origins=source_origins)
 
     # Initial-condition DLL (IBM or not): compile the .cc into dll/ and reference
     # it as ../dll/*.so. Non-IBM cases can drive the initial field from a DLL too

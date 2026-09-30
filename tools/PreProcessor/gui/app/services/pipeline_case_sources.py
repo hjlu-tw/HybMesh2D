@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 
 from app.models.pipeline_config import PipelineConfig
-from app.services import case_sources
+from app.services import case_sources, derived_geoms
 from app.services.logging_setup import get_logger
 
 _log = get_logger(__name__)
@@ -66,3 +66,35 @@ def case_sources_for(pcfg: PipelineConfig, repo: str, geoms: list | str | None,
                      "block topology reaches the case's cad/ folder",
                      exc_info=True)
     return [p for p in out if p], generated
+
+
+def derived_origins(pcfg: PipelineConfig, repo: str) -> dict:
+    """``{staged path: what SOURCES.txt should say it came from}`` (#154).
+
+    A geometry this run DERIVED has a path under ``results/derived/``, which
+    records that it was produced and nothing about from what. The note carries
+    the record instead — the distance, and the source geometry BY ITS OWN
+    ABSOLUTE PATH, so ``tools/scripts/case_sources_index.py`` still answers
+    "which cases go stale if I change this body?" with this one.
+
+    Computed from the same ``services/derived_geoms`` the run derived through,
+    and from ``output_path`` rather than from what the run happened to write, so
+    a caller can build it without having run the derivation. Never raises: a case
+    that cannot explain one of its files is worth having; failing a solve over
+    the explanation is not.
+    """
+    out: dict = {}
+    for i in pcfg.cad_indices():
+        rec = derived_geoms.record_for(pcfg.cad_at(i))
+        if rec is None:
+            continue
+        try:
+            src = pcfg.resolve_input_file(
+                repo, derived_geoms.source_index(pcfg, repo, i))
+        except derived_geoms.DerivedGeometryError:
+            _log.debug("cads[%d] has an offset record with no source in this "
+                       "script; SOURCES.txt keeps the path", i, exc_info=True)
+            continue
+        out[derived_geoms.output_path(pcfg, repo, i)] = (
+            "(derived) %s <- %s" % (rec.describe(), src))
+    return out

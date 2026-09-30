@@ -211,7 +211,8 @@ def _unique_name(dest_dir: str, name: str, taken: set,
         n += 1
 
 
-def stage_case_sources(sources, grid_dir: str, log=_noop, generated=()) -> list:
+def stage_case_sources(sources, grid_dir: str, log=_noop, generated=(),
+                       origins=None) -> list:
     """Copy ``sources`` (and their sidecars) into ``grid_dir/cad/``.
 
     ``generated`` is an iterable of ``(name, text)`` written straight into the
@@ -219,11 +220,22 @@ def stage_case_sources(sources, grid_dir: str, log=_noop, generated=()) -> list:
     temp file deleted on exit, so there is no path to copy and the alternative
     is that a case records every input except the one that shaped its grid.
 
-    Returns a list of ``(origin, dest_abs)``, where ``origin`` is the source path
-    or ``"(generated)"``. Missing and duplicate entries are dropped — callers
-    assemble the list from whatever the case happens to have, so blanks are
-    normal input, not an error. Creates nothing when there is nothing to stage.
+    ``origins`` maps a source's absolute path to what ``SOURCES.txt`` should say
+    it came from INSTEAD of that path (#154). One file needs it: a geometry the
+    run DERIVED rather than read, whose path is a run artifact under
+    ``results/derived/`` and answers "which body, at what distance?" with nothing.
+    The note names both, and it names the source geometry by its own absolute
+    path — so ``tools/scripts/case_sources_index.py`` still finds this case when
+    asked which cases a change to that body makes stale, which is the one
+    property the path in this column carries.
+
+    Returns a list of ``(origin, dest_abs)``, where ``origin`` is the source path,
+    an ``origins`` note, or ``"(generated)"``. Missing and duplicate entries are
+    dropped — callers assemble the list from whatever the case happens to have,
+    so blanks are normal input, not an error. Creates nothing when there is
+    nothing to stage.
     """
+    notes = {os.path.abspath(k): v for k, v in (origins or {}).items() if k and v}
     wanted: list = []
     seen: set = set()
     for src in sources or ():
@@ -267,7 +279,7 @@ def stage_case_sources(sources, grid_dir: str, log=_noop, generated=()) -> list:
         names[src] = name
         dst = os.path.join(dest_dir, name)
         shutil.copy2(src, dst)
-        staged.append((src, dst))
+        staged.append((notes.get(src, src), dst))
         note = f" (renamed from {os.path.basename(src)})" \
             if name != os.path.basename(src) else ""
         log(f"[case] source -> grid/{SOURCE_DIR_NAME}/{name}{note}")
@@ -299,7 +311,8 @@ def _write_index(dest_dir: str, staged: list, log=_noop) -> None:
     prevent."""
     lines = ["# CAD / STL sources this solver case was built from.",
              "# Copied here by HybMesh2D; the originals are untouched.",
-             "# Columns: staged name  <-  original absolute path",
+             "# Columns: staged name  <-  where it came from (an absolute "
+             "path, unless it was generated or derived)",
              ""]
     width = max((len(os.path.basename(d)) for _s, d in staged), default=0)
     for src, dst in sorted(staged, key=lambda p: os.path.basename(p[1])):

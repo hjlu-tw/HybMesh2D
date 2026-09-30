@@ -490,6 +490,8 @@ CASES = (
      ("b_wake_up", "b_upper", "b_lower", "b_wake_lo")),
     ("tworing", "multiblock_tworing",
      ("q0", "q1", "q2", "q3", "p0", "p1", "p2", "p3")),
+    ("tworing_offset", "multiblock_tworing_offset",
+     ("q0", "q1", "q2", "q3", "p0", "p1", "p2", "p3")),
 )
 
 # WHAT EACH SHIPPED CASE MEASURES, measured 2026-09-17 at the shipped defaults and
@@ -511,6 +513,14 @@ PINS = {
     # `test_multiblock_tworing_surface.py` check 9 beside the half it cost.
     "tworing": {"cells": 4608, "median": 1.685363, "p95": 21.128734,
                 "max": 32.767047},
+    # Measured 2026-09-30 (#154). The same eight blocks on a 2:1 ELLIPSE, so its
+    # max is NOT the O-grid family's 32.767: the wall band's azimuthal spacing
+    # varies around this body while the 1e-3 first cell does not, so the worst
+    # squeeze is at the flank rather than uniform, and every figure here is the
+    # ellipse's own. Its middle ring is COMPUTED from the body rather than drawn,
+    # which is what makes this row move if `services/geometry_offset.py` does.
+    "tworing_offset": {"cells": 4608, "median": 2.226388, "p95": 17.181390,
+                       "max": 25.274427},
 }
 
 # HOW MANY QUADS EACH CASE'S WALL BAND HOLDS, measured 2026-09-18 and pinned
@@ -536,6 +546,11 @@ BAND_PINS = {
     # follow there. That is the two-ring case's own statement of what the band
     # means, and it is why its bulk is larger than the O-grid's at the same budget.
     "tworing": (2208, 2400),
+    # #154. An even 2304/2304 where the circle's two rings split 2208/2400: the
+    # ellipse's inner ring is a CONSTANT thickness, so the band's walk reaches the
+    # same distance at every station instead of stopping short where the ring is
+    # relatively thicker. That evenness is the offset's doing, not the topology's.
+    "tworing_offset": (2304, 2304),
 }
 
 failures = []

@@ -89,8 +89,13 @@ BODY = (0.5, 0.25, 120, "wall")
 #: label its sidecar carries. That label reaches nothing — a following edge takes
 #: no condition — which check 7 is what proves.
 OFFSET_D, OFFSET_BC = 0.25, "seam"
-#: Far field: the r = 10 circle the single-ring and two-ring O-grids already use.
-FAR_R = 10.0
+#: Far field: an r = 10 circle at 80 facets per quarter — the same one the
+#: single-ring and two-ring O-grids use, but NUMBERED FROM 1 like this case's
+#: other two, so it is a file of its own rather than the shipped
+#: ``circle_farfield.dat``. See :func:`write_ellipse` for why the numbering is
+#: load bearing; a 0-based geometry here would mean the pipeline script could not
+#: share this case's topology document.
+FAR = ("ellipse_farfield", 10.0, 80, "farfield")
 
 
 # The ONE parser for the machine-readable quality line, in the gate that owns it.
@@ -100,6 +105,9 @@ from test_multiblock_weld_surface import (                               # noqa:
     bnd_faces, cel_cells, components, edge_use, vrt_nodes)
 # The ONE writer of this repo's closed-polyline `.meta` convention.
 from test_multiblock_cgrid_surface import closed_polyline_meta           # noqa: E402
+# The ONE generator of this repo's circle geometries, in the gate that owns the
+# other three (#55).
+from test_multiblock_ogrid_surface import write_circle                   # noqa: E402
 # THE ONE shipped-config retargeter (#126), imported and never re-implemented.
 from mb_shipped_config import shipped_config                             # noqa: E402
 from mesher_bin import NO_SMOOTH, mesher_env as _mesher_env              # noqa: E402
@@ -192,8 +200,19 @@ def closed_array(segs):
 
 
 def write_ellipse(a, b, per_quarter, bc):
-    """``(dat_text, meta_text)`` for the body: a closed ellipse in four quarters."""
-    return closed_polyline_meta(ellipse_segments(a, b, per_quarter), [bc] * 4)
+    """``(dat_text, meta_text)`` for the body: a closed ellipse in four quarters.
+
+    NUMBERED FROM 1, unlike every geometry that shipped before this case, and
+    that is load bearing rather than a style choice: the PreProcessor renumbers a
+    config's edges 1..N before every export, so a RESAMPLED sidecar is always
+    1-based. A 0-based geometry can never come out of the CAD stage, so a
+    topology bound to one cannot survive its geometry being resampled — and
+    surviving exactly that is what this case has to demonstrate. Numbered the
+    resampler's way, ONE topology document serves both the shipped run and the
+    pipeline run.
+    """
+    return closed_polyline_meta(ellipse_segments(a, b, per_quarter), [bc] * 4,
+                                first_id=1)
 
 
 def write_offset(a, b, per_quarter, distance, bc):
@@ -212,13 +231,14 @@ def write_offset(a, b, per_quarter, distance, bc):
     n = per_quarter
     off = [[(float(out[k][0]), float(out[k][1]))
             for k in range(s * n, (s + 1) * n + 1)] for s in range(4)]
-    return closed_polyline_meta(off, [bc] * 4)
+    return closed_polyline_meta(off, [bc] * 4, first_id=1)
 
 
 SHIPPED = (
     ("ellipse_body", lambda: write_ellipse(*BODY)),
     ("ellipse_offset", lambda: write_offset(BODY[0], BODY[1], BODY[2],
                                             OFFSET_D, OFFSET_BC)),
+    (FAR[0], lambda: write_circle(FAR[1], FAR[2], FAR[3], first_id=1)),
 )
 
 
@@ -433,8 +453,10 @@ def main() -> int:
           len(ring_pts) == len(body_pts) == 4 * per_q + 1)
     check("2b. the two sidecars carry the SAME segment id at every row — the "
           "pairing holds with nothing re-segmented", b_ids == r_ids and len(b_ids) > 0)
-    check("2c. and there are four of them, the body's own",
-          sorted(set(b_ids)) == [0, 1, 2, 3])
+    check("2c. and there are four of them, numbered the way the RESAMPLER "
+          "numbers segments — 1..N, so the same topology binds to the shipped "
+          "geometry and to a resampling of it",
+          sorted(set(b_ids)) == [1, 2, 3, 4])
 
     # ── 3. a constant-thickness ring; the drawable alternative is not ──────
     thick = [dist_to_polyline(p, body_pts) for p in ring_pts]
@@ -473,7 +495,7 @@ def main() -> int:
     se = shared_edges(out)
     check("5a. all four seam edges are reported FOLLOWING their own segment of "
           "the offset geometry",
-          all(se.get("s%d" % k) == "following segment %d of 'ellipse_offset.dat'" % k
+          all(se.get("s%d" % k) == "following segment %d of 'ellipse_offset.dat'" % (k + 1)
               for k in range(4)))
     check("5b. the eight radials are reported as straight chords",
           all(se.get(e) == "a straight chord"

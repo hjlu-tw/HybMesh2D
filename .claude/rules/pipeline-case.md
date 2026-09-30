@@ -64,6 +64,50 @@ the schema and the stage logic.
   per-MODE topology, the generated parameter file, and the refusal to fail a solve when the
   mesh config cannot be rebuilt. The runner therefore has no logger: its one `warning` was that
   refusal and travelled with it.
+- **A GEOMETRY THE SCRIPT DERIVES RATHER THAN NAMES IS PRODUCED AT THE START OF THE RUN**
+  (`services/derived_geoms.py`, Qt-free; #154, parent #150). #152's decision is that an offset is
+  an ORDINARY geometry to every stage that handles one — resampled, given boundary conditions,
+  staged into a case — and composing it with #151's `follows` on a real case confirmed every one
+  of those. It left exactly one gap, and it is the stage that handles no geometry at all: a
+  pipeline script identifies a CAD input BY ITS FILE PATH, and a derived geometry has none. So a
+  script saved from a workspace holding an offset carried the RECORD and no curve, and both hosts
+  did the only thing an entry naming no file allows — `cad_skip` skipped it headlessly, and the
+  GUI's script loader warned that a tab was missing. The mesh ran one geometry short, and on a
+  two-ring case the geometry it drops is the seam.
+  - **It is the explicit Regenerate, not the live recomputation #150 rules out.** What that
+    out-of-scope line forbids is a recomputation on every geometry EDIT — an implicit write into
+    every edit path, to be reconciled with global undo and the outline re-fit. This runs ONCE, at
+    the moment the whole chain is being executed on purpose. The script becomes self-contained: it
+    carries the body and the instruction, so the curve can never be the offset of a body the
+    script no longer names.
+  - **ONE OWNER, AND NOW REALLY TWO CALLERS.** `geometry_offset.offset_points` is the law; #152
+    could only state that a second caller WOULD go through it. `pipeline_runner.run_pipeline`
+    (before the plan, so an entry naming no file does not take the resample stage out of the
+    numbering) and `pipeline_io_ctrl._apply_pipeline_config` (before the loop that opens a tab per
+    entry) both call `materialise_all`, so "the same script produces the same mesh in both hosts"
+    is a property of the code and not a hope.
+  - **The points are written at `%.10f`, which is a PARITY constant and not a taste**: it is what
+    `backend_ctrl._write_temp_config` writes when it hands a session's points to the resampler, so
+    a finer precision here would be rounded away on one host and not the other.
+  - **`materialise_all` SETS `input_file` on the entry**, on the run's own configuration object,
+    so everything after it — the resample, the mesh stage's geometry wiring, `case_sources_for` —
+    sees the ordinary geometry #150 decided an offset should be, with no second code path
+    anywhere. That is also why the staged file needs no new rule: it is a CAD input.
+  - **Three refusals, each NAMED and none of them a skip**: a record whose source the script does
+    not carry (found by file identity first and by the source's display name second, the same
+    order `offset_geom_ctrl.find_offset_source` uses); a source whose file is not on disk
+    (`source_points`, a guard of its own so the two are different sentences); and an offset that
+    would fold, whose refusal carries the law's own largest-working distance through verbatim.
+    The RUN stops on all three — a run one geometry short meshes something the user did not ask
+    for.
+  - **`from_workspace_dict` carries the record**, which it did not: it copied seven of
+    `ProjectModel.to_state_dict`'s keys by hand and dropped the eighth, so a `.hws` holding an
+    offset became a script that could not produce one.
+  Gated by `tests/test_pipeline_derived_geometry.py` (9 groups through the REAL binaries plus six
+  injections, each re-running the gate as a CHILD so the harness's EXIT CODE is read and not only
+  its FAIL count, with a named negative control). The mesher-side case it exists for is
+  `.claude/rules/mesher-multiblock.md`'s two-ring offset O-grid.
+  Why: `docs/design_notes/pipeline.md`, "A GEOMETRY THE SCRIPT DERIVES".
 - **Producing a phi field is not the same as wiring one up** (`services/ib_handoff.py`, Qt-free):
   `link_phi_to_solver()` is the one owner and all three hosts call it. STL3d writes a *Tecplot*
   field while the init DLL reads a *headerless* `phi.dat` with the STL3d grid spec compiled into
@@ -424,7 +468,15 @@ the schema and the stage logic.
   per-segment BC labels and No-BL flags); **collisions are renamed, not overwritten**; generated
   files are staged **last** and marked `(generated)`, because a reconstruction must not read as
   evidence. `SOURCES.txt` maps every staged name back to its absolute origin, rewritten in full
-  each run — and it is the *only* index there is, so **`tools/scripts/case_sources_index.py`**
+  each run — **except for the one file whose path is not an answer** (#154): a geometry the run
+  DERIVED lands under `results/derived/`, which records that it was produced and nothing about
+  from what, so `stage_case_sources(..., origins=)` lets the caller replace that column with the
+  RECORD — the distance, and the source body **by its own absolute path**, which is the one
+  property of the column `case_sources_index.py` depends on. `pipeline_case_sources.derived_origins`
+  builds it from `derived_geoms.output_path` rather than from what the run happened to write, so
+  it can be computed without having run the derivation, and it never raises: a case that cannot
+  explain one of its files is worth having, failing a solve over the explanation is not.
+  `SOURCES.txt` is the *only* index there is, so **`tools/scripts/case_sources_index.py`**
   reads them back to answer "if I change this CAD, which cases go stale?" (matching by
   `(st_dev, st_ino)`, then path, then substring; exit 1 on no match). `case_export` descends into
   `grid/cad/` with its own allow-list.

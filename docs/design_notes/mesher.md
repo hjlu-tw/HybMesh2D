@@ -4172,6 +4172,110 @@ NO C++ CHANGE, which is the strongest thing this case says about #151's design.
   comparator's multi-block share, written as "six of nineteen" beside an "all ten
   multi-block cases" two bullets down, is eleven of twenty.
 
+**AN OFFSET-DERIVED MIDDLE RING, AND WHAT ARC LENGTH COSTS** (#154, parent #150,
+measured 2026-09-30). #153's own blind-spot list said its comparison was ONE body at ONE
+budget, that a circle is where a single tanh law has the least trouble spanning wall to
+far field, and that it "says nothing about a body where the wall-normal extent varies
+around it". This is that body, and the two halves of #150 — the CAD-stage offset (#152)
+and the interior edge that FOLLOWS a curve (#151) — meeting on it is the case the whole
+batch exists for.
+
+`examples/topology/tworing_offset.json` + `config/multiblock_tworing_offset.dat`: the
+same eight blocks around a **2:1 ellipse** (a = 0.5, b = 0.25, 120 points per quarter by
+equal ARC LENGTH) in the same r = 10 far field, with the middle ring at a signed
+distance of **+0.25**. It needed no C++ change either.
+
+- **WHY THE CURVE HAS TO BE COMPUTED, AS A NUMBER.** A circle's offset is a circle, so
+  #153's middle ring could be hand-drawn. An ellipse's offset is a degree-8 curve with no
+  entry in this tool's shape library, and the nearest thing that library CAN draw — a
+  concentric ellipse through the same four corners, (0.75, 0.50) — sits **0.241523** from
+  the body at the nose against the 0.250000 asked for. That is **3.39% of the ring
+  thickness missing in the one place a boundary layer is thickest**, and it is short
+  everywhere and long nowhere, so it cannot be read as the same curve sampled
+  differently. The real offset is 0.250001..0.250051 all the way round; the 5.1e-05 at
+  the top is the MITER's own excess, which `geometry_offset`'s docstring derives.
+  `test_multiblock_tworing_offset_surface.py` check 3 measures all three numbers.
+- **THE COMPARISON, AND ITS CONTROL IS BUILT RATHER THAN SHIPPED.** There is no
+  single-ring ellipse case in this repo and there should not be one — it is not a case
+  anybody should run — so the gate derives the control from the shipped document itself
+  (its corners, its body edges and its far-field edges verbatim, four blocks, 49 radial
+  nodes) and both meshes export the same **4704 vertices, 9216 triangles, 192 boundary
+  edges**. Read off BOTH runs, as #153's is.
+
+  | at `MB_SMOOTH_ITERS 20` (the shipped default) | single ring | two rings |
+  |---|---|---|
+  | non-orthogonality max (deg) | 29.8670 | **28.7957** |
+  | non-orthogonality mean (deg) | **9.0598** | 9.4818 |
+  | wall first cell, worst relative | 0.000389 | **0.000000** |
+  | worst wall-normal expansion ratio (+x ray) | **1.3988** | 1.8414 |
+
+  | unsmoothed (`MB_SMOOTH_ITERS 0`) | single ring | two rings |
+  |---|---|---|
+  | non-orthogonality max / mean (deg) | 30.3763 / 9.5607 | 29.3518 / 9.9107 |
+  | wall first cell, worst relative | **0.003779** | 0.070625 |
+  | worst wall-normal expansion ratio (+x ray) | 1.1853 | 1.2380 |
+  | cell-size ratio ACROSS the seam | — | 1.000000000 |
+
+- **THE READING THAT MATTERS IS THE UNSMOOTHED WALL FIGURE, AND IT IS A PROPERTY OF THE
+  COMPOSITION.** 0.070625 against 0.003779 is a factor of nineteen, and it is not the
+  offset being wrong — the ring is a constant 0.25 thick, which is exactly what a scaled
+  body cannot give. It is that `follows` places a node by **arc length**, which is #151's
+  deliberate reuse of the bound-wall rule and the thing that keeps a curved interface and
+  a bound wall from coming apart. Equal arc on the body corresponds to equal arc on its
+  constant-distance offset only where `1 + d·κ` is constant — that is, on a circle. On
+  anything else the seam node at arc fraction `t` is not the one the body node at `t`
+  sees along its normal, the radial tilts, and the first cell measured normal to the wall
+  is off before anything smooths it. **It cannot be fixed by resampling either geometry**,
+  and it gets WORSE as the ring gets thinner (measured at the same 24 intervals:
+  0.103051 at d = 0.05, 0.092325 at 0.10, 0.083931 at 0.15, 0.070625 at 0.25), because
+  the first row sits a smaller fraction of the way across a shorter blend. The shipped
+  default's 20 sweeps take it to 0.000000 — better than the single ring's 0.000389 — so
+  what a user gets is the top table, and the bottom one is what they would get by turning
+  the smoother off on this case.
+- **WHAT IT COSTS THE OTHER WAY.** Worst non-orthogonality is BETTER with the split, on
+  this body, where #153's circle showed it identical to every digit. That is the entry
+  #153's blind spot predicted could move and could not measure. Mean non-orthogonality
+  and the wall-normal expansion ratio both go the single ring's way, as they did there.
+- **THE FACETING PUZZLE DISAPPEARS, AND THAT IS THE STRONGEST THING THIS CASE SAYS ABOUT
+  #150'S DECISION.** #153 had to choose 120 facets per quarter for `circle_seam.dat` to
+  satisfy two of #94's divisibility rules at once, and recorded that 96 or 192 would have
+  dragged the BODY's own advice from "declare count 41" down to 9. An offset-derived ring
+  has no such choice: it returns one point per source point, so its faceting and its
+  segmentation are the body's, and settling the body settles both. Nothing fires here.
+- **AND THE DECISION LEFT ONE GAP, WHICH IS ALSO A FINDING** rather than a
+  confirmation — not in the mesher, but in the stage that DESCRIBES a run. A pipeline
+  script names a CAD input by its file path, and a derived geometry has none, so "an
+  ordinary geometry everywhere downstream" was true of every stage except that one.
+  Recorded, and closed, in `docs/design_notes/pipeline.md`, "A GEOMETRY THE SCRIPT
+  DERIVES".
+- **THREE GEOMETRIES NUMBERED FROM 1.** Every geometry shipped before this case numbers
+  its segments from 0, which is this repo's hand-authoring habit and not the chain's:
+  `ProjectModel.renumber_segments` renumbers 1..N before every export, so a resampled
+  sidecar is always 1-based and a 0-based geometry is one the CAD stage can never
+  produce. A topology bound to one therefore cannot survive its geometry being resampled,
+  which is precisely what #154 has to demonstrate. Numbering this case's three the
+  resampler's way is what lets ONE topology document serve both `./run.sh` and
+  `config/pipeline/tworing_offset_demo.json`; `closed_polyline_meta` grew a `first_id`
+  for it, defaulting to 0 so nothing earlier moved. The far field is a renumbered copy of
+  the same r = 10 / 80-per-quarter circle rather than a new shape, and it is a separate
+  file only because `circle_farfield.dat` is 0-based and shared with two other cases.
+
+Blind spots, named:
+
+  * **The expansion ratio is measured along ONE ray, +x**, as #153's is — and unlike
+    #153's circle this mesh is only TWO-fold symmetric about that ray, so it is a sample
+    at the highest-curvature station rather than a maximum over the mesh.
+  * **No solver run is recorded for this case.** #153's two-ring circle has one; this
+    one's chain was driven end to end through the solver by hand on 2026-09-30
+    (`./run_pipeline.sh config/pipeline/tworing_offset_demo.json`, exit 0, a contour PNG
+    written) but the operating point was not varied and no convergence history is quoted
+    here, so it is not an acceptance run in this repo's sense and is not written up as
+    one.
+  * **The control is a topology the gate composes.** It reuses the shipped document's
+    corners and outer edges, so an edit to the case moves the control with it — but a
+    single-ring ellipse O-grid is not itself covered by anything, and if it regressed
+    only this comparison would notice.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

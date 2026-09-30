@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Twelve rule files now — 52,329 / 50,834 / 47,348 / 46,445 / 39,554 / 35,517 / 25,325 / 22,904 / 22,516 / 18,512 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-handoff, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 7,671 / 9,166 of
+    Twelve rule files now — 55,420 / 52,329 / 51,891 / 46,445 / 39,554 / 35,517 / 25,325 / 22,904 / 22,516 / 18,512 / 15,762 / 8,969  characters (pipeline-case, gui-topology, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-handoff, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 4,580 / 7,671 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    ten, which have 12,652 / 13,555 / 20,446 / 24,483 / 34,675 / 37,096 / 37,484 / 41,488 / 44,238 / 51,031. #76 spent 3,446 of
+    ten, which have 8,109 / 13,555 / 20,446 / 24,483 / 34,675 / 37,096 / 37,484 / 41,488 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 40,267 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 40,691 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 40,267 taken down to the boundary above is 40,000, to
+# are its size and its slack -- and 40,691 taken down to the boundary above is 40,500, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -704,7 +704,15 @@ _SOURCES = {
 # which `docs/agents/rule-file-style.md` refuses ("when a rule file runs out of budget the
 # answer is a SPLIT, not a harder compression"). Staying inside this band is never a reason
 # to break that one.
-ROOT_BUDGET = 41_000
+# #154 is the EIGHTH, and it is #153's cause again with the reading unchanged: a SEVENTH
+# shipped `config/multiblock_*.dat`, its one-line invocation, the clause naming what it
+# declares and the pipeline script that runs the same chain headless -- 424 characters,
+# which took the slack to 309. No rule file was born and no tripwire row moved; two rule
+# files grew, and neither is this file's budget. So the corrected reading survives a
+# second consecutive test: it is any ticket that adds to something the root ENUMERATES.
+# The alternative was to leave the seventh shipped case out of Build & Run, which is the
+# trade #153's entry already refused -- a gated figure for an undocumented artefact.
+ROOT_BUDGET = 41_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -3484,10 +3492,10 @@ check(len(_hits) == 1 and "'12'" in _hits[0]
 # the code is what the figure is about. A gate that read the number out of the prose
 # beside it would pass here.
 inj = copy_world(world)
-_renamed = 'check(f"13. all four added configs EXIT 0'
+_renamed = 'check(f"13. all five added configs EXIT 0'
 assert inj["sources"][_SMOOTH].count(_renamed) == 1, "injection fixture: check moved"
 inj["sources"][_SMOOTH] = inj["sources"][_SMOOTH].replace(
-    _renamed, 'check(f"14. all four added configs EXIT 0')
+    _renamed, 'check(f"14. all five added configs EXIT 0')
 check(_smooth_other_three_group(inj) == (14,),
       "injection 13m2. injection is well-formed: the code now drives those configs from "
       "group 14, and the docstring still says what it said")
@@ -3653,7 +3661,7 @@ for _label, _target, _was, _now in (
         ("the block-field gate's injection count", "note:mesher.md",
          "injections into `src/Mesh.cpp`", "injections into the writer"),
         (_GROUP_LABEL, "src:" + _SMOOTH,
-         "ALSO DRIVES THE OTHER FOUR", "ALSO DRIVES THE REMAINING FOUR"),
+         "ALSO DRIVES THE OTHER FIVE", "ALSO DRIVES THE REMAINING FIVE"),
         # Built from `_ROOT_NAME` rather than written out: this target is THIS file, so a
         # literal here would be a second occurrence of the very phrase the fixture
         # requires to be unique, and the loop would abort on its own source text.

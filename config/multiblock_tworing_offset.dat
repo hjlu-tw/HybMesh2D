@@ -36,7 +36,7 @@ MESH_TOPOLOGY_FILE examples/topology/tworing_offset.json
 # hiding inside 'wall'.
 GEOM_FILE examples/geometries/ellipse_body.dat
 GEOM_FILE examples/geometries/ellipse_offset.dat
-GEOM_FILE examples/geometries/circle_farfield.dat
+GEOM_FILE examples/geometries/ellipse_farfield.dat
 
 # The wall spacing, under the name it already has. Only the INNER ring's radials
 # take it; the outer ring's first cell is declared in the topology document,

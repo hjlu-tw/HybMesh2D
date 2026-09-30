@@ -435,6 +435,58 @@ hand-drawn concentric `circle_seam.dat`.
   dated solver acceptance run is in that file's docstring.
   Why: `docs/design_notes/mesher.md`, "A TWO-RING O-GRID, MEASURED AGAINST THE SINGLE RING".
 
+**A TWO-RING O-GRID WHOSE MIDDLE RING WAS COMPUTED, and the seventh shipped case** (still the one
+pure entry point; `examples/topology/tworing_offset.json` +
+`config/multiblock_tworing_offset.dat`; #154, parent #150). **NO C++ CHANGE, as #153 needed
+none.** The same eight blocks, on a **2:1 ellipse** (a = 0.5, b = 0.25) whose middle ring is
+`examples/geometries/ellipse_offset.dat` — the body offset by **+0.25** through
+`app/services/geometry_offset.py`, the GUI's own CAD ▸ Offset Geometry… law. This is where #150's
+two halves meet, and the case the batch exists for.
+- **A CIRCLE'S OFFSET IS A CIRCLE; AN ELLIPSE'S IS NOT.** #153's middle ring could be drawn
+  because a concentric circle IS the offset of a circle. Here the nearest curve this tool can
+  draw — a concentric ellipse through the same four corners — is **0.2415** from the body at the
+  nose against the 0.2500 asked for, **3.39% of the ring thickness short in the one place a
+  boundary layer is thickest**. That number, not the word "computed", is why the curve is
+  generated. The gate measures it and the topology document states it.
+- **THE SEGMENTATION AND THE FACETING ARE THE BODY'S, BY CONSTRUCTION, AND THAT RETIRES A CHOICE.**
+  The offset returns one point per source point in the same order, so the two sidecars carry the
+  same segment ids at the same rows and the `m*` corners are the `b*` corners' own joints. #153
+  had to pick 120 facets per quarter to satisfy TWO of #94's divisibility rules at once; here the
+  seam inherits whatever the body has, so choosing the BODY's faceting settles both — one fewer
+  degree of freedom to get wrong, and the strongest thing this case says about #150's decision to
+  make the offset a CAD object.
+- **ITS THREE GEOMETRIES ARE NUMBERED FROM 1, unlike every geometry shipped before it, and that
+  is load bearing.** `ProjectModel.renumber_segments` renumbers a config's edges 1..N before every
+  export, so a RESAMPLED sidecar is always 1-based: a 0-based geometry is one the CAD stage can
+  never produce, and a topology bound to one cannot survive its geometry being resampled. Numbered
+  the resampler's way, ONE document serves both `./run.sh` and
+  `config/pipeline/tworing_offset_demo.json`. `closed_polyline_meta`'s `first_id` (and
+  `write_circle`'s) is that choice, defaulting to 0 so the earlier geometries are unmoved. The far
+  field is `ellipse_farfield.dat` — the same r = 10, 80-per-quarter circle as the other two
+  O-grids', renumbered — rather than `circle_farfield.dat`, for exactly this reason.
+- **The outer ring's `ds_start` is `0.02474095`**, the inner ring's own last interval over a span
+  of 0.25 in 24 intervals at `BL_INITIAL_THICKNESS` 1e-3. **DERIVED, not tuned**, as #153's is.
+- **THE COMPARISON IS THE ONE #153 SAID ITS CIRCLE COULD NOT MAKE**, and its control is a SINGLE
+  ring on the same ellipse at the same 4704 / 9216 / 192 budget, built by the gate rather than
+  shipped because a single ring on this body is not a case anybody should run. At the shipped
+  default of 20 sweeps: worst non-orthogonality **28.7957 against 29.8670** and wall spacing
+  **0.000000 against 0.000389**, both to the two rings; mean non-orthogonality **9.4818 against
+  9.0598** and worst wall-normal expansion ratio on the +x ray **1.8414 against 1.3988**, both
+  against them. Unsmoothed the wall reading REVERSES — **0.070625 against 0.003779** — and the
+  reason is the composition rather than either half: `follows` places a node by ARC LENGTH (#151's
+  deliberate reuse), and on a body of varying curvature equal arc on the body is not equal arc on
+  its constant-distance offset, so the two rings' nodes are not normal-opposite and the first cell
+  is off before the smoother repairs it. **Equal arc corresponds to equal arc only where
+  `1 + d·κ` is constant, i.e. on a circle** — so this cannot be fixed by resampling either
+  geometry, and it is a property of the pair and not of this case's numbers.
+- Gated by `tests/test_multiblock_tworing_offset_surface.py` (10 groups on the SHIPPED files,
+  which re-derives the committed offset through the REAL service rather than trusting it, and
+  reuses #53's conformity measure) and the `mb_tworing_offset` golden case over all three exported
+  files — the only golden case whose input geometry is the OUTPUT of a Python service. The
+  headless half of the same case, and the derived geometry's own rules, are
+  `.claude/rules/pipeline-case.md`.
+  Why: `docs/design_notes/mesher.md`, "AN OFFSET-DERIVED MIDDLE RING, AND WHAT ARC LENGTH COSTS".
+
 **The BLOCK ID is written to the VTK as a cell field, and it is OPTIONAL** (`Element::blockId`
 in `include/Mesh.hpp`, the `CELL_DATA` section in `src/Mesh.cpp::exportVTK`, filled by the
 adapter in `src/cli.cpp`; #106). #48's user story 39, the one item of that issue never built and

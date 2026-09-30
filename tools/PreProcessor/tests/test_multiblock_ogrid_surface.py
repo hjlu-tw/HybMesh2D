@@ -193,7 +193,7 @@ def check(msg, cond):
         failures.append(msg)
 
 
-def write_circle(radius, per_quarter, bc):
+def write_circle(radius, per_quarter, bc, first_id=0):
     """``(dat_text, meta_text)`` for a CLOSED circle in four quarter segments.
 
     THE ONE generator for the shipped circles, so check 1 can compare the
@@ -202,7 +202,8 @@ def write_circle(radius, per_quarter, bc):
     The `.meta` conventions it has to reproduce -- the closing duplicate the
     loader drops, and a joint belonging to the LATER segment -- are not written
     out here: they live in ``closed_polyline_meta``, which is the ONE writer of
-    them, and this function is one call to it. Two copies of that convention is
+    them, and this function is one call to it. ``first_id`` is that writer's too,
+    and its default keeps every circle that shipped before #154 unmoved. Two copies of that convention is
     how the two come to disagree, and the failure mode is a mesh with corners on
     the wrong segments and no error at all.
     """
@@ -217,7 +218,7 @@ def write_circle(radius, per_quarter, bc):
     # shared joint belongs to the later of the two.
     segs = [[at(k) for k in range(s * per_quarter, (s + 1) * per_quarter + 1)]
             for s in range(4)]
-    return closed_polyline_meta(segs, [bc] * 4)
+    return closed_polyline_meta(segs, [bc] * 4, first_id=first_id)
 
 
 def _write_shipped():

@@ -279,13 +279,13 @@ class PipelineConfig:
         cads = []
         for s in sessions:
             pconf = dict(s.get("project_config") or {})
-            # ProjectModel's own keys already ARE the cad-section keys; carry the
-            # session's source file over when the config didn't record one.
+            # ProjectModel's own keys already ARE the cad-section keys (the eight
+            # of to_state_dict since #154); carry the source file when none was set.
             if not pconf.get("input_file"):
                 pconf["input_file"] = s.get("file_path", "") or ""
             entry = {k: pconf.get(k) for k in
                      ("input_file", "output_file", "closed_mode", "is_closed",
-                      "global_spline", "transform")}
+                      "global_spline", "transform", "derived_from")}
             entry["segments"] = list(pconf.get("segments") or [])
             cads.append(entry)
 

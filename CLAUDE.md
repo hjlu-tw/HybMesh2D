@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **40,267
-characters (40,503 bytes, 2026-09-29) ≈ 10k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **40,691
+characters (40,927 bytes, 2026-09-30) ≈ 10k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**41,000**, leaving 733 characters of slack — derived by a rule the gate states at that
+**41,500**, leaving 809 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -144,7 +144,7 @@ gate here; the full text of all four is `.claude/rules/gui-seams.md`.
   the four with none, and a human reading a diff was its whole enforcement. Measured 2026-09-09:
   **four** commits crossed it in the six days after #67 wrote it down — `98003f1` (#85),
   `306d6a1` (#91) and `8bdc36a` (#47's merge) TWICE — and 44 across 35 files over the whole
-  history. 4 of 286 files exceed it (worst 520); those four are PINNED at their measured sizes,
+  history. 4 of 287 files exceed it (worst 520); those four are PINNED at their measured sizes,
   and a pin fails both when the file grows further and when it drops back under the limit. That
   status is DERIVED, never remembered: `--sync` rewrites it from the same walk, in all three
   files that state it — here, `gui-seams.md` (which names each one) and the design note (#101).
@@ -279,10 +279,14 @@ edge is one declared corner where all four meet — and it needed no C++ change 
 sixth is that O-grid split into TWO RINGS by a curved seam — four `follows` interfaces on a
 hand-drawn concentric circle, carrying no boundary condition — at the single ring's exact
 budget, and the design note records a comparison that goes BOTH ways at both smoothing caps.
+The seventh is that two-ring O-grid on a 2:1 ELLIPSE, whose middle ring nobody drew: it is the
+body offset by +0.25 through the GUI's own offset service, a curve this tool's shape library
+cannot express, and it is where #150's two halves meet. The same chain runs headless from
+`config/pipeline/tworing_offset_demo.json`, which carries the record and derives the curve.
 The
-rules for all six — "The multi-block path is ONE pure entry point", "Boundary conditions are
+rules for all seven — "The multi-block path is ONE pure entry point", "Boundary conditions are
 DECLARED", "Blocks are welded TOPOLOGICALLY", "A circular O-GRID", "A four-block C-GRID",
-"A TWO-RING O-GRID" —
+"A TWO-RING O-GRID", "A TWO-RING O-GRID WHOSE MIDDLE RING WAS COMPUTED" —
 are in `.claude/rules/mesher-multiblock.md`; the smoother's are in
 `.claude/rules/mesher-smoothing.md`, and it is ON by default (`MB_SMOOTH_ITERS` 20).
 

@@ -56,20 +56,20 @@
   // are the same four joints of the same segmentation, because the offset
   // inherited it.
   "corners": [
-    {"id": "b0", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 0, "t": 0.0},
-    {"id": "b1", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 1, "t": 0.0},
-    {"id": "b2", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 2, "t": 0.0},
-    {"id": "b3", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 3, "t": 0.0},
+    {"id": "b0", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 1, "t": 0.0},
+    {"id": "b1", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 2, "t": 0.0},
+    {"id": "b2", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 3, "t": 0.0},
+    {"id": "b3", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 4, "t": 0.0},
 
-    {"id": "m0", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 0, "t": 0.0},
-    {"id": "m1", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 1, "t": 0.0},
-    {"id": "m2", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 2, "t": 0.0},
-    {"id": "m3", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 3, "t": 0.0},
+    {"id": "m0", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 1, "t": 0.0},
+    {"id": "m1", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 2, "t": 0.0},
+    {"id": "m2", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 3, "t": 0.0},
+    {"id": "m3", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 4, "t": 0.0},
 
-    {"id": "f0", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 0, "t": 0.0},
-    {"id": "f1", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 1, "t": 0.0},
-    {"id": "f2", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 2, "t": 0.0},
-    {"id": "f3", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 3, "t": 0.0}
+    {"id": "f0", "kind": "on_geometry", "geom": "ellipse_farfield.dat", "seg": 1, "t": 0.0},
+    {"id": "f1", "kind": "on_geometry", "geom": "ellipse_farfield.dat", "seg": 2, "t": 0.0},
+    {"id": "f2", "kind": "on_geometry", "geom": "ellipse_farfield.dat", "seg": 3, "t": 0.0},
+    {"id": "f3", "kind": "on_geometry", "geom": "ellipse_farfield.dat", "seg": 4, "t": 0.0}
   ],
 
   "edges": [
@@ -101,36 +101,36 @@
 
     // ── The body. One block side per source segment; these carry the wall. ──
     {"id": "w0", "corners": ["b0", "b1"], "kind": "wall", "count": 25,
-     "binding": {"geom": "ellipse_body.dat", "seg": 0}},
-    {"id": "w1", "corners": ["b1", "b2"], "kind": "wall", "count": 25,
      "binding": {"geom": "ellipse_body.dat", "seg": 1}},
-    {"id": "w2", "corners": ["b2", "b3"], "kind": "wall", "count": 25,
+    {"id": "w1", "corners": ["b1", "b2"], "kind": "wall", "count": 25,
      "binding": {"geom": "ellipse_body.dat", "seg": 2}},
-    {"id": "w3", "corners": ["b3", "b0"], "kind": "wall", "count": 25,
+    {"id": "w2", "corners": ["b2", "b3"], "kind": "wall", "count": 25,
      "binding": {"geom": "ellipse_body.dat", "seg": 3}},
+    {"id": "w3", "corners": ["b3", "b0"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 4}},
 
     // ── THE SEAM. Four interior lines that FOLLOW a COMPUTED curve. ─────────
     // Each is the east of an inner block and the west of an outer one. `follows`
     // rather than `binding`: the offset's sidecar labels these segments 'seam',
     // and that label reaches nothing — no patch in the .bnd carries it.
     {"id": "s0", "corners": ["m0", "m1"], "kind": "interface",
-     "follows": {"geom": "ellipse_offset.dat", "seg": 0}},
-    {"id": "s1", "corners": ["m1", "m2"], "kind": "interface",
      "follows": {"geom": "ellipse_offset.dat", "seg": 1}},
-    {"id": "s2", "corners": ["m2", "m3"], "kind": "interface",
+    {"id": "s1", "corners": ["m1", "m2"], "kind": "interface",
      "follows": {"geom": "ellipse_offset.dat", "seg": 2}},
-    {"id": "s3", "corners": ["m3", "m0"], "kind": "interface",
+    {"id": "s2", "corners": ["m2", "m3"], "kind": "interface",
      "follows": {"geom": "ellipse_offset.dat", "seg": 3}},
+    {"id": "s3", "corners": ["m3", "m0"], "kind": "interface",
+     "follows": {"geom": "ellipse_offset.dat", "seg": 4}},
 
     // ── The far field. Bound, so its condition comes from its own sidecar. ──
     {"id": "o0", "corners": ["f0", "f1"], "kind": "wall",
-     "binding": {"geom": "circle_farfield.dat", "seg": 0}},
+     "binding": {"geom": "ellipse_farfield.dat", "seg": 1}},
     {"id": "o1", "corners": ["f1", "f2"], "kind": "wall",
-     "binding": {"geom": "circle_farfield.dat", "seg": 1}},
+     "binding": {"geom": "ellipse_farfield.dat", "seg": 2}},
     {"id": "o2", "corners": ["f2", "f3"], "kind": "wall",
-     "binding": {"geom": "circle_farfield.dat", "seg": 2}},
+     "binding": {"geom": "ellipse_farfield.dat", "seg": 3}},
     {"id": "o3", "corners": ["f3", "f0"], "kind": "wall",
-     "binding": {"geom": "circle_farfield.dat", "seg": 3}}
+     "binding": {"geom": "ellipse_farfield.dat", "seg": 4}}
   ],
 
   // [south, east, north, west] = [radial in, outer arc, radial out, inner arc].
