@@ -1695,8 +1695,47 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // THE CAP, and what it is honest to advise there. Two different situations wear
     // one flag, and telling them apart is #82's review finding: a solve still
     // DESCENDING has more to give, while one whose residual is already above the
-    // best it reached has TURNED, and telling that user to raise the cap points them
-    // at a worse mesh.
+    // best it reached has TURNED. They differ in what they OBSERVE. **Since #156
+    // they no longer differ in what they ADVISE**, and that correction is the rest
+    // of this block.
+    //
+    // #156: THE RESIDUAL DESCRIBES THE ITERATION, NOT THE MESH. The turned branch
+    // used to conclude about the MESH from it — "raising MB_SMOOTH_ITERS makes this
+    // mesh worse, not more converged. Lower it to at most that sweep." Measured
+    // 2026-09-30 on config/multiblock_tworing_offset.dat, varying only the cap,
+    // with the residual rising monotonically from sweep 4 onwards:
+    //
+    //     cap   inverted   nonortho max   nonortho mean   wall first cell
+    //       4          0        29.2248          9.8208          0.000000  <- advised
+    //      20          0        28.7957          9.4818          0.000000  <- shipped
+    //      40          0        28.1728          9.1025          0.000000
+    //      60          0        27.5881          8.7661          0.000000
+    //      80         76        29.3775          8.4945          (exit 9)
+    //
+    // Both halves of that sentence fail where they can be checked: it is not more
+    // converged (true) but it is not worse (false), and the sweep it named costs
+    // 0.43 deg of worst non-orthogonality and 0.34 deg of mean against the shipped
+    // default, buying nothing. All four shipped CURVED cases take this branch at
+    // the default cap of 20 (residual / best / at sweep, 2026-09-30: ogrid
+    // 4.545e-04 / 4.282e-04 / 2; cgrid 9.030e-04 / 8.536e-04 / 1; tworing
+    // 4.489e-04 / 4.206e-04 / 2; tworing_offset 4.847e-04 / 4.765e-04 / 4), so the
+    // accurate sentence below it was the one NOBODY EVER SAW.
+    //
+    // IT IS #82's DEFECT WITH THE SIGN FLIPPED, and the pair is worth more than
+    // either. #82 shipped "raise it to finish the solve" while its own tables said
+    // the end of that solve was a mesh nobody wants; the lesson recorded was to
+    // check where the end of a progress bar GOES. Here the progress bar runs
+    // backwards and the sentence concluded from that that the destination is worse
+    // — again against the tables. What survives is the OBSERVATION, which is true
+    // and worth saying: the iteration is not settling, so this mesh is an iterate
+    // rather than a solution.
+    //
+    // THE DIVERGED PATH ABOVE IS NOT THE SAME DEFECT, and the difference is a
+    // measurement rather than a distinction. It fires at 10x the best residual, by
+    // which point the shipped C-grid is far past the cap of 400 where it folds 184
+    // cells — so "the later ones are worse" is supported there — and that path has
+    // already ROLLED BACK to the best iterate, so its sentence names what the run
+    // did rather than steering the next one.
     //
     // WHAT #83 CHANGED IN THIS ADVICE, because the old text is now false. Before the
     // control functions, "raise it until it converges" was bad advice for a reason
@@ -1729,6 +1768,11 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // also the property check 43 rests on. The rollback belongs to the DIVERGED path,
     // where the solve has been declared lost. So the difference is said, not silently
     // repaired.
+    //
+    // WHICH IS WHY THE ADVICE IS HOISTED OUT OF THE TERNARY (#156). The fold bounds
+    // the cap on BOTH branches — it is the same lagged-coefficient iteration either
+    // way — so the instrument is the same sentence, said once, and the ternary is
+    // left holding only the two OBSERVATIONS it can actually tell apart.
     if (!r.smoothConverged && !r.smoothDiverged) {
         const bool pastBest = r.smoothResidual > r.smoothBestResidual;
         r.warnings.push_back(
@@ -1742,15 +1786,18 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
                    ? "Its residual is ALREADY ABOVE the best this solve reached ("
                      + fmtSci(r.smoothBestResidual) + " at sweep "
                      + std::to_string(r.smoothBestSweep) + "), so the iteration has "
-                     "turned: raising MB_SMOOTH_ITERS makes this mesh worse, not more "
-                     "converged. Lower it to at most that sweep."
+                     "turned and is not settling: this mesh is an ITERATE rather than "
+                     "a solution. That is a fact about the ITERATION and not about the "
+                     "mesh — do NOT lower the cap back to that sweep, which on every "
+                     "shipped curved case is a measurably worse grid. "
                    : std::string(
-                     "Raising MB_SMOOTH_ITERS takes it further and the declared wall "
-                     "height is held while it does. What bounds it is stability, not "
-                     "the kernel's limit: this point iteration lags its coefficients "
-                     "and is only conditionally stable on a strongly graded grid, so "
-                     "past some cap it begins to FOLD cells — raise it only while the "
-                     "inverted-cell count stays 0."))
+                     "Its residual is still FALLING, so the solve has more to give. "))
+            + "Raising MB_SMOOTH_ITERS takes it further and the declared wall "
+              "height is held while it does. What bounds it is stability, not "
+              "the kernel's limit: this point iteration lags its coefficients "
+              "and is only conditionally stable on a strongly graded grid, so "
+              "past some cap it begins to FOLD cells — raise it only while the "
+              "inverted-cell count stays 0."
             + " The control functions were clipped at "
             + std::to_string(r.smoothClipped)
             + " node(s) on the sweep this mesh came from. Read that count as a "

@@ -3601,6 +3601,62 @@ int main() {
                   && mentions(wv[0], "BEST iterate"),
               "49. ...with a warning that says it diverged and that the mesh is the "
               "best iterate, so neither is something a reader has to infer");
+        // ── THE TURNED BRANCH ADVISES WHAT THE FALLING ONE DOES (#156) ──────
+        //
+        // The two branches of the cap warning differ in what they OBSERVE and must
+        // not differ in what they ADVISE, because the fold bounds the cap on both.
+        // Before #156 the turned one said "raising MB_SMOOTH_ITERS makes this mesh
+        // worse, not more converged. Lower it to at most that sweep" — a claim about
+        // the MESH read off a quantity that only describes the ITERATION, and false
+        // where it can be checked (the measurement is in MultiBlock.cpp's own table
+        // and the gate that asserts it against a shipped mesh is group 14 of
+        // tools/PreProcessor/tests/test_multiblock_smooth_surface.py).
+        //
+        // THE FIXTURE IS THE SAME DOCUMENT, AND THE CAP IS SEARCHED FOR RATHER
+        // THAN WRITTEN DOWN. The 0.50 notch descends to convergence and can never
+        // turn; the 0.35 notch reaches all three endings, and which cap lands on
+        // which is a property of the kernel's constants rather than of this file.
+        // `rv.smoothBestSweep + 1` was the obvious guess and it is WRONG on the
+        // committed kernel — that run diverges and rolls back, so it comes out as
+        // sweeps == best with the ending flag set. So the cap is scanned upward and
+        // the FIRST turned-and-not-diverged one is used; if the window ever closes
+        // the search reports a cap of 0 and every check below it goes red, which is
+        // the failure this should have rather than a silent skip.
+        int turnedCap = 0;
+        MbResult rt;
+        for (int cap = 2; cap <= 40 && turnedCap == 0; ++cap) {
+            MbParams t;
+            t.smoothIters = cap;
+            MbResult probe = build(notchedBox(11, 9, "0.35"), t);
+            if (probe.ok && !probe.smoothConverged && !probe.smoothDiverged
+                && probe.smoothResidual > probe.smoothBestResidual) {
+                turnedCap = cap;
+                rt = probe;
+            }
+        }
+        CHECK(turnedCap > 0 && rt.smoothBestSweep < rt.smoothSweeps,
+              "49. a cap PAST the best iterate is a TURNED solve and not a diverged "
+              "one, which is what makes the branch below reachable (cap "
+              + std::to_string(turnedCap) + ", sweeps "
+              + std::to_string(rt.smoothSweeps) + ", best "
+              + std::to_string(rt.smoothBestSweep) + ", residual "
+              + std::to_string(rt.smoothResidual) + " vs best "
+              + std::to_string(rt.smoothBestResidual) + ")");
+        const std::vector<std::string> wt = smoothWarnings(rt);
+        CHECK(!wt.empty() && mentions(wt[0], "inverted-cell count stays 0")
+                  && mentions(wt[0], "the declared wall height is held")
+                  && mentions(wt[0], "a direction rather than a threshold"),
+              "49. ...and it names the SAME instrument the falling branch does — the "
+              "inverted-cell count — because the fold is what bounds the cap on both");
+        CHECK(!wt.empty() && mentions(wt[0], "ALREADY ABOVE the best")
+                  && mentions(wt[0], "an ITERATE rather than a solution"),
+              "49. ...while still OBSERVING the rising residual, and still saying the "
+              "mesh is a partly-solved iterate — the half of the old sentence that "
+              "was true and survives verbatim");
+        CHECK(!wt.empty() && !mentions(wt[0], "makes this mesh worse")
+                  && !mentions(wt[0], "Lower it to at most that sweep"),
+              "49. ...and NOT the half that was false: nothing tells the user to "
+              "lower the cap to the residual's best sweep");
     }
 
     // ── 50. AND IT UNFOLDS WHAT THE ALGEBRAIC FILL FOLDED ───────────────────

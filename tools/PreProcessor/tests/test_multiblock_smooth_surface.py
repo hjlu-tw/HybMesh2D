@@ -908,10 +908,25 @@ def main() -> int:
               st.get("converged") == 0 and st.get("diverged") == 0
               and st.get("best_sweep", 0) < st.get("sweeps", 0)
               and st.get("best_residual", 1) < st.get("residual", 0))
-        check("7. ...and the advice turns over with it: the iteration has TURNED, so "
-              "raising the cap makes the mesh worse rather than more converged",
+        # WHAT TURNS OVER IS THE OBSERVATION, NOT THE ADVICE (#156). This check
+        # used to assert the opposite — "raising the cap makes the mesh worse
+        # rather than more converged" — which is a claim about the MESH read off a
+        # quantity that only describes the ITERATION, and group 14 measures it
+        # false on two shipped cases. The branches differ in what they SEE.
+        check("7. ...and the OBSERVATION turns over with it: the iteration has "
+              "TURNED and this mesh is an iterate rather than a solution",
               "the iteration has turned" in outt
+              and "an ITERATE rather than a solution" in outt
               and "PAST ITS BEST" in outt)
+        check("7. ...while the ADVICE does not turn over with it: both branches "
+              "name the inverted-cell count, because the fold is what bounds the "
+              "cap on both — and nothing tells the user to lower it to the "
+              "residual's best sweep (#156)",
+              "inverted-cell count stays 0" in outt
+              and "the declared wall height is held" in outt
+              and "makes this mesh worse" not in outt
+              and "Lower it to at most that sweep" not in outt
+              and "a higher cap is a worse mesh" not in outt)
         check("7. ...while the mesh returned is still the LAST iterate, because N "
               "sweeps has to mean N sweeps outside the diverged path",
               st.get("sweeps") == 300)
@@ -1734,6 +1749,132 @@ def main() -> int:
               not w_tr and sl_tr.get("cap") == 20 and sl_tr.get("moved", 0) > 0
               and max(tr_b.values()) > 0.0
               and all(tr_a[e] <= tr_b[e] for e in tr_b))
+
+        # ── 14. THE ADVICE, ASSERTED AGAINST A MEASUREMENT (#156) ───────────
+        #
+        # Every other check in this file that reads the cap warning compares a
+        # STRING. That is the right gate for "the sentence #83 replaced is gone",
+        # and it is the wrong one for "the sentence is TRUE" — which is how the
+        # `pastBest` branch shipped for four tickets saying "raising
+        # MB_SMOOTH_ITERS makes this mesh worse, not more converged. Lower it to at
+        # most that sweep." The class the design notes call "a gate that did not
+        # measure its claim": a statement about the MESH concluded from a quantity
+        # that only describes the ITERATION.
+        #
+        # WHAT THIS GROUP DOES INSTEAD is run the case at the sweep the advice
+        # steered toward and compare it with the shipped default. The target sweep
+        # is READ OFF THE RUN (`best_sweep`), never written down here, so the check
+        # follows the advice wherever the kernel's constants move it.
+        #
+        # THE RULER IS BLIND ON TWO OF THE FOUR, and that is stated rather than
+        # averaged away. The circular O-grid and the two-ring O-grid on the same
+        # circle come out at EXACTLY 2.024972 deg max and 1.875000 deg mean at
+        # every cap from 0 to 40 — the limit recorded in the rule file as "THE
+        # O-GRID's FOLD IS INVISIBLE TO NON-ORTHOGONALITY" — so on those two the
+        # advice's target is a TIE on this figure, not a loss, and their wall
+        # first-cell figure actually moves the other way by 0.003 percentage points
+        # (0.0341% at their best sweep against 0.0371% at the default). The claim
+        # asserted over all four is therefore "never BETTER", and the strict "worse"
+        # is asserted only on the two where the ruler can see anything at all.
+        curved = [
+            ("C-GRID", out84,
+             lambda k: run(tmp, "c156", "\nMB_SMOOTH_ITERS %d\n" % k)),
+            ("O-GRID", outo20,
+             lambda k: run(tmp, "o156", "\nMB_SMOOTH_ITERS %d\n" % k,
+                           config=ogrid_config)),
+            ("TWO-RING", tr,
+             lambda k: run(tmp, "t156", "\nMB_SMOOTH_ITERS %d\n" % k,
+                           config=lambda: shipped_config("multiblock_tworing"))),
+            ("TWO-RING OFFSET", to,
+             lambda k: run(tmp, "to156", "\nMB_SMOOTH_ITERS %d\n" % k,
+                           config=lambda: shipped_config("multiblock_tworing_offset"))),
+        ]
+        table, verdicts = {}, {}
+        for name, out_d, at_cap in curved:
+            sl, ql = smooth_line(out_d), qlines(out_d)
+            table[name] = (sl.get("residual"), sl.get("best_residual"),
+                           sl.get("best_sweep"), sl.get("sweeps"))
+            rc_a, out_a, _ = at_cap(int(sl.get("best_sweep", 0)))
+            qa = qlines(out_a)
+            verdicts[name] = (rc_a, ql[0] if ql else {}, qa[0] if qa else {},
+                              smooth_line(out_a))
+        # THE BRANCH ITSELF, measured rather than remembered. All four shipped
+        # CURVED cases take `pastBest` at the shipped default of 20, which is what
+        # made the accurate sentence the one nobody ever saw. `--sync` cannot reach
+        # these figures — it rewrites what the instruction files state about
+        # themselves and does not run the mesher — so the rule file's table is
+        # dated, and THIS is what stops the property behind it going stale.
+        check(f"14. all four shipped CURVED cases reach the cap PAST their own best "
+              f"residual, so the branch whose advice #156 corrected is the one every "
+              f"one of them prints (residual, best, best sweep, sweeps: {table})",
+              len(table) == 4
+              and all(v[0] is not None and v[1] is not None
+                      and v[0] > v[1] and 0 < v[2] < v[3] == 20
+                      for v in table.values()))
+        for name, (rc_a, q_def, q_adv, sl_a) in sorted(verdicts.items()):
+            check(f"14. the {name} run AT the sweep the old advice steered toward "
+                  f"exports a mesh, so the comparison below is between two real "
+                  f"grids (cap {sl_a.get('cap')}, rc {rc_a})",
+                  rc_a == 0 and bool(q_def) and bool(q_adv)
+                  and sl_a.get("cap") == table[name][2])
+            check(f"14. ...and NEITHER cap has folded a cell, so the difference "
+                  f"between them is quality and not a broken mesh (default "
+                  f"{q_def.get('inverted')}, advised {q_adv.get('inverted')})",
+                  q_def.get("inverted") == 0 and q_adv.get("inverted") == 0)
+            check(f"14. ...and the advised sweep is NEVER BETTER than the shipped "
+                  f"default on non-orthogonality — the figure the old sentence "
+                  f"claimed to improve (max {q_adv.get('nonortho_max_deg'):.4f} vs "
+                  f"{q_def.get('nonortho_max_deg'):.4f}, mean "
+                  f"{q_adv.get('nonortho_mean_deg'):.4f} vs "
+                  f"{q_def.get('nonortho_mean_deg'):.4f})",
+                  q_adv.get("nonortho_max_deg", -1)
+                  >= q_def.get("nonortho_max_deg", 0)
+                  and q_adv.get("nonortho_mean_deg", -1)
+                  >= q_def.get("nonortho_mean_deg", 0))
+        for name in ("C-GRID", "TWO-RING OFFSET"):
+            _, q_def, q_adv, _ = verdicts[name]
+            check(f"14. and on the {name}, where the ruler is NOT blind, the advised "
+                  f"sweep is STRICTLY worse on both angles — so a gate that only "
+                  f"compared strings would have shipped the old sentence again "
+                  f"(max +{q_adv['nonortho_max_deg'] - q_def['nonortho_max_deg']:.4f} "
+                  f"deg, mean "
+                  f"+{q_adv['nonortho_mean_deg'] - q_def['nonortho_mean_deg']:.4f} deg)",
+                  q_adv["nonortho_max_deg"] > q_def["nonortho_max_deg"]
+                  and q_adv["nonortho_mean_deg"] > q_def["nonortho_mean_deg"])
+        # AND THE SENTENCE ITSELF, on the shipped cases rather than on the
+        # synthetic notch the C++ check 49 drives. Both halves: the observation
+        # survives, the false conclusion is gone, and the instrument is named on
+        # this branch too because the fold bounds the cap on both.
+        for name, out_d, _ in curved:
+            check(f"14. the {name}'s cap warning OBSERVES the rising residual and "
+                  f"still calls the mesh a partly-solved iterate, and names the "
+                  f"inverted-cell count as what bounds the cap (#156)",
+                  "ALREADY ABOVE the best" in out_d
+                  and "an ITERATE rather than a solution" in out_d
+                  and "PARTLY-SOLVED one" in out_d
+                  and "inverted-cell count stays 0" in out_d)
+        # THE COUPLING, which is the check this group exists for. The two halves
+        # above are each falsifiable on their own — the strings by an edit to the
+        # warning, the angles by a change to the kernel — and NEITHER of them is
+        # what went wrong: the sentence was well-formed English and the mesher was
+        # correct. What was wrong was the JOIN, a sentence steering at a sweep the
+        # same run measures to be worse. So the assert is the implication, and it
+        # is not vacuous: its measured half is TRUE today on two of the four, which
+        # means those two are guarded by the string half alone and an injection
+        # putting the old sentence back reddens them.
+        steer = ("Lower it to at most that sweep", "makes this mesh worse",
+                 "a higher cap is a worse mesh", "Lower it to at most that number")
+        for name, out_d, _ in curved:
+            _, q_def, q_adv, _ = verdicts[name]
+            said = [t for t in steer if t in out_d]
+            worse = (q_adv["nonortho_max_deg"] > q_def["nonortho_max_deg"]
+                     or q_adv["nonortho_mean_deg"] > q_def["nonortho_mean_deg"])
+            check(f"14. ...and NOTHING in the {name}'s output steers the user at the "
+                  f"residual's best sweep while this same run measures that sweep to "
+                  f"be the worse mesh — the JOIN, which is what actually shipped "
+                  f"wrong (steering phrases found {said}; that sweep measured worse: "
+                  f"{worse})",
+                  not (said and worse))
 
     print()
     if failures:

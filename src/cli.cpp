@@ -860,8 +860,17 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                                 ? "NO — DIVERGED; the mesh is the BEST iterate, not "
                                   "the last (see the warning above)"
                           : res.smoothResidual > res.smoothBestResidual
+                                // #156: the SECOND home of the false clause this
+                                // ticket deleted, and the one a user actually reads
+                                // first. "so a higher cap is a worse mesh" concluded
+                                // about the MESH from a quantity that only describes
+                                // the ITERATION, and every shipped curved case takes
+                                // this row. The observation survives; the conclusion
+                                // does not. See MultiBlock.cpp's table.
                                 ? "NO — and PAST ITS BEST; the iteration has turned, "
-                                  "so a higher cap is a worse mesh"
+                                  "so this mesh is an ITERATE — but the residual "
+                                  "describes the ITERATION, not the mesh (see the "
+                                  "warning above)"
                                 : "NO — the mesh is the partly-solved one, and a "
                                   "converged one is not the goal at this kernel")
                   << "\n";
