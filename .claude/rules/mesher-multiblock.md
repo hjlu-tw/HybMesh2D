@@ -484,6 +484,18 @@ two halves meet, and the case the batch exists for.
   this cannot be fixed by resampling either geometry, and it is a property of the pair and not of
   this case's numbers. Why, with the primary sources and the three sizes of fix:
   `docs/research/arc-length-correspondence-on-an-offset-ring.md`.
+  - **THE HERMITE FILL THAT NOTE NAMES WAS PROTOTYPED AND MEASURED, AND THE ANSWER IS NO ON BOTH
+    QUESTIONS IT WAS ASKED (#157). Do not re-argue it from the topology.** The wall figure it
+    targets is already `0.000000` from sweep 1, so at the shipped default it does not move; and
+    the STABILITY hypothesis — more usable sweeps before the fold — is dead on the measurement,
+    the first folding cap going 63 -> 64 here, 333 -> 342 on the C-grid and NOT AT ALL on the two
+    circle O-grids (202, 116). **What did move is an angle nobody was asking the fill about**:
+    max non-orthogonality 28.7957 -> 25.9888 here and 29.8951 -> 10.9456 on the C-grid at the
+    default, against +0.187 and +0.171 deg the WRONG way on the two circles, whose fill is
+    already exact. Nothing shipped changed to measure it (21/21 golden SAME with the flag off);
+    the patch, the harness, the tables and the four things a feature ticket would have to answer
+    first — starting with a solver run, which this has none of — are
+    `docs/research/hermite-wall-normal-fill.md`.
 - Gated by `tests/test_multiblock_tworing_offset_surface.py` (10 groups on the SHIPPED files,
   which re-derives the committed offset through the REAL service rather than trusting it, and
   reuses #53's conformity measure) and the `mb_tworing_offset` golden case over all three exported

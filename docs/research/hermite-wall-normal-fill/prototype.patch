@@ -1,0 +1,377 @@
+diff --git a/include/MultiBlock.hpp b/include/MultiBlock.hpp
+index ea788f7..f92b859 100644
+--- a/include/MultiBlock.hpp
++++ b/include/MultiBlock.hpp
+@@ -123,6 +123,16 @@ struct MbParams {
+     // `growth` beats it; 0 means none was resolved, and then `geometric` must
+     // declare one.
+     double wallGrowth = 0.0;
++    // PROTOTYPE, ISSUE #157, NOT A SHIPPED PARAMETER. Replace the fill's linear
++    // Lagrange blend with a cubic HERMITE one whose boundary derivative points
++    // along the wall normal with a magnitude set by the declared off-wall
++    // spacing (Thompson, Warsi & Mastin Ch. VIII SS1.B). There is NO `.dat` key
++    // and no GUI row for it: src/cli.cpp sets it from HYBMESH_MB_FILL_HERMITE so
++    // that the spike's measurement table can be produced against the same
++    // binary. 0 = off (the shipped fill), 1 = the literal derivative condition,
++    // 2 = the same correction calibrated against the fill's own first interior
++    // line. See docs/research/hermite-wall-normal-fill/ and src/MultiBlock.cpp.
++    int fillHermite = 0;
+     // THE ITERATION CAP on the elliptic smoother that runs between the fill and
+     // the split. 0 is "no sweep runs at all", and at that value this seam returns
+     // exactly what it returned before the smoother existed.
+diff --git a/src/MultiBlock.cpp b/src/MultiBlock.cpp
+index fdfc8b6..33541bd 100644
+--- a/src/MultiBlock.cpp
++++ b/src/MultiBlock.cpp
+@@ -1496,6 +1496,168 @@ Point2D coons(const std::vector<Point2D>& south, const std::vector<Point2D>& nor
+     return p - corr;
+ }
+ 
++// ── PROTOTYPE, ISSUE #157: a HERMITE wall-normal term in the fill ────────────
++//
++// NOT SHIPPED and reachable from no config key. `MbParams::fillHermite` is set
++// by the adapter from HYBMESH_MB_FILL_HERMITE, and this block exists so that the
++// spike's measurement table can be produced against the same binary that builds
++// the shipped meshes. The whole of it: docs/research/hermite-wall-normal-fill/.
++//
++// THE PRESCRIPTION is Thompson, Warsi & Mastin Ch. VIII §1.B — replace the
++// linear Lagrange blend in one direction with a cubic Hermite one whose boundary
++// derivative is set ALONG THE WALL NORMAL with a magnitude fixed by the declared
++// off-wall spacing, which makes the grid orthogonal at the boundary with that
++// spacing. What it targets here is the offset ring's tilted chord
++// (docs/research/arc-length-correspondence-on-an-offset-ring.md): the interior
++// radial between two nodes at equal arc fraction is longer than the ring is
++// thick, so the first cell is stretched by that ratio.
++//
++// WRITTEN AS AN ADDITIVE CORRECTION, not as a second fill, and that shape does
++// three things the alternative does not:
++//   * with the two tangents set to the LINEAR-EQUIVALENT `T = E - W`, the cubic
++//     Hermite blend collapses algebraically to `W + u(E - W)` — `H10 + H11 =
++//     2u³ - 3u² + u` cancels `H00`/`H01`'s cubic part exactly — so the whole
++//     change is carried by how far each end's tangent DEPARTS from that;
++//   * it VANISHES on all four sides, so the boundary is still the edge's own
++//     discretisation and nothing about the welding changes;
++//   * the two directions' corrections simply ADD. What superposition drops is
++//     the TWIST — the cross derivative at a corner where both directions carry a
++//     wall — and that is a real approximation of this prototype, stated rather
++//     than hidden.
++//
++// THERE ARE TWO VARIANTS, and the second exists because the first has a measured
++// accuracy limit that is NOT the prescription's fault:
++//   1 = the LITERAL derivative condition. `T = req/gap * n̂`, so the first
++//       interior node sits at `wall + req * n̂` to first order in `gap`. Its
++//       residual is `gap(2 - gap)` times the linear fill's own first-cell error
++//       vector, which is small only where `gap` is; and it is calibrated against
++//       the pure `u`-term `gap * chord`, which is NOT what the transfinite fill
++//       puts on the first interior line when the two facing perpendicular edges
++//       carry different laws. Measured on the shipped H-grid, whose `h00` asks
++//       for 1.504e-01 at one end and 2.000e-01 at the other: 0.15% -> 4.40%.
++//   2 = the same cubic correction CALIBRATED AGAINST THE FILL'S OWN FIRST
++//       INTERIOR LINE. `δ = (req * n̂ - actual first step) / H(gap)`, forced to
++//       zero at the side's two END stations, where the perpendicular edge's own
++//       discretisation is the answer and the boolean sum's compatibility
++//       condition says the corner derivative is shared. This is the best-faith
++//       version: it hits the declared height in the declared direction to the
++//       accuracy of one cubic term, so a NO measured with it is a statement
++//       about the idea rather than about the arithmetic.
++double mbH10(double t) { return t * (1.0 - t) * (1.0 - t); }
++double mbH11(double t) { return t * t * (t - 1.0); }
++
++// THE WALL'S UNIT TANGENT AT EACH STATION, and the two END stations are the ones
++// that had to be got right. A one-sided `wall[1] - wall[0]` is the chord of the
++// first interval, which on a curved wall is tilted from the tangent by half the
++// turn across it — 1.9 deg on the shipped O-grid's body arc — and that error does
++// not stay at the corner, because the correction subtracts a blend of the two END
++// deltas from every station. Measured with the one-sided version, the O-grid's
++// unsmoothed wall first-cell error went 0.000036 -> 0.024536: the prototype's own
++// arithmetic, not the prescription. The ends therefore EXTRAPOLATE the two
++// adjacent facet directions (`1.5*d01 - 0.5*d12`), which is exact on a circle to
++// the order the interior's central difference is.
++std::vector<Point2D> mbWallTangents(const std::vector<Point2D>& wall) {
++    const size_t n = wall.size();
++    std::vector<Point2D> tang(n, Point2D{0.0, 0.0});
++    if (n < 2) return tang;
++    std::vector<Point2D> dir(n - 1, Point2D{0.0, 0.0});
++    for (size_t k = 0; k + 1 < n; ++k) dir[k] = (wall[k + 1] - wall[k]).normalized();
++    for (size_t k = 0; k < n; ++k) {
++        if (k > 0 && k + 1 < n)   tang[k] = (wall[k + 1] - wall[k - 1]).normalized();
++        else if (n < 3)           tang[k] = dir[0];
++        else if (k == 0)          tang[k] = (dir[0] * 1.5 - dir[1] * 0.5).normalized();
++        else                      tang[k] = (dir[n - 2] * 1.5 - dir[n - 3] * 0.5)
++                                                .normalized();
++    }
++    return tang;
++}
++
++// The INWARD unit normal of one wall side at each station, oriented by the chord
++// to the facing side rather than by a winding convention: that chord is the
++// direction this blend already moves in. A zero vector where there is no normal.
++std::vector<Point2D> mbWallNormals(const std::vector<Point2D>& lo,
++                                   const std::vector<Point2D>& hi, bool atFarEnd) {
++    const std::vector<Point2D>& wall = atFarEnd ? hi : lo;
++    const double sgn = atFarEnd ? -1.0 : 1.0;
++    const std::vector<Point2D> tang = mbWallTangents(wall);
++    std::vector<Point2D> nrm(tang.size(), Point2D{0.0, 0.0});
++    for (size_t k = 0; k < tang.size(); ++k) {
++        if (tang[k].lengthSq() == 0.0) continue;
++        Point2D v = tang[k].leftNormal();
++        if (v.dot((hi[k] - lo[k]) * sgn) < 0.0) v = v * -1.0;
++        nrm[k] = v;
++    }
++    return nrm;
++}
++
++// THE REQUEST BETWEEN THE TWO CORNERS IS BLENDED LINEARLY IN THE LOGICAL
++// COORDINATE, which is not a choice — `src/MbQuality.cpp` measures the achieved
++// height against exactly that blend, and the smoother's control functions aim at
++// it for the same stated reason. Driving the fill at one measure while the ruler
++// reads another is the defect `.claude/rules/mesher-smoothing.md` names.
++double mbWallRequest(size_t k, size_t n, double reqLo, double reqHi) {
++    if (n < 2) return reqLo;
++    const double t = static_cast<double>(k) / static_cast<double>(n - 1);
++    return (1.0 - t) * reqLo + t * reqHi;
++}
++
++// VARIANT 1. How far one side's Hermite tangent departs from the linear
++// equivalent, per station. `gap` is the blending-coordinate distance from the
++// wall to the first interior grid line, which is what turns a requested LENGTH
++// into a derivative: `r(u) = wall + u·T + O(u²)`.
++std::vector<Point2D> mbHermiteDelta(const std::vector<Point2D>& lo,
++                                    const std::vector<Point2D>& hi,
++                                    bool atFarEnd, double gap,
++                                    double reqLo, double reqHi) {
++    const size_t n = lo.size();
++    std::vector<Point2D> d(n, Point2D{0.0, 0.0});
++    if (n < 2 || hi.size() != n || !(gap > 0.0)) return d;
++    const double sgn = atFarEnd ? -1.0 : 1.0;
++    const std::vector<Point2D> nrm = mbWallNormals(lo, hi, atFarEnd);
++    for (size_t k = 0; k < n; ++k) {
++        const double req = mbWallRequest(k, n, reqLo, reqHi);
++        if (!(req > 0.0) || nrm[k].lengthSq() == 0.0) continue;
++        d[k] = nrm[k] * (sgn * req / gap) - (hi[k] - lo[k]);
++    }
++    return d;
++}
++
++// VARIANT 2. The same cubic correction, calibrated against `step` — the vector
++// the fill ACTUALLY puts between the wall node and the first interior one — and
++// forced to zero at the two end stations. `weight` is the Hermite basis function
++// this end's delta is multiplied by AT that first interior line, so dividing by
++// it makes the correction land the node on `req * n̂` exactly, up to the other
++// end's own basis function there (which is O(gap²) and is why the two ends do
++// not have to be solved together).
++std::vector<Point2D> mbHermiteCalib(const std::vector<Point2D>& lo,
++                                    const std::vector<Point2D>& hi, bool atFarEnd,
++                                    const std::vector<Point2D>& step, double weight,
++                                    double reqLo, double reqHi) {
++    const size_t n = lo.size();
++    std::vector<Point2D> d(n, Point2D{0.0, 0.0});
++    if (n < 3 || hi.size() != n || step.size() != n || weight == 0.0) return d;
++    const std::vector<Point2D> nrm = mbWallNormals(lo, hi, atFarEnd);
++    for (size_t k = 1; k + 1 < n; ++k) {
++        const double req = mbWallRequest(k, n, reqLo, reqHi);
++        if (!(req > 0.0) || nrm[k].lengthSq() == 0.0) continue;
++        d[k] = (nrm[k] * req - step[k]) * (1.0 / weight);
++    }
++    return d;
++}
++
++// The correction one direction contributes at one interior node. `across` is the
++// blending coordinate that crosses the two walls, `along` the other one; the
++// subtracted term is the boolean sum's tensor part, and it is what makes this
++// vanish at `along` = 0 and 1 as well as at `across` = 0 and 1. Under variant 2
++// the two end deltas are already zero, so that term contributes nothing there.
++Point2D mbHermiteTerm(const std::vector<Point2D>& dLo,
++                      const std::vector<Point2D>& dHi,
++                      size_t k, double across, double along) {
++    const Point2D eLo = dLo[k] - (dLo.front() * (1.0 - along) + dLo.back() * along);
++    const Point2D eHi = dHi[k] - (dHi.front() * (1.0 - along) + dHi.back() * along);
++    return eLo * mbH10(across) + eHi * mbH11(across);
++}
++
+ // WHICH NODES MOVE: the answer is `mbSmoothPlan` (include/MbShared.hpp), which
+ // owns the freeze rule and states it — nodes strictly interior to a block, plus
+ // the nodes interior to every edge declared `interface` or `cut` that follows
+@@ -2635,6 +2797,26 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
+             at(0, j) = sIds[MB_WEST][static_cast<size_t>(j)];
+             at(ni - 1, j) = sIds[MB_EAST][static_cast<size_t>(j)];
+         }
++        auto firstInterval = [](const std::vector<Point2D>& e, bool fromEnd) {
++            if (e.size() < 2) return 0.0;
++            return fromEnd ? (e[e.size() - 1] - e[e.size() - 2]).length()
++                           : (e[1] - e[0]).length();
++        };
++        // WHAT THE DECLARATION ASKS FOR, when it says: the perpendicular
++        // edge's own `ds_start` / `ds_end` at the end that touches this side.
++        // The edge is stored in its DECLARED direction while the block reads it
++        // in the frame's, so `rev` decides which of the two ends is the near
++        // one — the same reversal the ids and the positions already go through,
++        // read once here rather than a second time by eye.
++        auto declaredDs = [&](int sideK, bool fromEnd) {
++            const EdgeSpec& pe = edges[static_cast<size_t>(f.edge[sideK])];
++            // The block reads the edge in its own frame, so the frame's "far
++            // end" is the edge's own start when the edge is traversed
++            // backwards. XOR rather than a second ternary: `rev` is already
++            // the one place that reversal is applied.
++            const int end = (fromEnd != f.rev[sideK]) ? END_FINISH : END_START;
++            return pe.cluster[end] ? pe.ds[end] : 0.0;
++        };
+         // Only the INTERIOR is interpolated. Transfinite (Coons) interpolation is
+         // exact on the boundary, but "exact" there means it reproduces the side to
+         // within the rounding of one subtraction, and a shared edge must be one
+@@ -2642,11 +2824,99 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
+         // the definitive answer and the blend is asked only about the inside.
+         const MbBlend blend{arcFraction(sPts[MB_SOUTH], sPts[MB_NORTH]),
+                             arcFraction(sPts[MB_WEST], sPts[MB_EAST])};
++        // PROTOTYPE (#157). Empty means "no correction in this direction"; the
++        // shipped path leaves all four empty and the fill below is unchanged.
++        std::vector<Point2D> dU[2], dV[2];
++        if (params.fillHermite) {
++            // The same request the wall specs publish below, read here because
++            // the fill now needs it BEFORE the block exists. A side that is not
++            // a wall keeps 0 and contributes nothing.
++            double reqLo[4] = {0.0, 0.0, 0.0, 0.0};
++            double reqHi[4] = {0.0, 0.0, 0.0, 0.0};
++            for (int k = 0; k < 4; ++k) {
++                if (edges[static_cast<size_t>(f.edge[k])].kind != hybmesh::MB_EDGE_WALL)
++                    continue;
++                const MbSideAxis ax = mbSideAxis(static_cast<MbSide>(k));
++                const int loK = ax.alongI ? MB_WEST : MB_SOUTH;
++                const int hiK = ax.alongI ? MB_EAST : MB_NORTH;
++                const double dLo = declaredDs(loK, ax.atFarEnd);
++                const double dHi = declaredDs(hiK, ax.atFarEnd);
++                reqLo[k] = (dLo > 0.0) ? dLo : firstInterval(sPts[loK], ax.atFarEnd);
++                reqHi[k] = (dHi > 0.0) ? dHi : firstInterval(sPts[hiK], ax.atFarEnd);
++            }
++            const bool calib = (params.fillHermite >= 2);
++            // The fill's OWN answer at a given node, so variant 2 can calibrate
++            // against it. Exact on the boundary, so a station at j = 0 or
++            // j = nj - 1 returns that edge's own first interval.
++            auto cn = [&](int i, int j) {
++                return coons(sPts[MB_SOUTH], sPts[MB_NORTH],
++                             sPts[MB_WEST], sPts[MB_EAST], blend, i, j);
++            };
++            if (ni > 2) {
++                const size_t uHi = static_cast<size_t>(ni - 2);
++                if (calib) {
++                    std::vector<Point2D> s0(static_cast<size_t>(nj));
++                    std::vector<Point2D> s1(static_cast<size_t>(nj));
++                    for (int j = 0; j < nj; ++j) {
++                        const size_t jj = static_cast<size_t>(j);
++                        s0[jj] = cn(1, j) - sPts[MB_WEST][jj];
++                        s1[jj] = cn(ni - 2, j) - sPts[MB_EAST][jj];
++                    }
++                    dU[0] = mbHermiteCalib(sPts[MB_WEST], sPts[MB_EAST], false, s0,
++                                           mbH10(blend.u[1]),
++                                           reqLo[MB_WEST], reqHi[MB_WEST]);
++                    dU[1] = mbHermiteCalib(sPts[MB_WEST], sPts[MB_EAST], true, s1,
++                                           mbH11(blend.u[uHi]),
++                                           reqLo[MB_EAST], reqHi[MB_EAST]);
++                } else {
++                    dU[0] = mbHermiteDelta(sPts[MB_WEST], sPts[MB_EAST], false,
++                                           blend.u[1],
++                                           reqLo[MB_WEST], reqHi[MB_WEST]);
++                    dU[1] = mbHermiteDelta(sPts[MB_WEST], sPts[MB_EAST], true,
++                                           1.0 - blend.u[uHi],
++                                           reqLo[MB_EAST], reqHi[MB_EAST]);
++                }
++            }
++            if (nj > 2) {
++                const size_t vHi = static_cast<size_t>(nj - 2);
++                if (calib) {
++                    std::vector<Point2D> s0(static_cast<size_t>(ni));
++                    std::vector<Point2D> s1(static_cast<size_t>(ni));
++                    for (int i = 0; i < ni; ++i) {
++                        const size_t ii = static_cast<size_t>(i);
++                        s0[ii] = cn(i, 1) - sPts[MB_SOUTH][ii];
++                        s1[ii] = cn(i, nj - 2) - sPts[MB_NORTH][ii];
++                    }
++                    dV[0] = mbHermiteCalib(sPts[MB_SOUTH], sPts[MB_NORTH], false, s0,
++                                           mbH10(blend.v[1]),
++                                           reqLo[MB_SOUTH], reqHi[MB_SOUTH]);
++                    dV[1] = mbHermiteCalib(sPts[MB_SOUTH], sPts[MB_NORTH], true, s1,
++                                           mbH11(blend.v[vHi]),
++                                           reqLo[MB_NORTH], reqHi[MB_NORTH]);
++                } else {
++                    dV[0] = mbHermiteDelta(sPts[MB_SOUTH], sPts[MB_NORTH], false,
++                                           blend.v[1],
++                                           reqLo[MB_SOUTH], reqHi[MB_SOUTH]);
++                    dV[1] = mbHermiteDelta(sPts[MB_SOUTH], sPts[MB_NORTH], true,
++                                           1.0 - blend.v[vHi],
++                                           reqLo[MB_NORTH], reqHi[MB_NORTH]);
++                }
++            }
++        }
+         for (int j = 1; j + 1 < nj; ++j) {
+             for (int i = 1; i + 1 < ni; ++i) {
+                 at(i, j) = static_cast<int>(r.nodes.size());
+-                r.nodes.push_back(coons(sPts[MB_SOUTH], sPts[MB_NORTH],
+-                                        sPts[MB_WEST], sPts[MB_EAST], blend, i, j));
++                Point2D p = coons(sPts[MB_SOUTH], sPts[MB_NORTH],
++                                  sPts[MB_WEST], sPts[MB_EAST], blend, i, j);
++                const double bu = blend.u[static_cast<size_t>(i)];
++                const double bv = blend.v[static_cast<size_t>(j)];
++                if (!dU[0].empty())
++                    p = p + mbHermiteTerm(dU[0], dU[1],
++                                          static_cast<size_t>(j), bu, bv);
++                if (!dV[0].empty())
++                    p = p + mbHermiteTerm(dV[0], dV[1],
++                                          static_cast<size_t>(i), bv, bu);
++                r.nodes.push_back(p);
+             }
+         }
+         r.blocks.push_back(filled);
+@@ -2673,26 +2943,6 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
+         // these two lines change source and nothing that reads the report has to
+         // change.
+         {
+-            auto firstInterval = [](const std::vector<Point2D>& e, bool fromEnd) {
+-                if (e.size() < 2) return 0.0;
+-                return fromEnd ? (e[e.size() - 1] - e[e.size() - 2]).length()
+-                               : (e[1] - e[0]).length();
+-            };
+-            // WHAT THE DECLARATION ASKS FOR, when it says: the perpendicular
+-            // edge's own `ds_start` / `ds_end` at the end that touches this side.
+-            // The edge is stored in its DECLARED direction while the block reads it
+-            // in the frame's, so `rev` decides which of the two ends is the near
+-            // one — the same reversal the ids and the positions already go through,
+-            // read once here rather than a second time by eye.
+-            auto declaredDs = [&](int sideK, bool fromEnd) {
+-                const EdgeSpec& pe = edges[static_cast<size_t>(f.edge[sideK])];
+-                // The block reads the edge in its own frame, so the frame's "far
+-                // end" is the edge's own start when the edge is traversed
+-                // backwards. XOR rather than a second ternary: `rev` is already
+-                // the one place that reversal is applied.
+-                const int end = (fromEnd != f.rev[sideK]) ? END_FINISH : END_START;
+-                return pe.cluster[end] ? pe.ds[end] : 0.0;
+-            };
+             for (int k = 0; k < 4; ++k) {
+                 const MbSide side = static_cast<MbSide>(k);   // sIds[] is in this order
+                 const MbSideAxis ax = mbSideAxis(side);
+diff --git a/src/cli.cpp b/src/cli.cpp
+index ad77416..2d34ecd 100644
+--- a/src/cli.cpp
++++ b/src/cli.cpp
+@@ -1,4 +1,6 @@
+ #include "Cli.hpp"
++
++#include <cstdlib>   // PROTOTYPE #157: HYBMESH_MB_FILL_HERMITE
+ #include "Mesh.hpp"
+ #include "Config.hpp"
+ #include "BoundaryLayer.hpp"
+@@ -648,6 +650,15 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
+     // default, and at 0 the seam returns what it returned before the smoother
+     // existed.
+     params.smoothIters = config.mbSmoothIters;
++    // PROTOTYPE, ISSUE #157, and deliberately NOT a `.dat` key: an environment
++    // variable so that the spike can measure the alternative fill against the
++    // same binary without a key reaching Config, the GUI parity table or the
++    // mesh-mode inert-parameter list. Nothing shipped reads it.
++    // docs/research/hermite-wall-normal-fill/.
++    {
++        const char* hf = std::getenv("HYBMESH_MB_FILL_HERMITE");
++        params.fillHermite = (hf == nullptr) ? 0 : std::atoi(hf);
++    }
+ 
+     const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
+     // Warnings are DATA on the way out of the seam; saying them is this layer's job.

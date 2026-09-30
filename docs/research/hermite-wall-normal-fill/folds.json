@@ -1,0 +1,23 @@
+[
+{"case": "cavity", "clean_through": 1000, "fill": "hermite1", "first_inverted_cap": null},
+{"case": "cavity", "clean_through": 1000, "fill": "hermite2", "first_inverted_cap": null},
+{"case": "cavity", "clean_through": 1000, "fill": "linear", "first_inverted_cap": null},
+{"case": "cgrid", "fill": "hermite1", "first_inverted_cap": 342, "last_clean_cap": 341, "scanned_from": 301},
+{"case": "cgrid", "fill": "hermite2", "first_inverted_cap": 1, "last_clean_cap": 0, "scanned_from": 1},
+{"case": "cgrid", "fill": "linear", "first_inverted_cap": 333, "last_clean_cap": 332, "scanned_from": 301},
+{"case": "hgrid", "clean_through": 1000, "fill": "hermite1", "first_inverted_cap": null},
+{"case": "hgrid", "clean_through": 1000, "fill": "hermite2", "first_inverted_cap": null},
+{"case": "hgrid", "clean_through": 1000, "fill": "linear", "first_inverted_cap": null},
+{"case": "ogrid", "fill": "hermite1", "first_inverted_cap": 202, "last_clean_cap": 201, "scanned_from": 201},
+{"case": "ogrid", "fill": "hermite2", "first_inverted_cap": 202, "last_clean_cap": 201, "scanned_from": 201},
+{"case": "ogrid", "fill": "linear", "first_inverted_cap": 202, "last_clean_cap": 201, "scanned_from": 201},
+{"case": "square", "clean_through": 1000, "fill": "hermite1", "first_inverted_cap": null},
+{"case": "square", "clean_through": 1000, "fill": "hermite2", "first_inverted_cap": null},
+{"case": "square", "clean_through": 1000, "fill": "linear", "first_inverted_cap": null},
+{"case": "tworing", "fill": "hermite1", "first_inverted_cap": 116, "last_clean_cap": 115, "scanned_from": 111},
+{"case": "tworing", "fill": "hermite2", "first_inverted_cap": 116, "last_clean_cap": 115, "scanned_from": 111},
+{"case": "tworing", "fill": "linear", "first_inverted_cap": 116, "last_clean_cap": 115, "scanned_from": 111},
+{"case": "tworing_offset", "fill": "hermite1", "first_inverted_cap": 64, "last_clean_cap": 63, "scanned_from": 61},
+{"case": "tworing_offset", "fill": "hermite2", "first_inverted_cap": 64, "last_clean_cap": 63, "scanned_from": 61},
+{"case": "tworing_offset", "fill": "linear", "first_inverted_cap": 63, "last_clean_cap": 62, "scanned_from": 61}
+]
