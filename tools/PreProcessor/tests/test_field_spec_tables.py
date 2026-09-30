@@ -1008,6 +1008,19 @@ MODE_SPECS_WITHOUT_KEY = {
     "topo_cgrid_radial_count": "as topo_ogrid_body_geom",
     "topo_cgrid_derived": "a derived read-out (model=None) of the C-grid's own "
                           "section and count derivation; authors nothing",
+    "topo_tworing_body_geom": "as topo_ogrid_body_geom",
+    "topo_tworing_body_segs": "as topo_ogrid_body_geom",
+    "topo_tworing_seam_geom": "as topo_ogrid_body_geom",
+    "topo_tworing_seam_segs": "as topo_ogrid_body_geom",
+    "topo_tworing_far_geom": "as topo_ogrid_body_geom",
+    "topo_tworing_far_segs": "as topo_ogrid_body_geom",
+    "topo_tworing_splits": "as topo_ogrid_body_geom",
+    "topo_tworing_cell": "as topo_ogrid_body_geom",
+    "topo_tworing_radial_inner": "as topo_ogrid_body_geom",
+    "topo_tworing_radial_outer": "as topo_ogrid_body_geom",
+    "topo_tworing_derived": "a derived read-out (model=None) of the two-ring "
+                            "family's own count and seam-spacing derivation; "
+                            "authors nothing",
 }
 
 from app.services.mesh_modes import (  # noqa: E402

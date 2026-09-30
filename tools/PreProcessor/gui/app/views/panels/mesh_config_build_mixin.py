@@ -218,7 +218,7 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         """
         from app.services import (
             topology_binding, topology_cgrid, topology_hgrid, topology_model,
-            topology_ogrid,
+            topology_ogrid, topology_tworing,
         )
         from app.views.panels.field_widgets import read_specs
         model = TopologyModel()
@@ -252,7 +252,9 @@ class MeshConfigBuildMixin(SpecRowsMixin):
         inert = set()
         for attr, fam_name, planner in (
                 ("topo_ogrid_derived", topology_ogrid.FAMILY, topology_ogrid.plan),
-                ("topo_cgrid_derived", topology_cgrid.FAMILY, topology_cgrid.plan)):
+                ("topo_cgrid_derived", topology_cgrid.FAMILY, topology_cgrid.plan),
+                ("topo_tworing_derived", topology_tworing.FAMILY,
+                 topology_tworing.plan)):
             lbl = getattr(self, attr, None)
             if lbl is None:
                 continue

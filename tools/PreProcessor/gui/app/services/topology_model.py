@@ -29,6 +29,7 @@ from dataclasses import dataclass, fields
 
 from app.services import (
     topology_cgrid, topology_hgrid, topology_ogrid, topology_ogrid_binding,
+    topology_tworing,
 )
 
 #: ``family`` value meaning "no template" — the user names a topology file by hand,
@@ -118,6 +119,30 @@ class TopologyModel:
     # 0 = take the derived count, by the rule `ogrid_radial_count` above states.
     cgrid_wake_count: int = 0
     cgrid_radial_count: int = 0
+
+    # ── Two-ring O-grid (#155) ───────────────────────────────────────────────
+    # THREE bound geometries, by the rule the O-grid's rows above state: stable
+    # segment ids, blank adopting whatever the geometry has now. The middle one
+    # is the SEAM, and it is the user's — a template writes no geometry (#133,
+    # #150), and a `follows` edge needs a real geometry with a segment id and a
+    # polyline rather than a generated corner. Normally made with CAD ▸ Offset
+    # Geometry… (#152), which pairs segment-for-segment with the body by
+    # construction; a hand-drawn one is equally legal and is checked, not assumed.
+    tworing_body_geom: str = ""
+    tworing_body_segs: str = ""
+    tworing_seam_geom: str = ""
+    tworing_seam_segs: str = ""
+    tworing_far_geom: str = ""
+    tworing_far_segs: str = ""
+    tworing_splits: int = 1
+    tworing_cell: float = 0.05
+    # TWO radial counts, not one: splitting the ring is pointless if a single
+    # number still governs both sides of the seam. 0 = take the derived count, by
+    # the rule `ogrid_radial_count` above states. The inner one's derivation is
+    # the O-grid's, from BL_INITIAL_THICKNESS; the outer one's starts from the
+    # interval the inner ring finished on, which is the derived `ds_start`.
+    tworing_radial_inner: int = 0
+    tworing_radial_outer: int = 0
 
     def to_dict(self) -> dict:
         """Every parameter, as plain JSON-able values.
@@ -324,6 +349,12 @@ FAMILIES: tuple[Family, ...] = (
     Family(topology_cgrid.FAMILY, "C-grid (wake cut around a drawn aerofoil)",
            topology_cgrid.build, "cgrid_",
            broken=topology_cgrid.broken_bindings,
+           reads_context=(("first_cell", "First Cell Height "
+                           "(BL_INITIAL_THICKNESS)", "bl_initial_thickness"),)),
+    Family(topology_tworing.FAMILY,
+           "Two-ring O-grid (a ring split at a seam you drew)",
+           topology_tworing.build, "tworing_",
+           broken=topology_tworing.broken_bindings,
            reads_context=(("first_cell", "First Cell Height "
                            "(BL_INITIAL_THICKNESS)", "bl_initial_thickness"),)),
 )

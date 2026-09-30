@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 287, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 289, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -3480,6 +3480,204 @@ agree, and was never going to: the median is blind to the difference, and the pe
 non-orthogonality (48.6° -> 31.5°, against the shipped 29.9°) is the only whole-mesh figure that
 sees it. The ticket predicted the wrong instrument; the check now says so rather than asserting a
 bound that happens to hold.
+
+#### THE TWO-RING O-GRID IS A FAMILY, AND THE ONE NUMBER IS DERIVED (#155, parent #133)
+
+The capability shipped TWICE as a hand-written document and zero times as something a user could
+produce: `examples/topology/tworing_ogrid.json` (#153, a circle with a hand-drawn concentric seam)
+and `examples/topology/tworing_offset.json` (#154, an ellipse whose seam is a computed offset).
+`FAMILIES` held `hgrid`, `ogrid`, `cgrid` and nothing else, so the capability shipped and the
+workflow did not.
+
+**THE ARGUMENT IS ONE NUMBER, NOT THE TEDIUM.** A 12-corner, 24-edge JSON document is tedious;
+tedium is not an argument. Both shipped documents declare the outer ring's first cell as
+`ds_start` and both say the same thing about it in their own comments: *"DERIVED, not tuned:
+change the inner ring's count, its span or `BL_INITIAL_THICKNESS` and this number is wrong and the
+seam shows."* It is the inner ring's own last interval, read off a run — `0.05813418` for the
+circle, `0.02474095` for the ellipse — and **nothing recomputed it**. A user who changed the radial
+count, moved the seam or edited the wall height got a mesh that still meshed, still exported and
+still looked right, with a visible jump in cell size across a seam the document itself claims
+cannot have one. That is the same failure class as every binding-by-index defect in this package:
+a stale number nothing errors on.
+
+**`ds_start` IS SOLVED IN PYTHON, AND THE PARITY IS MEASURED ON A MESH.** This was the ticket's own
+named risk: the tanh law that solves for a declared first cell lives in C++
+(`tools/PreProcessor/include/Spacing.hpp`), and a family that re-implements it grows a second
+parity surface beside `test_gui_cpp_config_parity.py`'s. Three shapes were considered and the
+third taken.
+
+| shape | why not / why |
+|---|---|
+| a new mesher key meaning "start where the edge before you ended" | rejected: a C++ change, which #155 rules out and #150 kept two-sided stretching out for the same reason |
+| the family declares nothing and the user still types the number | rejected: it IS the defect |
+| **one Qt-free function solving the same law, gated against the real mesher** | **taken** |
+
+`services/topology_spacing.py` mirrors `tanhStartPos`, `solveClusterDelta` and
+`generateTanhStart` — three expressions, the bracket cap and the iteration count included, because
+a bisection that stopped somewhere else would answer a slightly different delta than the run does
+and the digits that would move are exactly the seam. What holds the two together is not a diff of
+two formulae. It is `tests/test_topology_tworing.py` check 22: the family's own output through the
+REAL mesher, unsmoothed, at inner 17 / outer 31 — **a count neither shipped document uses**, or
+the gate would only prove that one hard-coded number was reproduced — with the first cell out of
+the seam required to equal the last cell into it. Measured **1.000000000**. The negative control is
+the same document with the key removed, which reads **3.15x** (lower than the shipped gates' 6.45
+because 31 uniform nodes over the outer ring is a coarser jump than 25).
+
+There is a second, cheaper parity that needs no binary and is the stronger statement of the two:
+check 19 requires the DERIVED number to equal the literal each shipped document had to be told,
+which was itself read off a real run. It does, to every digit those documents quote — circle
+`0.05813418`, ellipse `0.02474095`.
+
+**THE CHORD, NOT THE AREA-EQUIVALENT SPAN.** The radial COUNTS are derived from the three
+outlines' area-equivalent radii, which is the O-grid's own idealisation and is good enough to pick
+a count. `ds_start` is not: it is solved from the chord of edge `ri0`, because that is the length
+the mesher actually distributes the inner ring's nodes along. On the shipped ellipse the two are
+0.2500509 and 0.2630905 — 5% apart, which would be 5% of visible seam. Injection B of the gate
+made exactly that substitution and reddened **six checks including both reproductions**. The
+prediction written first was "check 21 alone, the circle being blind by construction"; the circle
+is NOT blind, because its equivalent radii are 0.49994 and 0.99999 rather than 0.5 and 1.0, so its
+own `ds_start` moved as well (0.05814123 against 0.05813418). Both shapes are still run, because
+the ellipse's error is 20x the circle's.
+
+**CHECK 22 WALKS ONE RADIAL LINE, AND INJECTION D IS HOW THAT IS KNOWN.** Writing `ds_start` on
+`ro0` alone rather than on all four left check 22 GREEN: the +x ray the continuity measurement
+walks runs along `ro0`, the one radial the mutation spared. What caught it is the node-for-node
+reproduction, plus check 9's structural "every outer radial declares one". Recorded because a
+continuity check that measures one line of a ring is worth exactly that much.
+
+**ONE `ds_start` FOR THE WHOLE RING, AND THE ALTERNATIVE IS BETTER.** Stated as a finding rather
+than left to be discovered. The inner radials of a body that is not a circle are NOT all the same
+length — 0.2500008 to 0.2500509 on the shipped ellipse — so a PER-EDGE `ds_start`, each outer
+radial continuing its own inner one, would be strictly more continuous at the three positions the
+one value is not taken from. It is not taken, because it would stop the family reproducing the two
+documents it exists to replace, which is this ticket's own strongest claim (acceptance: *"the
+family reproduces both shipped documents' meshes, node for node"*). Check 21b states the spread so
+the trade is on the record; a later ticket that decides continuity beats reproduction has the
+measurement it needs.
+
+**THE REPRODUCTION IS TO A TOLERANCE, AND SAYS SO.** Checks 20 and 21 configure the family to each
+shipped document's parameters, project, run the real mesher on the projection and compare the
+exported nodes against the shipped case's own. Both export 4704 nodes; the worst coordinate
+difference is **5.0e-08** (circle) and **8.0e-08** (ellipse). It is not zero and cannot be: the
+shipped files quote `ds_start` to 8 decimals where the family computes it in full, and this mesher
+is not byte-reproducible anyway. A document-level text diff is explicitly NOT the check — the
+family is free to order edges differently, and pinning that would pin the wrong thing.
+
+**#150's OWN QUESTION ARRIVED, AND THE ANSWER IS THAT THE RULE HOLDS.** #150 wrote: *"If a later
+family wants an offset the user never sees, that is a finding about this decision and should be
+raised rather than worked around."* This is that family. The rule — a template writes no geometry
+(#133, #137) — **holds**, at a cost of one user action. The C-grid's generated far field is the
+apparent counter-example and is not one: it generates CORNERS, `{id: (x, y)}`, not a geometry file.
+A `follows` edge cannot attach to a corner; it needs a real geometry with a segment id and a
+polyline, which is what carries the curve. A generated seam would therefore have to be a written
+FILE, with no stable-id scheme, no sidecar and no place in the project round trip. So the seam is
+the user's, normally made with **CAD ▸ Offset Geometry…** (#152), and the family REFUSES by name
+when it is absent or does not pair — with the refusal naming that menu action, spelled once in
+`OFFSET_ACTION` for the reason `BINDING_LISTS` names each role once.
+
+**AND THE SEAM MAY NOT BE ASSUMED TO BE AN OFFSET.** On an offset-derived seam the segment-for-
+segment pairing holds by construction (#152 returns one point per source point), which is why
+#154's case needed no re-segmenting step. #153's circle seam was drawn by hand. So the pairing is
+CHECKED, not assumed, and the mismatch refusal names the seam AND the action; the far field's own
+mismatch names the far field and NOT the action, since nothing offsets a far field.
+
+**`splits` IS A QUALITY PARAMETER HERE, WHICH IT IS NOT ON THE O-GRID, AND THE READ-OUT SAYS SO.**
+`ogrid_splits` means "how many equal-arc blocks each source segment becomes" and has no stated
+effect on accuracy. On this family it has one, and the ticket did not say so — the research note
+`docs/research/arc-length-correspondence-on-an-offset-ring.md` (`683e862`) did. `follows` places a
+node by arc length, and equal arc on a body corresponds to equal arc on its constant-distance
+offset only where `1 + d·κ` is constant, i.e. on a circle. The error is INTERIOR to each declared
+edge — the `m*` corners sit at the same point indices as the `b*` corners, so they ARE
+normal-correspondent by construction — so declaring more corners shrinks it QUADRATICALLY, at no
+code cost. Measured at a fixed 96 nodes around a 2:1 ellipse:
+
+| edges per ring | 4 | 6 | 8 | 12 | 16 | 24 |
+|---|---|---|---|---|---|---|
+| worst wall first cell, unsmoothed | 0.070625 | 0.035103 | 0.018242 | 0.005694 | 0.002102 | 0.000264 |
+
+The family ships a knob whose most useful property would otherwise be undocumented, so the last
+three lines of the read-out carry it, and check 12b is what stops them being deleted.
+
+**THE UNSMOOTHED NUMBER IS A PROPERTY OF AN INITIAL GUESS, WHICH IS A BETTER REASON THAN THE ONE
+#155 GAVE.** The ticket's Further Notes say the fix "would be a correspondence rule the mesher does
+not have". True, and the primary source says something stronger: Thompson, Warsi & Mastin Ch. VI
+§2F describes iteratively adjusting elliptic control functions until both the boundary line slope
+and the first off-boundary spacing are achieved, and frames the algebraic/transfinite grid as the
+INITIAL GUESS for that solve rather than as the deliverable. This repo already implements that
+repair, in `MbControl`, which is why 20 sweeps take 0.070625 to 0.000000. So this family
+inheriting the behaviour is CORRECT rather than merely acceptable, and it should not try to fix it.
+What it MUST do — and does — is make sure its read-out does not promise otherwise. The Hermite
+wall-normal fill that would change the underlying number is #157's, a spike, and out of scope here:
+a fill change would move both sides of the "reproduces both shipped documents' meshes" criterion
+together.
+
+**A CORRECTION #155's OWN QUOTE CARRIED IN.** The Further Notes say the cost is that "the two
+rings' nodes are NOT normal-opposite". True, but the mechanism sentence it came from was wrong:
+nothing measures a perpendicular distance to the wall. `src/MbQuality.cpp` measures the first grid
+step as `|node(k,1) - node(k,0)|`. The error is that the interior radial is a tilted chord LONGER
+than the ring is thick — 0.250000..0.267724 against `d = 0.25` on the shipped files — and the fill
+scales the first cell with it, so 7.09% of stretch is 7.09% of first cell.
+
+**TWO RADIAL CLASSES, AND NOTHING BUT A DERIVED PARTITION SAYS SO.** The separation is the whole
+point of splitting the ring: the law that holds the wall's first cell answers to the wall and the
+one that reaches the far field answers to the far field. Check 8 derives the count equivalence
+classes from the MESHER's two propagation rules (`topology_doc_invariants.count_classes`, extracted
+here for exactly this) and requires the inner radials to be one whole class, the outer radials
+another, and NO block to hold one of each as its two i-sides. Injection E took the outer class's
+count seed away and reddened SEVEN checks — but **not check 8**, which was the prediction. Removing
+a seed does not move the partition, so what sees it is the shared `one_seed_per_class` invariant
+(check 4) and then the mesher refusing the document outright. The two checks ask different
+questions and only look alike; a mutation that MERGED the classes is the one check 8 is for, and
+nothing has produced one.
+
+**THE THIRD BROKEN-BINDING LIST NEEDED NO PANEL EDIT, AND THAT IS #138's DESIGN PAYING OUT.** The
+repair box asks the REGISTRY (`topology_model.broken_bindings`) and writes into the row the family
+NAMES, so three lists instead of two is three `BrokenBinding` rows and nothing else. What it did
+need is a role word per row: a user whose CAD edit broke the body and the seam at once cannot tell
+two unlabelled rows apart, which is why `BINDING_LISTS` carries "body" / "seam" / "far field" and
+every refusal takes its noun from there. Checks 16-16c drive all three through the real panel, and
+that loop is worth a sentence of its own: **a repair rebuilds the rows from inside the combo's own
+signal**, so row 1 after the first repair is a DIFFERENT broken binding from row 1 before it. This
+gate's first draft looped over the rows positionally, silently skipped the seam, and check 16c said
+so. It now always takes the top row.
+
+**DETACH (#139) WORKED WITH NO EDIT, AND THE HALF A NEW FAMILY CAN BREAK IS THE SUMMARY.** Nothing
+in `topology_detach` knows a family by name: it writes whatever the registry builds and derives the
+provenance summary from the field-spec table BY PREFIX. So the file it writes is byte-identical to
+`build_document`'s output (check 17c) and the ten `tworing_*` rows appear in the summary for free.
+What is not free is the one quantity the family reads from the RUN rather than from the model —
+`BL_INITIAL_THICKNESS`, which carries no `tworing_` prefix — and #139's review found exactly that
+missing from an O-grid summary that looked complete. `Family.reads_context` is what declares it,
+`test_topology_param_specs.py` check 11 holds the declaration in both directions, and check 17b
+asserts it reaches the summary.
+
+**AND A THIRD COPY OF `broken_bindings` WAS NOT WRITTEN.** The O-grid's and the C-grid's were the
+same twelve lines with only the `edges` expression differing; a third would have been the shape
+`topology_counts` was taken out of those two families to stop. `broken_in_lists(model, ctx, lists)`
+now holds the walk in `topology_ogrid_binding.py` — which is de facto that package's shared
+binding-list module rather than the O-grid's private one — and `ring_edges(prefix, splits)` holds
+the "one stored position is `splits` block edges" answer beside it. What stays with each family is
+which lists it binds and how it names one edge of them.
+
+##### Named blind spots
+
+* **ONE `ds_start`, stated above.** Per-edge would be better on a non-circular body at the three
+  positions it is not taken from; the reproduction criterion is what stops it. Check 21b is the
+  measurement, not a promise.
+* **The arc-length correspondence is inherited, not fixed**, and deliberately — see the TWM
+  paragraph above. The read-out is what stops it being a surprise; nothing gates that a user reads
+  it.
+* **Nothing drives this family from the panel except the repair rows.** That the read-out updates
+  as the user types is `test_topology_panel.py`'s shape for the other three families and is not
+  re-run here.
+* **The fixtures are written by the gate rather than by the real `surface_resampler`**, so a change
+  to the `.meta` FORMAT would not be caught here. It is caught next door, by
+  `test_multiblock_binding_surface.py`.
+* **Check 22 walks ONE radial line**, measured by injection D and stated above.
+* **The reproduction covers TWO parameter sets, both at 4 segments and 1 split.** The nine-entry
+  spread is checked structurally and only the DEFAULTS are additionally run through the real
+  binary (check 23) — the O-grid's own limit, and for its reason: nine mesher runs in a gate is a
+  cost nobody asked for.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

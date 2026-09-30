@@ -118,14 +118,16 @@ def legal_counts(why, doc) -> list:
                                  or isinstance(e["count"], bool) or e["count"] < 2)]
 
 
-def one_seed_per_class(why, doc) -> list:
-    """Exactly one count seed per equivalence class.
+def count_classes(doc) -> list:
+    """The count equivalence classes of ``doc``, as lists of edge ids.
 
-    The classes are derived HERE from the mesher's two propagation rules — opposite
-    sides of a block carry equal counts, and a shared edge is one edge two blocks
-    name — rather than from any builder's idea of them.
+    Derived from the mesher's two propagation rules — opposite sides of a block
+    carry equal counts, and a shared edge is one edge two blocks name — rather than
+    from any builder's idea of them. Its own function since #155, whose family
+    declares TWO radial classes where the O-grid declares one and has to assert that
+    they really are two; a gate deriving them a second way would be free to agree
+    with the builder and disagree with the mesher.
     """
-    by_id = {e["id"]: e for e in doc["edges"]}
     uf = _UF()
     for e in doc["edges"]:
         uf.find(e["id"])
@@ -136,8 +138,15 @@ def one_seed_per_class(why, doc) -> list:
         uf.union(s, n)
         uf.union(e, w)
     cls = {}
-    for eid in by_id:
-        cls.setdefault(uf.find(eid), []).append(eid)
+    for e in doc["edges"]:
+        cls.setdefault(uf.find(e["id"]), []).append(e["id"])
+    return list(cls.values())
+
+
+def one_seed_per_class(why, doc) -> list:
+    """Exactly one count seed per equivalence class."""
+    by_id = {e["id"]: e for e in doc["edges"]}
+    cls = {k: v for k, v in enumerate(count_classes(doc))}
     bad = []
     for members in cls.values():
         seeds = [m for m in members if "count" in by_id[m]]

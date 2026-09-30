@@ -55,14 +55,14 @@ import math
 import os
 from dataclasses import dataclass, field
 
-from app.services.topology_binding import BindingError, BrokenBinding
+from app.services.topology_binding import BindingError
 from app.services.topology_cgrid_section import (
     FAR_CORNERS, FAR_EDGES, FAR_ROLE, SECTION_ROLE, SURFACE_EDGES, Section,
     drawn_ring, far_corners, far_edge_at, generated_ring, outside_point,
     resolve_far, resolve_section,
 )
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
-from app.services.topology_ogrid_binding import parse_binding
+from app.services.topology_ogrid_binding import broken_in_lists
 
 #: The template's own name for the family, as stored in the project file.
 FAMILY = "cgrid"
@@ -449,30 +449,16 @@ BINDING_LISTS = (
 
 
 def broken_bindings(model, ctx) -> tuple:
-    """Every stored id this family holds that its geometries no longer carry (#138).
+    """This family's two lists, walked by ``broken_in_lists`` (#155).
 
     THE COMPLEMENT OF `plan`'s REFUSAL, NOT A SECOND COPY OF IT — the O-grid's rule,
-    and the panel asks the registry rather than asking a family by name.
+    and the panel asks the registry rather than asking a family by name. What stays
+    here is which two lists this family binds and how each one names its edges
+    (:data:`BINDING_LISTS`); the walk is shared, because a third family arrived
+    needing exactly it.
 
     A blank far-field row is the GENERATED path, which binds nothing and so can break
     nothing — the same sentence `parse_binding` already writes for a blank list,
     reached one step earlier.
     """
-    if ctx is None:
-        return ()
-    out = []
-    for field_name, geom_field, who, edges_at in BINDING_LISTS:
-        g = ctx.geometry(getattr(model, geom_field, ""))
-        if g is None or not g.seg_ids:
-            continue
-        held, why = parse_binding(getattr(model, field_name, ""), (), who)
-        if why or not held:
-            # A blank list adopts the geometry's own segments and so cannot be
-            # broken; a malformed one is refused as a whole string and is not a
-            # position a dropdown could re-point.
-            continue
-        out += [BrokenBinding(field=field_name, who=who, geom=g.spelling, seg=s,
-                              pos=pos, edges=edges_at(pos),
-                              choices=tuple(g.seg_ids))
-                for pos, s in enumerate(held) if s not in g.spans]
-    return tuple(out)
+    return broken_in_lists(model, ctx, BINDING_LISTS)

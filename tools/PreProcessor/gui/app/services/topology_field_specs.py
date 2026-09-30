@@ -269,6 +269,90 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               "were derived from.",
               model=None, group=GROUP, modes=_MB),
 
+    # ── Two-ring O-grid (#155) ───────────────────────────────────────────────
+    FieldSpec("topo_tworing_body_geom", "path", "Body Geometry",
+              "The closed body the inner ring wraps. One of the geometries this "
+              "mesh loads — the template writes none of its own, so the walls "
+              "follow the shape you drew and their boundary conditions are read off "
+              "its own segments.",
+              model="tworing_body_geom", group=GROUP, modes=_MB,
+              opts=dict(caption="Select body geometry",
+                        filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_tworing_body_segs", "text", "Bound Body Segments",
+              "READ-ONLY, by the rule the O-grid's binding rows above state: which "
+              "edges bind is the template's decision, and a binding is the CAD "
+              "segment's STABLE ID rather than its position in a list.",
+              model="tworing_body_segs", group=GROUP, modes=_MB,
+              opts=dict(placeholder="(all of the body's segments)", readonly=True)),
+    FieldSpec("topo_tworing_seam_geom", "path", "Seam Geometry",
+              "The MIDDLE ring — the curve the two rings meet on. It is an "
+              "interior line, so its edges carry no boundary condition and export "
+              "no face: whatever you labelled its segments reaches nothing. This "
+              "template writes no geometry, so you must have one: the usual way is "
+              "CAD ▸ Offset Geometry…, which offsets the body by a distance and "
+              "pairs segment for segment with it. A hand-drawn one is equally "
+              "legal, and is refused by name if it does not pair.",
+              model="tworing_seam_geom", group=GROUP, modes=_MB,
+              opts=dict(caption="Select seam geometry",
+                        filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_tworing_seam_segs", "text", "Bound Seam Segments",
+              "The seam's bound segment ids. Same rule as the body's — and these "
+              "bind through 'follows' rather than 'binding', which is the same "
+              "object with the boundary-condition half removed.",
+              model="tworing_seam_segs", group=GROUP, modes=_MB,
+              opts=dict(placeholder="(all of the seam's segments)", readonly=True)),
+    FieldSpec("topo_tworing_far_geom", "path", "Far-Field Geometry",
+              "The outer outline. Its segments pair ONE TO ONE with the body's and "
+              "with the seam's, so segment all three the same way; its own "
+              "per-segment conditions reach the export the way the body's do.",
+              model="tworing_far_geom", group=GROUP, modes=_MB,
+              opts=dict(caption="Select far-field geometry",
+                        filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_tworing_far_segs", "text", "Bound Far Segments",
+              "The far field's bound segment ids. Same rule as the body's.",
+              model="tworing_far_segs", group=GROUP, modes=_MB,
+              opts=dict(placeholder="(all of the far field's segments)",
+                        readonly=True)),
+    FieldSpec("topo_tworing_splits", "int", "Splits Per Segment",
+              "How many equal-arc blocks each source segment becomes, in BOTH "
+              "rings. It is a QUALITY knob here and not only a block count: the "
+              "seam's nodes track the body's by ARC LENGTH, which makes the two "
+              "rings' nodes normal-opposite only on a circle, and declaring more "
+              "corners shrinks the resulting wall-spacing error quadratically. "
+              "Measured on a 2:1 ellipse at 96 nodes around: 7.06% worst unsmoothed "
+              "error at 4 edges per ring, 0.21% at 16. The default smoothing "
+              "repairs it; the read-out says so.",
+              model="tworing_splits", group=GROUP, modes=_MB,
+              opts=dict(lo=1, hi=64)),
+    FieldSpec("topo_tworing_cell", "sci", "Target Cell Edge",
+              "The circumferential cell edge length to aim for along the wall. The "
+              "node count each wall edge gets is derived from it and from that "
+              "segment's own arc length, and shown below.",
+              model="tworing_cell", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-12, hi=1e9)),
+    FieldSpec("topo_tworing_radial_inner", "int", "Override Inner Radial Nodes",
+              "0 takes the derived count: where a law starting from your "
+              "BL_INITIAL_THICKNESS and growing at the 1:1 ratio reaches the seam. "
+              "Changing it moves the spacing the OUTER ring starts from, which is "
+              "the point of deriving that number rather than typing it.",
+              model="tworing_radial_inner", group=GROUP, modes=_MB,
+              opts=dict(lo=0, hi=20000, special="(derived)")),
+    FieldSpec("topo_tworing_radial_outer", "int", "Override Outer Radial Nodes",
+              "0 takes the derived count, by the same 1:1 law — but starting from "
+              "the interval the inner ring finished on rather than from the wall "
+              "height, because that is the cell the outer ring has to continue. "
+              "Separate from the inner count on purpose: splitting the ring is "
+              "pointless if one number still governs both sides of the seam.",
+              model="tworing_radial_outer", group=GROUP, modes=_MB,
+              opts=dict(lo=0, hi=20000, special="(derived)")),
+    FieldSpec("topo_tworing_derived", "label", "Derivation",
+              "What the parameters above imply, with the working shown: the two "
+              "rings' blocks and circumferential cells, the 1:1 growth ratio, each "
+              "ring's radial node count and the span it crosses, the seam spacing "
+              "DERIVED from the inner ring's own last interval, what the splits buy "
+              "and what the seam's label reaches.",
+              model=None, group=GROUP, modes=_MB),
+
     FieldSpec("topo_ogrid_derived", "label", "Derivation",
               "What the parameters above imply, with the working shown: the ring's "
               "blocks and circumferential cells, the 1:1 growth ratio those imply, "
@@ -287,7 +371,10 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
 BINDING_ROWS = (("topo_ogrid_body_geom", "topo_ogrid_body_segs"),
                 ("topo_ogrid_far_geom", "topo_ogrid_far_segs"),
                 ("topo_cgrid_body_geom", "topo_cgrid_body_segs"),
-                ("topo_cgrid_far_geom", "topo_cgrid_far_segs"))
+                ("topo_cgrid_far_geom", "topo_cgrid_far_segs"),
+                ("topo_tworing_body_geom", "topo_tworing_body_segs"),
+                ("topo_tworing_seam_geom", "topo_tworing_seam_segs"),
+                ("topo_tworing_far_geom", "topo_tworing_far_segs"))
 
 #: Rows that author the model's STATE rather than a family's parameter: which family
 #: is selected, and whether it still generates the document (#139). Declared rather
@@ -304,4 +391,4 @@ TOPOLOGY_STATE_ROWS = ("topo_family", "topo_detached")
 #: Named here so the bidirectional gate can hold "every OTHER row is read by a
 #: family" without a read-out counting as an unread parameter.
 TOPOLOGY_READONLY = ("topo_hgrid_counts_derived", "topo_ogrid_derived",
-                     "topo_cgrid_derived")
+                     "topo_cgrid_derived", "topo_tworing_derived")

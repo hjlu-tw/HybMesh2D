@@ -88,6 +88,60 @@ def edges_by_prefix(prefix: str):
     return lambda i: f"{prefix}{i}"
 
 
+def ring_edges(prefix: str, splits: int):
+    """``stored position -> every edge id that position darkens``.
+
+    :func:`edges_by_prefix` answers for ONE ring position; this answers for one
+    STORED position, which is ``splits`` of them — a source segment becomes
+    ``splits`` block edges, so a single broken id darkens all of them and naming
+    only the first would under-report what the user is looking at. The shape
+    :func:`broken_in_lists` takes, and the O-grid's and the two-ring family's
+    answer to it.
+    """
+    at = edges_by_prefix(prefix)
+    return lambda pos: tuple(at(int(pos) * splits + j) for j in range(splits))
+
+
+def broken_in_lists(model, ctx, lists) -> tuple:
+    """Every stored id in ``lists`` that its geometry no longer carries (#138).
+
+    ``lists`` is ``((model field, geometry field, role word, position -> edge ids),
+    ...)`` — which lists a family binds, and how it names the edges of one, are the
+    FAMILY's answers; walking them is not. Three families ask this now (#155), and
+    the first two had written the same twelve lines twice with only the ``edges``
+    expression differing, which is the shape ``topology_counts`` was taken out of
+    them to stop.
+
+    THE COMPLEMENT OF A FAMILY'S ``plan`` REFUSAL, NOT A SECOND COPY OF IT. ``plan``
+    stops at the FIRST problem because it answers "can this run?"; this lists every
+    position the user would have to repair, because repairing them one refusal at a
+    time means a generate, a refusal and a return to the panel per broken wall.
+
+    SCOPED TO THE ONE THING A DROPDOWN CAN REPAIR. A geometry that is not in the
+    mesh's list, an unparseable list, a body that is not closed, a far field inside
+    the body — none of those is a wrong SEGMENT, so none is reported here and all of
+    them keep the read-out's sentence as their only voice. Reporting them as flagged
+    edges would offer a repair that cannot repair them.
+    """
+    if ctx is None:
+        return ()
+    out = []
+    for field, geom_field, who, edges_at in lists:
+        g = ctx.geometry(getattr(model, geom_field, ""))
+        if g is None or not g.seg_ids:
+            continue
+        held, why = parse_binding(getattr(model, field, ""), (), who)
+        if why or not held:
+            # A blank list adopts the geometry's own segments and so cannot be
+            # broken; a malformed one is refused as a whole string and is not a
+            # position a dropdown could re-point.
+            continue
+        out += [BrokenBinding(field=field, who=who, geom=g.spelling, seg=s, pos=pos,
+                              edges=tuple(edges_at(pos)), choices=tuple(g.seg_ids))
+                for pos, s in enumerate(held) if s not in g.spans]
+    return tuple(out)
+
+
 def repair_binding(order, pos: int, seg: int) -> str:
     """The binding that puts segment ``seg`` at ring position ``pos`` (#138).
 
@@ -165,48 +219,20 @@ BINDING_LISTS = (("body", "ogrid_body_segs", "ogrid_body_geom", "w"),
 
 
 def broken_bindings(model, ctx) -> tuple:
-    """Every stored id this family holds that its geometry no longer carries (#138).
+    """The O-grid's two lists, walked by :func:`broken_in_lists`.
 
-    THE COMPLEMENT OF `plan`'s REFUSAL, NOT A SECOND COPY OF IT. `plan` stops at the
-    FIRST problem, because it is answering "can this run?" — one sentence is the
-    right answer to that. This answers "what would the user have to fix?", which is
-    every broken position at once: repairing them one refusal at a time means a
-    generate, a refusal and a return to the panel per broken wall, and the user
-    already knows all of the answers.
-
-    SCOPED TO THE ONE THING A DROPDOWN CAN REPAIR. A geometry that is not in the
-    mesh's list, an unparseable list, a body that is not closed, a far field inside
-    the body — none of those is a wrong SEGMENT, so none is reported here and all of
-    them keep the read-out's sentence as their only voice. Reporting them as
-    flagged edges would offer a repair that cannot repair them.
+    What stays HERE is the family's own answers — which two lists it binds
+    (:data:`BINDING_LISTS`) and that a stored position becomes ``ogrid_splits``
+    ring edges — and nothing else; the walk itself is shared with the C-grid and
+    the two-ring family since #155.
     """
-    if ctx is None:
-        return ()
     try:
         splits = max(1, int(model.ogrid_splits))
     except (TypeError, ValueError):
         splits = 1
-    out = []
-    for who, field, geom_field, prefix in BINDING_LISTS:
-        g = ctx.geometry(getattr(model, geom_field, ""))
-        if g is None or not g.seg_ids:
-            continue
-        held, why = parse_binding(getattr(model, field, ""), (), who)
-        if why or not held:
-            # A blank list adopts the geometry's own segments and so cannot be
-            # broken; a malformed one is refused as a whole string and is not a
-            # position a dropdown could re-point.
-            continue
-        for pos, s in enumerate(held):
-            if s in g.spans:
-                continue
-            base = pos * splits
-            edge_at = edges_by_prefix(prefix)
-            out.append(BrokenBinding(
-                field=field, who=who, geom=g.spelling, seg=s, pos=pos,
-                edges=tuple(edge_at(base + j) for j in range(splits)),
-                choices=tuple(g.seg_ids)))
-    return tuple(out)
+    return broken_in_lists(model, ctx, tuple(
+        (field, geom_field, who, ring_edges(prefix, splits))
+        for who, field, geom_field, prefix in BINDING_LISTS))
 
 
 def order_problem(who: str, g, segs, splits: int, edge_at) -> tuple:
