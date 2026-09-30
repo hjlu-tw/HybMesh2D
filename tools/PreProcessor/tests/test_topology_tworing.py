@@ -101,6 +101,12 @@ NAMED BLIND SPOTS:
     not byte-reproducible anyway (``docs/design_notes/mesher.md``, "THE GOLDEN
     COMPARATOR"). Checks 20 and 21 report the worst deviation they measured — 5.0e-08
     and 8.0e-08 — rather than asserting an equality that would be a fiction.
+  * ONE REFUSAL OF THE TEN IS FALSIFIED BY INJECTION, not ten. Injection C deletes the
+    seam's pairing check; the other nine are asserted positively, held apart from each
+    other by check 13i's distinctness test and held against a passing configuration by
+    13h's control. A branch whose CONDITION was inverted while keeping its sentence
+    would pass all of them — nine more mutations is what would close it, and they are
+    not run.
   * Only the DEFAULTS and the two shipped parameter sets reach the real binary. The
     nine-entry spread is checked structurally, which is the O-grid gate's own limit and
     for its reason: nine mesher runs in a gate is a cost nobody asked for.
@@ -399,6 +405,19 @@ check("13g. no context at all is a refusal and not a crash, because the panel as
       "this before a configuration exists", bool(tw.plan(model(_b, _m, _f), None).problem))
 check("13h. THE NEGATIVE CONTROL: the same three outlines with nothing wrong build a "
       "document and report no problem", not tw.plan(model(_b, _m, _f), _ctx).problem)
+# ...and the eight above really are EIGHT refusals, not one reached eight ways. Each
+# check asserts a substring, and a substring assertion passes on any sentence that
+# happens to contain it — so a family whose branches had collapsed into one message
+# would satisfy every one of them. Only injection C removes a refusal (the blind spot
+# below says so); this is what covers the other seven without seven more mutations.
+_SENTENCES = [_no_seam, _pair, _pf, _pi, _pw,
+              why_of(tworing_seam_segs="0,x,2"),
+              tw.plan(model(_b, _m, _f), None).problem,
+              why_of(tworing_cell=0.0)]
+check(f"13i. ...and the eight refusals above are eight DISTINCT sentences, so no "
+      f"check among them is passing on another's message "
+      f"({len(set(_SENTENCES))} distinct of {len(_SENTENCES)})",
+      len(set(_SENTENCES)) == len(_SENTENCES) and all(_SENTENCES))
 
 # ── 14. build() REFUSES rather than falling back, and names the edge ───────
 _broken_model = model(_b, _m, _f, tworing_seam_segs="0, 1, 99, 3")
