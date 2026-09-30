@@ -84,6 +84,7 @@ import test_multiblock_binding_surface as mbb         # noqa: E402
 import test_multiblock_ogrid_surface as mbo          # noqa: E402
 import test_multiblock_cgrid_surface as mbc          # noqa: E402
 import test_multiblock_tworing_surface as mbt       # noqa: E402
+import test_multiblock_tworing_offset_surface as mbto  # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
 from app.services.logging_setup import get_logger     # noqa: E402
 
@@ -354,6 +355,17 @@ CASES = {
     #     Its `ds_start` is the inner ring's own last interval, so a change to the
     #     tanh solver moves the whole outer ring rather than one edge of it.
     "mb_tworing": _shipped_multiblock(mbt),
+    #   mb_tworing_offset (#154): the same eight blocks around a 2:1 ELLIPSE,
+    #     whose middle ring is not drawn but COMPUTED — the shipped body offset
+    #     by +0.25 through app/services/geometry_offset.py. What it adds over
+    #     mb_tworing is not the topology, which is the same document with other
+    #     geometry names in it: it is the only case here whose input geometry is
+    #     the OUTPUT of a Python service, so a change to the offset law moves
+    #     every node of this mesh while leaving all nineteen others at 0.000e+00.
+    #     The `.vrt` carries that; the `.bnd` carries the property that the seam
+    #     exports no face on a body where the seam is not a circle either; and
+    #     the `.cel` carries the weld along a curve that is not one.
+    "mb_tworing_offset": _shipped_multiblock(mbto),
     #   mb_cgrid_smooth (#81): the same shipped C-grid with MB_SMOOTH_ITERS 1, the
     #     only case here whose node positions come from the SMOOTHER rather than
     #     from the fill. Every interior node moves on that one sweep, so a kernel

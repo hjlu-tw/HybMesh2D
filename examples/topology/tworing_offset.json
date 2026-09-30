@@ -1,0 +1,148 @@
+// AN EIGHT-BLOCK TWO-RING O-GRID whose middle ring was COMPUTED (issue #154) —
+// the case the #150 batch exists for, where the CAD-stage offset (#152) and the
+// topology edge that FOLLOWS a curve (#151) meet on a body whose seam nobody
+// could have drawn.
+//
+//   ./run.sh -conf config/multiblock_tworing_offset.dat
+//
+// WHAT IS DIFFERENT FROM THE TWO-RING O-GRID BESIDE IT.
+//
+// examples/topology/tworing_ogrid.json is the same eight blocks around a CIRCLE,
+// and its middle ring is a second circle a user could have drawn: a circle's
+// offset is a circle. THE BODY HERE IS A 2:1 ELLIPSE, and an ellipse's offset is
+// not an ellipse — it is a degree-8 curve with no entry in this tool's shape
+// library. The nearest thing that library can draw is a concentric ellipse
+// through the same four corners, and that curve is 0.2415 from the body at the
+// nose against the 0.2500 asked for: 3.39% of the ring thickness missing in the
+// one place a boundary layer is thickest. So this middle ring is not drawn. It
+// is examples/geometries/ellipse_offset.dat, written by
+// app/services/geometry_offset.py from examples/geometries/ellipse_body.dat at a
+// signed distance of +0.25, and the gate re-derives it rather than trusting it.
+//
+// THE SEGMENTATION IS THE BODY'S, WITH NOTHING ASKED OF THE USER. The offset
+// service returns one point per source point in the same order, so the offset's
+// sidecar carries the same four segment ids at the same rows as the body's. The
+// `m*` corners below are therefore at the SAME t = 0 joints as the `b*` corners,
+// on the four axes, and the four radials are straight. #153's middle ring had to
+// be faceted at 120 per quarter to satisfy two of #94's divisibility rules at
+// once; this one inherits the body's faceting and there is nothing to choose.
+//
+// THE TWO RINGS ARE CONTINUOUS ACROSS THE SEAM, AND THAT IS DECLARED. The inner
+// ring crosses a ring of CONSTANT thickness 0.25 in 24 intervals with its first
+// cell at the run's BL_INITIAL_THICKNESS (1e-3); the tanh law that solves for
+// that first cell finishes at 2.474095e-02, so the outer ring starts there and
+// the ratio across the seam is 1.000000000 on the unsmoothed mesh. The number is
+// the inner ring's own arithmetic read off: change the inner ring's count, its
+// span or the run's wall height and this number is wrong and the seam shows.
+//
+// A CONSTANT-THICKNESS RING IS WHAT THE OFFSET BUYS AND WHAT A SCALED BODY
+// CANNOT GIVE. Every node of the middle ring is 0.25 from the body's polyline to
+// within the miter's own excess (5.1e-05 at the nose), which is why the inner
+// ring's 24 intervals mean the same thing all the way round.
+//
+// THE BUDGET IS THE SHIPPED O-GRIDS': 96 nodes around and 25 + 25 - 1 = 49
+// across, so 4704 vertices, 9216 triangles and 192 boundary edges, the same as
+// the single-ring and two-ring circles. The comparison that budget makes
+// possible is in docs/design_notes/mesher.md; unlike #153's it is against a body
+// whose wall-normal extent varies around it, which is the case #153's own blind
+// spot said it could not speak for.
+//
+// Each block's i runs OUTWARD (its south and north are the two radials) and its
+// j runs ANTICLOCKWISE (its west is the inner arc, its east the outer one).
+{
+  "format_version": 1,
+
+  // THREE rings of corners, on the four axes. The body's and the middle ring's
+  // are the same four joints of the same segmentation, because the offset
+  // inherited it.
+  "corners": [
+    {"id": "b0", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 0, "t": 0.0},
+    {"id": "b1", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 1, "t": 0.0},
+    {"id": "b2", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 2, "t": 0.0},
+    {"id": "b3", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 3, "t": 0.0},
+
+    {"id": "m0", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 0, "t": 0.0},
+    {"id": "m1", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 1, "t": 0.0},
+    {"id": "m2", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 2, "t": 0.0},
+    {"id": "m3", "kind": "on_geometry", "geom": "ellipse_offset.dat", "seg": 3, "t": 0.0},
+
+    {"id": "f0", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 0, "t": 0.0},
+    {"id": "f1", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 1, "t": 0.0},
+    {"id": "f2", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 2, "t": 0.0},
+    {"id": "f3", "kind": "on_geometry", "geom": "circle_farfield.dat", "seg": 3, "t": 0.0}
+  ],
+
+  "edges": [
+    // ── The INNER ring's radials, body -> seam ──────────────────────────────
+    // One equivalence class that wraps around and closes. Each declares its
+    // 'start' — the corner on the body — a wall end, so its first cell is the
+    // run's BL_INITIAL_THICKNESS.
+    {"id": "ri0", "corners": ["b0", "m0"], "kind": "interface", "count": 25,
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri1", "corners": ["b1", "m1"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri2", "corners": ["b2", "m2"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri3", "corners": ["b3", "m3"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+
+    // ── The OUTER ring's radials, seam -> far field ─────────────────────────
+    // A SECOND equivalence class. They cluster at their 'start', the corner on
+    // the SEAM, to the height the inner ring finished at. Not 'wall_ends': that
+    // end is not a wall, and the number is not BL_INITIAL_THICKNESS.
+    {"id": "ro0", "corners": ["m0", "f0"], "kind": "interface", "count": 25,
+     "spacing": {"ds_start": 0.02474095}},
+    {"id": "ro1", "corners": ["m1", "f1"], "kind": "interface",
+     "spacing": {"ds_start": 0.02474095}},
+    {"id": "ro2", "corners": ["m2", "f2"], "kind": "interface",
+     "spacing": {"ds_start": 0.02474095}},
+    {"id": "ro3", "corners": ["m3", "f3"], "kind": "interface",
+     "spacing": {"ds_start": 0.02474095}},
+
+    // ── The body. One block side per source segment; these carry the wall. ──
+    {"id": "w0", "corners": ["b0", "b1"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 0}},
+    {"id": "w1", "corners": ["b1", "b2"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 1}},
+    {"id": "w2", "corners": ["b2", "b3"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 2}},
+    {"id": "w3", "corners": ["b3", "b0"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 3}},
+
+    // ── THE SEAM. Four interior lines that FOLLOW a COMPUTED curve. ─────────
+    // Each is the east of an inner block and the west of an outer one. `follows`
+    // rather than `binding`: the offset's sidecar labels these segments 'seam',
+    // and that label reaches nothing — no patch in the .bnd carries it.
+    {"id": "s0", "corners": ["m0", "m1"], "kind": "interface",
+     "follows": {"geom": "ellipse_offset.dat", "seg": 0}},
+    {"id": "s1", "corners": ["m1", "m2"], "kind": "interface",
+     "follows": {"geom": "ellipse_offset.dat", "seg": 1}},
+    {"id": "s2", "corners": ["m2", "m3"], "kind": "interface",
+     "follows": {"geom": "ellipse_offset.dat", "seg": 2}},
+    {"id": "s3", "corners": ["m3", "m0"], "kind": "interface",
+     "follows": {"geom": "ellipse_offset.dat", "seg": 3}},
+
+    // ── The far field. Bound, so its condition comes from its own sidecar. ──
+    {"id": "o0", "corners": ["f0", "f1"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 0}},
+    {"id": "o1", "corners": ["f1", "f2"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 1}},
+    {"id": "o2", "corners": ["f2", "f3"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 2}},
+    {"id": "o3", "corners": ["f3", "f0"], "kind": "wall",
+     "binding": {"geom": "circle_farfield.dat", "seg": 3}}
+  ],
+
+  // [south, east, north, west] = [radial in, outer arc, radial out, inner arc].
+  "blocks": [
+    {"id": "q0", "edges": ["ri0", "s0", "ri1", "w0"]},
+    {"id": "q1", "edges": ["ri1", "s1", "ri2", "w1"]},
+    {"id": "q2", "edges": ["ri2", "s2", "ri3", "w2"]},
+    {"id": "q3", "edges": ["ri3", "s3", "ri0", "w3"]},
+
+    {"id": "p0", "edges": ["ro0", "o0", "ro1", "s0"]},
+    {"id": "p1", "edges": ["ro1", "o1", "ro2", "s1"]},
+    {"id": "p2", "edges": ["ro2", "o2", "ro3", "s2"]},
+    {"id": "p3", "edges": ["ro3", "o3", "ro0", "s3"]}
+  ]
+}
