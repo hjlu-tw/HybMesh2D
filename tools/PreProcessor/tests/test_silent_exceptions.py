@@ -682,7 +682,7 @@ before = len(read_log())
 ctl._scan_geometry_files(bad_cfg)
 bb_log = read_log()[before:]
 check("unreadable.dat" in bb_log and "bbox scan" in bb_log
-      and "hybmesh.gui.controllers.mesh_gen_ctrl" in bb_log,
+      and "hybmesh.gui.controllers.mesh_gen_diag_ctrl" in bb_log,
       "7. the mesh bbox scan names it too (the third caller that OPENS)")
 
 # The FOURTH opener records to stdout rather than to the log file, beside its

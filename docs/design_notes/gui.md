@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 289, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 292, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -3709,6 +3709,68 @@ say what its docstring already says.
   spread is checked structurally and only the DEFAULTS are additionally run through the real
   binary (check 23) — the O-grid's own limit, and for its reason: nine mesher runs in a gate is a
   cost nobody asked for.
+
+#### THREE FILES SPLIT BEFORE THE FEATURE NEEDED THEM (#159, parent #158)
+
+**NOTHING A USER CAN SEE, AND THAT IS THE CLAIM.** Three files the case-type feature must each
+grow sat within 35 lines of the ~500-line GUI file-length standard: `controllers/mesh_gen_ctrl.py`
+(465), `models/mesh_config.py` (482) and `services/topology_model.py` (472). Every later ticket in
+#158 adds to at least one of them, so without this each would have landed fighting the gate and
+the split would have been done under feature pressure by whoever drew the short straw. Prefactor:
+make the change easy, then make the easy change.
+
+**THE SEAM TAKEN IN EACH IS ONE THE FILE ALREADY HAD**, not a line drawn to hit a number.
+`mesh_config.py` DECLARES parameters and `models/mesh_config_validate.py::ConfigValidationMixin`
+JUDGES them (`validate`, `domain_box_errors`, `_as_float`, `bl_fronts`) — the same cut, for the
+same reason, as `mesh_config_geoms.py::GeomListMixin` one file over, and `validate()` stays PURE
+on the far side of it. `topology_model.py`'s own docstring named three things — "the topology
+MODEL, the family registry, and the projection to JSON" — so the model went to
+`services/topology_params.py` and the registry and projection stayed. `mesh_gen_ctrl.py` LAUNCHES
+the mesher and handles what comes back; everything in
+`controllers/mesh_gen_diag_ctrl.py::MeshGenDiagnosticsMixin` is diagnosis that starts no worker —
+the pre-flight `mesh_input_warning`, the per-geometry bbox scan, and the post-mortem that reads an
+intersection out of the mesher's log and points at it on the canvas.
+
+**NO CALLER MOVED, BY RE-EXPORT AND BY INHERITANCE** — `app/utils.py` → `services/paths.py` is the
+precedent. `TopologyModel` and `FAMILY_NONE` are re-exported from `topology_model`, so the import every
+caller and every gate already writes is unchanged; `mesh_input_warning` is re-exported from
+`mesh_gen_ctrl`; and both new mixins are BASES of the classes their methods left, so
+`cfg.validate(...)`, `self._scan_geometry_files(...)` and the gates that read those methods through
+`inspect.getsource(MeshGenControllerMixin._scan_geometry_files)` resolve exactly as before. The
+dependency runs ONE WAY in each case — no module imports the one that re-exports it — so no cycle
+was traded for the room.
+
+**ONE ASSERTION REALLY DID HAVE TO MOVE, AND IT IS THE MOVE'S OWN EVIDENCE.**
+`test_silent_exceptions.py` check 7 asserts the bbox scan's `warning` carries its OWN module's
+logger name; `get_logger(__name__)` follows the code, so the expected name became
+`...controllers.mesh_gen_diag_ctrl`. The claim is unchanged and the gate still measures it.
+
+**"NO BEHAVIOUR MOVED" IS MEASURED, NOT ASSERTED.** `golden_mesh.py` compare over all 21 mesher
+cases against the pre-split capture: 21 SAME, 20 at a worst coordinate deviation of exactly
+0.000e+00 and `wedge_45` at 2.492e-13, which is the run-to-run wobble that tool's `TOL` exists for;
+`isolated_corner` matched as NO MESH on both sides. The full suite is 143/143, and the three
+repo-wide gates that could have noticed a split — `test_qt_free_seam.py`, `test_silent_exceptions.py`,
+`test_signal_guards.py` — plus `test_gui_cpp_config_parity.py` are green with no new pin in
+`test_file_length.py`.
+
+**THE FILE COUNT IS A GATED FIGURE AND IT MOVED.** Three new GUI modules took the tree from 289
+`.py` files to 292, which `test_instruction_budget.py` check 7 caught in `CLAUDE.md`,
+`.claude/rules/gui-seams.md` and this note on the first run after the split — the figure is derived
+from disk by `--sync`, never remembered, which is exactly the decay it was built against.
+
+##### Named blind spots
+
+* **The gate counts LINES, so this bought room and not quality.** `mesh_config.py` at 326 and
+  `topology_params.py` at 272 are both well inside the standard, and nothing here measures whether
+  either is easier to read than the 482-line file was. The claim made is room, which is checkable.
+* **A mixin is a flat namespace.** `ConfigValidationMixin` and `MeshGenDiagnosticsMixin` can reach
+  any attribute of the class they are mixed into, so the seam is a convention rather than an
+  enforced boundary — the same cost `GeomListMixin` already carries, taken for the same reason
+  (these are the model's and the controller's own verbs, and a free function would be a second way
+  in that callers could choose).
+* **`topology_params.py` knows about no family and nothing gates that it stays that way.** The
+  one-way direction is what keeps the re-export free of a cycle; an import added there would be
+  caught by `test_qt_free_seam.py` only if it dragged in Qt.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

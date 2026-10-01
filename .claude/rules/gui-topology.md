@@ -55,7 +55,9 @@ canvas, whose edit-ownership rules are `.claude/rules/gui-canvas-edit.md` (`view
 does not match `mesh_canvas*`).
 
 **A TOPOLOGY TEMPLATE IS A MODEL; THE JSON IS A PROJECTION** (#134, parent #133;
-`services/topology_model.py`, `services/topology_hgrid.py`, `services/topology_field_specs.py`)
+`services/topology_model.py` — the registry and the projection, with the model itself in
+`services/topology_params.py` since #159 and RE-EXPORTED from it, so the import every caller
+writes is unchanged — `services/topology_hgrid.py`, `services/topology_field_specs.py`)
 
 - **One family = one PURE FUNCTION** from `TopologyModel` to a document `dict`, registered in
   `FAMILIES` with its own parameter PREFIX. Qt-free, mesher-free, canvas-free. A family is a

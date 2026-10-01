@@ -218,7 +218,9 @@ global default, so a per-geometry override never hides behind a collapsed header
 `canonical_geom_keys` / `dedupe_geom_paths` / `stored_geom_path` / `readable_geom_path`; the
 model's verbs are
 `models/mesh_config_geoms.py::GeomListMixin`, split off
-when `mesh_config.py` went over the file-size budget). Every dedup guard in the tree used to be a
+when `mesh_config.py` went over the file-size budget; `models/mesh_config_validate.py::ConfigValidationMixin`
+is the second such half, split off by #159 BEFORE the budget bit — `validate`, `domain_box_errors`,
+`_as_float` and `bl_fronts`, still reached as methods on `MeshConfig`, and `validate()` still PURE). Every dedup guard in the tree used to be a
 `not in` string compare over `MeshConfig.geom_files`, so the repo-relative and absolute spellings
 of one file were two entries: the Mesh Generator listed the geometry twice and the mesher was
 handed a doubled boundary — USER-REPORTED (2026-08-20), reopening an exported case package, which
