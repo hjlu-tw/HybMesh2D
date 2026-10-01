@@ -52,6 +52,7 @@ def mesh_input_warning(cfg) -> str:
                 ".dat first.")
     return f"[WARNING] {why}.{hint}"
 
+
 class MeshGenDiagnosticsMixin:
     """The mesh stage's pre-flight scan and its post-mortem read of the log."""
 

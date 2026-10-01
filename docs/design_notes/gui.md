@@ -3771,6 +3771,25 @@ from disk by `--sync`, never remembered, which is exactly the decay it was built
 * **`topology_params.py` knows about no family and nothing gates that it stays that way.** The
   one-way direction is what keeps the re-export free of a cycle; an import added there would be
   caught by `test_qt_free_seam.py` only if it dragged in Qt.
+* **THE MODULE NAMED `topology_model.py` NO LONGER HOLDS `TopologyModel`**, which a reader
+  grepping for `class TopologyModel` will find next door. Named in review as the cost it is, and
+  the obvious alternative was PRICED rather than waved off: putting the registry in a new
+  `topology_registry.py` and leaving the class where it is costs the same re-export only if the
+  registry never needs the class at run time — it does not, but it annotates with it, so that
+  shape takes a `TYPE_CHECKING` import BACK into `topology_model` and trades the one-way
+  direction for a type-level cycle. Renaming both modules honestly (`topology_model.py` for the
+  class, `topology_registry.py` for the rest) costs neither, and was not taken because it rewrites
+  the import line in every caller and ten gate files inside a ticket whose whole claim is that
+  nothing moved — #159's own acceptance asks for callers untouched. The re-export is what carries
+  the name; the next ticket that touches these files for another reason is the cheap moment to
+  rename.
+* **A RE-EXPORT IS A SECOND LEGAL IMPORT PATH, AND NOTHING GATES WHICH ONE IS WRITTEN.**
+  `TopologyModel`, `FAMILY_NONE` and `mesh_input_warning` can each now be imported from two
+  modules. That is the shape `app/utils.py` → `services/paths.py` already has and it is accepted
+  here for the same reason — it is what keeps the call sites untouched — but the cost is real:
+  nothing stops a new caller importing from the inner module, and the two paths would then have to
+  be kept in step by hand if either ever stopped re-exporting. No gate, by decision; the
+  alternative is a scan whose allow-list would be longer than the rule.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
