@@ -502,7 +502,11 @@ type's lengths belong to the SIZE of the body and which to the FLOW over it.
   user story 23 made structural rather than left to a dialog a second host could skip — and a
   confirmation may carry the operator's OWN value, so confirming and adjusting are one act.
   Confirming a field that is not one of the asked-about parameters is REFUSED: an edit wearing
-  a confirmation's name would be invisible to the deviation report.
+  a confirmation's name would be invisible to the deviation report. **A physical parameter the
+  case type does not CARRY is not asked about**, and that is the sparse overlay working rather
+  than a hole in the question: nothing is inherited, so the operator's own value survives
+  untouched. `--field bl_initial_thickness` is how a maintainer who MEANS the default records
+  it, and then it is asked about like any other.
 - **IT USES THE LENGTH-UNIT SYSTEM RATHER THAN DUPLICATING IT.** The geometric factor is a
   ratio of two lengths each measured in its OWN project's grid units, so the unit cancels and
   nothing converts. The physical parameter is the opposite case: `services/units.py` records
@@ -511,7 +515,10 @@ type's lengths belong to the SIZE of the body and which to the FLOW over it.
   of the two unit factors — the existing rule applied where it has always applied, not a second
   one. **The three `length_unit*` fields are therefore NOT ownable** (`EXCLUDED`): a case type
   that imposed its author's unit would RELABEL the operator's geometry rather than fit it,
-  which is the 1000x error this repo has lost a run to.
+  which is the 1000x error this repo has lost a run to. **That is the ONE place the artefact
+  was NARROWED rather than widened**, so a v3 document that OWNED one is REFUSED on load — and
+  the refusal carries the remedy (delete that entry from its `fields` section), or an operator
+  holding such a file is stuck. Gated as a refusal, so the claim is not wider than the assert.
 - **A RULER THAT CANNOT BE READ REFUSES, and never falls back.** No geometry bearing the named
   role (the refusal names the role and the roles that ARE borne), a geometry file that will not
   load, a role-bearing set with no extent, an unknown role or measure, a recorded length of
@@ -521,12 +528,17 @@ type's lengths belong to the SIZE of the body and which to the FLOW over it.
   the paths AS THE CONFIG HOLDS THEM — `models/mesh_config_io.py` resolves every geometry token
   to an absolute path as it loads, and a second resolution rule here could only disagree.
 - **DEVIATION IS MEASURED AGAINST THE FITTED NUMBERS, not the authored ones**
-  (`fitted_fields`, called by `case_type_verdict.run_report` and by
-  `show_case_type.py --config`). The value a case type has an opinion about on THIS drawing is
+  (`fit`, called by `case_type_verdict.run_report` and by
+  `show_case_type.py --config`, which also prints the reason `fit` hands back when the
+  ruler cannot be read — a verdict only logs it). The value a case type has an opinion about on THIS drawing is
   the one its ruler scaled to; comparing against the authored number would mark every geometric
   field of every rescaled run as the operator's own edit. A case type with NO ruler, or one
-  whose ruler this drawing cannot provide, falls back to the authored overlay and logs it at
-  `debug` — not an error there, since no ruler means nothing was scaled.
+  whose ruler this drawing cannot provide, falls back to the authored overlay — not an error,
+  since no ruler means nothing was scaled. **`fit` RETURNS that reason as well as logging it,
+  and both readers SAY it**: `run_report` appends a line to the verdict and
+  `show_case_type --config` prints one, because a deviation list computed on unfitted numbers
+  with nothing said is this file's own failure mode, a plausible wrong answer rather than an
+  error.
 - **`SCHEMA_VERSION` is 4 and `READABLE_VERSIONS` is `(1, 2, 3, 4)`.** A v3 document is a v4
   that declares no ruler and fits every drawing at 1:1 — which is the behaviour it has always
   had — and still asks for its physical parameters to be confirmed, that question being about
@@ -578,6 +590,12 @@ which are capability refusals.
   invisible to it.
 - **The GUI leg drives `_on_mesh_gen_finished` with a recording stand-in for the main window.**
   That the verdict is wired to a button and rendered by the log panel is not checked here.
+- **A CASE TYPE WITH NO RULER CANNOT CONVERT A PHYSICAL PARAMETER.** `unit_metres` is recorded
+  ON the characteristic length, so a case type declaring none — every v3 document, and any v4
+  authored without `--characteristic` — has no authoring unit to convert from, and its physical
+  parameters cross a unit change UNCONVERTED. The operator is still asked, and the
+  confirmation reports the metres value in THEIR units, so an unconverted one shows up as the
+  absurd length it is. Pinned by the gate; the remedy is to declare a ruler, not to invent a unit.
 - **A ROLE IS PER GEOMETRY, NOT PER SEGMENT.** #163's acceptance says "the role-bearing
   segments" and what exists is `MeshConfig.geom_roles`, keyed by geometry FILE. The measure
   is a pure function of a point set either way, so a per-segment assignment would narrow

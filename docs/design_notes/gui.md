@@ -4244,7 +4244,12 @@ it — and the second half of that distinction is the reason it is not just a mu
   derivation rather than by decision — they are scalars on `MeshConfig`. A case type that set one
   would relabel the operator's drawing, which is the destructive version of the same error, and
   it would also make the physical conversion vacuous by forcing both ends to agree. Excluding
-  them had one consequence worth recording: #162's `FINER_PRECISION` map existed solely to give
+  them NARROWED the artefact, which nothing else in this seam has done — a v3 document that
+  owned one is REFUSED on load, and the Spec review caught the gate claiming "a v3 one still
+  loads" while asserting only the case with no unit field in it. The refusal is the right
+  answer (silently dropping an opinion is what the module exists against) but it has to carry
+  the REMEDY, so the exclusion's reason names the one edit that reads the file. Excluding
+  them had a second consequence worth recording: #162's `FINER_PRECISION` map existed solely to give
   `length_unit_metres` the `%.10g` the `.dat` writer uses for it, so the map named a field no
   overlay can hold any more and LEFT WITH ITS SUBJECT, along with `same()`'s `name` parameter.
   The rule is kept as a comment at `DAT_PRECISION` and has to come back if a unit field ever
@@ -4253,11 +4258,17 @@ it — and the second half of that distinction is the reason it is not just a mu
   introduced.** `deviations` compares the overlay against the config NOW. Once a geometric field
   is scaled on application, comparing against the AUTHORED number marks every one of them as the
   operator's own edit — a run that did exactly what the case type said, reported as deviated on
-  six fields. `fitted_fields` is the fair ground, and both readers of it (the verdict's
+  six fields. `fit` is the fair ground, and both readers of it (the verdict's
   `run_report` and `show_case_type.py --config`) go through it so the two cannot disagree. It
   falls back to the authored overlay when the ruler cannot be read off the drawing, which is not
   a silent wrong: no ruler means nothing was scaled, so the authored numbers ARE what the case
-  type wants. Injection H reverts the comparison and check 9 reddens alone.
+  type wants. Injection H reverts the comparison and check 9 reddens alone. **The fallback is
+  SAID, not only logged** — the Standards and Spec reviews converged on this from two sides:
+  `fit` returns the reason, `run_report` appends it to the verdict and `show_case_type --config`
+  prints it, because a deviation list computed on unfitted numbers with nothing said is this
+  area's own failure mode. The same review pass collapsed a DOUBLE derivation in
+  `show_case_type` that measured the ruler once to print it and again to compare — against a
+  comment in `apply_case_type.py` forbidding exactly that.
 * **THE END-TO-END LEG CARRIES ITS OWN CONTROL, because the mesher publishes no first cell
   height on the hybrid path.** The gate runs the real binary three times: the case type at 1x, the
   same case type fitted to a 100x drawing, and a CONTROL that scales the first cell height too.
@@ -4272,6 +4283,13 @@ it — and the second half of that distinction is the reason it is not just a mu
   carried across a unit change and the question a rulerless case type still asks are all keyed
   off the same classification, which is stated in the injection's own message rather than
   claimed as independent evidence. Check 9 does NOT move and is not claimed to.
+
+* **A PHYSICAL PARAMETER THE CASE TYPE DOES NOT CARRY IS NOT ASKED ABOUT**, and the Spec review
+  read that as a hole in user story 23's "on every application". It is the sparse overlay working
+  instead: a field the case type has no opinion about is not inherited at all, so the operator's
+  own first cell height survives untouched and there is nothing to confirm. #162's `--field` is
+  how a maintainer who MEANS the default records it, and then it is asked about like any other.
+  Gated both ways, with injection K making `plan` ask about one it does not carry.
 
 **Named blind spots.** **A role is per GEOMETRY here, not per segment**: the ticket's acceptance
 says "the role-bearing segments" and what exists is `MeshConfig.geom_roles`, keyed by geometry

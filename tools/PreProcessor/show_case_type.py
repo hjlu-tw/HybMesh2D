@@ -94,29 +94,28 @@ def _diff(left, right) -> None:
 def _deviation(case_type, path) -> None:
     config = case_type_fields.read_config(path)
     print("Deviation of %s from case type '%s'" % (path, case_type.name))
-    if case_type.characteristic is not None:
-        # SAID OUT LOUD, both ways. `fitted_fields` falls back to the authored
-        # numbers when the ruler cannot be read off this case and logs that at
-        # debug — right for a verdict, which must still be issued, and not
-        # enough for somebody who came here to ask the question.
-        try:
-            scale = case_type.characteristic.scale_for(config)
-            print("  measured here: %s %.6g, so its geometry-driven sizes are "
-                  "compared at x %.6g"
-                  % (case_type.characteristic.measure,
-                     case_type.characteristic.value * scale.factor,
-                     scale.factor))
-        except CaseTypeError as exc:
-            print("  the characteristic length could not be measured here (%s)"
-                  ", so the fields below are compared AS AUTHORED" % exc)
-    # Against the FITTED overlay, exactly as `case_type_verdict.run_report`
-    # marks a run: the value the case type wants on THIS drawing is the one its
-    # characteristic length scaled to, so the two reports cannot disagree.
-    wanted = case_type_scale.fitted_fields(case_type, config)
-    moved = case_type_fields.deviations(wanted, config)
     if not case_type.fields:
+        # Asked BEFORE the ruler is measured: a case type that owns nothing has
+        # nothing for a ruler to scale, so measuring one would be work whose
+        # only possible output is a line about a comparison there is none of.
         print("  nothing to deviate from: this case type owns no mesh fields")
         return
+    # ONE derivation, through the same `fit` `case_type_verdict.run_report`
+    # marks a run with — the value a case type wants on THIS drawing is the one
+    # its characteristic length scaled to, so the two reports cannot disagree,
+    # and the ruler is not measured a second time to print it. `fit` also hands
+    # back WHY it could not be measured, which that verdict only logs: somebody
+    # who came here to ask the question is owed the sentence.
+    wanted, scale, why_not = case_type_scale.fit(case_type, config)
+    if scale is not None:
+        print("  measured here: %s %.6g, so its geometry-driven sizes are "
+              "compared at x %.6g"
+              % (case_type.characteristic.measure,
+                 case_type.characteristic.value * scale.factor, scale.factor))
+    elif why_not:
+        print("  the characteristic length could not be measured here (%s), so "
+              "the fields below are compared AS AUTHORED" % why_not)
+    moved = case_type_fields.deviations(wanted, config)
     if not moved:
         print("  none — all %d owned field(s) match" % len(case_type.fields))
         return

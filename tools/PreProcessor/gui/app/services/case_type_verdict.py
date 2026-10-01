@@ -379,9 +379,19 @@ def run_report(mesh_path: str, exit_code: int,
     # type has an opinion about on THIS drawing is the one its characteristic
     # length scaled to. Comparing against the authored number would mark every
     # geometric field of every rescaled run as deviated.
-    moved = (() if config is None
-             else case_type_fields.deviations(
-                 case_type_scale.fitted_fields(case_type, config), config))
+    moved, why_not = (), ""
+    if config is not None:
+        wanted, _scale, why_not = case_type_scale.fit(case_type, config)
+        moved = case_type_fields.deviations(wanted, config)
     verdict = judge(case_type, mesh_shape_stats.read_shape_summary(mesh_path),
                     exit_code, moved)
-    return (report_text(verdict), verdict.level)
+    text = report_text(verdict)
+    if why_not:
+        # SAID, not only logged. The comparison below it was made against
+        # numbers nothing fitted to this geometry, and a deviation list computed
+        # on the wrong ground is this file's own failure mode: a plausible wrong
+        # answer rather than an error.
+        text += ("\n  The case type's characteristic length could not be "
+                 "measured on this case (%s), so its fields were compared as "
+                 "AUTHORED rather than fitted to this geometry." % why_not)
+    return (text, verdict.level)

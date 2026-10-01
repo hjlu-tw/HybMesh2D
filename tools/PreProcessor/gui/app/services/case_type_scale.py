@@ -3,58 +3,57 @@
 The sixth file of the case-type seam (#163, parent #158). `case_type.py` is the
 document, `case_type_reference.py` the figures and provenance it holds,
 `case_type_fields.py` the sparse config overlay, `case_type_author.py` the step
-that produces one and `case_type_verdict.py` the grading. This one makes an
-overlay fit a geometry OTHER THAN the one it was authored on: without it a case
-type built on a 1 m body hands a 10 mm body the same 0.02 surface size and meshes
-it in two cells (#158's user story 22).
+that produces one, `case_type_verdict.py` the grading. This one makes an overlay
+fit a geometry OTHER THAN the one it was authored on: without it a case type
+built on a 1 m body hands a 10 mm body the same 0.02 surface size and meshes it
+in two cells (#158's user story 22).
 
 **THE RULER IS DERIVED, NEVER TYPED.** A case type names a ROLE and a MEASURE —
 "the extent of the geometries bearing `body`" — and the length is read off the
-maintainer's drawing when the case type is authored, and off the operator's when
-it is applied. Neither end types a number, for the reason a threshold is measured
-from a reference mesh rather than invented (#161): a figure somebody typed is a
-figure nobody can trace. What the maintainer declares is which curve the sizes
-are about, which no measurement can decide for them.
+maintainer's drawing at authoring and the operator's at application. Neither end
+types a number, for the reason a threshold is measured from a reference mesh
+rather than invented (#161): a figure somebody typed is a figure nobody can
+trace. What the maintainer declares is which curve the sizes are about, which no
+measurement can decide for them.
 
 **TWO KINDS OF LENGTH, AND CONFLATING THEM IS THE BUG THIS EXISTS AGAINST.** A
 surface size, a far-field radius and a wake length are GEOMETRIC: they say "a
 fiftieth of the body", and they scale. The boundary-layer first cell height is
-PHYSICAL: it is set by the Reynolds number and the target y+, and scaling it with
-the body would amount to claiming that smaller aerofoils have thinner boundary
-layers. So it is carried through unscaled, and it is the one value a case type
-asks the operator to CONFIRM on every application rather than applying silently
-(user story 23) — `Application.apply` refuses until they do, which makes "never
-silently" a property of the code rather than a promise in a docstring.
+PHYSICAL — set by the Reynolds number and the target y+ — and scaling it with the
+body would claim that smaller aerofoils have thinner boundary layers. So it is
+carried unscaled, and is the one value a case type asks the operator to CONFIRM
+on every application rather than applying silently (user story 23):
+`Application.apply` refuses until they do, which makes "never silently" a
+property of the code rather than a promise in a docstring.
 
 **WHICH LENGTHS EXIST IS DERIVED FROM THE FIELD-SPEC TABLES, NOT LISTED.** A
-field is a length exactly when its `FieldSpec.kind` is `sci`, which is already
-this repo's declaration of a physical length — it decides the unit suffix and the
-decade-stepping spin box, and `field_spec.LENGTH_KINDS` says so. What each of
-those lengths MEANS — a size, an x or y coordinate, or a physical quantity — is a
-judgement nothing in the tree records, so `LENGTH_KIND` declares it per field. A
-`sci` field missing from that map FAILS `tests/test_case_type_scale.py`: a new
-length must be classified before it ships, because the default would otherwise be
-"scale it", and that is the wrong default for the one field that matters most.
+field is a length exactly when its `FieldSpec.kind` is `sci`, this repo's own
+declaration of a physical length — it decides the unit suffix and the
+decade-stepping spin box (`field_spec.LENGTH_KINDS`). What each one MEANS — a
+size, an x or y coordinate, a physical quantity — is a judgement nothing in the
+tree records, so `LENGTH_KIND` declares it per field. A `sci` field missing from
+that map FAILS `tests/test_case_type_scale.py`: a new length must be classified
+before it ships, the default otherwise being "scale it" — the wrong default for
+the one field that matters most.
 
 **A COORDINATE IS NOT A SIZE.** `DOMAIN_X_MIN` is a position in the geometry's own
-frame, so multiplying it by the scale factor is right only when the body sits at
-the origin. Positions map AFFINELY about the characteristic length's own centre —
-the centre of the role-bearing geometries, recorded at authoring and re-derived
-at application — so a case type authored on a body at the origin still works on a
-drawing whose body sits at (500, 500).
+frame, so multiplying it is right only when the body sits at the origin.
+Positions map AFFINELY about the characteristic length's own centre — the centre
+of the role-bearing geometries, recorded at authoring and re-derived at
+application — so a case type authored on a body at the origin still fits a
+drawing whose body sits at (500, 300).
 
 **IT USES THE LENGTH-UNIT SYSTEM RATHER THAN DUPLICATING IT.** The geometric
-scale factor is a RATIO of two lengths each measured in its own project's grid
-units, so the unit cancels and nothing converts. The physical parameter is the
-opposite case: `services/units.py` records that `length_unit_metres` IS
+factor is a RATIO of two lengths each measured in its own project's grid units,
+so the unit cancels and nothing converts. The physical parameter is the opposite
+case: `services/units.py` records that `length_unit_metres` IS
 metres-per-grid-unit, and a first cell height means a height in METRES, so
-carrying it from a case authored in metres to a project drawn in millimetres
-multiplies by the ratio of the two unit factors — not a second scaling rule, the
-existing one applied where it has always applied. This repo has already lost a
-run to the adjacent mistake (a millimetre mesh left at the default `Linf` runs a
-thousand times wrong), which is also why the three `length_unit*` fields are NOT
-ownable: a case type that imposed its author's unit on the operator's drawing
-would relabel their geometry rather than fit it.
+carrying one from a metre case into a millimetre drawing multiplies by the ratio
+of the two unit factors — the existing rule applied where it has always applied,
+not a second one. This repo has lost a run to the adjacent mistake (a millimetre
+mesh left at the default `Linf` runs a thousand times wrong), which is also why
+the three `length_unit*` fields are NOT ownable: a case type imposing its
+author's unit would RELABEL the operator's geometry rather than fit it.
 
 **A RULER THAT CANNOT BE READ REFUSES.** No geometry bearing the named role, a
 file that will not load, a role-bearing set with no extent — each raises rather
@@ -75,8 +74,8 @@ logger = get_logger(__name__)
 
 #: How a characteristic length is read off a point set. Four, because the two
 #: lengths #158 names ("a chord, a body diameter") are not one measurement: a
-#: chord is an axis extent and a diameter is orientation-free, and `diagonal` is
-#: the only one no rotation of the body changes.
+#: chord is an axis extent, a diameter is orientation-free, and `diagonal` is the
+#: only one no rotation of the body changes.
 MEASURES = {
     "extent": "the larger of the x and y extents of the role-bearing geometry",
     "x_extent": "the x extent — a chord, for a body drawn along x",
@@ -88,7 +87,7 @@ MEASURES = {
 #: `MeshConfig.geom_roles`'s own vocabulary rather than a second one (see
 #: `models/mesh_config_geoms.py`), with `body` for the DEFAULT role, which that
 #: model spells as the ABSENCE of an entry. #164 gives the operator a panel to
-#: assign these; the words do not change when it lands.
+#: assign these, per SEGMENT; the words do not change when it lands.
 ROLES = {
     "body": "the geometries that grow a boundary layer (no role recorded)",
     "farfield": "the outer-domain outline, external flow",
@@ -136,19 +135,19 @@ PHYSICAL_WHY = {
 }
 
 
-def length_fields(*tables) -> dict:
+def length_fields() -> dict:
     """Overlay name -> `True` for every field the spec tables declare a LENGTH.
 
     Reads the tables rather than a list, so this is the same declaration that
-    decides the unit suffix on the panel. They are parameters so the gate can
-    hand in one carrying a length this build does not have.
+    decides the unit suffix on the panel. Imported here rather than at module
+    scope so the hot path — `LENGTH_KIND`, a literal — never loads three panel
+    tables; only the gate asks this question.
     """
-    if not tables:
-        from app.services import mesh_bl_field_specs, mesh_field_specs
-        from app.services import topology_field_specs
-        tables = ((mesh_field_specs.MESH_SPECS, ""),
-                  (mesh_bl_field_specs.BL_SPECS, ""),
-                  (topology_field_specs.TOPOLOGY_SPECS, TOPOLOGY_PREFIX))
+    from app.services import mesh_bl_field_specs, mesh_field_specs
+    from app.services import topology_field_specs
+    tables = ((mesh_field_specs.MESH_SPECS, ""),
+              (mesh_bl_field_specs.BL_SPECS, ""),
+              (topology_field_specs.TOPOLOGY_SPECS, TOPOLOGY_PREFIX))
     out = {}
     for table, prefix in tables:
         for spec in table:
@@ -183,7 +182,7 @@ def _extent(paths, measure: str) -> tuple:
     hosts' deliberately narrow ones would otherwise catch.
     """
     from app.services.geometry_service import load_points_dat
-    box = None
+    lo, hi = [], []
     for path in paths:
         try:
             pts = load_points_dat(path)
@@ -191,12 +190,10 @@ def _extent(paths, measure: str) -> tuple:
             raise CaseTypeError(
                 "the characteristic length is measured from '%s', which could "
                 "not be read: %s" % (path, exc)) from exc
-        lo = (float(pts[:, 0].min()), float(pts[:, 1].min()))
-        hi = (float(pts[:, 0].max()), float(pts[:, 1].max()))
-        box = (lo, hi) if box is None else (
-            (min(box[0][0], lo[0]), min(box[0][1], lo[1])),
-            (max(box[1][0], hi[0]), max(box[1][1], hi[1])))
-    (x0, y0), (x1, y1) = box
+        lo.append((float(pts[:, 0].min()), float(pts[:, 1].min())))
+        hi.append((float(pts[:, 0].max()), float(pts[:, 1].max())))
+    x0, y0 = min(p[0] for p in lo), min(p[1] for p in lo)
+    x1, y1 = max(p[0] for p in hi), max(p[1] for p in hi)
     dx, dy = x1 - x0, y1 - y0
     value = {"extent": max(dx, dy), "x_extent": dx, "y_extent": dy,
              "diagonal": (dx * dx + dy * dy) ** 0.5}[measure]
@@ -243,8 +240,10 @@ class CharacteristicLength:
 
     `role` and `measure` are the maintainer's DECLARATION; `value` and `centre`
     are what it measured on the authoring drawing, and `unit_metres` what one of
-    its grid units was worth — what a later application needs to put its own
-    measurement into proportion.
+    its grid units was worth. A case type that declares NO ruler therefore
+    records no authoring unit either, so its physical parameters cross a unit
+    change unconverted — named as a blind spot by the gate, and the reason the
+    confirmation reports its metres value in the OPERATOR's units.
     """
 
     __slots__ = ("role", "measure", "value", "centre", "unit_metres")
@@ -327,10 +326,6 @@ class CharacteristicLength:
                      self.unit_metres / units.metres_per_unit(
                          config.length_unit, config.length_unit_metres))
 
-    def __repr__(self) -> str:  # pragma: no cover - diagnostics only
-        return "CharacteristicLength(role=%r, value=%r)" % (self.role,
-                                                            self.value)
-
 
 class Scale:
     """How one case type's numbers become this drawing's numbers.
@@ -371,12 +366,14 @@ class Scale:
             return self.size(value)
         return self.physical(value) if kind == PHYSICAL else value
 
-    def __repr__(self) -> str:  # pragma: no cover - diagnostics only
-        return "Scale(%r, unit_ratio=%r)" % (self.factor, self.unit_ratio)
-
 
 class Confirmation:
-    """One physical parameter the operator must answer for before it applies."""
+    """One physical parameter the operator must answer for before it applies.
+
+    `metres` is what the offered value will MEAN in their drawing, computed with
+    THEIR unit — so a value that crossed a unit change unconverted shows up as
+    the absurd length it is rather than as the number it was authored as.
+    """
 
     __slots__ = ("name", "offered", "metres", "why")
 
@@ -407,10 +404,10 @@ class Application:
     def describe(self) -> list:
         """One line per owned field: what the case type said, what this run gets."""
         out = []
+        asked = {c.name for c in self.confirmations}
         for name, value in self.values.items():
             was = show_value(self.case_type.fields.values[name])
-            by = ("unit" if LENGTH_KIND.get(name) == PHYSICAL
-                  else "%.6g" % self.scale.factor)
+            by = "unit" if name in asked else "%.6g" % self.scale.factor
             now = show_value(value)
             out.append("%s = %s%s" % (name, now, "" if was == now
                                       else "   <- %s x %s" % (was, by)))
@@ -455,9 +452,9 @@ def plan(case_type, config) -> Application:
 
     `config` is the OPERATOR's own: their geometry list and the roles on it are
     what the ruler is read from, and what the returned `Application` leaves
-    untouched. A case type declaring no characteristic length (every one
-    authored before #163) fits at 1:1 — and still asks for its physical
-    parameters, that question being about physics rather than scale.
+    untouched. A case type declaring no ruler (every one authored before #163)
+    fits at 1:1 — and still asks for its physical parameters, that question
+    being about physics rather than scale.
     """
     scale = (Scale() if case_type.characteristic is None
              else case_type.characteristic.scale_for(config))
@@ -474,8 +471,8 @@ def plan(case_type, config) -> Application:
     return Application(case_type, scale, values, tuple(confirmations))
 
 
-def fitted_fields(case_type, config) -> FieldOverlay:
-    """What the case type wants ON THIS DRAWING — the fair deviation ground.
+def fit(case_type, config) -> tuple:
+    """`(overlay, scale, why_not)` — what the case type wants ON THIS DRAWING.
 
     A deviation is "the operator moved a field the case type had an opinion
     about", and since #163 the value it has an opinion about is the FITTED one.
@@ -485,15 +482,18 @@ def fitted_fields(case_type, config) -> FieldOverlay:
 
     Falls back to the authored overlay when the ruler cannot be read off this
     drawing: no ruler means nothing was scaled, so the authored numbers ARE what
-    the case type wants. Logged rather than swallowed — the same refusal is a
-    hard one at `plan`.
+    the case type wants. The reason is RETURNED as well as logged, because a
+    caller that is answering the operator's question rather than grading a run
+    owes them that sentence — and the fallback rule stays here, so no host can
+    hold a second copy of it.
     """
     if case_type.characteristic is None:
-        return case_type.fields
+        return case_type.fields, None, ""
     try:
-        return FieldOverlay(plan(case_type, config).values)
+        fitted = plan(case_type, config)
     except CaseTypeError as exc:
         logger.debug("case type %r could not measure its characteristic length "
                      "on this drawing, so its fields are compared as authored: "
                      "%s", case_type.name, exc, exc_info=True)
-        return case_type.fields
+        return case_type.fields, None, str(exc)
+    return FieldOverlay(fitted.values), fitted.scale, ""

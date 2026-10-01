@@ -79,9 +79,17 @@ def _parse_confirmations(entries, application):
             raise CaseTypeError(
                 "--confirm %r names no physical parameter of this case type; "
                 "it asks about %s" % (raw, ", ".join(offered) or "none"))
-        if not sep or not value.strip():
+        if not sep:
             out[name] = offered[name]
             continue
+        if not value.strip():
+            # REFUSED rather than read as a bare name: `--confirm x=$VAL` with
+            # the variable unset is the shape this catches, and silently
+            # accepting somebody else's first cell height is the one thing this
+            # command exists to prevent.
+            raise CaseTypeError(
+                "--confirm %r gives an empty value; use the bare name %r to "
+                "accept the offered one" % (raw, name))
         try:
             out[name] = float(value)
         except ValueError as exc:

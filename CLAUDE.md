@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **43,016
-characters (43,256 bytes, 2026-10-01) ≈ 11k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **43,193
+characters (43,435 bytes, 2026-10-01) ≈ 11k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**44,000**, leaving 984 characters of slack — derived by a rule the gate states at that
+**44,000**, leaving 807 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -45,7 +45,7 @@ feature commit ever ran against it, and the file drifted 110 characters in total
 the missing guard, not damage done; #78 closed it. Before #75 it was a
 ratchet that TRACKED this file rather than only descending — over every commit touching the gate
 it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
-characters while `wc -c` reports bytes, and the two differ by 240 today because of the CJK in this
+characters while `wc -c` reports bytes, and the two differ by 242 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -313,9 +313,9 @@ plus any number of geometry files; `--run` then executes Run All.
 python3 tools/PreProcessor/save_case_type.py results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk \
     --name "Circular body, O-grid" --out config/my_case.casetype.json \
     --advice "max=Ask for a less aggressive first cell." --override "max.unusable=200.0" \
-    --fields-from config/multiblock_ogrid.dat --characteristic body.extent
+    --fields-from config/multiblock_ogrid.dat
 ```
-That mesh becomes the REFERENCE MESH: every bound is a figure it published times a tolerance factor, and the file records which mesh, when, and which bounds were hand-set instead. `--advice` selects the figures bounded; one the mesh could not measure gets none, out loud. `--fields-from` records the fields that case MOVED off the default, as a SPARSE overlay — so a field no case type mentions takes the ordinary default. `--characteristic ROLE.MEASURE` declares the CHARACTERISTIC LENGTH the geometry-driven sizes are relative to, MEASURED off that case's role-bearing geometries. Worked: `examples/case_types/ogrid_circle.casetype.json`.
+That mesh becomes the REFERENCE MESH: every bound is a figure it published times a tolerance factor, and the file records which mesh, when, and which bounds were hand-set instead. `--advice` selects the figures bounded; one the mesh could not measure gets none, out loud. `--fields-from` records the fields that case MOVED off the default, as a SPARSE overlay — so a field no case type mentions takes the ordinary default. `--characteristic ROLE.MEASURE` (e.g. `body.x_extent`) declares the CHARACTERISTIC LENGTH the geometry-driven sizes are relative to, MEASURED off that case's role-bearing geometries — omitted above on purpose, since BOTH of that case's geometries bear `body` and the ruler would be the far field's extent rather than the body's. Worked: `examples/case_types/ogrid_circle.casetype.json`, which declares none for that reason.
 
 **Apply a case type to your own geometry, at your own scale (headless):**
 ```bash

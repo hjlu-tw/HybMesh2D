@@ -100,11 +100,15 @@ EXCLUDED = {
 #: millimetre mesh left at the default `Linf`. The unit is what the physical
 #: parameters are converted THROUGH (`services/case_type_scale.py`), which is
 #: only meaningful while the two ends are free to differ.
+#: A v3 document that OWNED one is therefore refused rather than silently
+#: shorn of it — the one place the artefact was narrowed rather than widened,
+#: stated here and gated, so the message carries the remedy.
 EXCLUDED.update({
     name: "the length unit belongs to the operator's own drawing; a case type "
           "that set it would relabel their geometry rather than fit it, and a "
           "physical parameter is carried across the two units, not imposed on "
-          "them"
+          "them. A case type written before #163 that owns it is read by "
+          "deleting that one entry from its `fields` section"
     for name in ("length_unit", "length_unit_metres", "length_unit_name")
 })
 

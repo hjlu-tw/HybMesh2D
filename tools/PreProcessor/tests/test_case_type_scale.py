@@ -39,7 +39,9 @@ What this pins down:
   4. CONFIRMATION IS STRUCTURAL. `apply` RAISES while any physical parameter is
      unanswered and names it; the offered value confirms; the operator's own
      value wins over the offered one; confirming a field the case type does not
-     own is refused.
+     own is refused. And a physical parameter the case type does NOT carry is
+     not asked about — the sparse overlay working rather than a hole in the
+     question: nothing is inherited, so the operator's own value survives.
   5. A RULER THAT CANNOT BE READ REFUSES. No geometry bearing the role, a
      geometry file that will not load, a role-bearing set with no extent, an
      unknown role or measure, a recorded length of zero — six refusals, each
@@ -49,12 +51,17 @@ What this pins down:
      fields are not ownable and the refusal says why; a physical parameter
      carried to a drawing in another unit keeps its value IN METRES; a geometric
      size does NOT convert, the factor being a ratio of two lengths each in its
-     own project's units.
+     own project's units. And the GAP is pinned beside them: a case type with no
+     ruler records no authoring unit, so its physical parameters cross a unit
+     change UNCONVERTED, and what keeps that from being silent is that the
+     confirmation reports the metres value in the OPERATOR's units.
   7. EVERY LENGTH IS CLASSIFIED, both directions. `LENGTH_KIND`'s keys are
      exactly the `sci` fields the field-spec tables declare, so a new length
      cannot ship unclassified and default to "scale it".
   8. A v4 DOCUMENT ROUND-TRIPS AND A v3 ONE STILL LOADS, carrying no ruler and
      fitting every drawing at 1:1 — which is the behaviour it has always had.
+     With ONE narrowing, measured rather than claimed: a v3 document that OWNED
+     a `length_unit*` field is REFUSED, and the refusal carries the remedy.
   9. DEVIATION IS MEASURED AGAINST THE FITTED NUMBERS. A run of the fitted
      config deviates on nothing; comparing against the AUTHORED numbers would
      mark every geometric field of every rescaled run.
@@ -84,6 +91,13 @@ Known blind spots, named rather than papered over:
     naming `body` on a drawing whose far field also bears that role measures the
     far field, consistently at both ends. The refusal is for a role NOBODY
     bears, not for one borne by something the maintainer did not mean.
+  - A CASE TYPE WITH NO RULER CANNOT CONVERT A PHYSICAL PARAMETER. `unit_metres`
+    is recorded ON the characteristic length, so a case type that declares none
+    — every v3 document, and any v4 authored without `--characteristic` — has no
+    authoring unit to convert from. The value is carried literally and the
+    operator is still asked; check 6's last leg pins both halves, and the
+    confirmation's metres figure is what makes the mismatch visible. The remedy
+    is to declare a ruler, not to invent a unit.
   - THE CLASSIFICATION IS A JUDGEMENT. That `bl_initial_thickness` is physical
     and `surface_mesh_size` is not is argued in the service's docstring and
     pinned here; what check 7 measures is that every length HAS a judgement, not
@@ -117,11 +131,15 @@ that no other check moves (`others_green`):
      is a length nobody scales.
   G. `Scale.coord` multiplies instead of mapping about the centre -> check 2
      fails: a far-field box correct only for a body at the origin.
-  H. `fitted_fields` compares against the AUTHORED overlay -> check 9 fails:
+  H. `fit` hands back the AUTHORED overlay instead of the fitted one -> check 9 fails:
      every geometric field of every rescaled run reported as deviated.
   I. the apply HOST -- a subprocess, so no in-memory mutant reaches it -- stops
      asking the service to apply and writes the plan directly, and check 10
      fails.
+  K. `plan` builds a confirmation for every PHYSICAL field whether the case
+     type carries it or not -> check 4 fails: the operator is asked to confirm a
+     number nobody handed them, and answering it writes somebody else's default
+     over their own setting.
   J. negative control: the unmutated services pass every check.
 
 Run:  python3 tools/PreProcessor/tests/test_case_type_scale.py
@@ -479,6 +497,28 @@ def check_confirmation_is_structural(w):
                        "physical was accepted")
         except err:
             pass
+        # A PHYSICAL PARAMETER THE CASE TYPE DOES NOT CARRY IS NOT ASKED ABOUT,
+        # and that is the sparse overlay working rather than a hole in the
+        # question: nothing is inherited, so the operator's own value survives
+        # untouched. `--field` is how a maintainer who MEANS the default records
+        # it, and then it is asked about like any other.
+        fields = {n: v for n, v in AUTHORED.items()
+                  if w.scale.LENGTH_KIND.get(n) != w.scale.PHYSICAL}
+        silent = case(w, fields=fields, author_config=drawing(
+            [os.path.join(tmp, "author.dat")]))
+        quiet = w.scale.plan(silent, op)
+        op.bl_initial_thickness = 9.5e-7
+        if quiet.confirmations:
+            # Reported and NOT applied: `apply` would raise on the unanswered
+            # question and take every check below this one with it, which reads
+            # as the harness rather than as the mutation.
+            bad.append("a case type owning no physical parameter still asks "
+                       "about %r — nothing was inherited, so there is nothing "
+                       "to confirm" % [c.name for c in quiet.confirmations])
+        elif quiet.apply(op).bl_initial_thickness != 9.5e-7:
+            bad.append("applying a case type that owns no physical parameter "
+                       "moved the operator's own first cell height; nothing "
+                       "was inherited, so nothing may be overwritten")
     return bad
 
 
@@ -596,6 +636,28 @@ def check_unit_system_is_used(w):
         if app_m.confirmations[0].offered != AUTHORED["bl_initial_thickness"]:
             bad.append("with both drawings in metres the first cell height was "
                        "not carried through literally")
+        # A CASE TYPE WITH NO RULER RECORDS NO AUTHORING UNIT, so there is
+        # nothing to convert FROM and the value crosses unconverted. Pinned
+        # rather than left unmeasured, and what makes it safe rather than silent
+        # is that the confirmation reports the metres value in the OPERATOR's
+        # units: the absurd length shows up at the moment they are asked.
+        ct, op, _ = _fitted(w, tmp, op_unit="mm")
+        bare = w.case_type.CaseType(ct.name, ct.metric, fields=ct.fields)
+        app_bare = w.scale.plan(bare, op)
+        if not app_bare.confirmations:
+            bad.append("a case type with no ruler stopped asking about its "
+                       "physical parameters")
+            return bad
+        c = app_bare.confirmations[0]
+        if c.offered != AUTHORED["bl_initial_thickness"]:
+            bad.append("a case type with no ruler converted a physical "
+                       "parameter (%r); it records no authoring unit, so there "
+                       "is nothing to convert from" % c.offered)
+        if abs(c.metres - AUTHORED["bl_initial_thickness"] * 1.0e-3) > 1e-18:
+            bad.append("the confirmation reports %r m; it must report what the "
+                       "value will MEAN in the operator's own units, which is "
+                       "how an unconverted one shows up as the absurd length "
+                       "it is" % c.metres)
     return bad
 
 
@@ -643,8 +705,11 @@ def check_document_round_trips(w):
                 or abs(a.value - b.value) > 1e-12
                 or tuple(a.centre) != tuple(b.centre)
                 or a.unit_metres != b.unit_metres):
-            bad.append("the ruler did not survive a round trip: %r -> %r"
-                       % (a, b))
+            bad.append("the ruler did not survive a round trip: %s/%s %r %r "
+                       "-> %s/%s %r %r"
+                       % (a.role, a.measure, a.value, a.centre,
+                          getattr(b, "role", None), getattr(b, "measure", None),
+                          getattr(b, "value", None), getattr(b, "centre", None)))
         # A v3 document — every case type authored before #163 — still loads,
         # carries no ruler and fits at 1:1.
         doc = back.to_dict()
@@ -669,6 +734,26 @@ def check_document_round_trips(w):
                 "n", "m", fields={"mesh_mode": 1}).to_dict():
             bad.append("a case type declaring no ruler writes an empty section "
                        "it never had")
+        # THE ONE NARROWING, and the gate's claim must not be wider than its
+        # assert. #163 made the three `length_unit*` fields unownable, so a v3
+        # document that OWNED one is REFUSED — deliberate, and the refusal has
+        # to carry the remedy or an operator with such a file is stuck.
+        doc["fields"] = dict(doc.get("fields") or {})
+        doc["fields"]["length_unit_metres"] = 0.0254
+        hostile = os.path.join(tmp, "v3_unit.json")
+        with open(hostile, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        try:
+            w.case_type.load(hostile)
+            bad.append("a v3 document owning `length_unit_metres` still loads; "
+                       "a case type that sets the operator's unit relabels "
+                       "their geometry, which is what excluding it is for")
+        except w.case_type.CaseTypeError as exc:
+            for token in ("length_unit_metres", "drawing", "fields"):
+                if token not in str(exc):
+                    bad.append("the refusal of a v3 unit field does not say "
+                               "%r — an operator with such a file needs the "
+                               "reason AND the remedy: %s" % (token, exc))
     return bad
 
 
@@ -679,7 +764,7 @@ def check_deviation_is_against_the_fitted(w):
         tmp = os.path.realpath(_raw)
         ct, op, app = _fitted(w, tmp)
         fitted = app.apply(op, confirm_all(app))
-        wanted = w.scale.fitted_fields(ct, fitted)
+        wanted = w.scale.fit(ct, fitted)[0]
         moved = w.fields.deviations(wanted, fitted)
         if moved:
             bad.append("a run of the FITTED config deviates on %s — the "
@@ -697,7 +782,7 @@ def check_deviation_is_against_the_fitted(w):
                        "field %r" % ({d.name for d in raw}, geometric))
         # And the operator who really moved something is still told so.
         fitted.surface_mesh_size *= 2.0
-        moved = w.fields.deviations(w.scale.fitted_fields(ct, fitted), fitted)
+        moved = w.fields.deviations(w.scale.fit(ct, fitted)[0], fitted)
         if [d.name for d in moved] != ["surface_mesh_size"]:
             bad.append("a real edit to a fitted config reported %r"
                        % [d.name for d in moved])
@@ -1032,8 +1117,8 @@ check(check_sizes_scale_and_coords_map(inj) and others_green(inj, 2),
       "right only for a body drawn at the origin")
 
 inj = mutate("case_type_scale",
-             "        return FieldOverlay(plan(case_type, config).values)",
-             "        return case_type.fields")
+             "    return FieldOverlay(fitted.values), fitted.scale, \"\"",
+             "    return case_type.fields, fitted.scale, \"\"")
 check(check_deviation_is_against_the_fitted(inj) and others_green(inj, 9),
       "injection H. check 9 ALONE fails when deviation is measured against the "
       "AUTHORED numbers — every geometric field of every rescaled run reported "
@@ -1060,6 +1145,23 @@ with tempfile.TemporaryDirectory() as _tmp:
     check(not check_the_hosts_answer(_REAL),
           "injection I. ...and the UNmutated host still passes it, so the "
           "failure above is the mutation and not the copy or its PYTHONPATH")
+
+inj = mutate("case_type_scale",
+             "    for name, value in case_type.fields.values.items():",
+             "    from app.models.mesh_config import MeshConfig as _MC\n"
+             "    _all = dict(case_type.fields.values)\n"
+             "    for _n, _k in LENGTH_KIND.items():\n"
+             "        if _k == PHYSICAL and _n not in _all:\n"
+             "            _all[_n] = getattr(_MC(), _n)\n"
+             "    for name, value in _all.items():")
+check(check_confirmation_is_structural(inj) and others_green(inj, 4, 3, 9),
+      "injection K. check 4 fails when `plan` asks about a physical parameter "
+      "the case type does NOT carry — the sparse overlay's own rule, read the "
+      "other way: a field it has no opinion about is not inherited, so there is "
+      "nothing to confirm and the operator's own value must survive. Checks 3 "
+      "and 9 go with it, and are not claimed as independent evidence: both "
+      "compare an applied config field by field, and the mutant now writes a "
+      "field neither of them handed it")
 
 check(not any(fn(_REAL) for num, fn in _ALL.items()),
       "injection J. negative control: the unmutated services pass every check, "
