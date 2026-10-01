@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
-from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT
+from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT, is_reason
+from app.services import case_type_verdict
 from app.utils import (find_binary_executable, repo_root, confirm,
                        report_error)
 # Re-exported so `from app.controllers.mesh_gen_ctrl import mesh_input_warning`
@@ -275,6 +276,20 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
             self.main_window.mesh_canvas_view.clear_error_highlights()
             if rc not in (RC_CANCELLED, RC_TIMEOUT):
                 self._try_highlight_self_intersection_error()
+
+        # THE VERDICT (#160). The same `run_report` the headless host calls, so
+        # the window and an unattended log cannot grade one mesh two ways: the
+        # service reads the figures this run published, applies the active case
+        # type's thresholds and returns the text AND the grade. Reported on a
+        # FAILED run too — `EXIT_ERR_INVERTED` (9) is the state this layer most
+        # needs to say, and the mesher exports that mesh under its ordinary
+        # name. Skipped for the worker's own out-of-band sentinels, which are
+        # not mesher exit codes: judging a run the user cancelled would be an
+        # answer about nothing. One graded message, not one per line.
+        if not is_reason(rc):
+            verdict, level = case_type_verdict.run_report(expected_vtk_path, rc)
+            if verdict:
+                self.log_report(verdict, level=level)
 
         # Auto-export chain (Export-before-Generate foolproofing): run the pending
         # export only if a mesh is now actually available; drop it otherwise.

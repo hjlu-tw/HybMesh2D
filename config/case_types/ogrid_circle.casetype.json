@@ -1,0 +1,26 @@
+{
+  "schema": "hybmesh-case-type",
+  "version": 1,
+  "name": "Circular body, O-grid",
+  "metric": "quad_midline_ratio",
+  "thresholds": [
+    {
+      "key": "median",
+      "attention": 2.5,
+      "unusable": 6.0,
+      "advice": "The typical cell is far from square. Check that the radial count is in proportion to the azimuthal one — an O-grid with 96 points round the body and 12 out to the far field stretches every cell the same way."
+    },
+    {
+      "key": "bulk.p95",
+      "attention": 2.5,
+      "unusable": 5.0,
+      "advice": "The cells away from the wall band are stretched. Spread the radial spacing law out: a growth rate that reaches its final interval early leaves the outer rows long and thin."
+    },
+    {
+      "key": "max",
+      "attention": 50.0,
+      "unusable": 200.0,
+      "advice": "The worst cell is in the wall band and its ratio is the azimuthal spacing over BL_INITIAL_THICKNESS. Either ask for a less aggressive first cell or put more points round the body; this number is arithmetic, not a defect to smooth away."
+    }
+  ]
+}

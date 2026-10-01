@@ -20,17 +20,15 @@ import threading
 from app.models.mesh_config import MeshConfig
 from app.models.pipeline_config import PipelineConfig
 from app.services import (
-    derived_geoms, ib_handoff, pipeline_stages, solver_case, stl3d_case,
+    case_type_verdict, derived_geoms, ib_handoff, mesh_shape_stats,
+    pipeline_stages, solver_case, stl3d_case,
 )
 from app.services.derived_geoms import DerivedGeometryError
 from app.services.pipeline_bc_derive import derive_bc_definitions
-from app.services.pipeline_case_sources import (
-    case_sources_for, derived_origins,
-)
+from app.services.pipeline_case_sources import case_sources_for, derived_origins
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.services.case_files import CLI_RUN_TAG
 from app.services.mesh_modes import missing_mesh_input
-from app.services import mesh_shape_stats
 from app.services.paths import (
     find_binary_executable, find_solver_executables, repo_root,
 )
@@ -242,6 +240,12 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
                      on_process=on_process)
     finally:
         _rm(cfg_path)
+    # The VERDICT a case type passes on this run (#160) — the SAME call the GUI
+    # makes, silent when none is in play. It PRECEDES the two report lines below
+    # by design: the next line raises, and exit 9's `unusable` must be SAID.
+    verdict, _level = case_type_verdict.run_report(vtk, rc)
+    if verdict:
+        log("[Mesh] " + verdict)
     if rc != 0:
         raise PipelineError(f"HybMesh2D failed (code {rc})")
     if not os.path.exists(vtk):

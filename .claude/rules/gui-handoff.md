@@ -4,6 +4,7 @@ paths:
   - tools/PreProcessor/gui/app/services/project_file_kind*
   - tools/PreProcessor/gui/app/services/mesh_grid_lookup*
   - tools/PreProcessor/gui/app/services/mesh_shape_stats*
+  - tools/PreProcessor/gui/app/services/case_type*
   - tools/PreProcessor/gui/app/views/panels/mesh_stats_panel*
   - tools/PreProcessor/gui/app/models/mesh_output_names*
   - tools/PreProcessor/gui/app/controllers/mesh_export_ctrl*
@@ -15,9 +16,11 @@ paths:
 # GUI file hand-off rules
 
 Loaded on demand when the mesh-BC audit, the project-file classifier, the case-grid lookup,
-the shape-summary reader, the Mesh Statistics panel, the mesh output-name resolver, the
-mesh-export / Mesh-layers / solver controller, or the segment model is read — **10 files**,
-verified to match. **Rules only** — the rationale (the
+the shape-summary reader, the CASE TYPE and its verdict, the Mesh Statistics panel, the mesh
+output-name resolver, the mesh-export / Mesh-layers / solver controller, or the segment model
+is read — **12 files**, verified to match. The `services/case_type*` glob is #160's: a case
+type GRADES the same `.provenance.json` this file's sixth concern already reads inward, so
+the reader and the judge sit together rather than one area's rule being split in two. **Rules only** — the rationale (the
 measurements, the dated USER-REPORTED failures, the reversals and the named blind spots) is
 `docs/design_notes/gui.md`. Read that note before overruling a rule here; when a rule changes,
 update BOTH.
@@ -267,3 +270,66 @@ first time**. The fact moved **up**, not down.
 Gated by `tests/test_seg_edit_carryover.py`, which drives the real `surface_resampler` (so the wipe
 cannot quietly stop happening) and the real controller handler.
 
+**A CASE TYPE HOLDS THE THRESHOLDS THE MESHER REFUSES TO HOLD, AND THE VERDICT HAS FOUR STATES**
+(`services/case_type.py` = the artefact, `services/case_type_verdict.py` = the grading, both
+Qt-free; `config/case_types/ogrid_circle.casetype.json`; #160, parent #158). The mesher measures
+and never grades, by decision; a case type's threshold is not universal — it is scoped to one
+class of problem and authored by someone who knows that class. Read
+`docs/adr/0002-thresholds-live-in-case-types.md` before concluding the mesher's rule was violated.
+- **The mesher is NOT modified.** The inputs are `mesh.quality` in the `.provenance.json`
+  sidecar, read through `mesh_shape_stats.read_shape_summary`, plus the process exit code. No
+  second reader and no recomputation.
+- **FOUR states, and `not determinable` is not optional.** `usable`, `needs attention`,
+  `unusable`, `not determinable`. An unmeasurable figure is the fourth and NEVER the first: the
+  mesher returns negative, never 0.0, and prints `not measured` so that "we did not measure"
+  cannot read as "it came out perfect". **"Unmeasurable" is asked of the SET**
+  (`ShapeFigures.measured`), never of one figure's sign — `include/CellShape.hpp` writes a set's
+  count 0 exactly when its three figures are negative.
+- **`EXIT_ERR_INVERTED` (9) is `unusable` before any figure is read**, because non-orthogonality
+  is blind to a fold that preserves angles and the mesh is exported under its ordinary name. The
+  Python mirror of that code is in `case_type_verdict.py` and is held against
+  `include/ExitCodes.hpp`'s own enum by check 1 of the gate.
+- **Worst wins: unusable > not determinable > needs attention > usable.** One unmeasurable figure
+  beside two good ones is NOT the milder answer.
+- **A case type NAMES its metric** and a mesh measured with the other path's metric is `not
+  determinable` — `quad_midline_ratio` against `tri_edge_ratio` is comparing nothing (#130).
+- **A threshold is an UPPER bound with two levels** (`attention`, `unusable`; either may be
+  omitted), because every published figure is a ratio whose floor is 1.0. **Advice is REQUIRED**
+  — "needs attention" with nothing to try is a dead end — and **an unknown key is REFUSED at both
+  levels**, document and threshold: a bound misspelled into a key nobody reads is a threshold
+  that silently stops biting.
+- **ONE call for both hosts: `run_report(mesh_path, exit_code)`**, returning the text AND the log
+  grade. `controllers/mesh_gen_ctrl.py` passes both to `log_report` (one graded message, not one
+  per line) and `services/pipeline_runner.py` logs the text; **neither host may spell a verdict
+  state, a threshold comparison or a grade of its own**, which the gate reads out of their ASTs.
+  The headless call sits ABOVE the guard that raises on a non-zero exit, or exit 9's `unusable`
+  could never be said. The GUI skips `RC_CANCELLED` / `RC_TIMEOUT`: those are the worker's own
+  sentinels, not mesher exit codes.
+- **Which case type is in play is NOT decided here.** `HYBMESH_CASE_TYPE` names it, as the one
+  channel both hosts read identically; #162 builds the picker that replaces it. Unset means no
+  verdict at all — **there is no default case type**, which would be a universal threshold
+  wearing a different hat.
+- **ONE SEAM, TWO FILES**, split by the ~500-line standard and not by subject: the thresholds and
+  their advice are declared in `case_type.py` and nowhere else. Same cut as `mesh_config.py` /
+  `mesh_config_validate.py` (#159), dependency one way.
+Gated by `tests/test_case_type_verdict.py` (13 checks and eight automated injections, each
+asserting the mutation is well-formed, that the named check reddens and that no other does; the
+counts are that file's own docstring's and are not restated here).
+  Why: `docs/design_notes/gui.md`, "A CASE TYPE'S THRESHOLDS, AND THE FOUR-STATE VERDICT".
+
+## Named blind spots
+
+One list per rule file (`docs/agents/rule-file-style.md` rule 5). These are this file's coverage
+limits — what a gate does NOT check — as distinct from the caveats stated with the rules above,
+which are capability refusals.
+
+- **Nothing judges whether a THRESHOLD IS RIGHT.** The shipped case type's bounds are round
+  numbers above a measurement; #161 makes a threshold a measurement times a tolerance and #168
+  corrects one with evidence.
+- **The "neither host grades" check reads SOURCE**, so a third host that grew its own grading is
+  invisible to it.
+- **The GUI leg drives `_on_mesh_gen_finished` with a recording stand-in for the main window.**
+  That the verdict is wired to a button and rendered by the log panel is not checked here.
+- **The sidecar carries only the CELL SHAPE figures.** Inverted counts, non-orthogonality and the
+  wall first-cell error are on the `HYBMESH_MB_QUALITY` stdout line, so no threshold can be set on
+  them and the only route to `unusable` from a fold is the exit code.

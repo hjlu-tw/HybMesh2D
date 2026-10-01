@@ -111,6 +111,11 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
   - **NO COLOUR AND NO THRESHOLD, anywhere, by decision.** The shipped O-grid's max is 32.77 =
     0.0327 azimuthal spacing / 0.001 requested `BL_INITIAL_THICKNESS` — what the user asked for,
     not a defect. `test_multiblock_quality_gate.py` gains no bar on these three figures.
+    **STILL TRUE, AND THRESHOLDS NOW EXIST ONE LAYER UP** (#160):
+    `docs/adr/0002-thresholds-live-in-case-types.md` puts them in a CASE TYPE, which is scoped to
+    one class of problem and consumes the `.provenance.json` figures this report writes. The rule
+    here is about UNIVERSALITY, so the two coexist — and nothing in `MbQuality`, the banner or the
+    machine line may gain a bar, a colour or a grade on their account.
   - **THE SHIPPED C-GRID'S max 3147.958 IS THE SAME QUOTIENT, and it is ARITHMETIC** (#140). Its
     worst cell is the LAST cell on the wake cut, at the outlet: **3.143570** — the last of the
     wake's 24 intervals, `count` 25 with `ds_start` 0.005 over a 19-chord span — over **0.000998606**,

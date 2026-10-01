@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 292, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 294, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -3790,6 +3790,121 @@ from disk by `--sync`, never remembered, which is exactly the decay it was built
   nothing stops a new caller importing from the inner module, and the two paths would then have to
   be kept in step by hand if either ever stopped re-exporting. No gate, by decision; the
   alternative is a scan whose allow-list would be longer than the rule.
+
+**A CASE TYPE'S THRESHOLDS, AND THE FOUR-STATE VERDICT** (#160, parent #158;
+`services/case_type.py` + `services/case_type_verdict.py`, both Qt-free;
+`config/case_types/ogrid_circle.casetype.json`; gated by
+`tests/test_case_type_verdict.py`).
+
+The tracer bullet for #158's workflow. The problem it starts on is in that issue's own words:
+the tool reports and grades nothing, "deliberately with NO COLOUR AND NO THRESHOLD, anywhere,
+by decision, because whether 30° of non-orthogonality is bad depends on the problem. True, and
+useless to someone who does not know what 30° means for *their* problem." So a **case type**
+carries the thresholds and the mesher does not, which is
+`docs/adr/0002-thresholds-live-in-case-types.md` and is the thing a future reader will
+mistake for a violated rule if they find thresholds here without reading it.
+
+* **THE MESHER IS NOT TOUCHED, AND THAT IS CHECKABLE RATHER THAN CLAIMED.** No file under
+  `src/`, `include/`, `tests/cpp/` or `CMakeLists.txt` changed, and `golden_mesh.py compare`
+  over all 21 mesher cases is **21 SAME, every one at exactly 0.0** — 20 meshes plus
+  `isolated_corner`, the junction shape that is expected to refuse and so matched a NO-MESH
+  outcome rather than a deviation. Everything this work reads is already on disk: the
+  `mesh.quality` block of the `.provenance.json` sidecar, through
+  `services/mesh_shape_stats.py`'s existing reader, and the process exit code.
+* **FOUR STATES, NOT THREE PLUS AN ERROR.** `usable`, `needs attention`, `unusable`, `not
+  determinable`. The fourth is forced by a rule the mesher already paid for: it returns
+  NEGATIVE, never 0.0, for anything it could not measure and prints `not measured`, precisely
+  so that "we did not measure" never reads as "it came out perfect". Collapsing that into a
+  pass at this layer would spend the rule for nothing, so an unmeasurable figure is `not
+  determinable` — asserted in the gate for every one of the nine figure keys a threshold can
+  name, and separately for a sidecar carrying no `layer`/`bulk` split at all.
+* **THE SET IS THE HONEST UNIT FOR "UNMEASURABLE", NOT ONE FIGURE'S SIGN.**
+  `include/CellShape.hpp` says a `ShapeStats`' count "is 0 exactly when the three figures are
+  negative", so the three move together and `ShapeFigures.measured` is the existing spelling of
+  the question. Reading one figure's sign instead would accept a set the producer never writes,
+  and would put a second definition of "measured" beside #131's.
+* **`EXIT_ERR_INVERTED` (9) IS DECIDED BEFORE ANY FIGURE IS READ.** The mesher exports a folded
+  mesh under its ordinary filename and keeps `blSuccess` true, by design, so that a developer
+  can see the fold; for an operator that same file is a folded mesh that looks entirely normal.
+  The short circuit is not merely belt-and-braces: non-orthogonality is BLIND to a fold that
+  preserves angles (`.claude/rules/mesher-quality.md`), so no published figure can be relied on
+  to notice what the exit code already said. Injection B of the gate deletes that short circuit
+  and reddens exactly the check written for it.
+* **WORST WINS, AND THE ORDER IS AN ARGUMENT.** `unusable` > `not determinable` > `needs
+  attention` > `usable`. Positive evidence of a defect outranks the absence of evidence about
+  something else, and the absence outranks a figure that merely crossed a bound — otherwise one
+  unmeasurable figure among three good ones would be reported as the milder answer, which is
+  the collapse the fourth state exists to prevent, reached by a different route. Injection D
+  swaps the middle two and reddens that check alone.
+* **THE METRIC NAME IS MATCHED, NOT ASSUMED.** `quad_midline_ratio` and `tri_edge_ratio` are
+  different quantities and "a reader that compares one against the other is comparing nothing"
+  (#130), so a case type NAMES its metric and a mesh measured with another one is `not
+  determinable`. That is also how the gate reaches the fourth state from a fully measured mesh.
+* **A THRESHOLD IS AN UPPER BOUND AND NEEDS NO DIRECTION FLAG**, because every figure the
+  sidecar publishes is a ratio whose floor is 1.0 and whose larger values are worse. Two bounds
+  rather than one, `attention` and `unusable`, because four states need two bands; either may be
+  omitted, and an `unusable` below its `attention` is refused on load as a band with nothing in
+  it.
+* **ADVICE IS REQUIRED, EMPTY ADVICE IS REFUSED.** #158's user story 13 asks that "needs
+  attention" be actionable instead of a dead end, and a case type that may carry an empty string
+  can produce one silently. The gate's injection F removes that refusal and reddens the
+  load-refusal check.
+* **AN UNKNOWN KEY IS REFUSED, AT BOTH LEVELS.** A threshold naming a figure the mesher does not
+  publish, and a bound misspelled into a key nobody reads (`atention`), are both a threshold
+  that silently stops biting — the exact failure the layer exists against — so `from_dict`
+  refuses unknown keys on the document and on each threshold rather than ignoring them. It is
+  also what makes the versioned schema usable: a document from a later build fails loudly.
+* **ONE RENDERING AND ONE GRADE, FOR BOTH HOSTS.** `run_report(mesh_path, exit_code)` returns
+  the text AND the log level, and is the only thing either host calls; the GUI passes both to
+  `log_report` so a four-line verdict is ONE graded message rather than four, which is #102's
+  rule. The gate reads both hosts' ASTs and fails if either spells a verdict state, a threshold
+  comparison or a grade of its own, so "the same service" is measured rather than asserted.
+* **THE HEADLESS CALL SITS ABOVE THE GUARD THAT RAISES.** `pipeline_runner._run_mesh` raises on
+  any non-zero exit, so a verdict reported after that guard could never say the one thing this
+  layer exists to say. It is reported first and the guard still raises. The GUI reports on a
+  failed run for the same reason, and skips the worker's own out-of-band sentinels
+  (`RC_CANCELLED`, `RC_TIMEOUT`) because those are not mesher exit codes and a verdict about a
+  run the user stopped is an answer about nothing.
+* **ONE SEAM, TWO FILES, AND THE SPLIT IS THE 500-LINE STANDARD.** #158 decided judging belongs
+  with the case type "because thresholds belong to the case type; splitting them would put one
+  body of knowledge in two places". It does not: the thresholds, their bounds and their advice
+  are declared in `case_type.py` and nowhere else, and `case_type_verdict.py` only applies them.
+  Written as one module it measured 523 lines against a ~500 limit, which is the situation #159
+  prefactored three other files out of; the cut is the same one #159 made between
+  `mesh_config.py` (declares) and `mesh_config_validate.py` (judges), and the dependency runs
+  one way.
+* **THE SHIPPED CASE TYPE'S NUMBERS ARE HAND-AUTHORED, AND SAY SO.** `ogrid_circle.casetype.json`
+  bounds `median` at 2.5/6.0, `bulk.p95` at 2.5/5.0 and `max` at 50/200, against the shipped
+  O-grid's published 1.845977 / 1.877756 / 32.767868 (measured 2026-09-30) — so it reads that
+  mesh as `usable`, and the gate also proves it is not decoration by tightening every bound to
+  1.0 and watching the verdict move. They are ROUND numbers above a measurement, not a
+  measurement times a tolerance: #161 is the ticket that makes a threshold a demonstration and
+  records which reference mesh it came from, and #168 the one that corrects a threshold with
+  evidence. `bulk.p95` rather than the whole-mesh `p95` is #144's finding — the O-grid's
+  whole-mesh p95 of 23.662 describes its wall band, not its mesh.
+* **`HYBMESH_CASE_TYPE` IS AN INTERIM CHANNEL, OWNED BY THIS TICKET.** Which case type is in
+  play — picking one, assigning roles, overlaying its config fields — is #162's whole subject,
+  and `models/pipeline_config.py` is the worst offender against the file-length standard
+  (pinned at 520) so a field there would have had to be bought with a split. An environment
+  variable is the one channel both hosts read identically with no GUI chrome for #162 to unpick,
+  and a run with it unset says nothing at all rather than inventing a default — a default case
+  type would be a universal threshold wearing a different hat, which is the one thing ADR-0002
+  rules out.
+* **TWO IMPORTS IN `services/pipeline_runner.py` WERE REFLOWED FOR ROOM.** That file stood at 495
+  lines against the 500 limit; the verdict call is 5 lines, and the two lines for it came from
+  folding `pipeline_case_sources`' two-name import back onto one line and merging
+  `mesh_shape_stats` into the grouped `from app.services import (...)`. Recorded because a
+  reviewer seeing an unrelated import reflow in a feature diff should find the reason rather
+  than infer one.
+
+**Named blind spots.** Nothing here judges whether a threshold is RIGHT; the gate holds the
+machinery and #161/#168 hold the numbers. The host check reads SOURCE, so a third host that grew
+its own grading would be invisible to it. The GUI leg drives `_on_mesh_gen_finished` with a
+recording stand-in for the main window, not a real one — that the verdict is wired to a button
+and rendered by the log panel is `smoke_headless_appcontroller.py`'s territory. And the
+`.provenance.json` carries only the CELL SHAPE figures: inverted counts, non-orthogonality and
+the wall first-cell error are on the `HYBMESH_MB_QUALITY` stdout line and are NOT available to a
+threshold, so the only route to `unusable` from a fold is the exit code.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
