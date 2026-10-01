@@ -143,11 +143,18 @@ characteristic length, and is the one thing a case type asks the operator to con
 every application rather than applying silently.
 _Avoid_: absolute parameter, fixed parameter
 
-**Preview**:
+**Trial**:
 A mesh generated for the operator to look at and decide whether to adjust. It is the
-inspect-and-tweak loop: the operator may run it as many times as they like, and nothing
-downstream consumes what it produces.
-_Avoid_: draft, test mesh, quick mesh
+inspect-and-tweak loop: the operator may run it as many times as they like, it carries a
+verdict, and nothing downstream consumes what it produces. Named Trial, not Preview,
+because Preview is taken.
+_Avoid_: preview, draft, test mesh, quick mesh
+
+**Preview**:
+The existing canvas drawing of the far-field box, the boundaries and their BCs, shown
+while the operator is still editing. It generates no mesh. Already named "BC Preview" in
+the menu; the term is reserved for it and must not be reused for anything that meshes.
+_Avoid_: BC preview, boundary preview
 
 **Generate**:
 The action that produces the mesh the solver will read, and commits it to the case along
