@@ -18,12 +18,13 @@ paths:
 Loaded on demand when the mesh-BC audit, the project-file classifier, the case-grid lookup,
 the shape-summary reader, the CASE TYPE and its verdict, the Mesh Statistics panel, the mesh
 output-name resolver, the mesh-export / Mesh-layers / solver controller, or the segment model
-is read — **15 files**, verified to match. The `services/case_type*` glob is #160's: a case
+is read — **16 files**, verified to match. The `services/case_type*` glob is #160's: a case
 type GRADES the same `.provenance.json` this file's sixth concern already reads inward, so
 the reader and the judge sit together rather than one area's rule being split in two. It
-reaches FIVE files since #162 — the document, the figures and provenance it holds, the
-config overlay, the verdict and the authoring step — all five being the ~500-line standard's
-cuts through one artefact rather than five seams. **Rules only** — the rationale (the
+reaches SIX files since #163 — the document, the figures and provenance it holds, the
+config overlay, the characteristic length that fits that overlay to another drawing, the
+verdict and the authoring step — all six being the ~500-line standard's cuts through one
+artefact rather than six seams. **Rules only** — the rationale (the
 measurements, the dated USER-REPORTED failures, the reversals and the named blind spots) is
 `docs/design_notes/gui.md`. Read that note before overruling a rule here; when a rule changes,
 update BOTH.
@@ -40,13 +41,14 @@ looks converged, a float parse error on JSON, a file literally named `mesh_<case
 whose labels nothing carries, a quality figure measuring a quantity the mesher never reported.
 That is the family resemblance, and it is why they are one file.
 
-**TWO files this rules on are reached by NO glob in ANY rule file**:
-`tools/PreProcessor/save_case_type.py`, #161's authoring host, and
-`tools/PreProcessor/show_case_type.py`, #162's inspecting one. Both sit outside
+**THREE files this rules on are reached by NO glob in ANY rule file**:
+`tools/PreProcessor/save_case_type.py`, #161's authoring host,
+`tools/PreProcessor/show_case_type.py`, #162's inspecting one, and
+`tools/PreProcessor/apply_case_type.py`, #163's applying one. All three sit outside
 `gui-seams.md`'s tree-wide `tools/PreProcessor/gui/**` as well — so the tripwire row in
 `CLAUDE.md` is the only thing that reaches their reader, the same gap recorded for `run_batch.py`
-and `CMakeLists.txt`. Both are outside `tests/test_silent_exceptions.py`'s swept tree for the
-same reason, and both carry the narrow handler that file's absence argues for.
+and `CMakeLists.txt`. All three are outside `tests/test_silent_exceptions.py`'s swept tree for the
+same reason, and all three carry the narrow handler that file's absence argues for.
 
 **Boundaries run BOTH ways.**
 - **Outward.** Three owners sit under other rule files' globs. `models/mesh_config.py`
@@ -399,7 +401,7 @@ moves away from them.
   parameter is added, and nobody could tell which disagreement was an opinion (user story 36).
 - **THE CAPTURE IS A SUBTRACTION, and that is what makes it sparse without a tick list.** The
   maintainer built a case they are happy with, so the fields they MOVED OFF THE DEFAULT ARE the
-  fields they have an opinion about — `capture_differences`, three of 77 for the shipped
+  fields they have an opinion about — `capture_differences`, three of 74 for the shipped
   O-grid. `--field` is the one way a field sitting at a default becomes an opinion.
 - **WHAT MAY BE OWNED IS DERIVED FROM THE TWO MODELS, never listed**: the SCALAR dataclass
   fields of `MeshConfig` and `TopologyModel`, minus a declared `EXCLUDED` set stating its
@@ -425,10 +427,11 @@ moves away from them.
   became an absolute 1e-6 and missed `bl_initial_thickness` 0.001 -> 0.0010008; unfloored,
   no single relative value separates `%.6g`'s own rounding error (up to 5e-6) from its
   finest expressible change (1e-5) by more than a factor of two. Rendering answers both
-  ends, and the gate asserts both. **`LENGTH_UNIT_METRES` is written at `%.10g` and gets that
-  format** (`FINER_PRECISION`), because `length_unit_metres` IS metres-per-grid-unit — `Linf`,
-  and so the Reynolds number, which this repo has lost a run to being wrong by 1000x. A second
-  entry in that map would mean the writer grew a third precision.
+  ends, and the gate asserts both. **It is ONE format again since #163**: `FINER_PRECISION`
+  gave `length_unit_metres` the writer's own `%.10g`, because it IS metres-per-grid-unit —
+  `Linf`, and so the Reynolds number — and #163 made that field UNOWNABLE, so the map named a
+  field no overlay can hold. It left with its subject, and the rule has to come back if a unit
+  field ever becomes ownable again.
 - **DEVIATION IS A COMPARISON, NOT A HISTORY.** `deviations` asks what the overlay says and
   what the config says NOW, over the owned fields and ONLY those — so a field the case type has
   no opinion about can be changed freely (user story 21), and putting an owned one back removes
@@ -464,6 +467,90 @@ asserting the mutation is well-formed, that the named checks redden and that no 
 counts are that file's own docstring's and are not restated here).
   Why: `docs/design_notes/gui.md`, "A CASE TYPE'S CONFIG FIELDS, AND WHAT A DEVIATION COSTS".
 
+**ONE CASE TYPE FITS A GEOMETRY AT ANY SCALE, AND A PHYSICAL PARAMETER IS CONFIRMED RATHER
+THAN APPLIED** (`services/case_type_scale.py`, Qt-free;
+`tools/PreProcessor/apply_case_type.py` is the applying host; #163, parent #158). #162's
+overlay carries numbers that fit the geometry it was authored on, so a case type built on a
+1 m body hands a 10 mm one the same 0.02 surface size and meshes it in two cells (user story
+22). The whole ticket turns on a distinction a single number cannot carry: which of a case
+type's lengths belong to the SIZE of the body and which to the FLOW over it.
+- **THE RULER IS DECLARED BY ROLE AND MEASURE, AND MEASURED — NEVER TYPED.** A case type names
+  a ROLE (`MeshConfig.geom_roles`'s own vocabulary, with `body` for the DEFAULT role that model
+  spells as the ABSENCE of an entry) and one of four MEASURES (`extent`, `x_extent`, `y_extent`,
+  `diagonal`), and `CharacteristicLength.derive` is the ONLY constructor: it reads the length
+  and the CENTRE off the role-bearing geometries of whatever drawing it meets — the
+  maintainer's at `save_case_type.py --characteristic body.extent`, the operator's at apply.
+  Same rule as #161's threshold: a figure somebody typed is a figure nobody can trace. What is
+  DECLARED is which curve the sizes are about, which no measurement can decide.
+- **FOUR KINDS OF LENGTH, AND WHICH FIELDS ARE LENGTHS IS DERIVED.** A field is a length
+  exactly when its `FieldSpec.kind` is `sci` — this repo's existing declaration of a physical
+  length, the one that decides the unit suffix (`field_spec.LENGTH_KINDS`). What each one MEANS
+  is a judgement nothing records, so `LENGTH_KIND` declares it per field: `SIZE` scales by the
+  ratio, `X`/`Y` are POSITIONS and map AFFINELY about the ruler's own centre, `PHYSICAL` never
+  scales. **A `sci` field missing from that map FAILS the gate**, in both directions — the
+  default would otherwise be "scale it", which is the wrong default for the one field that
+  matters most.
+- **A COORDINATE IS NOT A SIZE.** `DOMAIN_X_MIN` is a position in the geometry's frame, so
+  multiplying it is right only for a body at the origin. The reference centre travels in the
+  declaration and the operator's is re-derived, so a case type authored on a body at the origin
+  fits a drawing whose body sits at (500, 300).
+- **A PHYSICAL PARAMETER IS CARRIED UNSCALED AND CONFIRMED ON EVERY APPLICATION.** The
+  boundary-layer first cell height is set by the Reynolds number and the target y+; scaling it
+  with the body would claim a bigger aerofoil has a thicker boundary layer. `PHYSICAL_WHY`
+  states that reason per field and it is PRINTED, because "confirm this number" with no reason
+  is a dialog people learn to dismiss. **`Application.apply` RAISES while any is unanswered** —
+  user story 23 made structural rather than left to a dialog a second host could skip — and a
+  confirmation may carry the operator's OWN value, so confirming and adjusting are one act.
+  Confirming a field that is not one of the asked-about parameters is REFUSED: an edit wearing
+  a confirmation's name would be invisible to the deviation report.
+- **IT USES THE LENGTH-UNIT SYSTEM RATHER THAN DUPLICATING IT.** The geometric factor is a
+  ratio of two lengths each measured in its OWN project's grid units, so the unit cancels and
+  nothing converts. The physical parameter is the opposite case: `services/units.py` records
+  that `length_unit_metres` IS metres-per-grid-unit, and a first cell height means a height in
+  METRES, so carrying one from a metre case into a millimetre drawing multiplies by the ratio
+  of the two unit factors — the existing rule applied where it has always applied, not a second
+  one. **The three `length_unit*` fields are therefore NOT ownable** (`EXCLUDED`): a case type
+  that imposed its author's unit would RELABEL the operator's geometry rather than fit it,
+  which is the 1000x error this repo has lost a run to.
+- **A RULER THAT CANNOT BE READ REFUSES, and never falls back.** No geometry bearing the named
+  role (the refusal names the role and the roles that ARE borne), a geometry file that will not
+  load, a role-bearing set with no extent, an unknown role or measure, a recorded length of
+  zero. A guessed ruler produces a mesh that looks right and is the wrong size, which is the
+  failure this exists to remove. The geometry goes through
+  `geometry_service.load_points_dat`, the tree's one validated loader, and `measure_role` takes
+  the paths AS THE CONFIG HOLDS THEM — `models/mesh_config_io.py` resolves every geometry token
+  to an absolute path as it loads, and a second resolution rule here could only disagree.
+- **DEVIATION IS MEASURED AGAINST THE FITTED NUMBERS, not the authored ones**
+  (`fitted_fields`, called by `case_type_verdict.run_report` and by
+  `show_case_type.py --config`). The value a case type has an opinion about on THIS drawing is
+  the one its ruler scaled to; comparing against the authored number would mark every geometric
+  field of every rescaled run as the operator's own edit. A case type with NO ruler, or one
+  whose ruler this drawing cannot provide, falls back to the authored overlay and logs it at
+  `debug` — not an error there, since no ruler means nothing was scaled.
+- **`SCHEMA_VERSION` is 4 and `READABLE_VERSIONS` is `(1, 2, 3, 4)`.** A v3 document is a v4
+  that declares no ruler and fits every drawing at 1:1 — which is the behaviour it has always
+  had — and still asks for its physical parameters to be confirmed, that question being about
+  physics rather than scale. A case type declaring none writes NO `characteristic_length`
+  section. The artefact has now been WIDENED three times rather than replaced.
+- **ONE SEAM, SIX FILES**, every cut the ~500-line standard: `case_type_scale.py` is
+  re-exported from the document (`CharacteristicLength`, `Application`, `plan`) so no caller
+  learns a new name, and the dependency still runs one way — scale -> fields -> figures,
+  document -> scale, verdict -> scale.
+- **`apply_case_type.py` is a HEADLESS host**, like the two beside it and for the same reason:
+  #166 owns the picker and the Trial/Generate actions. Without `--confirm` it exits 1, names
+  the unconfirmed parameter and writes nothing; `--confirm NAME` accepts the offered value and
+  `--confirm NAME=VALUE` supplies the operator's own. **There is deliberately no flag that
+  confirms everything**, because a case type's whole risk is that somebody else's Reynolds
+  number is not yours.
+Gated by `tests/test_case_type_scale.py` (twelve checks and nine automated injections, each
+asserting the mutation is well-formed, that the named checks redden and that no other does;
+the counts are that file's own docstring's and are not restated here). Its last check runs the
+REAL binary three times — the case type at 1x, at 100x, and a CONTROL that scales the first
+cell height too — and the control's published figures match the 1x run's to within 1% while
+the correctly fitted run's differ by more than 10x. That control is what makes the end-to-end
+leg falsifiable without an injection.
+  Why: `docs/design_notes/gui.md`, "ONE CASE TYPE FITS A GEOMETRY AT ANY SCALE".
+
 **WHY THIS FILE AND NOT A THIRTEENTH, recorded because the opposite call has precedent.** This
 file's thesis is "is a file one stage leaves on disk still correct when the NEXT one reads it",
 and grading is a different question — which is the exact argument #153 used to split
@@ -491,10 +578,20 @@ which are capability refusals.
   invisible to it.
 - **The GUI leg drives `_on_mesh_gen_finished` with a recording stand-in for the main window.**
   That the verdict is wired to a button and rendered by the log panel is not checked here.
-- **NOTHING SCALES AN APPLIED FIELD.** A case type applied to a geometry at another scale
-  produces the same numbers; the characteristic length, and the physical parameters that must
-  NOT move with it, are #163. `bl_initial_thickness` is in the shipped overlay and is exactly
-  the field that ticket will mark physical.
+- **A ROLE IS PER GEOMETRY, NOT PER SEGMENT.** #163's acceptance says "the role-bearing
+  segments" and what exists is `MeshConfig.geom_roles`, keyed by geometry FILE. The measure
+  is a pure function of a point set either way, so a per-segment assignment would narrow
+  which points are handed in and change nothing in `case_type_scale.py` — but it is #164's,
+  and until then the ruler is read off whole geometries.
+- **NOTHING JUDGES WHETHER THE DECLARED RULER IS THE RIGHT CURVE.** A case type naming the
+  `body` role on a drawing whose far field also bears it (which is what a `MESH_MODE 1` case
+  with two plain `GEOM_FILE` lines looks like) measures the pair — consistently at both ends,
+  so the ratio still scales, but it is not the chord the maintainer meant. The refusal is for
+  a role NOBODY bears, never for one borne by something unintended. The shipped case type
+  therefore declares no characteristic length at all.
+- **THE LENGTH CLASSIFICATION IS A JUDGEMENT.** That `bl_initial_thickness` is physical and
+  `surface_mesh_size` is not is argued in `case_type_scale.py`'s docstring; what the gate
+  measures is that every `sci` field HAS a judgement, not that each one is right.
 - **AN OVERLAY NAMING A FAMILY CANNOT BE WRITTEN TO A `.dat` ON ITS OWN.** `save_to_file`
   PROJECTS a named family's topology document, and every family but the H-grid refuses to build
   one with no geometry to bind to — so applying a case type that names `ogrid` produces a config

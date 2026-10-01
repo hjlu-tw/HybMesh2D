@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 297, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 298, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -4176,6 +4176,118 @@ ships no project that uses the O-grid template — so the family half of the ove
 constructed inputs only. **And there is still no GUI**: no picker, no Trial, no Generate, so
 "the operator can see which fields the case type owns" is measured at a headless host, which is
 where #161 deliberately left the authoring action too.
+
+**ONE CASE TYPE FITS A GEOMETRY AT ANY SCALE** (#163, parent #158;
+`services/case_type_scale.py`, Qt-free; `tools/PreProcessor/apply_case_type.py`; gated by
+`tests/test_case_type_scale.py`).
+
+#162's own gate named the gap this closes, in as many words: "NOTHING HERE SCALES ANYTHING. A
+case type applied to a geometry at another scale produces the same numbers." The overlay carries
+the maintainer's 0.02 surface size and their -12..20 far-field box, which fit the 1 m body they
+were measured on and nothing else. The whole ticket turns on a distinction a single number cannot
+carry — which of a case type's lengths belong to the SIZE of the body and which to the FLOW over
+it — and the second half of that distinction is the reason it is not just a multiplication.
+
+* **THE RULER IS DECLARED AND MEASURED, AND THOSE ARE DIFFERENT ACTS.** What the maintainer
+  supplies is a ROLE and a MEASURE — `--characteristic body.x_extent` — and what the tool
+  supplies is the number, read off the role-bearing geometries of whatever drawing it is pointed
+  at. Same argument as #161's threshold, applied to a different artefact: a maintainer asked for
+  their own chord types the one they remember, and a figure somebody typed is a figure nobody can
+  trace. `CharacteristicLength.derive` is the ONLY constructor, so there is no door through which
+  a typed length can enter; the gate's check 1 drives all four measures against a real geometry
+  file and then drives the authoring HOST to show that what lands in the file is what was
+  measured.
+* **THE ROLE VOCABULARY IS NOT NEW.** `MeshConfig.geom_roles` already names `farfield`, `wall`,
+  `nobl` and `seed`, and spells the default role — a geometry that grows a boundary layer — as
+  the ABSENCE of an entry. `body` is that absence given a word. Inventing a second vocabulary
+  would have meant two answers to "which curve is the body" on the day #164 lands the panel that
+  assigns one.
+* **FOUR KINDS OF LENGTH, AND ONLY THE JUDGEMENT IS HAND-WRITTEN.** Which fields ARE lengths is
+  derived: `FieldSpec.kind == "sci"` is already this repo's declaration of a physical length —
+  it is what decides the unit suffix and the decade-stepping spin box — so `length_fields()`
+  reads the three spec tables rather than listing anything. What each length MEANS is a judgement
+  nothing in the tree records, and `LENGTH_KIND` writes it down per field: eighteen entries,
+  seventeen geometric and one physical. **The gate fails on a `sci` field missing from that map,
+  in both directions.** That is the load-bearing part: the default for an unclassified length
+  would be "carry it through", which reads as right for the one field that must not scale and is
+  wrong for the sixteen that must. Injection F deletes one entry and check 7 reddens.
+* **A COORDINATE IS NOT A SIZE, and the first draft of this would have got it wrong.**
+  `DOMAIN_X_MIN` is a position in the geometry's own frame; multiplying it by 100 is correct only
+  when the body happens to sit at the origin, which is true of every shipped example here and
+  would therefore have shipped undetected. So the declaration carries the CENTRE of the
+  role-bearing geometries as well as their extent, the operator's centre is re-derived, and a
+  position maps `c_op + (v - c_ref) * factor`. The gate's operator box is deliberately at
+  (500, 300) for exactly this reason, and injection G — multiply instead of map — reddens check 2
+  alone.
+* **THE PHYSICAL PARAMETER IS THE POINT, NOT AN EXCEPTION TO IT.** The boundary-layer first cell
+  height is set by the Reynolds number and the target y+. Scaling it with the body amounts to
+  claiming that smaller aerofoils have thinner boundary layers; carrying it SILENTLY hands the
+  operator somebody else's flow conditions wearing their own geometry. So `Application.apply`
+  raises while any physical parameter is unanswered, and the refusal lives in the SERVICE rather
+  than in a dialog — a prompt can be skipped by a second host, a raise cannot. A confirmation may
+  carry the operator's own value rather than the offered one, which is what keeps the question
+  from being a button people learn to click; and confirming a field that was NOT asked about is
+  refused, because an edit wearing a confirmation's name would be invisible to the deviation
+  report. `PHYSICAL_WHY` states the reason per field and it is printed: "confirm this number"
+  with no reason is the dialog everyone dismisses.
+* **IT USES THE UNIT SYSTEM RATHER THAN DUPLICATING IT, and the two halves pull opposite ways.**
+  The geometric factor is a ratio of two lengths each measured in its own project's grid units,
+  so the unit cancels and nothing converts — a drawing declared in millimetres scales by exactly
+  the same 100 as one in metres. The physical parameter is the opposite case, and it is the one
+  `services/units.py` was written about: `length_unit_metres` IS metres-per-grid-unit, `Linf`,
+  so a first cell height means a height in METRES and carrying 0.0002 literally into a
+  millimetre drawing is a first cell a thousand times too thin. That is the same 1000x this repo
+  has already lost a run to, reached from the other direction. Note this does NOT contradict
+  `units.py`'s own rule that changing a project's declared unit RELABELS rather than rescales:
+  that is one drawing being renamed, this is a value crossing between two.
+* **SO THE THREE `length_unit*` FIELDS STOPPED BEING OWNABLE.** They were ownable under #162 by
+  derivation rather than by decision — they are scalars on `MeshConfig`. A case type that set one
+  would relabel the operator's drawing, which is the destructive version of the same error, and
+  it would also make the physical conversion vacuous by forcing both ends to agree. Excluding
+  them had one consequence worth recording: #162's `FINER_PRECISION` map existed solely to give
+  `length_unit_metres` the `%.10g` the `.dat` writer uses for it, so the map named a field no
+  overlay can hold any more and LEFT WITH ITS SUBJECT, along with `same()`'s `name` parameter.
+  The rule is kept as a comment at `DAT_PRECISION` and has to come back if a unit field ever
+  becomes ownable again; #162's gate now holds that condition instead of the rule.
+* **DEVIATION HAD TO MOVE WITH THE SCALING, and this is the defect the work would otherwise have
+  introduced.** `deviations` compares the overlay against the config NOW. Once a geometric field
+  is scaled on application, comparing against the AUTHORED number marks every one of them as the
+  operator's own edit — a run that did exactly what the case type said, reported as deviated on
+  six fields. `fitted_fields` is the fair ground, and both readers of it (the verdict's
+  `run_report` and `show_case_type.py --config`) go through it so the two cannot disagree. It
+  falls back to the authored overlay when the ruler cannot be read off the drawing, which is not
+  a silent wrong: no ruler means nothing was scaled, so the authored numbers ARE what the case
+  type wants. Injection H reverts the comparison and check 9 reddens alone.
+* **THE END-TO-END LEG CARRIES ITS OWN CONTROL, because the mesher publishes no first cell
+  height on the hybrid path.** The gate runs the real binary three times: the case type at 1x, the
+  same case type fitted to a 100x drawing, and a CONTROL that scales the first cell height too.
+  The control's figures match the 1x run's to within 1% — it is a geometrically SIMILAR mesh, so
+  every ratio is unchanged — while the correctly fitted run's p95 is more than 10x larger,
+  because its boundary layer stayed at its absolute height while the body grew. Measured
+  2026-10-01 on a NACA 0012: 1x p95 36.09, control p95 36.09, fitted p95 2184.72. That control is
+  what makes the leg falsifiable without an injection: an implementation that scaled the first
+  cell height would make the fitted run match the 1x one and the check would fail.
+* **THE INJECTION THE TICKET ASKS FOR BY NAME.** Injection B reclassifies `bl_initial_thickness`
+  as `SIZE`. Check 3 reddens, and so do checks 4, 6 and 8 — the confirmation list, the metres
+  carried across a unit change and the question a rulerless case type still asks are all keyed
+  off the same classification, which is stated in the injection's own message rather than
+  claimed as independent evidence. Check 9 does NOT move and is not claimed to.
+
+**Named blind spots.** **A role is per GEOMETRY here, not per segment**: the ticket's acceptance
+says "the role-bearing segments" and what exists is `MeshConfig.geom_roles`, keyed by geometry
+file. The measure is a pure function of a point set either way, so a per-segment assignment
+narrows which points are handed in and changes nothing in this module — but it does not exist,
+and the panel that lets an operator assign one, like deriving a BINDING from one, is #164's. **Nothing judges whether the declared ruler is the right curve**: a case type
+naming `body` on a drawing whose far field also bears that role — which is what a `MESH_MODE 1`
+case with two plain `GEOM_FILE` lines looks like, and the shipped O-grid is exactly that —
+measures the pair, consistently at both ends, so the ratio still scales but it is not the chord
+the maintainer meant. That is why the shipped case type declares no characteristic length at all,
+and the refusal is for a role NOBODY bears rather than for one borne by something unintended.
+**The classification is a judgement**: what the gate measures is that every length HAS one, not
+that each one is right. **Check 12 measures the mesher's published figures, not the first cell
+height itself**, the hybrid sidecar publishing none. **And there is still no GUI**: no picker and
+no Trial, so "the operator is asked to confirm" is measured at the service and at the headless
+host, which is where #161 and #162 both left their actions too.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

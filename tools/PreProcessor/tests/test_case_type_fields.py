@@ -26,7 +26,7 @@ drops by exactly one audible notch.
 What this pins down:
 
   1. CAPTURE IS SPARSE AND IS A SUBTRACTION. The fields recorded off a working
-     case are exactly the ones it moved OFF THE DEFAULT — three of 77 for the
+     case are exactly the ones it moved OFF THE DEFAULT — three of 74 for the
      shipped O-grid `.dat` — and a field sitting at its default is recorded only
      when the maintainer names it.
   2. A ROUND TRIP PRESERVES EXACTLY THAT SET. Save -> load gives back the same
@@ -48,7 +48,9 @@ What this pins down:
      WOULD WRITE THEM; and the smallest edit that writer CAN carry — one `%.6g`
      step on a 1e-3 first-cell height — IS one. Both ends, because a comparison
      that is wrong at either is wrong, and the first version of this service was
-     wrong at the coarse one.
+     wrong at the coarse one. The `%.10g` half of that rule LEFT in #163 with
+     the one field it named, and this check now holds the condition it left
+     under rather than the rule.
   6. A DEVIATED VERDICT IS STILL ISSUED, IS MARKED, AND NAMES THE FIELDS. The
      STATE is identical to the undeviated one — deviation is not a downgrade of
      the answer — and the report says which fields moved rather than how many.
@@ -79,11 +81,11 @@ What this pins down:
      technique's blind spot.
 
 Known blind spots, named rather than papered over:
-  - NOTHING HERE SCALES ANYTHING. A case type applied to a geometry at another
-    scale produces the same numbers, which is #163's subject: the characteristic
-    length, and the physical parameters that must not move with it.
-    `bl_initial_thickness` is in the shipped overlay and is exactly the field
-    #163 will mark physical.
+  - NOTHING HERE SCALES ANYTHING, and since #163 that is a statement about this
+    FILE rather than about the tree. The characteristic length, the four kinds
+    of length and the physical parameters that must not move with the body are
+    `tests/test_case_type_scale.py`'s; every overlay here is applied at 1:1,
+    which is what a case type declaring no ruler still does.
   - NOTHING HERE BINDS TO A DRAWING. Bindings are excluded from the vocabulary
     and that exclusion is gated; deriving a binding from a role is #164.
   - NO GUI. There is no picker, no Trial and no Generate — #166 — so "the
@@ -556,16 +558,17 @@ def check_deviation_names_owned_fields_only(w):
                        "not reported as a deviation"
                        % (reread.bl_initial_thickness,
                           nudged.bl_initial_thickness))
-    # `length_unit_metres` is the one field the writer puts out at `%.10g`, and
-    # it IS metres-per-grid-unit — Linf, and so the Reynolds number. A change
-    # finer than six significant figures must still deviate, or the costliest
-    # field in the vocabulary is the one that goes quiet.
-    unit = overlay(w, {"length_unit": "custom", "length_unit_metres": 0.0254})
-    finer = F.apply(unit)
-    finer.length_unit_metres = 0.02540001
-    if [d.name for d in F.deviations(unit, finer)] != ["length_unit_metres"]:
-        out.append("a 1e-7 change to length_unit_metres — which the .dat really "
-                   "carries, at %.10g — is not reported as a deviation")
+    # THE `%.10g` LEG LEFT WITH ITS SUBJECT (#163). It compared
+    # `length_unit_metres`, the one field `mesh_config_io` writes finer than
+    # `%.6g`; #163 made the three `length_unit*` fields unownable — the unit
+    # belongs to the operator's drawing, not to a case type — so there is no
+    # overlay that can hold one, and `FINER_PRECISION` went with it. That the
+    # three really are refused is `tests/test_case_type_scale.py` check 6.
+    unownable = [n for n in ("length_unit", "length_unit_metres",
+                             "length_unit_name") if n in F.ownable_names()]
+    if unownable:
+        out.append("%s became ownable again; the `%%.10g` leg this check used "
+                   "to carry has to come back with it" % ", ".join(unownable))
     return out
 
 
@@ -995,15 +998,15 @@ check(check_deviation_names_owned_fields_only(inj) and others_green(inj, 5),
 
 inj = mutate("case_type_fields",
              '''    names = [n for n in ownable_names()
-             if not same(_get(config, n), _get(default, n), n)]''',
+             if not same(_get(config, n), _get(default, n))]''',
              "    names = list(ownable_names())")
 check(len(inj.fields.capture_differences(MeshConfig())) == len(
           inj.fields.ownable_names()),
       "injection C. injection is well-formed: capture is now a full snapshot")
 check(check_capture_is_sparse(inj) and others_green(inj, 1),
       "injection C. check 1 ALONE fails when the capture stops subtracting the "
-      "default — a case type that records all 77 fields goes stale the day a "
-      "78th is added, which is the design this ticket exists against")
+      "default — a case type that records all 74 fields goes stale the day a "
+      "75th is added, which is the design this ticket exists against")
 
 inj = mutate("case_type_verdict",
              "                   checked=len(reasons), deviations=deviations)",

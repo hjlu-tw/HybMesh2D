@@ -29,6 +29,13 @@ drops that bound's tolerance factor, so the file itself shows which bounds were
 measured and which were typed; `--override max.unusable=` (an empty value)
 removes that bound altogether.
 
+`--characteristic ROLE.MEASURE` declares the CHARACTERISTIC LENGTH the case
+type's geometry-driven sizes are relative to (#163) — `body.extent`, say. The
+length itself is never typed: it is MEASURED off the role-bearing geometries of
+the case `--fields-from` names, exactly as a threshold is measured off the
+reference mesh. Without it a case type carries numbers that fit only the
+geometry they were authored on.
+
 `--fields-from` is the other half of the same action (#162): it reads the case's
 own mesh configuration — a `.dat`, a `.hws` workspace or a pipeline script — and
 records the fields it has MOVED OFF THE DEFAULT as the case type's sparse
@@ -61,6 +68,7 @@ if _GUI_DIR not in sys.path:
 
 from app.services import case_type_author
 from app.services import case_type_fields
+from app.services import case_type_scale
 from app.services.case_type import BOUNDS, CaseTypeError
 
 
@@ -137,6 +145,26 @@ def _read_fields(from_path, extra):
         case_type_fields.read_config(from_path), extra or ())
 
 
+def _read_characteristic(spec, from_path):
+    """The characteristic length `--characteristic ROLE.MEASURE` declares.
+
+    MEASURED off the case `--fields-from` names, never typed — so declaring one
+    with no case to read it from is refused rather than defaulted, the same shape
+    as `--field` without `--fields-from`.
+    """
+    if not spec:
+        return None
+    role, _, measure = str(spec).partition(".")
+    if not from_path:
+        raise CaseTypeError(
+            "--characteristic %s names the length this case type's sizes are "
+            "relative to, but no --fields-from says which case to MEASURE it on"
+            % spec)
+    return case_type_scale.CharacteristicLength.derive(
+        case_type_fields.read_config(from_path), role.strip(),
+        measure.strip() or "extent")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Save a working case as a case type, with thresholds "
@@ -171,6 +199,13 @@ def main() -> int:
                          "a pipeline script). Every field it has moved off the "
                          "default becomes part of the case type's sparse "
                          "overlay.")
+    ap.add_argument("--characteristic", metavar="ROLE.MEASURE",
+                    help="declare the characteristic length the geometry-driven "
+                         "sizes are relative to, e.g. `body.extent`. Measured "
+                         "off --fields-from's own role-bearing geometries; "
+                         "roles: %s; measures: %s."
+                         % (", ".join(case_type_scale.ROLES),
+                            ", ".join(case_type_scale.MEASURES)))
     ap.add_argument("--field", action="append", metavar="NAME",
                     help="record this field as well, even where it equals the "
                          "ordinary default; repeatable. Needs --fields-from, "
@@ -179,6 +214,8 @@ def main() -> int:
 
     try:
         fields = _read_fields(args.fields_from, args.field)
+        characteristic = _read_characteristic(args.characteristic,
+                                              args.fields_from)
         reference = case_type_author.measure_reference(
             args.mesh, ident=args.reference_id, measured_on=args.measured_on)
         result = case_type_author.author(
@@ -186,7 +223,8 @@ def main() -> int:
             _parse_advice(args.advice, args.advice_from),
             attention_factor=args.attention_factor,
             unusable_factor=args.unusable_factor,
-            overrides=_parse_overrides(args.override), fields=fields)
+            overrides=_parse_overrides(args.override), fields=fields,
+            characteristic=characteristic)
         result = case_type_author.save_authored(result, args.out)
     except (CaseTypeError, OSError, json.JSONDecodeError) as exc:
         # NARROW on purpose, and narrower than it first read: `CaseTypeError` IS
@@ -204,6 +242,12 @@ def main() -> int:
              reference.measured_on))
     for th in case_type.thresholds:
         print("  %-13s %s" % (th.key, th.describe_bounds()))
+    if case_type.characteristic is not None:
+        # Printed beside the thresholds for the same reason they are: a ruler
+        # measured off the wrong curve fits every size wrongly, and the only
+        # moment the maintainer can notice is now.
+        print("  characteristic length: %s"
+              % case_type.characteristic.describe())
     for name in case_type.fields.describe():
         # The overlay is PRINTED for the same reason the thresholds above are:
         # a maintainer who captured a field they did not mean, or missed one

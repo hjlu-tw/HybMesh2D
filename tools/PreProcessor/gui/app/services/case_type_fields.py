@@ -93,6 +93,20 @@ EXCLUDED = {
         "records that THIS project stopped projecting its template, which is "
         "provenance about one project rather than a reusable setting",
 }
+#: The length UNIT a drawing is in belongs to the drawing, never to a case type
+#: (#163). `length_unit_metres` IS metres-per-grid-unit — the solver's `Linf` —
+#: so a case type that imposed its author's unit would RELABEL the operator's
+#: geometry rather than fit it, and this repo has already lost a run to a
+#: millimetre mesh left at the default `Linf`. The unit is what the physical
+#: parameters are converted THROUGH (`services/case_type_scale.py`), which is
+#: only meaningful while the two ends are free to differ.
+EXCLUDED.update({
+    name: "the length unit belongs to the operator's own drawing; a case type "
+          "that set it would relabel their geometry rather than fit it, and a "
+          "physical parameter is carried across the two units, not imposed on "
+          "them"
+    for name in ("length_unit", "length_unit_metres", "length_unit_name")
+})
 
 #: The precision `models/mesh_config_io.py` writes every float in the mesher's
 #: `.dat` at. TWO floats are the same value here when they RENDER THE SAME at
@@ -113,16 +127,17 @@ EXCLUDED = {
 #: both sides answers both: a round-tripped value renders to itself, and a
 #: one-step edit renders differently. Found in review, twice.
 #:
-#: ONE FIELD IS WRITTEN FINER, and it is the one field where missing a change
-#: is expensive: `LENGTH_UNIT_METRES` goes out at `%.10g`, and
-#: `length_unit_metres` IS metres-per-grid-unit — `Linf`, and so the Reynolds
-#: number, which this repo has already lost a run to being wrong by 1000x. So
-#: it gets the writer's own format for that line rather than a named blind
-#: spot. The map is keyed by field and is expected to stay this short: it
-#: mirrors `mesh_config_io`, and a second entry means that writer grew a third
-#: precision.
+#: IT IS ONE FORMAT AGAIN SINCE #163, and the second one's departure is worth
+#: recording rather than silently reverting to. #162 added a `FINER_PRECISION`
+#: map because `LENGTH_UNIT_METRES` goes out at `%.10g` and `length_unit_metres`
+#: IS metres-per-grid-unit — `Linf`, and so the Reynolds number, which this repo
+#: has lost a run to being wrong by 1000x; a change finer than six significant
+#: figures to the costliest field in the vocabulary had to still deviate. #163
+#: made that field UNOWNABLE — the unit belongs to the operator's drawing, not
+#: to a case type — so the map named a field no overlay can hold and the second
+#: format could never be reached. It left with its subject. If a unit field ever
+#: becomes ownable again, this is the rule that has to come back with it.
 DAT_PRECISION = "%.6g"
-FINER_PRECISION = {"length_unit_metres": "%.10g"}
 
 
 def _binding(name: str) -> bool:
@@ -200,24 +215,20 @@ def _set(config, name: str, value) -> None:
         setattr(config, name, value)
 
 
-def same(a, b, name: str = "") -> bool:
+def same(a, b) -> bool:
     """True when two overlay values are the same value.
 
     Floats are the same when they RENDER THE SAME at the precision the `.dat`
-    writer uses for `name` — see `DAT_PRECISION` for why rendering and not a
-    tolerance. Everything else is equality. `bool` is checked before the numeric
-    path because `True == 1` in Python and a case type that says
-    `export_vtk: true` has not been deviated from by a config holding `1`.
-
-    `name` is optional because a caller comparing two loose values has none; it
-    then gets the format all but one field is written at.
+    writer uses — see `DAT_PRECISION` for why rendering and not a tolerance.
+    Everything else is equality. `bool` is checked before the numeric path
+    because `True == 1` in Python and a case type that says `export_vtk: true`
+    has not been deviated from by a config holding `1`.
     """
     if isinstance(a, bool) or isinstance(b, bool):
         return bool(a) is bool(b)
     if isinstance(a, float) or isinstance(b, float):
-        fmt = FINER_PRECISION.get(name, DAT_PRECISION)
         try:
-            return (fmt % float(a)) == (fmt % float(b))
+            return (DAT_PRECISION % float(a)) == (DAT_PRECISION % float(b))
         except (TypeError, ValueError):
             return False
     return a == b
@@ -279,7 +290,7 @@ class FieldOverlay:
         about, so that I know what I am overriding when I change one". A list
         rather than a string, because the two hosts indent it differently.
         """
-        return ["%s = %s" % (name, _show(self.values[name]))
+        return ["%s = %s" % (name, show_value(self.values[name]))
                 for name in self.values]
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
@@ -304,8 +315,13 @@ def _why_not_ownable(name: str) -> str:
             % (name, ", ".join(ownable_names())))
 
 
-def _show(value) -> str:
-    """A value as the reports spell it. One owner, so two reports agree."""
+def show_value(value) -> str:
+    """A value as the reports spell it. One owner, so two reports agree.
+
+    PUBLIC since #163, because `apply_case_type.py` prints a confirmed physical
+    parameter and a host spelling a value its own way is the drift this exists
+    against. It was `_show` while every caller was inside the seam.
+    """
     if isinstance(value, bool):
         return "on" if value else "off"
     if isinstance(value, float):
@@ -376,7 +392,7 @@ def capture_differences(config, extra=()) -> FieldOverlay:
     """
     default = MeshConfig()
     names = [n for n in ownable_names()
-             if not same(_get(config, n), _get(default, n), n)]
+             if not same(_get(config, n), _get(default, n))]
     for name in extra:
         if name not in names:
             names.append(str(name))
@@ -411,7 +427,7 @@ class Deviation:
 
     def describe(self) -> str:
         return ("%s: the case type sets %s, this run uses %s"
-                % (self.name, _show(self.wanted), _show(self.actual)))
+                % (self.name, show_value(self.wanted), show_value(self.actual)))
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
         return "Deviation(name=%r)" % self.name
@@ -427,7 +443,7 @@ def deviations(overlay: FieldOverlay, config) -> tuple:
     out = []
     for name, wanted in overlay.values.items():
         actual = _get(config, name)
-        if not same(wanted, actual, name):
+        if not same(wanted, actual):
             out.append(Deviation(name, wanted, actual))
     return tuple(out)
 
@@ -448,7 +464,7 @@ class FieldDiff:
         self.right = right
 
     def _side(self, value) -> str:
-        return "no opinion" if value is self.MISSING else _show(value)
+        return "no opinion" if value is self.MISSING else show_value(value)
 
     def describe(self) -> str:
         return "%s: %s | %s" % (self.name, self._side(self.left),
@@ -473,7 +489,7 @@ def diff(left: FieldOverlay, right: FieldOverlay) -> tuple:
             continue
         a = left.values[name] if in_left else FieldDiff.MISSING
         b = right.values[name] if in_right else FieldDiff.MISSING
-        if in_left and in_right and same(a, b, name):
+        if in_left and in_right and same(a, b):
             continue
         out.append(FieldDiff(name, a, b))
     return tuple(out)

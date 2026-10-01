@@ -80,6 +80,9 @@ from app.services.case_type_reference import ReferenceMesh
 from app.services.case_type_reference import opt_float
 from app.services.case_type_reference import split_key  # noqa: F401
 from app.services.case_type_fields import FieldOverlay
+from app.services.case_type_scale import CharacteristicLength
+from app.services.case_type_scale import Application  # noqa: F401
+from app.services.case_type_scale import plan  # noqa: F401
 from app.services.case_type_fields import apply  # noqa: F401
 from app.services.case_type_fields import deviations  # noqa: F401
 from app.services.case_type_fields import diff  # noqa: F401
@@ -90,7 +93,7 @@ from app.services.case_type_fields import ownable_names  # noqa: F401
 #: overlay, reference-mesh provenance), so the version is what lets a later
 #: reader tell a file it understands from one it does not.
 SCHEMA = "hybmesh-case-type"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 #: Every version this build can READ; `SCHEMA_VERSION` is the only one it
 #: WRITES. A v1 document is a v2 document carrying no reference meshes and no
@@ -99,7 +102,7 @@ SCHEMA_VERSION = 3
 #: is what every case type authored before #162 is. So the artefact has now been
 #: WIDENED twice rather than replaced, and the version is still what makes a
 #: document from a LATER build fail loudly instead of being partly read.
-READABLE_VERSIONS = (1, 2, 3)
+READABLE_VERSIONS = (1, 2, 3, 4)
 
 #: The environment variable naming the active case type file. INTERIM: #166
 #: builds the picker that replaces it.
@@ -246,13 +249,14 @@ class CaseType:
     """
 
     __slots__ = ("name", "metric", "thresholds", "source", "references",
-                 "fields")
+                 "fields", "characteristic")
 
     def __init__(self, name: str, metric: str,
                  thresholds: "list[Threshold] | None" = None,
                  source: str = "",
                  references: "list[ReferenceMesh] | None" = None,
-                 fields: "FieldOverlay | dict | None" = None):
+                 fields: "FieldOverlay | dict | None" = None,
+                 characteristic: "CharacteristicLength | None" = None):
         if not str(name).strip():
             raise CaseTypeError("a case type must have a name")
         if not str(metric).strip():
@@ -270,6 +274,10 @@ class CaseType:
         # would have written a case type with no opinion about anything.
         self.fields = (fields if isinstance(fields, FieldOverlay)
                        else FieldOverlay(fields))
+        #: The ruler this case type's geometry-driven sizes are expressed
+        #: against, or ``None`` for one authored before #163 — which fits every
+        #: drawing at 1:1, the behaviour it has always had.
+        self.characteristic = characteristic
         seen = set()
         for th in self.thresholds:
             if th.key in seen:
@@ -356,7 +364,8 @@ class CaseType:
                 "this build reads"
                 % (version, ", ".join(str(v) for v in READABLE_VERSIONS)))
         unknown = set(doc) - {"schema", "version", "name", "metric",
-                              "thresholds", "reference_meshes", "fields"}
+                              "thresholds", "reference_meshes", "fields",
+                              "characteristic_length"}
         if unknown:
             # Refused for the same reason an unknown THRESHOLD key is: a case
             # type is expected to grow fields, so a key this build does not read
@@ -375,11 +384,18 @@ class CaseType:
                    thresholds=[Threshold.from_dict(t) for t in raw],
                    source=source,
                    references=[ReferenceMesh.from_dict(r) for r in refs],
-                   fields=FieldOverlay.from_dict(doc.get("fields")))
+                   fields=FieldOverlay.from_dict(doc.get("fields")),
+                   characteristic=CharacteristicLength.from_dict(
+                       doc.get("characteristic_length")))
 
     def to_dict(self) -> dict:
         out = {"schema": SCHEMA, "version": SCHEMA_VERSION,
                "name": self.name, "metric": self.metric}
+        if self.characteristic is not None:
+            # Written only when declared, for the reason `fields` below is: a
+            # case type that names no ruler must come back out of a round trip
+            # as the document it was.
+            out["characteristic_length"] = self.characteristic.to_dict()
         if self.fields:
             # Written only when there is an opinion, for the reason
             # `reference_meshes` is: a case type that takes no position on any
@@ -400,9 +416,10 @@ class CaseType:
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
         return ("CaseType(name=%r, metric=%r, thresholds=%d, references=%d, "
-                "fields=%d)"
+                "fields=%d, characteristic=%r)"
                 % (self.name, self.metric, len(self.thresholds),
-                   len(self.references), len(self.fields)))
+                   len(self.references), len(self.fields),
+                   self.characteristic))
 
 
 def load(path: str) -> CaseType:

@@ -59,6 +59,7 @@ from __future__ import annotations
 # inside the function that needs it most.
 from app.services import case_type as case_type_mod
 from app.services import case_type_fields
+from app.services import case_type_scale
 from app.services import mesh_shape_stats
 from app.services.logging_setup import get_logger
 
@@ -374,8 +375,13 @@ def run_report(mesh_path: str, exit_code: int,
             return ("No verdict: %s" % exc, "WARNING")
         if case_type is None:
             return ("", "INFO")
+    # Against the FITTED overlay, not the authored one (#163): the value a case
+    # type has an opinion about on THIS drawing is the one its characteristic
+    # length scaled to. Comparing against the authored number would mark every
+    # geometric field of every rescaled run as deviated.
     moved = (() if config is None
-             else case_type_fields.deviations(case_type.fields, config))
+             else case_type_fields.deviations(
+                 case_type_scale.fitted_fields(case_type, config), config))
     verdict = judge(case_type, mesh_shape_stats.read_shape_summary(mesh_path),
                     exit_code, moved)
     return (report_text(verdict), verdict.level)

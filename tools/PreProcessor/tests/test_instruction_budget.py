@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 42,037 / 39,810 / 35,517 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-handoff, gui-panels-config, mesher, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 50,285 / 39,810 / 35,517 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-handoff, gui-panels-config, mesher, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 424 / 3,595 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    ten, which have 5,006 / 8,335 / 17,963 / 20,190 / 24,483 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
+    ten, which have 5,006 / 8,335 / 9,715 / 20,190 / 24,483 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 42,252 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 43,016 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 42,252 taken down to the boundary above is 42,000, to
+# are its size and its slack -- and 43,016 taken down to the boundary above is 43,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -660,7 +660,13 @@ _SOURCES = {
 # the ELEVENTH rule file, so a tripwire row went in and the row above it was rewritten,
 # taking the slack to 73. A band whose floor is 500 cannot survive a new rule file, and
 # by blind spot (d)'s own arithmetic there will be more of them — which is the honest
-# reading of "three consecutive re-bands with one cause" one ticket later. #109 wrote here that closing its own loop by hand was "the last time
+# reading of "three consecutive re-bands with one cause" one ticket later. #163 is the
+# FIFTH, and its cause is neither prose nor a rule file: it added a THIRD headless host
+# (`apply_case_type.py`) and the root's Build & Run section documents each one, so a new
+# command block went in and two existing ones were amended, taking the slack to -16. That
+# is a sixth shape — a feature whose deliverable is a command — and the three causes
+# recorded here (a tripwire row, a rule file, a command) are now the whole set of things
+# that cross a 500 floor. #109 wrote here that closing its own loop by hand was "the last time
 # this number will need one"; it was not, and the sentence is corrected rather than
 # deleted, because the useful half is WHY it was wrong: a band whose floor is 500 is
 # crossed by any ticket that adds a tripwire row, and #109 had no way to know how often
@@ -760,7 +766,7 @@ _SOURCES = {
 # count moved 14 -> 15 because the artefact split a third time on the ~500-line standard.
 # That file's own "#162 is the cheap moment" note for a thirteenth rule file was
 # RE-MEASURED rather than acted on, and says so.
-ROOT_BUDGET = 43_000
+ROOT_BUDGET = 44_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

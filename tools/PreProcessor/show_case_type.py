@@ -13,6 +13,9 @@ before anybody can sensibly apply one:
 * **How do two problem classes differ?** `--against <other>` prints the fields
   the two disagree about, including the ones only one of them has an opinion
   about. User story 37.
+* **What would it do to MY drawing?** A case type declares a CHARACTERISTIC
+  LENGTH (#163) and `--config` measures it on the case given, so the deviation
+  below is reported against the FITTED numbers rather than the authored ones.
 * **Have I moved anything?** `--config <case>` reads a case's own mesh
   configuration — a `.dat`, a `.hws` or a pipeline script — and reports every
   owned field it has moved. That is the same comparison the verdict marks a run
@@ -44,6 +47,7 @@ if _GUI_DIR not in sys.path:
 
 from app.services import case_type as case_type_mod
 from app.services import case_type_fields
+from app.services import case_type_scale
 from app.services.case_type import CaseTypeError
 
 
@@ -57,6 +61,12 @@ def _show(case_type) -> None:
                  ref.measured_on or "(no date recorded)", len(ref.figures)))
     for th in case_type.thresholds:
         print("  threshold    %-13s %s" % (th.key, th.describe_bounds()))
+    if case_type.characteristic is not None:
+        print("  characteristic length: %s"
+              % case_type.characteristic.describe())
+    else:
+        print("  no characteristic length: its sizes fit the geometry it was "
+              "authored on and are carried through unscaled")
     # The FIELDS, which is what this command exists for. Said even when there
     # are none: "this case type takes no position on any setting" is an answer
     # an operator needs, and an empty section that printed nothing would read as
@@ -83,8 +93,27 @@ def _diff(left, right) -> None:
 
 def _deviation(case_type, path) -> None:
     config = case_type_fields.read_config(path)
-    moved = case_type_fields.deviations(case_type.fields, config)
     print("Deviation of %s from case type '%s'" % (path, case_type.name))
+    if case_type.characteristic is not None:
+        # SAID OUT LOUD, both ways. `fitted_fields` falls back to the authored
+        # numbers when the ruler cannot be read off this case and logs that at
+        # debug — right for a verdict, which must still be issued, and not
+        # enough for somebody who came here to ask the question.
+        try:
+            scale = case_type.characteristic.scale_for(config)
+            print("  measured here: %s %.6g, so its geometry-driven sizes are "
+                  "compared at x %.6g"
+                  % (case_type.characteristic.measure,
+                     case_type.characteristic.value * scale.factor,
+                     scale.factor))
+        except CaseTypeError as exc:
+            print("  the characteristic length could not be measured here (%s)"
+                  ", so the fields below are compared AS AUTHORED" % exc)
+    # Against the FITTED overlay, exactly as `case_type_verdict.run_report`
+    # marks a run: the value the case type wants on THIS drawing is the one its
+    # characteristic length scaled to, so the two reports cannot disagree.
+    wanted = case_type_scale.fitted_fields(case_type, config)
+    moved = case_type_fields.deviations(wanted, config)
     if not case_type.fields:
         print("  nothing to deviate from: this case type owns no mesh fields")
         return

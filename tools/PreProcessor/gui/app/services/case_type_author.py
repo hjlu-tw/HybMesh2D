@@ -177,7 +177,7 @@ def author(name: str, reference: case_type_mod.ReferenceMesh, advice: dict,
            attention_factor: float = DEFAULT_ATTENTION_FACTOR,
            unusable_factor: float = DEFAULT_UNUSABLE_FACTOR,
            overrides: "dict | None" = None,
-           fields=None) -> AuthorResult:
+           fields=None, characteristic=None) -> AuthorResult:
     """Build a case type from one reference mesh, its advice and its factors.
 
     `advice` maps a figure key to the sentence shown when that threshold is
@@ -191,6 +191,11 @@ def author(name: str, reference: case_type_mod.ReferenceMesh, advice: dict,
     than something derived here, because the settings come from the maintainer's
     CASE and the thresholds come from the MESH it produced: deriving one from the
     other would make a case type claim an opinion about fields nobody chose.
+
+    `characteristic` is the CHARACTERISTIC LENGTH the geometry-driven half of
+    that overlay is expressed relative to (#163), and is a separate argument for
+    the same reason: it is MEASURED off the maintainer's own drawing, which is a
+    third artefact beside the case and the mesh.
 
     Nothing here is lenient about a key it was handed and cannot act on: an
     override naming a figure with no advice, or either naming a figure the
@@ -248,7 +253,8 @@ def author(name: str, reference: case_type_mod.ReferenceMesh, advice: dict,
             % (name, reference.ident, len(advice)))
     return AuthorResult(
         case_type_mod.CaseType(name, reference.metric, thresholds,
-                               references=[reference], fields=fields),
+                               references=[reference], fields=fields,
+                               characteristic=characteristic),
         skipped)
 
 
@@ -265,5 +271,6 @@ def save_authored(result: AuthorResult, path: str) -> AuthorResult:
         result.case_type.name, result.case_type.metric,
         result.case_type.thresholds, source=path,
         references=result.case_type.references,
-        fields=result.case_type.fields)
+        fields=result.case_type.fields,
+        characteristic=result.case_type.characteristic)
     return AuthorResult(written, result.skipped)
