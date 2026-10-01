@@ -40,6 +40,13 @@ looks converged, a float parse error on JSON, a file literally named `mesh_<case
 whose labels nothing carries, a quality figure measuring a quantity the mesher never reported.
 That is the family resemblance, and it is why they are one file.
 
+**One file this rules on is reached by NO glob in ANY rule file**:
+`tools/PreProcessor/save_case_type.py`, #161's authoring host, which sits outside
+`gui-seams.md`'s tree-wide `tools/PreProcessor/gui/**` as well — so the tripwire row in
+`CLAUDE.md` is the only thing that reaches its reader, the same gap recorded for `run_batch.py`
+and `CMakeLists.txt`. It is outside `tests/test_silent_exceptions.py`'s swept tree for the same
+reason.
+
 **Boundaries run BOTH ways.**
 - **Outward.** Three owners sit under other rule files' globs. `models/mesh_config.py`
   re-exports the whole output-name resolver and belongs to
@@ -347,8 +354,10 @@ rule: a threshold is a demonstration, and a misjudged verdict is corrected by ad
   The positive form is gated — the reference mesh is `usable` under its own case type.
 - **A MEASURED BOUND AND A HAND-SET ONE ARE TOLD APART BY THE FILE'S SHAPE, never by a flag**:
   `Threshold.origin_of` answers `MEASURED` when a factor sits beside the bound and `MANUAL` when
-  one does not. A flag could disagree with the number next to it. **An override keeps the
-  `reference`** and drops only that bound's factor, so what it overrode stays on the record.
+  one does not. A flag could disagree with the number next to it. **An override of ONE bound keeps
+  the `reference`** and drops only that bound's factor, so what it overrode stays on the record;
+  a threshold whose bounds are BOTH hand-set records no reference at all, `Origin` refusing to
+  exist with no factor.
 - **A FIGURE THE REFERENCE MESH COULD NOT MEASURE PRODUCES NO THRESHOLD, and the skip is
   REPORTED** (`AuthorResult.skipped`, printed by the host). `measured_figures` asks
   `ShapeFigures.measured` of the SET, so the mesher's negative sentinel is ABSENT from

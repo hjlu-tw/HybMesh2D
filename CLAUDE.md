@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **41,545
-characters (41,781 bytes, 2026-10-01) ≈ 10k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **41,703
+characters (41,939 bytes, 2026-10-01) ≈ 10k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**42,500**, leaving 955 characters of slack — derived by a rule the gate states at that
+**42,500**, leaving 797 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -311,10 +311,10 @@ plus any number of geometry files; `--run` then executes Run All.
 **Save a working case as a case type (headless):**
 ```bash
 python3 tools/PreProcessor/save_case_type.py results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk \
-    --name "Circular body, O-grid" --out examples/case_types/ogrid_circle.casetype.json \
+    --name "Circular body, O-grid" --out config/my_case.casetype.json \
     --advice "max=Ask for a less aggressive first cell." --override "max.unusable=200.0"
 ```
-That mesh becomes the case type's REFERENCE MESH: every bound is a figure it published times a tolerance factor, and the file records which mesh, when, and which bounds were set by hand instead. `--advice` selects the figures bounded; one the mesh could not measure gets none, out loud.
+That mesh becomes the case type's REFERENCE MESH: every bound is a figure it published times a tolerance factor, and the file records which mesh, when, and which bounds were set by hand instead. `--advice` selects the figures bounded; one the mesh could not measure gets none, out loud. `examples/case_types/ogrid_circle.casetype.json` is a worked one (three thresholds, `--advice-from` a file). Ruled on by `.claude/rules/gui-handoff.md`, which NO glob reaches.
 
 **Run a batch of pipeline scripts (headless):**
 ```bash

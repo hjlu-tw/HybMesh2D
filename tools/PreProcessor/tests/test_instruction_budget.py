@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 39,810 / 35,517 / 33,369 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-handoff, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 39,810 / 35,517 / 33,939 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-handoff, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 424 / 3,595 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    ten, which have 5,006 / 8,335 / 20,190 / 24,483 / 26,631 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
+    ten, which have 5,006 / 8,335 / 20,190 / 24,483 / 26,061 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 41,545 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 41,703 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 41,545 taken down to the boundary above is 41,500, to
+# are its size and its slack -- and 41,703 taken down to the boundary above is 41,500, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -719,16 +719,26 @@ _SOURCES = {
 # worth re-reading against the file it describes.
 # #161 is the NINTH, and it is #154's cause a third consecutive time with the reading still
 # unchanged: a new HEADLESS ENTRY POINT, `tools/PreProcessor/save_case_type.py`, its
-# invocation and the two sentences saying what a reference mesh is -- 674 characters of
-# Build & Run, which took the slack to -45. The root ENUMERATES its entry points (`run.sh`,
+# invocation and the sentences saying what a reference mesh is -- 793 characters of Build &
+# Run, plus 39 for the tripwire row's clause, 832 in all. The two are given apart because
+# only the first is the enumeration this ledger's reading is about; the block reached 793
+# rather than its first 635 because the review required the documented command to be
+# literally runnable without clobbering the shipped example. The root ENUMERATES its entry
+# points (`run.sh`,
 # `run_pipeline.sh`, `run_batch.sh`, `run_preprocessor.sh`, the GUI), so a ninth one that
 # went undocumented would be exactly the trade #153 and #154 both refused. No rule file was
-# born; `gui-handoff.md` grew by ~3.3k and is nowhere near its own budget, and its file
-# count moved 12 -> 14 because the artefact split again on the ~500-line standard. What was
-# tried first and did not work: trimming the block. Any version of it carrying both the
-# invocation and what a reference mesh IS lands around 450-680 characters, and the slack
-# before this ticket was 629, so there is no honest wording that fits -- the choice is the
-# re-band or the undocumented artefact, not a shorter sentence.
+# born; `gui-handoff.md` grew 29,205 -> 33,939 (+4,734) and is nowhere near its own budget,
+# and its file count moved 12 -> 14 because the artefact split again on the ~500-line
+# standard. BE PRECISE ABOUT WHAT WAS AND WAS NOT TRIED: trimming the block was, and a
+# shorter one WOULD have fitted -- 590 characters were available after the tripwire row, and
+# a version carrying the invocation alone is about 300. What it drops is the two sentences
+# saying what a reference mesh IS, which is the only thing that tells a reader why the
+# command exists. So this is a judgement that the explanation is worth the re-band, NOT an
+# arithmetic impossibility, and the first draft of this paragraph claimed the latter
+# ("there is no honest wording that fits") off a range whose own low end refuted it. The
+# Standards review found that, as it found the same shape in #154's entry above. The
+# ledger's reading is what licenses the re-band and it is unchanged: anything the root
+# ENUMERATES grows it, and the entry points are one of those lists.
 ROOT_BUDGET = 42_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is

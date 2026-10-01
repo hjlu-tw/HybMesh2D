@@ -70,6 +70,7 @@ from app.services.case_type_reference import figures_for  # noqa: F401
 from app.services.case_type_reference import MANUAL
 from app.services.case_type_reference import MEASURED
 from app.services.case_type_reference import CaseTypeError
+from app.services.case_type_reference import check_bound
 from app.services.case_type_reference import Origin
 from app.services.case_type_reference import ReferenceMesh
 from app.services.case_type_reference import opt_float
@@ -155,10 +156,7 @@ class Threshold:
         derived from the reference mesh, and a bound without one was typed. A
         flag could disagree with the number next to it; this cannot.
         """
-        if bound not in BOUNDS:
-            raise CaseTypeError("%r is not a bound; expected one of %s"
-                                % (bound, ", ".join(BOUNDS)))
-        if getattr(self, bound) is None:
+        if getattr(self, check_bound(bound)) is None:
             return None
         if self.measured_from is None:
             return MANUAL
@@ -343,8 +341,10 @@ class CaseType:
                "name": self.name, "metric": self.metric}
         if self.references:
             # Written only when there are any, so a hand-authored case type is
-            # still the short document it was and a v1 file round-trips through
-            # this build without growing an empty list it never had.
+            # still the short document it was: a v1 document read by this build
+            # comes back out with its thresholds unchanged and no empty list it
+            # never had. Its `version` IS rewritten to 2 — writing is always the
+            # current version — so what round-trips is the CONTENT, not the file.
             out["reference_meshes"] = [r.to_dict() for r in self.references]
         out["thresholds"] = [t.to_dict() for t in self.thresholds]
         return out

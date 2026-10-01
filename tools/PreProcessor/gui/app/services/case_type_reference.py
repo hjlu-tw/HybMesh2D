@@ -73,6 +73,19 @@ MANUAL = "manual"
 BOUNDS = ("attention", "unusable")
 
 
+def check_bound(bound: str) -> str:
+    """`bound` if it names one, else raise. One owner, two askers.
+
+    `Origin.factor_for` and `Threshold.origin_of` both take a bound name from a
+    caller, and the same three lines in two files is where one of them acquires
+    a different message — or a different answer — by edit.
+    """
+    if bound not in BOUNDS:
+        raise CaseTypeError("%r is not a bound; expected one of %s"
+                            % (bound, ", ".join(BOUNDS)))
+    return bound
+
+
 def split_key(key: str) -> tuple:
     """A figure key as `(set name, field)` — `("", "p95")`, `("bulk", "p95")`.
 
@@ -116,8 +129,9 @@ class Origin:
     derived; absent while the bound is set, the maintainer typed it — which is
     how "an overridden threshold is distinguishable from a measured one" is held
     by the file's SHAPE rather than by a flag that can disagree with the number
-    beside it. An override keeps the reference, so what it overrode is still on
-    the record.
+    beside it. An override of ONE bound keeps the reference, so what it overrode
+    is still on the record; a threshold whose bounds are BOTH hand-set carries no
+    origin at all, since an origin that derived nothing is not provenance.
 
     A FACTOR BELOW 1.0 IS REFUSED. It would put the bound UNDER the figure the
     reference mesh published, so the mesh the maintainer judged good would fail
@@ -162,10 +176,7 @@ class Origin:
 
     def factor_for(self, bound: str) -> float | None:
         """The tolerance factor for `bound`, or ``None`` when it was hand-set."""
-        if bound not in BOUNDS:
-            raise CaseTypeError("%r is not a bound; expected one of %s"
-                                % (bound, ", ".join(BOUNDS)))
-        return getattr(self, bound + "_factor")
+        return getattr(self, check_bound(bound) + "_factor")
 
     @classmethod
     def from_dict(cls, raw: dict, key: str) -> "Origin":

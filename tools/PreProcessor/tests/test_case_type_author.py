@@ -94,6 +94,11 @@ that no other check moves (`others_green`):
      check 3 fails: a reference recording its numbers and not which mesh they
      came from, which is a threshold traceable to nothing.
   I. negative control: the unmutated trio passes every check.
+  J. the HOST — which runs as a subprocess and so cannot see an in-memory mutant
+     — stops passing `--reference-id` through, and check 1 fails. Added in
+     review: without it, criterion 1's own check was the only one here never
+     shown able to go red. It runs a mutated COPY of the script, with the real
+     unmutated host asserted green beside it.
 
 Two injections were RETARGETED after they passed for the wrong reason, which is
 what `others_green` is for and is recorded rather than quietly fixed: A's
@@ -262,8 +267,15 @@ def authored(w, advice=None, **kw):
 
 
 # --- checks -------------------------------------------------------------------
-def check_one_action(w):
-    """The CLI really turns a finished mesh into a case type, in one command."""
+def check_one_action(w, host=""):
+    """The CLI really turns a finished mesh into a case type, in one command.
+
+    `host` lets injection J run a MUTATED COPY of the script, which is the only
+    way this check can be shown able to go red: it launches a subprocess against
+    the real files on disk and so cannot see the in-memory mutants every other
+    injection uses. The copy is run with the GUI package on `PYTHONPATH`, since
+    its own `sys.path` insert is relative to wherever it is sitting.
+    """
     ct, au = w
     out = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -275,12 +287,15 @@ def check_one_action(w):
         advice_file = os.path.join(tmp, "advice.json")
         with open(advice_file, "w", encoding="utf-8") as fh:
             json.dump(ADVICE, fh)
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join(
+            [_GUI] + ([env["PYTHONPATH"]] if env.get("PYTHONPATH") else []))
         proc = subprocess.run(
-            [sys.executable, os.path.join(_REPO, _HOST), mesh,
+            [sys.executable, host or os.path.join(_REPO, _HOST), mesh,
              "--name", "Demo type", "--out", dest,
              "--advice-from", advice_file,
              "--reference-id", "demo", "--measured-on", "2026-09-30"],
-            capture_output=True, text=True, cwd=_REPO)
+            capture_output=True, text=True, cwd=_REPO, env=env)
         if proc.returncode != 0:
             return ["%s exited %d: %s" % (_HOST, proc.returncode, proc.stderr)]
         if not os.path.isfile(dest):
@@ -504,7 +519,7 @@ def check_authored_type_produces_verdicts(w):
     ref, result = authored(w, attention_factor=1.5, unusable_factor=3.0)
     with tempfile.TemporaryDirectory() as tmp:
         path = os.path.join(tmp, "v.casetype.json")
-        saved = au.save_case_type(result, path)
+        saved = au.save_authored(result, path)
         try:
             loaded = ct.load(path)
         except ct.CaseTypeError as exc:
@@ -824,6 +839,27 @@ check(check_provenance_round_trip(inj) and others_green(inj, 3),
       "injection H. check 3 ALONE fails when a reference records its NUMBERS "
       "and not which mesh they came from or when — a threshold traceable to no "
       "mesh is the thing this ticket exists to make impossible")
+
+# J reaches the one file the in-memory mutants cannot: the HOST, which runs as a
+# subprocess. Without it check 1 — the acceptance criterion that a working case
+# can be saved in ONE ACTION — was the only check in this file never shown able
+# to go red. Found by the Spec review.
+_host_src = _read(_HOST)
+_anchor = "args.mesh, ident=args.reference_id, measured_on=args.measured_on)"
+assert _anchor in _host_src, "host injection anchor not found: %r" % _anchor
+with tempfile.TemporaryDirectory() as _tmp:
+    _mutant = os.path.join(_tmp, "save_case_type_mutant.py")
+    with open(_mutant, "w", encoding="utf-8") as _fh:
+        _fh.write(_host_src.replace(
+            _anchor, 'args.mesh, ident="", measured_on=args.measured_on)', 1))
+    check(check_one_action(_REAL, host=_mutant),
+          "injection J. check 1 fails when the HOST stops passing "
+          "--reference-id through, so the case type names its reference mesh by "
+          "the mesh's filename stem instead — the one check in this file that "
+          "an in-memory mutant cannot reach, now shown able to go red")
+    check(not check_one_action(_REAL),
+          "injection J. ...and the UNmutated host still passes it, so the "
+          "failure above is the mutation and not the copy or its PYTHONPATH")
 
 check(not any(fn(_REAL) for num, fn in _ALL.items()),
       "injection I. negative control: the unmutated trio passes every check, so "

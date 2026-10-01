@@ -63,7 +63,13 @@ def _parse_advice(pairs, files):
     advice = {}
     for path in files or []:
         with open(path, "r", encoding="utf-8") as fh:
-            doc = json.load(fh)
+            try:
+                doc = json.load(fh)
+            except json.JSONDecodeError as exc:
+                # Named, because the bare decoder message says only where in the
+                # file and the maintainer may have passed several.
+                raise CaseTypeError("'%s' is not valid JSON: %s"
+                                    % (path, exc)) from exc
         if not isinstance(doc, dict):
             raise CaseTypeError(
                 "'%s' must hold a JSON object mapping a figure key to its "
@@ -141,8 +147,13 @@ def main() -> int:
             attention_factor=args.attention_factor,
             unusable_factor=args.unusable_factor,
             overrides=_parse_overrides(args.override))
-        result = case_type_author.save_case_type(result, args.out)
-    except (CaseTypeError, OSError, ValueError) as exc:
+        result = case_type_author.save_authored(result, args.out)
+    except (CaseTypeError, OSError, json.JSONDecodeError) as exc:
+        # NARROW on purpose, and narrower than it first read: `CaseTypeError` IS
+        # a `ValueError`, so listing `ValueError` beside it only widened the
+        # handler far enough to render an unrelated conversion bug as one tidy
+        # stderr line — in a file `tests/test_silent_exceptions.py` does not
+        # sweep. `JSONDecodeError` is what `--advice-from` can really raise.
         print("save_case_type: %s" % exc, file=sys.stderr)
         return 1
 

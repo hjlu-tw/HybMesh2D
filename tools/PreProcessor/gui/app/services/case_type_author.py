@@ -36,7 +36,11 @@ it out loud.
 reference mesh on the record and loses only the claim to have been derived from
 it, which is what makes an overridden bound distinguishable from a measured one
 by the file's own shape (`Threshold.origin_of`). A factor and a bound that
-disagree is refused on load rather than being a third state.
+disagree is refused on load rather than being a third state. **The exception is
+a threshold whose bounds are BOTH overridden**: nothing was derived, `Origin`
+refuses to exist with no factor, and the threshold is written as the hand-written
+one it has become. That loss is named in `docs/design_notes/gui.md`'s blind spots
+rather than bought with a third state.
 """
 from __future__ import annotations
 
@@ -149,10 +153,10 @@ def measure_reference(mesh_path: str, ident: str = "",
 
 def _bounds_for(reference, key: str, attention_factor: float,
                 unusable_factor: float, override: dict):
-    """One threshold's two bounds and the factors that survive the overrides.
+    """One threshold's two bounds, and the factors that survive the overrides.
 
-    Returns `(attention, unusable, factors)`, where `factors` holds only the
-    bounds still derived — which is what an `Origin` is built from, and what
+    Returns `(bounds, factors)`, both keyed by BOUND NAME. `factors` holds only
+    the bounds still derived — which is what an `Origin` is built from, and what
     makes an overridden bound read as hand-set rather than as a measurement
     whose arithmetic went wrong.
     """
@@ -164,8 +168,8 @@ def _bounds_for(reference, key: str, attention_factor: float,
             bounds[bound] = case_type_mod.opt_float(override[bound])
             continue
         bounds[bound] = value * wanted[bound]
-        factors[bound + "_factor"] = wanted[bound]
-    return bounds["attention"], bounds["unusable"], factors
+        factors[bound] = wanted[bound]
+    return bounds, factors
 
 
 def author(name: str, reference: case_type_mod.ReferenceMesh, advice: dict,
@@ -215,14 +219,19 @@ def author(name: str, reference: case_type_mod.ReferenceMesh, advice: dict,
             skipped.append((key, "reference mesh '%s' could not measure it"
                             % reference.ident))
             continue
-        attention, unusable, factors = _bounds_for(
+        bounds, factors = _bounds_for(
             reference, key, attention_factor, unusable_factor,
             overrides.get(key, {}))
-        origin = (case_type_mod.Origin(reference.ident, **factors)
-                  if factors else None)
+        # Both constructors are called with their parameters SPELLED OUT rather
+        # than splatted from a dict keyed by `bound + "_factor"`: a renamed
+        # `Origin` parameter would otherwise break only at run time, in the one
+        # place nothing names it.
+        origin = None if not factors else case_type_mod.Origin(
+            reference.ident, attention_factor=factors.get("attention"),
+            unusable_factor=factors.get("unusable"))
         thresholds.append(case_type_mod.Threshold(
-            key, advice[key], attention=attention, unusable=unusable,
-            measured_from=origin))
+            key, advice[key], attention=bounds["attention"],
+            unusable=bounds["unusable"], measured_from=origin))
     if not thresholds:
         raise CaseTypeError(
             "case type '%s' would carry no thresholds: reference mesh '%s' "
@@ -234,7 +243,7 @@ def author(name: str, reference: case_type_mod.ReferenceMesh, advice: dict,
         skipped)
 
 
-def save_case_type(result: AuthorResult, path: str) -> AuthorResult:
+def save_authored(result: AuthorResult, path: str) -> AuthorResult:
     """Write the authored case type and hand back one that knows its own file.
 
     `CaseType.source` is what a verdict prints to name the file that issued it,

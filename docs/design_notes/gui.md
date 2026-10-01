@@ -4018,7 +4018,17 @@ this against mesh X and typed both numbers", which is a weaker claim than either
 not worth a third state. The
 reference mesh's figures come from the sidecar reader, which has its own gate, and nothing here
 re-measures a mesh by design. Check 1 drives the CLI rather than a GUI action, saving a case type
-from the window being #162's. And the shipped reference mesh is under `results/`, which is
+from the window being #162's — and the host's one positional is a MESH, not a case directory, so
+the maintainer locates `mesh_<case>.vtk` themselves and the case's own identity (its config, its
+family, its bindings) reaches the artefact nowhere. #160 said those "arrive in later tickets" and
+#161's acceptance asks for none of them, but it does mean "saved from a working case" is true of
+the mesh that case produced rather than of the case. **The HOST carried no injection at first**,
+`_SKIP_UNDER_MUTATION` excluding the two subprocess checks; injection J was added in review and
+runs a mutated COPY of it, so criterion 1's check is shown able to go red like every other.
+**And #168 will need more than a list append**: `Origin.reference` is one string and
+`_check_references` demands an exact `figure x factor`, so a threshold citing TWO reference meshes
+— which is what story 39's plural and #168's "corrected with evidence" ask for — is a schema 3,
+not a second entry in the list `reference_meshes` already is. And the shipped reference mesh is under `results/`, which is
 gitignored — the case type records which mesh it was measured on and the mesh itself is
 regenerated from `config/multiblock_ogrid.dat`, so the numbers are reproducible but the file they
 were read from is not in the tree.
