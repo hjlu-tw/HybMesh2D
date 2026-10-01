@@ -269,7 +269,7 @@ Layered PyQt6 application, `tools/PreProcessor/gui/app/`:
   exact-match pin would go red on every intermediate commit of the work it exists to provoke. The hole is bounded by
   the pin, which never rises. Two smaller ones beside it: the gate counts LINES, so a 400-line file
   can be far worse than a 510-line one and nothing here can tell; and it reaches `.py` files only.
-  Re-measured 2026-10-01: 294 GUI `.py` files, of which 4 exceed 500 lines —
+  Re-measured 2026-10-01: 296 GUI `.py` files, of which 4 exceed 500 lines —
   `app/models/pipeline_config.py` 520, `app/services/case_run_note.py` 508,
   `app/models/solver_config.py` 501, `app/services/result_legs.py` 501. Every figure in that sentence is DERIVED, never remembered —
   the count, the total, the standard and each offender by name and size — off

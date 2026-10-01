@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 39,810 / 35,517 / 29,205 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-handoff, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 39,810 / 35,517 / 33,369 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-handoff, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 424 / 3,595 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    ten, which have 5,006 / 8,335 / 20,190 / 24,483 / 30,795 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
+    ten, which have 5,006 / 8,335 / 20,190 / 24,483 / 26,631 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 40,871 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 41,545 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 40,871 taken down to the boundary above is 40,500, to
+# are its size and its slack -- and 41,545 taken down to the boundary above is 41,500, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -717,7 +717,19 @@ _SOURCES = {
 # and the re-band was then argued here from an invocation that was not in the file. The
 # Spec review found it. A rationale beside a constant is a claim like any other and is
 # worth re-reading against the file it describes.
-ROOT_BUDGET = 41_500
+# #161 is the NINTH, and it is #154's cause a third consecutive time with the reading still
+# unchanged: a new HEADLESS ENTRY POINT, `tools/PreProcessor/save_case_type.py`, its
+# invocation and the two sentences saying what a reference mesh is -- 674 characters of
+# Build & Run, which took the slack to -45. The root ENUMERATES its entry points (`run.sh`,
+# `run_pipeline.sh`, `run_batch.sh`, `run_preprocessor.sh`, the GUI), so a ninth one that
+# went undocumented would be exactly the trade #153 and #154 both refused. No rule file was
+# born; `gui-handoff.md` grew by ~3.3k and is nowhere near its own budget, and its file
+# count moved 12 -> 14 because the artefact split again on the ~500-line standard. What was
+# tried first and did not work: trimming the block. Any version of it carrying both the
+# invocation and what a reference mesh IS lands around 450-680 characters, and the slack
+# before this ticket was 629, so there is no honest wording that fits -- the choice is the
+# re-band or the undocumented artefact, not a shorter sentence.
+ROOT_BUDGET = 42_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

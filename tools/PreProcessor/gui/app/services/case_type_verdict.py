@@ -3,10 +3,11 @@
 The grading half of the case-type seam (issue #160, parent #158); the artefact
 itself — the name, the metric, the thresholds and their advice — is
 `services/case_type.py`, and the thresholds are DECLARED there and only there.
-This module applies them, which is why the two are one seam in two files rather
-than one body of knowledge in two places: the split is the ~500-line GUI
-file-length standard, the same cut #159 made between `mesh_config.py` (declares)
-and `mesh_config_validate.py` (judges), and the dependency runs one way.
+This module applies them, which is why the files are one seam rather than one
+body of knowledge in several places: every cut is the ~500-line GUI file-length
+standard — #161 added `case_type_reference.py` and `case_type_author.py` the
+same way — and it is the same one #159 made between `mesh_config.py` (declares)
+and `mesh_config_validate.py` (judges). The dependency runs one way.
 
 THE FOUR STATES ARE NOT THREE PLUS AN ERROR. `usable`, `needs attention`,
 `unusable`, `not determinable`. The fourth exists because the mesher returns
@@ -170,17 +171,6 @@ class Verdict:
                 % (self.state, self.case_type.name, len(self.reasons)))
 
 
-def _figures_for(summary, set_name: str):
-    """The `ShapeFigures` a key's set names, or ``None`` when it is absent.
-
-    Only a HALF is ever absent, and only on a sidecar from a path that did not
-    split — the whole-mesh set is the summary itself.
-    """
-    if not set_name:
-        return summary
-    return getattr(summary, set_name, None)
-
-
 def judge_threshold(threshold: case_type_mod.Threshold, summary) -> Reason:
     """One threshold against the published figures. Never raises.
 
@@ -195,8 +185,8 @@ def judge_threshold(threshold: case_type_mod.Threshold, summary) -> Reason:
     both be crossed when the figure is past the higher of the two, and the
     answer then is the worse state.
     """
-    set_name, _, field = threshold.key.rpartition(".")
-    figures = _figures_for(summary, set_name)
+    set_name, field = case_type_mod.split_key(threshold.key)
+    figures = case_type_mod.figures_for(summary, set_name)
     if figures is None:
         return Reason(threshold.key, NOT_DETERMINABLE, advice=threshold.advice,
                       detail="this run published no layer/bulk split")

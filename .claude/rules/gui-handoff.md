@@ -18,9 +18,12 @@ paths:
 Loaded on demand when the mesh-BC audit, the project-file classifier, the case-grid lookup,
 the shape-summary reader, the CASE TYPE and its verdict, the Mesh Statistics panel, the mesh
 output-name resolver, the mesh-export / Mesh-layers / solver controller, or the segment model
-is read — **12 files**, verified to match. The `services/case_type*` glob is #160's: a case
+is read — **14 files**, verified to match. The `services/case_type*` glob is #160's: a case
 type GRADES the same `.provenance.json` this file's sixth concern already reads inward, so
-the reader and the judge sit together rather than one area's rule being split in two. **Rules only** — the rationale (the
+the reader and the judge sit together rather than one area's rule being split in two. It
+reaches FOUR files since #161 — the document, the figures and provenance it holds, the
+verdict and the authoring step — all four being the ~500-line standard's cuts through one
+artefact rather than four seams. **Rules only** — the rationale (the
 measurements, the dated USER-REPORTED failures, the reversals and the named blind spots) is
 `docs/design_notes/gui.md`. Read that note before overruling a rule here; when a rule changes,
 update BOTH.
@@ -272,7 +275,7 @@ cannot quietly stop happening) and the real controller handler.
 
 **A CASE TYPE HOLDS THE THRESHOLDS THE MESHER REFUSES TO HOLD, AND THE VERDICT HAS FOUR STATES**
 (`services/case_type.py` = the artefact, `services/case_type_verdict.py` = the grading, both
-Qt-free; `config/case_types/ogrid_circle.casetype.json`; #160, parent #158). The mesher measures
+Qt-free; `examples/case_types/ogrid_circle.casetype.json`; #160, parent #158). The mesher measures
 and never grades, by decision; a case type's threshold is not universal — it is scoped to one
 class of problem and authored by someone who knows that class. Read
 `docs/adr/0002-thresholds-live-in-case-types.md` before concluding the mesher's rule was violated.
@@ -318,13 +321,58 @@ class of problem and authored by someone who knows that class. Read
   channel both hosts read identically; #162 builds the picker that replaces it. Unset means no
   verdict at all — **there is no default case type**, which would be a universal threshold
   wearing a different hat.
-- **ONE SEAM, TWO FILES**, split by the ~500-line standard and not by subject: the thresholds and
-  their advice are declared in `case_type.py` and nowhere else. Same cut as `mesh_config.py` /
-  `mesh_config_validate.py` (#159), dependency one way.
+- **ONE SEAM, FOUR FILES** (two at #160, four since #161), every cut the ~500-line standard and
+  none of them by subject: the thresholds and their advice are declared in `case_type.py` and
+  nowhere else, and `case_type_reference.py` is re-exported from it so no caller learns a new
+  name. Same cut as `mesh_config.py` / `mesh_config_validate.py` (#159), every dependency one way.
 Gated by `tests/test_case_type_verdict.py` (14 checks and ten automated injections, each
 asserting the mutation is well-formed, that the named check reddens and that no other does; the
 counts are that file's own docstring's and are not restated here).
   Why: `docs/design_notes/gui.md`, "A CASE TYPE'S THRESHOLDS, AND THE FOUR-STATE VERDICT".
+
+**A THRESHOLD IS MEASURED FROM A REFERENCE MESH, NOT TYPED** (`services/case_type_author.py` =
+the authoring step, `services/case_type_reference.py` = the figures and the provenance a case
+type holds, both Qt-free; `tools/PreProcessor/save_case_type.py` is the one action; #161, parent
+#158). The maintainer knows which mesh is good and does not necessarily know what its p95 is, so
+the tool measures the mesh and applies a TOLERANCE FACTOR. ADR-0002's first consequence is the
+rule: a threshold is a demonstration, and a misjudged verdict is corrected by adding evidence
+(#168), not by editing a number.
+- **A bound IS its reference mesh's own published figure times a stated factor**, and the file
+  carries the factor rather than only the product, so the derivation is re-checkable off disk.
+  `CaseType._check_references` refuses a document whose bound is not its own derivation within
+  `Origin.REL_TOL` — the only scope holding both halves, a `Threshold` knowing its factor and a
+  `ReferenceMesh` its figure.
+- **A FACTOR BELOW 1.0 IS REFUSED**: the bound would sit under the figure the reference mesh
+  published, so the mesh the maintainer judged good would fail the case type authored from it.
+  The positive form is gated — the reference mesh is `usable` under its own case type.
+- **A MEASURED BOUND AND A HAND-SET ONE ARE TOLD APART BY THE FILE'S SHAPE, never by a flag**:
+  `Threshold.origin_of` answers `MEASURED` when a factor sits beside the bound and `MANUAL` when
+  one does not. A flag could disagree with the number next to it. **An override keeps the
+  `reference`** and drops only that bound's factor, so what it overrode stays on the record.
+- **A FIGURE THE REFERENCE MESH COULD NOT MEASURE PRODUCES NO THRESHOLD, and the skip is
+  REPORTED** (`AuthorResult.skipped`, printed by the host). `measured_figures` asks
+  `ShapeFigures.measured` of the SET, so the mesher's negative sentinel is ABSENT from
+  `ReferenceMesh.figures` rather than carried — and a `ReferenceMesh` recording a negative figure,
+  or none at all, is refused.
+- **ADVICE IS THE SELECTION.** The keys advice was supplied for ARE the thresholds; there is
+  deliberately no all-nine-keys default. An override naming a figure with no advice is REFUSED,
+  not silently inert.
+- **`SCHEMA_VERSION` is 2 and `READABLE_VERSIONS` is `(1, 2)`.** A v1 document is a v2 document
+  with no reference meshes and every bound `MANUAL` — which is what a hand-written case type is —
+  so the artefact GREW rather than being replaced. Writing is always the current version.
+- **Provenance is recorded, not merely consulted**: a `ReferenceMesh` carries its id, the mesh,
+  the `.provenance.json` the numbers came out of, the date and the figures themselves, every path
+  repo-relative. A reference recorded as a path alone says nothing once that mesh is regenerated.
+- **Nothing re-measures a mesh.** `measure_reference` goes through
+  `mesh_shape_stats.read_shape_summary`, the same single owner the verdict consumes, so a
+  threshold cannot be derived from one reading of a mesh and judged against another.
+- **`tools/PreProcessor/save_case_type.py` is a HEADLESS host and that is deliberate**, like
+  `HYBMESH_CASE_TYPE` beside it: #162 owns the picker and the apply flow, and a dialog authored
+  here would be chrome for that ticket to unpick.
+Gated by `tests/test_case_type_author.py` (ten checks and nine automated injections, each
+asserting the mutation is well-formed, that the named checks redden and that no other does; the
+counts are that file's own docstring's and are not restated here).
+  Why: `docs/design_notes/gui.md`, "A THRESHOLD IS MEASURED FROM A REFERENCE MESH".
 
 **WHY THIS FILE AND NOT A THIRTEENTH, recorded because the opposite call has precedent.** This
 file's thesis is "is a file one stage leaves on disk still correct when the NEXT one reads it",
@@ -344,9 +392,10 @@ One list per rule file (`docs/agents/rule-file-style.md` rule 5). These are this
 limits — what a gate does NOT check — as distinct from the caveats stated with the rules above,
 which are capability refusals.
 
-- **Nothing judges whether a THRESHOLD IS RIGHT.** The shipped case type's bounds are round
-  numbers above a measurement; #161 makes a threshold a measurement times a tolerance and #168
-  corrects one with evidence.
+- **Nothing judges whether a TOLERANCE FACTOR is right.** #161 closed the half of this that was
+  about the shipped case type — its bounds are now measurements times a factor, with one
+  deliberate override — and what is gated is that a bound really IS the product, not that the
+  product is a good place for a bound. #168 is what corrects a misjudged one with evidence.
 - **The "neither host grades" check reads SOURCE**, so a third host that grew its own grading is
   invisible to it.
 - **The GUI leg drives `_on_mesh_gen_finished` with a recording stand-in for the main window.**

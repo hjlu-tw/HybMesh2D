@@ -1,26 +1,60 @@
 {
   "schema": "hybmesh-case-type",
-  "version": 1,
+  "version": 2,
   "name": "Circular body, O-grid",
   "metric": "quad_midline_ratio",
+  "reference_meshes": [
+    {
+      "id": "ogrid_circle",
+      "metric": "quad_midline_ratio",
+      "mesh": "results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk",
+      "provenance": "results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.provenance.json",
+      "measured_on": "2026-09-30",
+      "figures": {
+        "median": 1.845977,
+        "p95": 23.662285,
+        "max": 32.767868,
+        "layer.median": 5.184358,
+        "layer.p95": 28.507718,
+        "layer.max": 32.767868,
+        "bulk.median": 1.692763,
+        "bulk.p95": 1.877756,
+        "bulk.max": 1.881891
+      }
+    }
+  ],
   "thresholds": [
     {
       "key": "median",
-      "attention": 2.5,
-      "unusable": 6.0,
+      "attention": 2.7689655,
+      "unusable": 5.537931,
+      "measured_from": {
+        "reference": "ogrid_circle",
+        "attention_factor": 1.5,
+        "unusable_factor": 3.0
+      },
       "advice": "The typical cell is far from square. Check that the radial count is in proportion to the azimuthal one — an O-grid with 96 points round the body and 12 out to the far field stretches every cell the same way."
     },
     {
-      "key": "bulk.p95",
-      "attention": 2.5,
-      "unusable": 5.0,
-      "advice": "The cells away from the wall band are stretched. Spread the radial spacing law out: a growth rate that reaches its final interval early leaves the outer rows long and thin."
+      "key": "max",
+      "attention": 49.151802,
+      "unusable": 200.0,
+      "measured_from": {
+        "reference": "ogrid_circle",
+        "attention_factor": 1.5
+      },
+      "advice": "The worst cell is in the wall band and its ratio is the azimuthal spacing over BL_INITIAL_THICKNESS. Either ask for a less aggressive first cell or put more points round the body; this number is arithmetic, not a defect to smooth away."
     },
     {
-      "key": "max",
-      "attention": 50.0,
-      "unusable": 200.0,
-      "advice": "The worst cell is in the wall band and its ratio is the azimuthal spacing over BL_INITIAL_THICKNESS. Either ask for a less aggressive first cell or put more points round the body; this number is arithmetic, not a defect to smooth away."
+      "key": "bulk.p95",
+      "attention": 2.816634,
+      "unusable": 5.633268,
+      "measured_from": {
+        "reference": "ogrid_circle",
+        "attention_factor": 1.5,
+        "unusable_factor": 3.0
+      },
+      "advice": "The cells away from the wall band are stretched. Spread the radial spacing law out: a growth rate that reaches its final interval early leaves the outer rows long and thin."
     }
   ]
 }

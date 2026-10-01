@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 294, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 296, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -3875,15 +3875,16 @@ mistake for a violated rule if they find thresholds here without reading it.
   prefactored three other files out of; the cut is the same one #159 made between
   `mesh_config.py` (declares) and `mesh_config_validate.py` (judges), and the dependency runs
   one way.
-* **THE SHIPPED CASE TYPE'S NUMBERS ARE HAND-AUTHORED, AND SAY SO.** `ogrid_circle.casetype.json`, under `examples/` rather than `config/`,
-  bounds `median` at 2.5/6.0, `bulk.p95` at 2.5/5.0 and `max` at 50/200, against the shipped
-  O-grid's published 1.845977 / 1.877756 / 32.767868 (measured 2026-09-30) — so it reads that
-  mesh as `usable`, and the gate also proves it is not decoration by tightening every bound to
-  1.0 and watching the verdict move. They are ROUND numbers above a measurement, not a
-  measurement times a tolerance: #161 is the ticket that makes a threshold a demonstration and
-  records which reference mesh it came from, and #168 the one that corrects a threshold with
-  evidence. `bulk.p95` rather than the whole-mesh `p95` is #144's finding — the O-grid's
-  whole-mesh p95 of 23.662 describes its wall band, not its mesh.
+* **THE SHIPPED CASE TYPE'S NUMBERS WERE HAND-AUTHORED, AND SAID SO — #161 REPLACED THEM.**
+  `ogrid_circle.casetype.json`, under `examples/` rather than `config/`, bounded `median` at
+  2.5/6.0, `bulk.p95` at 2.5/5.0 and `max` at 50/200, against the shipped O-grid's published
+  1.845977 / 1.877756 / 32.767868 (measured 2026-09-30) — so it read that mesh as `usable`, and
+  the gate also proves it is not decoration by tightening every bound to 1.0 and watching the
+  verdict move. They were ROUND numbers above a measurement, not a measurement times a tolerance,
+  which this section's own blind spot named. The entry below is the ticket that closed it; #168 is
+  still the one that corrects a threshold with evidence. `bulk.p95` rather than the whole-mesh
+  `p95` is #144's finding — the O-grid's whole-mesh p95 of 23.662 describes its wall band, not
+  its mesh.
 * **`HYBMESH_CASE_TYPE` IS AN INTERIM CHANNEL, OWNED BY THIS TICKET.** Which case type is in
   play — picking one, assigning roles, overlaying its config fields — is #162's whole subject,
   and `models/pipeline_config.py` is the worst offender against the file-length standard
@@ -3922,6 +3923,105 @@ and rendered by the log panel is `smoke_headless_appcontroller.py`'s territory. 
 `.provenance.json` carries only the CELL SHAPE figures: inverted counts, non-orthogonality and
 the wall first-cell error are on the `HYBMESH_MB_QUALITY` stdout line and are NOT available to a
 threshold, so the only route to `unusable` from a fold is the exit code.
+
+**A THRESHOLD IS MEASURED FROM A REFERENCE MESH** (#161, parent #158;
+`services/case_type_author.py` + `services/case_type_reference.py`, both Qt-free;
+`tools/PreProcessor/save_case_type.py`; `examples/case_types/ogrid_circle.casetype.json`
+regenerated; gated by `tests/test_case_type_author.py`).
+
+The ticket that closes the blind spot the section above named. #158's user story 32 states the
+problem in one sentence: "I want the thresholds measured from the reference mesh rather than
+typed, so that I do not have to invent numbers I do not know." The maintainer knows which mesh is
+good; they do not necessarily know what its p95 is. So the tool reads the figures that mesh
+published, multiplies each by a tolerance factor, and records which mesh every bound came from —
+which is `docs/adr/0002-thresholds-live-in-case-types.md`'s first consequence and the reason a
+misjudged verdict is corrected by adding a reference mesh (#168) rather than by editing a number.
+
+* **THE INVARIANT IS ARITHMETIC, NOT A CLAIM ABOUT PROVENANCE.** A case type that says a bound
+  was measured must be able to prove it: `CaseType._check_references` re-derives every measured
+  bound as `reference.figure(key) * factor` and refuses the document when the stated bound is not
+  that product within `Origin.REL_TOL` (1e-9 relative). That is why the file carries the FACTOR
+  and not only the product, and why `Origin` holds no figure of its own — the measured value lives
+  once, in the `ReferenceMesh`, so the file cannot disagree with itself about what the reference
+  mesh measured. The check lives on `CaseType` because it is the only scope holding both halves.
+  Injection A widens the tolerance to 1e9 and reddens exactly the check written for it.
+* **THE TOLERANCE IS ALSO A COHERENCE RULE, AND IT HAS A POSITIVE FORM.** A factor below 1.0 is
+  refused outright: the bound would sit UNDER the figure the reference mesh published, so the mesh
+  the maintainer judged good would fail the case type authored from it. Said the other way round,
+  which is how the gate asserts it: **the reference mesh is `usable` under its own case type**,
+  structurally, because the comparison is strict. Injection B removes the refusal and the check
+  goes red from the positive side.
+* **MEASURED AND HAND-SET ARE TOLD APART BY THE FILE'S SHAPE.** A bound with a tolerance factor
+  beside it was derived; a bound without one was typed, and `Threshold.origin_of` reads that off
+  rather than off a flag — a flag can disagree with the number next to it and this cannot. An
+  override keeps the `reference`, so what it overrode is still on the record, which is what makes
+  "overridden" a weaker claim than "unrelated to any mesh". Injection D makes `origin_of` answer
+  `measured` for everything and reddens the override check and the shipped-file one together.
+* **THE SHIPPED EXAMPLE DEMONSTRATES BOTH ORIGINS, DELIBERATELY.** Re-authored from
+  `results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk` at the default 1.5 / 3.0, its
+  `median` and `bulk.p95` bounds are measured (2.7689655 / 5.537931 and 2.816634 / 5.633268) and
+  its `max` unusable bound is the hand-written 200.0 carried over from the pre-#161 file, because
+  that figure is arithmetic — the azimuthal spacing over `BL_INITIAL_THICKNESS` — and the
+  maintainer's judgement about where it stops being usable is not a thing the measurement
+  captures. That is user story 34, and it is also what makes the gate's "exactly one hand-set
+  bound" assertion mean something. **The defaults were chosen and then checked against the
+  hand-written numbers they replace**: 1.5x reproduces 2.769 against a hand-picked 2.5 and 49.15
+  against 50, so the factor is not a number invented to make the example come out right.
+* **AN UNMEASURED FIGURE IS ABSENT FROM THE RECORD, NOT A NEGATIVE NUMBER IN IT.**
+  `measured_figures` asks `ShapeFigures.measured` of the SET — the honest unit, since
+  `include/CellShape.hpp` writes a set's count 0 exactly when its three figures are negative — so
+  the mesher's sentinel never reaches `ReferenceMesh.figures`, and `ReferenceMesh` refuses one
+  that does. The consequence the acceptance asks for falls out: a figure the reference mesh could
+  not measure gets no threshold. **The skip is REPORTED and not merely absent**
+  (`AuthorResult.skipped`): a maintainer who asked for a bound on a figure and silently did not
+  get one would believe they had it. Injection C stops asking and reddens that check alone.
+* **ADVICE IS THE SELECTION, AND THERE IS NO ALL-NINE-KEYS DEFAULT.** A case type that bounded
+  every figure the sidecar publishes would have an opinion it was never asked for, and `Threshold`
+  refuses empty advice anyway (#160). An override naming a figure with no advice is REFUSED rather
+  than silently inert — a bound the maintainer believes they set and that changes nothing is the
+  same defect as a threshold that silently stops biting. Injection G removes that refusal.
+* **THE SCHEMA WENT TO 2 AND STILL READS 1.** `READABLE_VERSIONS = (1, 2)`: a v1 document is a v2
+  document with no reference meshes and every bound `MANUAL`, which is exactly what a hand-written
+  case type is. #160 designed the artefact to GROW rather than be replaced and this is the first
+  time that was tested; writing is always the current version, so the unknown-key refusal still
+  makes a document from a LATER build fail loudly.
+* **NOTHING RE-MEASURES A MESH.** `measure_reference` goes through
+  `mesh_shape_stats.read_shape_summary`, the single owner #131 made, so a threshold cannot be
+  derived from one reading of a mesh and judged against another. Every path it records is
+  repo-relative where it can be (`_repo_relative`), because a case type is a file other people
+  read and an absolute path out of one maintainer's home directory is provenance nobody can follow.
+* **THE HOST IS HEADLESS, FOR `HYBMESH_CASE_TYPE`'S OWN REASON.**
+  `tools/PreProcessor/save_case_type.py` takes a mesh, a name and a sentence of advice per figure.
+  #162 owns the picker and the apply flow; a dialog authored here would be chrome for that ticket
+  to unpick, and the authoring step has almost no UI of its own to speak of.
+* **THE ARTEFACT SPLIT A SECOND TIME, AND AGAIN ON LENGTH RATHER THAN SUBJECT.** Adding `Origin`
+  and `ReferenceMesh` took `case_type.py` to 601 lines against the ~500 standard, so the figure
+  vocabulary and the provenance moved to `services/case_type_reference.py` and are RE-EXPORTED
+  from `case_type.py` — every existing `case_type.FIGURE_KEYS` / `case_type.CaseTypeError` reader
+  is untouched, and the dependency runs one way. The same cut #160 made for the verdict and #159
+  for `mesh_config.py`. One small consolidation rode along: `judge_threshold`'s inline
+  `rpartition(".")` became `split_key` / `figures_for` in the new module, so "where does the dot
+  fall in a figure key" has one owner now that two modules ask it.
+* **TWO INJECTIONS WERE RETARGETED AFTER PASSING FOR THE WRONG REASON**, and the gate's docstring
+  records it rather than the fix being silent. A's document first raised a bound to a round 99.0,
+  which the band rule (`unusable` below `attention`) refused before the derivation was ever
+  compared — green, for a reason with nothing to do with provenance. H's first form emptied
+  `figures`, which `ReferenceMesh` refuses outright, so it reddened every check that loads a file
+  instead of the one it was written for. `others_green` is what surfaced both.
+
+**Named blind spots.** Nothing here judges whether a tolerance FACTOR is right: what is gated is
+that a bound really is the product, not that the product is a good place for a bound. **A
+threshold BOTH of whose bounds are overridden records no reference at all** and is indistinguishable
+from a hand-written one: `Origin` refuses to exist with no factor, since an origin that derived
+nothing is not provenance, and `author` therefore drops it. The information lost is "I authored
+this against mesh X and typed both numbers", which is a weaker claim than either neighbour and was
+not worth a third state. The
+reference mesh's figures come from the sidecar reader, which has its own gate, and nothing here
+re-measures a mesh by design. Check 1 drives the CLI rather than a GUI action, saving a case type
+from the window being #162's. And the shipped reference mesh is under `results/`, which is
+gitignored — the case type records which mesh it was measured on and the mesh itself is
+regenerated from `config/multiblock_ogrid.dat`, so the numbers are reproducible but the file they
+were read from is not in the tree.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
