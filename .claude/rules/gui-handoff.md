@@ -293,6 +293,11 @@ class of problem and authored by someone who knows that class. Read
   beside two good ones is NOT the milder answer.
 - **A case type NAMES its metric** and a mesh measured with the other path's metric is `not
   determinable` — `quad_midline_ratio` against `tri_edge_ratio` is comparing nothing (#130).
+- **ONLY the CELL SHAPE figures can carry a threshold.** Inverted counts, non-orthogonality and
+  the wall first-cell error are on the `HYBMESH_MB_QUALITY` stdout line and not in the sidecar, so
+  the only route to `unusable` from a fold is the exit code. A capability refusal, not a coverage
+  limit: reading them would mean parsing the mesher's stdout, a second contract beside the one
+  #131 made the single owner.
 - **A threshold is an UPPER bound with two levels** (`attention`, `unusable`; either may be
   omitted), because every published figure is a ratio whose floor is 1.0. **Advice is REQUIRED**
   — "needs attention" with nothing to try is a dead end — and **an unknown key is REFUSED at both
@@ -303,8 +308,12 @@ class of problem and authored by someone who knows that class. Read
   per line) and `services/pipeline_runner.py` logs the text; **neither host may spell a verdict
   state, a threshold comparison or a grade of its own**, which the gate reads out of their ASTs.
   The headless call sits ABOVE the guard that raises on a non-zero exit, or exit 9's `unusable`
-  could never be said. The GUI skips `RC_CANCELLED` / `RC_TIMEOUT`: those are the worker's own
-  sentinels, not mesher exit codes.
+  could never be said. The GUI skips every code `workers/exit_codes.is_reason` claims — all
+  THREE of `RC_EXCEPTION`, `RC_CANCELLED`, `RC_TIMEOUT`, read from that module rather than
+  listed here — because those are the worker's own sentinels, not mesher exit codes.
+- **A verdict NAMES the file that issued it** (`CaseType.source`, printed as the report's last
+  line when the case type came from one). It is the only record of which case type a run used,
+  the interim channel below leaving none.
 - **Which case type is in play is NOT decided here.** `HYBMESH_CASE_TYPE` names it, as the one
   channel both hosts read identically; #162 builds the picker that replaces it. Unset means no
   verdict at all — **there is no default case type**, which would be a universal threshold
@@ -312,10 +321,22 @@ class of problem and authored by someone who knows that class. Read
 - **ONE SEAM, TWO FILES**, split by the ~500-line standard and not by subject: the thresholds and
   their advice are declared in `case_type.py` and nowhere else. Same cut as `mesh_config.py` /
   `mesh_config_validate.py` (#159), dependency one way.
-Gated by `tests/test_case_type_verdict.py` (13 checks and eight automated injections, each
+Gated by `tests/test_case_type_verdict.py` (14 checks and ten automated injections, each
 asserting the mutation is well-formed, that the named check reddens and that no other does; the
 counts are that file's own docstring's and are not restated here).
   Why: `docs/design_notes/gui.md`, "A CASE TYPE'S THRESHOLDS, AND THE FOUR-STATE VERDICT".
+
+**WHY THIS FILE AND NOT A THIRTEENTH, recorded because the opposite call has precedent.** This
+file's thesis is "is a file one stage leaves on disk still correct when the NEXT one reads it",
+and grading is a different question — which is the exact argument #153 used to split
+`mesher-quality.md` out of `mesher-multiblock.md`. The difference is budget and size: that split
+happened because the source file had 197 characters of slack, while this one had 37,484 before
+the entry landed (60,000 - 22,516, re-derivable) and the
+whole entry is ~3.4k. A rule file taken for a tracer bullet would be the thinnest in the tree, and
+`services/case_type*` would still need a glob beside `services/mesh_shape_stats*` because the
+judge reads what that reader returns. **#162 and #166 are the cheap moment**: they add the picker,
+the config overlay, deviation and Trial/Generate, and that is the volume a thirteenth file is
+worth taking. By decision, not by oversight.
 
 ## Named blind spots
 
@@ -330,6 +351,3 @@ which are capability refusals.
   invisible to it.
 - **The GUI leg drives `_on_mesh_gen_finished` with a recording stand-in for the main window.**
   That the verdict is wired to a button and rendered by the log panel is not checked here.
-- **The sidecar carries only the CELL SHAPE figures.** Inverted counts, non-orthogonality and the
-  wall first-cell error are on the `HYBMESH_MB_QUALITY` stdout line, so no threshold can be set on
-  them and the only route to `unusable` from a fold is the exit code.

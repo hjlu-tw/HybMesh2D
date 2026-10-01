@@ -198,9 +198,11 @@ def log_report(message, level: str = "ERROR") -> None:
     The tag therefore goes on the FIRST line with text of its own, and every
     line after it goes out untagged, to be graded on its own words. That is NOT
     a promise that they grade INFO: a continuation line containing "failed", or
-    one of the crash tokens, still grades up. It holds for the wording the one
-    real caller produces (``MeshConfig.missing_geometry_message``), and a report
-    whose body carries those words is asking for what it gets.
+    one of the crash tokens, still grades up. It holds for the wording BOTH real
+    callers produce — ``MeshConfig.missing_geometry_message`` (#102) and
+    ``case_type_verdict.report_text`` (#160), whose continuation lines carry a
+    measurement, a bound and the case type's advice and none of those words —
+    and a report whose body carries them is asking for what it gets.
 
     Use :func:`log_all` instead for several INDEPENDENT lines, which is a
     different job: there, each line is its own message and grades for itself.

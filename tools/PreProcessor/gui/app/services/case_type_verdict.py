@@ -32,10 +32,14 @@ outranks a figure that merely crossed a bound — otherwise one unmeasurable
 figure among three good ones would be reported as the milder answer.
 
 ONE RENDERING, TWO HOSTS. `run_report` is the single call the GUI's mesh
-controller and `services/pipeline_runner` both make, returning the text AND the
-log grade, so a verdict cannot be worded or graded one way in the window and
-another in a log file nobody is watching — the same arrangement
-`mesh_shape_stats.format_figures` already holds for the figures themselves.
+controller and `services/pipeline_runner` both make, so a verdict cannot be
+WORDED one way in the window and another in a log file nobody is watching — the
+same arrangement `mesh_shape_stats.format_figures` already holds for the figures
+themselves. The GRADE it returns beside the text is used by the GUI only: the
+headless `log` callback takes no level (it is `print` in `run_pipeline`), and a
+level tag inside the text would not anchor behind the `[Mesh] ` component prefix
+either, which is the shape ~20 of this repo's lines already have
+(`.claude/rules/gui-seams.md`). Named rather than left as a half-used return.
 """
 from __future__ import annotations
 
@@ -62,10 +66,14 @@ USABLE = "usable"
 NEEDS_ATTENTION = "needs attention"
 UNUSABLE = "unusable"
 NOT_DETERMINABLE = "not determinable"
-STATES = (USABLE, NEEDS_ATTENTION, UNUSABLE, NOT_DETERMINABLE)
 
 #: Worst wins; see the module docstring for why this order and not another.
+#: This is also the ONE declaration of the set of states — `STATES` is derived
+#: from it, so a fifth state cannot be added to one and missed by the other.
+#: `_LEVELS` is the map that could still go stale, which is why check 3 of the
+#: gate compares its keys against `STATES` rather than trusting them to match.
 _RANK = {USABLE: 0, NEEDS_ATTENTION: 1, NOT_DETERMINABLE: 2, UNUSABLE: 3}
+STATES = tuple(_RANK)
 
 # The grade each state is logged at. Held HERE so the GUI and the headless host
 # cannot show one verdict two ways; `user_log.log_report` takes the level as an
@@ -207,6 +215,17 @@ def judge_threshold(threshold: case_type_mod.Threshold, summary) -> Reason:
     return Reason(threshold.key, USABLE, measured=value)
 
 
+def _undeterminable(case_type, key: str, detail: str) -> Verdict:
+    """A verdict settled before any threshold was read. One shape, four causes.
+
+    Written once because the four short circuits in `judge` differ in nothing
+    but the subject and the sentence; four copies of the same three-line
+    construction is where one of them acquires a different state by edit.
+    """
+    return Verdict(NOT_DETERMINABLE, case_type,
+                   [Reason(key, NOT_DETERMINABLE, detail=detail)])
+
+
 def judge(case_type: case_type_mod.CaseType, summary, exit_code: int = 0) -> Verdict:
     """Grade one mesh: measured figures + the mesher's exit code + thresholds.
 
@@ -222,25 +241,23 @@ def judge(case_type: case_type_mod.CaseType, summary, exit_code: int = 0) -> Ver
                    "it was exported under its ordinary name anyway so that the "
                    "fold can be looked at" % EXIT_ERR_INVERTED)])
     if exit_code != 0:
-        return Verdict(NOT_DETERMINABLE, case_type, [Reason(
-            "the run", NOT_DETERMINABLE,
-            detail="the mesher exited %d — there is no finished mesh to judge"
-                   % exit_code)])
+        return _undeterminable(
+            case_type, "the run",
+            "the mesher exited %d — there is no finished mesh to judge" % exit_code)
     if summary is None:
-        return Verdict(NOT_DETERMINABLE, case_type, [Reason(
-            "the mesh", NOT_DETERMINABLE,
-            detail="this mesh publishes no quality figures")])
+        return _undeterminable(case_type, "the mesh",
+                               "this mesh publishes no quality figures")
     if summary.metric != case_type.metric:
-        return Verdict(NOT_DETERMINABLE, case_type, [Reason(
-            "the metric", NOT_DETERMINABLE,
-            detail="this mesh was measured with %s and the case type's "
-                   "thresholds are about %s, which are different quantities"
-                   % (summary.metric, case_type.metric))])
+        return _undeterminable(
+            case_type, "the metric",
+            "this mesh was measured with %s and the case type's thresholds are "
+            "about %s, which are different quantities"
+            % (summary.metric, case_type.metric))
     if not case_type.thresholds:
-        return Verdict(NOT_DETERMINABLE, case_type, [Reason(
-            "the case type", NOT_DETERMINABLE,
-            detail="case type '%s' carries no thresholds, so it has no opinion "
-                   "about this mesh" % case_type.name)])
+        return _undeterminable(
+            case_type, "the case type",
+            "case type '%s' carries no thresholds, so it has no opinion about "
+            "this mesh" % case_type.name)
 
     reasons = [judge_threshold(th, summary) for th in case_type.thresholds]
     state = max((r.state for r in reasons), key=lambda s: _RANK[s])
@@ -260,6 +277,13 @@ def report_lines(verdict: Verdict) -> list:
         lines.append("  " + reason.describe())
         if reason.advice:
             lines.append("    try: " + reason.advice)
+    if verdict.case_type.source:
+        # WHICH FILE JUDGED, when it came from one. `CaseType.source` is kept
+        # for traceability — "a verdict a user questions must be traceable to
+        # the file that issued it" — and a field nobody prints cannot do that.
+        # It also records which case type a run used, which the interim
+        # environment-variable channel otherwise leaves nowhere.
+        lines.append("  from " + verdict.case_type.source)
     return lines
 
 

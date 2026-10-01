@@ -62,10 +62,15 @@ What this pins down:
      without a build tree — plus, with no binary, the structural half: the call
      sits ABOVE the guard that raises on a non-zero exit, so exit 9's `unusable`
      is said rather than only raised on.
- 13. THE SHIPPED CASE TYPE IS NOT VACUOUS: `config/case_types/ogrid_circle.casetype.json`
+ 13. THE SHIPPED CASE TYPE IS NOT VACUOUS: `examples/case_types/ogrid_circle.casetype.json`
      reads the shipped O-grid's published figures (median 1.845977, p95
      23.662285, max 32.767868; bulk 1.692763 / 1.877756 / 1.881891, measured
      2026-09-30) as `usable`, and one bound tightened by hand moves it off that.
+ 14. A VERDICT NAMES THE FILE THAT ISSUED IT when the case type came from one,
+     and claims no file when it did not — `CaseType.source` is kept for
+     traceability and a field nobody prints cannot provide it. It is also the
+     only record of WHICH case type a run used, the interim environment-variable
+     channel leaving none.
 
 Known blind spots, named rather than papered over:
   - Nothing here judges whether a THRESHOLD IS RIGHT. The shipped one's numbers
@@ -104,6 +109,11 @@ be scored as proof about one check:
      is how `not determinable` is reached there) — #130's "comparing nothing".
   H. negative control: the unmutated pair passes every check, so the failures
      above are the mutations and not the checker.
+  I. the `from <file>` line dropped from `report_lines` -> check 14 fails: a
+     `source` nobody prints is not the traceability it is kept for.
+  J. one state removed from `_LEVELS` -> check 3 fails. `STATES` is DERIVED from
+     `_RANK` and so cannot drift from it; `_LEVELS` is the map that can, and a
+     state missing from it reaches a host as a KeyError off `Verdict.level`.
 
 Run:  python3 tools/PreProcessor/tests/test_case_type_verdict.py
 Needs no build tree for checks 1-11 and 13; check 12's end-to-end half skips
@@ -130,7 +140,7 @@ _HOSTS = {
     "pipeline_runner": "tools/PreProcessor/gui/app/services/pipeline_runner.py",
     "mesh_gen_ctrl": "tools/PreProcessor/gui/app/controllers/mesh_gen_ctrl.py",
 }
-_SHIPPED = "config/case_types/ogrid_circle.casetype.json"
+_SHIPPED = "examples/case_types/ogrid_circle.casetype.json"
 _EXITCODES = "include/ExitCodes.hpp"
 
 _FAILS = []
@@ -275,6 +285,22 @@ def check_file_round_trip(w):
     return out
 
 
+def check_verdict_names_its_file(w):
+    """A verdict says WHICH case type file judged, when it came from one."""
+    ct, vd = w
+    out = []
+    shipped_path = os.path.join(_REPO, _SHIPPED)
+    v = vd.judge(ct.load(shipped_path), split_summary(), 0)
+    if shipped_path not in vd.report_text(v):
+        out.append("a verdict from a LOADED case type does not name its file")
+    # A case type built in memory has no file, and the line is then absent
+    # rather than present and empty.
+    v2 = vd.judge(all_key_type(ct, attention=1e9), split_summary(), 0)
+    if "from " in vd.report_text(v2):
+        out.append("a verdict from a case type with no file claims one anyway")
+    return out
+
+
 def check_four_states(w):
     """Each state from a constructed input, and the four are distinct."""
     ct, vd = w
@@ -298,6 +324,12 @@ def check_four_states(w):
         out.append("STATES does not hold four distinct names: %r" % (vd.STATES,))
     if set(reached) != set(vd.STATES):
         out.append("the four reachable states are not the four declared ones")
+    # `STATES` is DERIVED from `_RANK`, so those two cannot disagree; `_LEVELS`
+    # is a separate map over the same keys and is the one that can go stale —
+    # a state missing from it reaches a host as a KeyError off `Verdict.level`.
+    if set(vd._LEVELS) != set(vd.STATES):
+        out.append("_LEVELS does not grade every state: %r vs %r"
+                   % (sorted(vd._LEVELS), sorted(vd.STATES)))
     return out
 
 
@@ -640,6 +672,7 @@ _ALL = {
     8: check_malformed_is_refused, 9: check_hosts_do_not_grade,
     10: check_qt_free, 11: check_gui_emits_verdict,
     12: check_headless_emits_verdict, 13: check_shipped_case_type,
+    14: check_verdict_names_its_file,
 }
 
 _LABELS = {
@@ -656,6 +689,7 @@ _LABELS = {
     11: "check 11. the GUI really emits the verdict, at the service's own grade",
     12: "check 12. the headless host really emits it, before the guard that raises",
     13: "check 13. the shipped case type reads the shipped O-grid as usable",
+    14: "check 14. a verdict names the case type FILE that issued it, when there is one",
 }
 
 _REAL = world()
@@ -744,6 +778,22 @@ inj = mutate("v", "    if summary.metric != case_type.metric:", "    if False:")
 check(check_four_states(inj) and others_green(inj, 3),
       "injection G. check 3 ALONE fails when a tri_edge_ratio mesh is read "
       "against quad_midline_ratio thresholds — #130's comparing nothing")
+
+inj = mutate("v", '        lines.append("  from " + verdict.case_type.source)',
+             "        pass")
+check(check_verdict_names_its_file(inj) and others_green(inj, 14),
+      "injection I. check 14 ALONE fails when the verdict stops naming the file "
+      "that issued it — a `source` nobody prints cannot be the traceability it "
+      "is kept for")
+
+inj = mutate("v", '_LEVELS = {USABLE: "INFO", NEEDS_ATTENTION: "WARNING",',
+             '_LEVELS = {NEEDS_ATTENTION: "WARNING",')
+check(set(inj[1]._LEVELS) != set(inj[1].STATES),
+      "injection J. injection is well-formed: one state really has no grade now")
+check(check_four_states(inj) and others_green(inj, 3, 5, 13, 14),
+      "injection J. check 3 fails when `_LEVELS` stops grading every state — the "
+      "map `STATES` is NOT derived from, so it is the one that can go stale; the "
+      "other three that move are the ones that read `Verdict.level`")
 
 check(not any(fn(_REAL) for num, fn in _ALL.items()),
       "injection H. negative control: the unmutated pair passes every check, so "

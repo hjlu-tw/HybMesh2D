@@ -3793,7 +3793,7 @@ from disk by `--sync`, never remembered, which is exactly the decay it was built
 
 **A CASE TYPE'S THRESHOLDS, AND THE FOUR-STATE VERDICT** (#160, parent #158;
 `services/case_type.py` + `services/case_type_verdict.py`, both Qt-free;
-`config/case_types/ogrid_circle.casetype.json`; gated by
+`examples/case_types/ogrid_circle.casetype.json`; gated by
 `tests/test_case_type_verdict.py`).
 
 The tracer bullet for #158's workflow. The problem it starts on is in that issue's own words:
@@ -3862,9 +3862,11 @@ mistake for a violated rule if they find thresholds here without reading it.
 * **THE HEADLESS CALL SITS ABOVE THE GUARD THAT RAISES.** `pipeline_runner._run_mesh` raises on
   any non-zero exit, so a verdict reported after that guard could never say the one thing this
   layer exists to say. It is reported first and the guard still raises. The GUI reports on a
-  failed run for the same reason, and skips the worker's own out-of-band sentinels
-  (`RC_CANCELLED`, `RC_TIMEOUT`) because those are not mesher exit codes and a verdict about a
-  run the user stopped is an answer about nothing.
+  failed run for the same reason, and skips every code `workers/exit_codes.is_reason` claims —
+  all three of `RC_EXCEPTION`, `RC_CANCELLED` and `RC_TIMEOUT`, asked of that module rather than
+  listed at the call site — because those are not mesher exit codes and a verdict about a run the
+  user stopped is an answer about nothing. The first draft of this note and of the rule file both
+  named two of the three while the code asked the right question; a Standards review found it.
 * **ONE SEAM, TWO FILES, AND THE SPLIT IS THE 500-LINE STANDARD.** #158 decided judging belongs
   with the case type "because thresholds belong to the case type; splitting them would put one
   body of knowledge in two places". It does not: the thresholds, their bounds and their advice
@@ -3873,7 +3875,7 @@ mistake for a violated rule if they find thresholds here without reading it.
   prefactored three other files out of; the cut is the same one #159 made between
   `mesh_config.py` (declares) and `mesh_config_validate.py` (judges), and the dependency runs
   one way.
-* **THE SHIPPED CASE TYPE'S NUMBERS ARE HAND-AUTHORED, AND SAY SO.** `ogrid_circle.casetype.json`
+* **THE SHIPPED CASE TYPE'S NUMBERS ARE HAND-AUTHORED, AND SAY SO.** `ogrid_circle.casetype.json`, under `examples/` rather than `config/`,
   bounds `median` at 2.5/6.0, `bulk.p95` at 2.5/5.0 and `max` at 50/200, against the shipped
   O-grid's published 1.845977 / 1.877756 / 32.767868 (measured 2026-09-30) — so it reads that
   mesh as `usable`, and the gate also proves it is not decoration by tightening every bound to
@@ -3890,6 +3892,21 @@ mistake for a violated rule if they find thresholds here without reading it.
   and a run with it unset says nothing at all rather than inventing a default — a default case
   type would be a universal threshold wearing a different hat, which is the one thing ADR-0002
   rules out.
+* **WHAT THE REVIEW CHANGED, AND WHAT IT ONLY RECORDED.** Changed: the sentinel claim above
+  (it named two of three); `_RANK` made the ONE declaration of the four state names with
+  `STATES = tuple(_RANK)` derived from it, and check 3 of the gate now pins `_LEVELS` against
+  that, since it is the only one of the three maps that can still go stale (injection J); four
+  identical `not determinable` returns in `judge` behind one `_undeterminable` helper;
+  `CaseType.source` PRINTED as the report's last line, having been kept for traceability and
+  shown nowhere (check 14, injection I); the shipped case type moved from `config/` to
+  `examples/`, where it cannot read as the product default this module's own docstring says must
+  not exist; and `user_log.log_report`'s docstring, which claimed "the one real caller" and now
+  has two. Recorded instead: the state constants stay STRINGS, because #166 writes a verdict into
+  a finished case and an enum's VALUE is the only part that survives that, so the three-map
+  argument buys nothing the derivation above did not; and the headless host DISCARDS the grade
+  `run_report` returns, because its `log` callback takes no level and a level tag behind the
+  `[Mesh] ` component prefix would not anchor the classifier anyway — the shape ~20 of this
+  repo's lines already have.
 * **TWO IMPORTS IN `services/pipeline_runner.py` WERE REFLOWED FOR ROOM.** That file stood at 495
   lines against the 500 limit; the verdict call is 5 lines, and the two lines for it came from
   folding `pipeline_case_sources`' two-name import back onto one line and merging
