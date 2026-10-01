@@ -44,7 +44,7 @@ contains, and "visibly better round the nose", which is a judgement on two uncom
 
 ---
 
-## Lead: the answer, and it is not the one the ticket expected
+## Lead: the answer is the ticket's NO, and the route to it was not
 
 ### A1 — The error it was built to fix needs no fixing, and that half is a clean NO. **[V]**
 
@@ -121,11 +121,18 @@ free edges exactly the 320 `.bnd` rows' node pairs as a SET and not merely as a 
 connected component**, identical under both fills. Its cell-shape p95 falls from 148.006 to
 145.447 while the median rises 4.832 → 4.991.
 
-**So the honest recommendation is neither the ticket's expected flat NO nor a YES.** It is that
-the quantity worth a feature ticket is not the one #157 named: the wall height needs nothing,
-the stability budget does not move, and the angle — which nobody was asking the fill about —
-does. That is a different ticket with a different argument, and §5 says what it would have to
-answer before it is one.
+**At the time this was first written the recommendation was neither the ticket's expected flat
+NO nor a YES**: the wall height needed nothing, the stability budget did not move, and the angle
+— which nobody was asking the fill about — did. §5 listed what a feature ticket would have to
+answer first, starting with the solver run nothing here had done.
+
+**It has since been done (§6, 2026-10-01) and it makes the answer a NO on every axis.** Gate 2
+passes on the Hermite mesh — exit 0 at #57's operating point, every count identical to the
+control's — and the solve cannot be used to value the angle: neither C-grid converges, the
+inter-mesh drag difference drifts monotonically with the iteration count rather than settling,
+and the two residual histories are near-identical in floor, iteration and departure. Nineteen
+degrees of maximum non-orthogonality reach the one downstream consumer available here as nothing
+at all. **Do not open the feature ticket.**
 
 ---
 
@@ -362,12 +369,12 @@ the only thing on the table is the angle, on two of seven cases. Before that is 
 radius #157's §3 enumerates — 21 golden cases, `PINS` and `BAND_PINS`, the per-case figures in
 three instruction files and four gate docstrings — it would have to answer:
 
-1. **Does the angle buy anything downstream?** Nothing here ran the solver. The C-grid's 32° is
-   the figure #57's gate-2 diagnosis turned on, and 11° is a large move, but "the solver runs"
-   was already true at 32° and no pressure distribution has been compared with anything. **This
-   is the load-bearing gap.** One `getPGrid` + `unicones` run at #57's own operating point
-   (M 0.2, Re 200, zero incidence, 100 iterations, `cfl 0.6`) on both meshes would settle
-   whether the question is worth asking.
+1. ~~**Does the angle buy anything downstream?**~~ **ANSWERED 2026-10-01 — see §6, and the
+   answer closes the question rather than opening the ticket.** The solver runs on the Hermite
+   mesh at #57's operating point, and it cannot be used to value the angle: neither C-grid
+   converges, the inter-mesh drag difference drifts monotonically with the iteration count, and
+   the two residual histories are near-identical. Kept here rather than deleted because the rest
+   of this list was written against it.
 2. **What is done about the H-grid?** Variant 1 costs `h00` 0.15% → 4.40% unsmoothed, and the
    cause is understood (§2c): the correction is calibrated against the pure `u`-term rather than
    against the fill's own first interior line. Variant 2 fixes exactly that and folds the
@@ -382,10 +389,80 @@ three instruction files and four gate docstrings — it would have to answer:
    be, and is not what TWM Ch. VIII §1.B describes. That is a different construction and would
    need its own literature pass.
 
-## 6. Gaps I could not close, by name
+## 6. THE SOLVER RUN (added 2026-10-01), and it makes the NO firmer
 
-- **No solver run, on either fill.** §5 item 1. Everything in this note is the mesher's own
-  ruler measuring the mesher.
+§5 called the absent solver run "the load-bearing gap". It was run, through
+`config/pipeline/multiblock_cgrid_demo.json` with only the case name and output paths changed —
+#57's operating point exactly (M 0.2, Re 200, zero incidence, `cfl` 0.6, every non-wall patch
+flag 1), and since #91 the headless runner derives that BC table from the mesh's own patches.
+**The two runs' `input.in` and `<case>.bc.def` are identical once the case name is normalised,
+so the mesh is the only difference between them.** Transcripts: `evidence.txt` §5–§6.
+
+### 6a — GATE 2 PASSES ON THE HERMITE MESH **[V]**
+
+Exit 0, and every count the recorded acceptance runs quote is identical to the control's: 5920
+vertices, 11520 elements, 320 boundary elements, 320 boundary condition flags, 288 warnings that
+getPGrid does not know the name `farfield`, last printed `Global Iteration count 90` at
+`print_convg_per_niter` 10 with `num_half_iter` 100 — i.e. 100 iterations — and no NaN. The
+linear column reproduces #85's 2026-09-07 run figure for figure. **That is the question #57's own
+gate asks, and for the Hermite fill the answer is yes.**
+
+### 6b — AND NO ACCURACY CLAIM IS AVAILABLE HERE, which is measured and not assumed **[V]**
+
+Run to 50000 iterations, **neither C-grid converges**:
+
+| | residual floor | at iteration | last sample | `\|Fy\|` > 1e-6 from | Fy at the end |
+|---|---|---|---|---|---|
+| `cgrid` linear | 1.6262e-05 | **5500** | 2.8662e-04 | it 942 | +2.73e-02 |
+| `cgrid` hermite1 | 1.7851e-05 | **5500** | 2.1406e-03 | it 863 | −8.00e-04 |
+
+`Fy` must be **zero by symmetry** at zero incidence and leaves the noise floor before iteration
+1000 on both. The residual bottoms at the same iteration on both and then rises. Integrated wall
+drag falls monotonically — linear 1.3246e-01 at 5000, 1.0280e-01 at 15000, 8.0522e-02 at 25000,
+6.2863e-02 at 35000 — and is still falling when the run ends. **The `t` column is `0.000000e+00`
+at every row**: this is a pseudo-time steady iteration with local time stepping, so there is no
+physical time and the drift is the steady solve failing to arrive, not a transient being
+resolved.
+
+**The inter-mesh drag difference therefore drifts with the iteration count and is not a mesh
+effect**: −1.14% at 5000, −3.03% at 10000, −4.95% at 15000, −6.75% at 20000, −8.60% at 25000,
+−10.27% at 32500. That monotone ramp is the signature of differencing two unconverged
+transients. **Quoting any one of those numbers as "the Hermite mesh changes drag by X%" would be
+false**, and the +1.69% at iteration 100 that the first look produced is the same artefact at
+the other end.
+
+### 6c — The improved angle shows up NOWHERE in the solve **[V]**
+
+Nineteen degrees of maximum non-orthogonality, and the two residual histories are near-identical:
+the same floor at the same iteration, within 10% of each other (1.63e-05 against 1.79e-05), the
+same departure, symmetry lost at iteration 942 against 863. Whatever the angle buys, it does not
+reach this solve — **which is the firmest thing #157 gets, because the angle was the one axis
+still open.**
+
+### 6d — A control, so "it does not converge" is not pinned on the wrong thing **[V]**
+
+The shipped two-ring ellipse O-grid, same script shape, same operating point, 50000 iterations:
+its residual falls **monotonically to 8.5702e-06 at the last sample with no turn**, and `Fy`
+stays at 1.07e-06. So the configuration is not inherently divergent and the C-grid's turn is the
+C-grid's. **But its drag is also still falling by a factor of two per 10000 iterations at the
+end** (3.8718e-02 at 25000, 2.1740e-02 at 35000, 1.0393e-02 at 50000), so **no shipped case in
+this repo reaches a settled force at this operating point**, and a mesh-to-mesh accuracy
+comparison needs a different setup rather than more iterations.
+
+### 6e — What this does to the recommendation
+
+§5's first question is answered both ways: the solver runs, and it cannot be used to value the
+angle. **Do not open the feature ticket.** The blast radius in #157 §3 is unchanged, and the only
+benefit anybody has measured is a quality-line figure that the one downstream consumer available
+here cannot see.
+
+## 7. Gaps I could not close, by name
+
+- ~~**No solver run, on either fill.**~~ **CLOSED 2026-10-01 by §6**, which replaces it with a
+  sharper one: **no shipped case in this repo reaches a settled force at this operating point**,
+  so a mesh-to-mesh accuracy comparison is not available from the demo scripts at all. What
+  would be needed is a setup that converges, which is a separate investigation and is not this
+  note's.
 - **`TWM Ch. VIII Eq. (66)–(67)` is still secondhand.** The gap
   `arc-length-correspondence-on-an-offset-ring.md` named is unchanged: the passage exists and
   was read, the equation images did not survive text extraction. Variant 1 is written from the

@@ -498,9 +498,19 @@ two halves meet, and the case the batch exists for.
     the linear blend ALREADY delivers the declared spacing in the declared direction, which is
     `mb_square`, `mb_square_quads`, `mb_graded`, `mb_bound`, `mb_cavity` and `mb_random` but not
     the H-grid, whose `h00` declares 1.504e-01 at one end and 2.000e-01 at the other so its two
-    facing perpendicular edges carry different laws. Nothing shipped changed to measure any of it;
-    the patch, the harness, the tables and the four things a feature ticket would have to answer
-    first — starting with a solver run, which this has none of — are
+    facing perpendicular edges carry different laws. Nothing shipped changed to measure any of it.
+    **THE SOLVER RUN WAS THEN DONE (2026-10-01) AND IT CLOSES THE ANGLE TOO, SO DO NOT OPEN THE
+    FEATURE TICKET.** Gate 2 PASSES on the Hermite C-grid at #57's operating point — exit 0, 100
+    iterations, no NaN, and `input.in` and the derived `.bc.def` IDENTICAL to the control's, so
+    the mesh is the only difference — and the solve cannot value the angle: at 50000 iterations
+    neither C-grid converges (residual floor at sweep 5500 on BOTH, 1.63e-05 against 1.79e-05,
+    then rising; `Fy`, zero by symmetry, leaving the noise floor at 942 and 863), so the drag
+    difference DRIFTS with the iteration count — -1.14% at 5000 to -10.27% at 32500 — and is an
+    artefact of differencing two unconverged transients. **AND THE CONTROL IS THE SHARPEST PART:
+    the two-ring ellipse O-grid at the same operating point descends monotonically with no turn,
+    yet its drag is still halving per 10000 iterations at 50000 — so NO SHIPPED CASE REACHES A
+    SETTLED FORCE HERE, and a mesh-to-mesh accuracy comparison needs a different setup, not more
+    iterations.** The patch, the harness, the tables, the transcripts and what is still open are
     `docs/research/hermite-wall-normal-fill.md`.
 - Gated by `tests/test_multiblock_tworing_offset_surface.py` (10 groups on the SHIPPED files,
   which re-derives the committed offset through the REAL service rather than trusting it, and

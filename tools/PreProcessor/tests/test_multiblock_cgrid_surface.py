@@ -191,6 +191,27 @@ WHAT THIS RUN DOES **NOT** EXERCISE, so it is not read as more than it is:
     is the whole claim. It is not convergence, not accuracy, and no pressure
     distribution is compared with anything — not even between the smoothed run and
     its own control, which is the obvious next question and is not answered here.
+
+    AND THAT NEXT QUESTION CANNOT BE ANSWERED AT THIS OPERATING POINT, measured
+    2026-10-01 while valuing a different mesh change (#157). Run to 50000
+    iterations through config/pipeline/multiblock_cgrid_demo.json, this case does
+    NOT converge: the residual bottoms at iteration 5500 and then rises, Fy —
+    which must be zero by symmetry at zero incidence — leaves the noise floor at
+    iteration 942 and grows to 2.7e-02, and the integrated wall drag falls
+    monotonically from 1.3246e-01 at 5000 to 6.2863e-02 at 35000 and is still
+    falling. Any force difference read between two meshes therefore drifts with
+    the iteration count rather than settling, which is exactly what it did
+    (-1.14% at 5000 to -10.27% at 32500 between two fills of the same topology).
+    The CONTROL is the sharp part: the shipped two-ring ellipse O-grid at the same
+    operating point descends monotonically to 8.5702e-06 with no turn and holds Fy
+    at 1.07e-06, so the configuration is not inherently divergent — but ITS drag is
+    also still halving per 10000 iterations at 50000. No shipped case in this repo
+    reaches a settled force here, so the comparison this bullet names needs a
+    different setup and not more iterations. Transcripts:
+    docs/research/hermite-wall-normal-fill/evidence.txt, sections 5 and 6.
+    `t` is 0.000000e+00 at every row of tWall_values — this is a pseudo-time
+    steady iteration with local time stepping, so none of the above is a resolved
+    physical transient.
   * THE `.bnd` NAME -> SOLVER FLAG MAPPING WAS NOT EXERCISED HERE, and it still
     is not — but it is no longer UNEXERCISED, which is a different sentence.
     CLOSED BY #91 (2026-09-08), stated here rather than deleted because the runs

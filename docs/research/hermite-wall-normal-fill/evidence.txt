@@ -116,3 +116,69 @@ DIFFERED: ['mb_hgrid', 'mb_ogrid', 'mb_cgrid', 'mb_tworing', 'mb_tworing_offset'
     (tools/scripts/view_mesh_vtk.py over the window -0.3 1.3 -0.6 0.6). The
     images are not committed. The conforming, non-inverted, quality-line half of
     that sentence IS in (2), (3) and rows.json.
+
+================================================================================
+ADDENDUM 2026-10-01: THE SOLVER RUN
+================================================================================
+Section 5 item 1 of the note called the absent solver run "the load-bearing gap".
+It was run. These are the transcripts; the reading is section 7 of the note.
+
+The chain is `./run_pipeline.sh <script>` on a copy of
+config/pipeline/multiblock_cgrid_demo.json with only `name`, `case_name` and the
+two output paths changed -- #57's operating point exactly (M 0.2, Re 200, zero
+incidence, cfl 0.6, every non-wall patch flag 1), and since #91 the headless
+runner DERIVES that BC table from the mesh's own patches instead of taking
+getPGrid's default. The prototype patch was applied for both runs; only
+HYBMESH_MB_FILL_HERMITE differs.
+
+--------------------------------------------------------------------------------
+(5) GATE 2, AT #57's OPERATING POINT, 100 ITERATIONS
+--------------------------------------------------------------------------------
+                                           linear fill        Hermite v1
+  mesher exit                              0                  0
+  nonortho max / mean deg                  29.895095/3.821201 10.945557/2.738961
+  wall_first_cell_worst_rel                0.000968           0.001013
+  inverted                                 0                  0
+  getPGrid "Read in N vertices"            5920               5920
+  getPGrid "Read in N elements"            11520              11520
+  "number of boundary elements"            320                320
+  "Read in N boundary condition flags"     320                320
+  "unknown boundary name 'farfield'"       288 warnings       288 warnings
+  derived .bc.def                          1=2 2=2 3..8=1     1=2 2=2 3..8=1
+  solver exit                              0                  0
+  last "Global Iteration count"            90  (= 100 iters)  90  (= 100 iters)
+  NaN in the log                           none               none
+  pipeline exit                            0                  0
+
+  The two runs' `input.in` and `<case>.bc.def` are IDENTICAL once the case name
+  is normalised (diff is empty). The mesh is the only difference between them.
+  The linear column reproduces #85's recorded 2026-09-07 acceptance run figure
+  for figure.
+
+--------------------------------------------------------------------------------
+(6) 50000 ITERATIONS: NEITHER C-GRID CONVERGES, AND THE TWO-RING CONTROL SHOWS
+    IT IS NOT JUST THE CONFIGURATION
+--------------------------------------------------------------------------------
+  Residual is the SUM of the 30 per-zone entropy norms on <case>.enorm.
+
+  case                  residual floor          last sample  |Fy|>1e-6 from  Fy end
+  cgrid linear          1.6262e-05 at it 5500   2.8662e-04   it 942          +2.73e-02
+  cgrid hermite1        1.7851e-05 at it 5500   2.1406e-03   it 863          -8.00e-04
+  tworing_offset (ctl)  8.5702e-06 at it 49500  8.5702e-06   it 468          +1.07e-06
+                        -- monotone to the last sample, no turn
+
+  Integrated wall Drag (tWall_values column 2):
+
+  case                it 5000      it 15000     it 25000     it 35000     it 50000
+  cgrid linear        1.324594e-1  1.027973e-1  8.052221e-2  6.286326e-2  1.153746e-1
+  cgrid hermite1      1.309540e-1  9.770582e-2  7.359587e-2  5.699442e-2  2.650444e-2
+  tworing_offset      1.988288e-1  7.779782e-2  3.871754e-2  2.173991e-2  1.039252e-2
+
+  Hermite-minus-linear drag, as a fraction of the linear value, by iteration:
+    5000 -1.137%   10000 -3.029%   15000 -4.953%   20000 -6.748%
+    25000 -8.602%  30000 -10.160%  32500 -10.267%  35000 -9.336%
+
+  The `t` column of tWall_values is 0.000000e+00 at every row in all three runs:
+  this is a pseudo-time steady iteration with local time stepping, so there is no
+  physical time to reason about and the drift above is the steady solve failing to
+  arrive, not a resolved transient.
