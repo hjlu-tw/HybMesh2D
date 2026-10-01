@@ -32,6 +32,16 @@ defect outranks the absence of evidence about something else, and the absence
 outranks a figure that merely crossed a bound — otherwise one unmeasurable
 figure among three good ones would be reported as the milder answer.
 
+DEVIATION DOWNGRADES STANDING, IT NEVER WITHHOLDS (#162). The thresholds were
+measured on a reference mesh the case type's own config fields produced; an
+operator who changes one of those fields has moved the ground under them, so
+presenting the verdict unqualified would be a lie. Withholding it would be
+worse — it would teach operators not to touch anything, which is the opposite of
+user story 21. So the STATE is unchanged and honest, the verdict is MARKED, the
+moved fields are NAMED, and the only thing that moves is the log grade: a
+deviated `usable` is a WARNING rather than an INFO, because it is a pass with a
+caveat and a caveat nobody sees is not one.
+
 ONE RENDERING, TWO HOSTS. `run_report` is the single call the GUI's mesh
 controller and `services/pipeline_runner` both make, so a verdict cannot be
 WORDED one way in the window and another in a log file nobody is watching — the
@@ -48,6 +58,7 @@ from __future__ import annotations
 # named `case_type`, so importing the module under that name would shadow it
 # inside the function that needs it most.
 from app.services import case_type as case_type_mod
+from app.services import case_type_fields
 from app.services import mesh_shape_stats
 from app.services.logging_setup import get_logger
 
@@ -82,6 +93,12 @@ STATES = tuple(_RANK)
 # (`.claude/rules/gui-seams.md`), and this is that caller's one answer.
 _LEVELS = {USABLE: "INFO", NEEDS_ATTENTION: "WARNING",
            UNUSABLE: "ERROR", NOT_DETERMINABLE: "WARNING"}
+
+#: The grade a DEVIATED verdict may not sit below. It only ever lifts `usable`
+#: — every other state is already at least this — which is exactly the
+#: "standing downgraded, never withheld" rule: the answer is unchanged, the
+#: caveat is audible.
+DEVIATED_FLOOR = "WARNING"
 
 
 class Reason:
@@ -136,10 +153,11 @@ class Reason:
 class Verdict:
     """The graded judgement one case type passes on one finished mesh."""
 
-    __slots__ = ("state", "case_type", "reasons", "checked")
+    __slots__ = ("state", "case_type", "reasons", "checked", "deviations")
 
     def __init__(self, state: str, case_type: case_type_mod.CaseType,
-                 reasons: "list[Reason] | None" = None, checked: int = 0):
+                 reasons: "list[Reason] | None" = None, checked: int = 0,
+                 deviations: "tuple | None" = None):
         self.state = state
         self.case_type = case_type
         #: ONLY the reasons that moved the verdict off `usable`. A figure that
@@ -149,15 +167,38 @@ class Verdict:
         #: when the verdict was settled before any of them was read, which is a
         #: different thing from a case type that has none.
         self.checked = checked
+        #: The owned config fields this run has moved, as
+        #: `case_type_fields.Deviation`. Carried on EVERY verdict, including the
+        #: ones settled before a figure is read: a folded mesh produced with the
+        #: case type's settings changed is still a folded mesh, and which
+        #: settings were changed is the first thing anybody asks about it.
+        self.deviations = tuple(deviations or ())
+
+    @property
+    def deviated(self) -> bool:
+        """True when the operator has moved a field the case type owns."""
+        return bool(self.deviations)
 
     @property
     def level(self) -> str:
-        """The log grade for this state, so both hosts show it the same way."""
-        return _LEVELS[self.state]
+        """The log grade for this state, so both hosts show it the same way.
+
+        A deviated verdict is floored at `DEVIATED_FLOOR`, which is the whole of
+        what "standing downgraded" costs: the state is untouched and the caveat
+        becomes audible.
+        """
+        level = _LEVELS[self.state]
+        if self.deviated and level == "INFO":
+            return DEVIATED_FLOOR
+        return level
 
     @property
     def headline(self) -> str:
-        line = "Verdict: %s — case type '%s'" % (self.state, self.case_type.name)
+        line = "Verdict: %s%s — case type '%s'" % (
+            self.state,
+            (", DEVIATED on %d field(s)" % len(self.deviations)
+             if self.deviated else ""),
+            self.case_type.name)
         if self.checked:
             # `reasons` holds only the ones that MOVED the verdict (see the slot
             # comment), so their count IS the number that were not met; counting
@@ -205,7 +246,8 @@ def judge_threshold(threshold: case_type_mod.Threshold, summary) -> Reason:
     return Reason(threshold.key, USABLE, measured=value)
 
 
-def _undeterminable(case_type, key: str, detail: str) -> Verdict:
+def _undeterminable(case_type, key: str, detail: str,
+                    deviations: tuple = ()) -> Verdict:
     """A verdict settled before any threshold was read. One shape, four causes.
 
     Written once because the four short circuits in `judge` differ in nothing
@@ -213,46 +255,56 @@ def _undeterminable(case_type, key: str, detail: str) -> Verdict:
     construction is where one of them acquires a different state by edit.
     """
     return Verdict(NOT_DETERMINABLE, case_type,
-                   [Reason(key, NOT_DETERMINABLE, detail=detail)])
+                   [Reason(key, NOT_DETERMINABLE, detail=detail)],
+                   deviations=deviations)
 
 
-def judge(case_type: case_type_mod.CaseType, summary, exit_code: int = 0) -> Verdict:
+def judge(case_type: case_type_mod.CaseType, summary, exit_code: int = 0,
+          deviations: "tuple | None" = None) -> Verdict:
     """Grade one mesh: measured figures + the mesher's exit code + thresholds.
 
     `summary` is a `mesh_shape_stats.ShapeSummary`, or ``None`` when the mesh
     published none. The five short circuits below are ordered by how much they
     know, most certain first, and every one of them is a state the tool can
     genuinely be in rather than a defensive branch.
+
+    `deviations` is what `case_type_fields.deviations` returned for this run.
+    It does not change the STATE — see the module docstring — so it is attached
+    to whatever verdict the figures and the exit code produce, on every path.
     """
+    deviations = tuple(deviations or ())
     if exit_code == EXIT_ERR_INVERTED:
         return Verdict(UNUSABLE, case_type, [Reason(
             "inverted cells", UNUSABLE,
             detail="the mesher exited %d — this mesh holds inverted cells, and "
                    "it was exported under its ordinary name anyway so that the "
-                   "fold can be looked at" % EXIT_ERR_INVERTED)])
+                   "fold can be looked at" % EXIT_ERR_INVERTED)],
+            deviations=deviations)
     if exit_code != 0:
         return _undeterminable(
             case_type, "the run",
-            "the mesher exited %d — there is no finished mesh to judge" % exit_code)
+            "the mesher exited %d — there is no finished mesh to judge"
+            % exit_code, deviations)
     if summary is None:
         return _undeterminable(case_type, "the mesh",
-                               "this mesh publishes no quality figures")
+                               "this mesh publishes no quality figures",
+                               deviations)
     if summary.metric != case_type.metric:
         return _undeterminable(
             case_type, "the metric",
             "this mesh was measured with %s and the case type's thresholds are "
             "about %s, which are different quantities"
-            % (summary.metric, case_type.metric))
+            % (summary.metric, case_type.metric), deviations)
     if not case_type.thresholds:
         return _undeterminable(
             case_type, "the case type",
             "case type '%s' carries no thresholds, so it has no opinion about "
-            "this mesh" % case_type.name)
+            "this mesh" % case_type.name, deviations)
 
     reasons = [judge_threshold(th, summary) for th in case_type.thresholds]
     state = max((r.state for r in reasons), key=lambda s: _RANK[s])
     return Verdict(state, case_type, [r for r in reasons if r.state != USABLE],
-                   checked=len(reasons))
+                   checked=len(reasons), deviations=deviations)
 
 
 def report_lines(verdict: Verdict) -> list:
@@ -267,6 +319,16 @@ def report_lines(verdict: Verdict) -> list:
         lines.append("  " + reason.describe())
         if reason.advice:
             lines.append("    try: " + reason.advice)
+    if verdict.deviated:
+        # NAMED, not counted: user story 20 is "I want to see which fields I
+        # deviated on, so that I can put one back if I want the verdict's full
+        # standing", and a count tells the operator a number they cannot act on.
+        lines.append("  deviated: the thresholds were measured on a mesh these "
+                     "settings produced, and %d of them %s moved"
+                     % (len(verdict.deviations),
+                        "has" if len(verdict.deviations) == 1 else "have"))
+        for dev in verdict.deviations:
+            lines.append("    " + dev.describe())
     if verdict.case_type.source:
         # WHICH FILE JUDGED, when it came from one. `CaseType.source` is kept
         # for traceability — "a verdict a user questions must be traceable to
@@ -283,13 +345,21 @@ def report_text(verdict: Verdict) -> str:
 
 
 def run_report(mesh_path: str, exit_code: int,
-               case_type: case_type_mod.CaseType | None = None) -> tuple:
+               case_type: case_type_mod.CaseType | None = None,
+               config=None) -> tuple:
     """`(text, level)` for one finished run. ``("", "INFO")`` when there is none.
 
     The ONE call both hosts make. It resolves the active case type, reads the
-    figures the run published and grades them, so neither host holds a rule of
-    its own about any of the three — which is what keeps the GUI's verdict and
-    the headless one the same verdict.
+    figures the run published, works out which of the case type's own fields
+    this run moved and grades the lot, so neither host holds a rule of its own
+    about any of the four — which is what keeps the GUI's verdict and the
+    headless one the same verdict.
+
+    `config` is the `MeshConfig` the run used. Passed by the host because only
+    the host has it; ``None`` means nobody could say, and the deviation report
+    is then EMPTY rather than invented — a verdict that silently claimed no
+    deviation because nothing looked would be the one lie this layer exists
+    against.
 
     A case type that was NAMED and will not load comes back as a message rather
     than as silence: the operator asked for a judgement and must be told why
@@ -304,6 +374,8 @@ def run_report(mesh_path: str, exit_code: int,
             return ("No verdict: %s" % exc, "WARNING")
         if case_type is None:
             return ("", "INFO")
+    moved = (() if config is None
+             else case_type_fields.deviations(case_type.fields, config))
     verdict = judge(case_type, mesh_shape_stats.read_shape_summary(mesh_path),
-                    exit_code)
+                    exit_code, moved)
     return (report_text(verdict), verdict.level)

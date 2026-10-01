@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 236 more of today because this repo's own prose
+bytes, which the root file has 240 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 39,810 / 35,517 / 33,939 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-handoff, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 40,752 / 39,810 / 35,517 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-handoff, gui-panels-config, mesher, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 424 / 3,595 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    ten, which have 5,006 / 8,335 / 20,190 / 24,483 / 26,061 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
+    ten, which have 5,006 / 8,335 / 19,248 / 20,190 / 24,483 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 41,703 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 42,252 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 41,703 taken down to the boundary above is 41,500, to
+# are its size and its slack -- and 42,252 taken down to the boundary above is 42,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -739,7 +739,28 @@ _SOURCES = {
 # Standards review found that, as it found the same shape in #154's entry above. The
 # ledger's reading is what licenses the re-band and it is unchanged: anything the root
 # ENUMERATES grows it, and the entry points are one of those lists.
-ROOT_BUDGET = 42_500
+# #162 is the TENTH, and it is #161's cause a fourth consecutive time with the reading
+# still unchanged: a TENTH HEADLESS ENTRY POINT, `tools/PreProcessor/show_case_type.py`,
+# its invocation and the one sentence saying what a deviation is -- 389 characters of
+# Build & Run, plus 80 for `save_case_type.py`'s own new `--fields-from` flag and its
+# clause, and 80 for the tripwire row's. 549 in all, which took the slack to 248: inside
+# the budget and OUT of the band at the tight end, where the next typo fix in the root
+# would have had to edit this file too. The three are given apart because only the first
+# is the enumeration this ledger's reading is about. BE PRECISE ABOUT WHAT WAS TRIED:
+# 906 characters went in first and check 1 refused them outright -- the root was 109 over
+# -- so the block was rewritten to 549 BEFORE this entry was written, which is the
+# opposite order to #154's and is the point of that entry's note. What the trimmed version
+# dropped is the worked `--against` / `--config` paths and the list of file kinds
+# `--fields-from` reads; what it kept is the invocation and the one clause saying what
+# `--config` answers, because a reader who cannot tell what the command is FOR is the
+# trade #153, #154 and #161 all refused. A version carrying the invocation alone is about
+# 250 and WOULD have fitted inside the old band, so this is a judgement that the clause is
+# worth the re-band and not an arithmetic impossibility. No rule file was born:
+# `gui-handoff.md` grew 33,939 -> 40,752 (+6,813) against its own 60,000, and its file
+# count moved 14 -> 15 because the artefact split a third time on the ~500-line standard.
+# That file's own "#162 is the cheap moment" note for a thirteenth rule file was
+# RE-MEASURED rather than acted on, and says so.
+ROOT_BUDGET = 43_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

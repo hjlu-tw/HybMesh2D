@@ -1,8 +1,9 @@
 """AUTHORING a case type from a mesh the maintainer judged good. Qt-free.
 
-The third file of the case-type seam (#161, parent #158): `case_type.py` is the
-document, `case_type_reference.py` the figures and the provenance it holds, and
-this module is the one step that PRODUCES one. The verdict half
+The authoring file of the case-type seam (#161, parent #158): `case_type.py` is
+the document, `case_type_reference.py` the figures and the provenance it holds,
+`case_type_fields.py` the config overlay, and this module is the one step that
+PRODUCES one. The verdict half
 (`case_type_verdict.py`) is not involved and is not imported — a case type is
 authored, then judged with, and running the two together would make the gate's
 "the reference mesh is usable under the case type it authored" circular.
@@ -175,13 +176,21 @@ def _bounds_for(reference, key: str, attention_factor: float,
 def author(name: str, reference: case_type_mod.ReferenceMesh, advice: dict,
            attention_factor: float = DEFAULT_ATTENTION_FACTOR,
            unusable_factor: float = DEFAULT_UNUSABLE_FACTOR,
-           overrides: "dict | None" = None) -> AuthorResult:
+           overrides: "dict | None" = None,
+           fields=None) -> AuthorResult:
     """Build a case type from one reference mesh, its advice and its factors.
 
     `advice` maps a figure key to the sentence shown when that threshold is
     missed, and selects the figures the case type has an opinion about.
     `overrides` maps a figure key to `{bound: value}`; a value replaces the
     derived bound by hand, and ``None`` removes that bound altogether.
+
+    `fields` is the SPARSE config overlay the case type carries (#162) — a
+    `FieldOverlay` or a plain dict, and ``None`` for a case type that grades a
+    mesh without saying how to produce one. It is a separate argument rather
+    than something derived here, because the settings come from the maintainer's
+    CASE and the thresholds come from the MESH it produced: deriving one from the
+    other would make a case type claim an opinion about fields nobody chose.
 
     Nothing here is lenient about a key it was handed and cannot act on: an
     override naming a figure with no advice, or either naming a figure the
@@ -239,7 +248,7 @@ def author(name: str, reference: case_type_mod.ReferenceMesh, advice: dict,
             % (name, reference.ident, len(advice)))
     return AuthorResult(
         case_type_mod.CaseType(name, reference.metric, thresholds,
-                               references=[reference]),
+                               references=[reference], fields=fields),
         skipped)
 
 
@@ -255,5 +264,6 @@ def save_authored(result: AuthorResult, path: str) -> AuthorResult:
     written = case_type_mod.CaseType(
         result.case_type.name, result.case_type.metric,
         result.case_type.thresholds, source=path,
-        references=result.case_type.references)
+        references=result.case_type.references,
+        fields=result.case_type.fields)
     return AuthorResult(written, result.skipped)

@@ -18,12 +18,12 @@ paths:
 Loaded on demand when the mesh-BC audit, the project-file classifier, the case-grid lookup,
 the shape-summary reader, the CASE TYPE and its verdict, the Mesh Statistics panel, the mesh
 output-name resolver, the mesh-export / Mesh-layers / solver controller, or the segment model
-is read — **14 files**, verified to match. The `services/case_type*` glob is #160's: a case
+is read — **15 files**, verified to match. The `services/case_type*` glob is #160's: a case
 type GRADES the same `.provenance.json` this file's sixth concern already reads inward, so
 the reader and the judge sit together rather than one area's rule being split in two. It
-reaches FOUR files since #161 — the document, the figures and provenance it holds, the
-verdict and the authoring step — all four being the ~500-line standard's cuts through one
-artefact rather than four seams. **Rules only** — the rationale (the
+reaches FIVE files since #162 — the document, the figures and provenance it holds, the
+config overlay, the verdict and the authoring step — all five being the ~500-line standard's
+cuts through one artefact rather than five seams. **Rules only** — the rationale (the
 measurements, the dated USER-REPORTED failures, the reversals and the named blind spots) is
 `docs/design_notes/gui.md`. Read that note before overruling a rule here; when a rule changes,
 update BOTH.
@@ -40,12 +40,13 @@ looks converged, a float parse error on JSON, a file literally named `mesh_<case
 whose labels nothing carries, a quality figure measuring a quantity the mesher never reported.
 That is the family resemblance, and it is why they are one file.
 
-**One file this rules on is reached by NO glob in ANY rule file**:
-`tools/PreProcessor/save_case_type.py`, #161's authoring host, which sits outside
+**TWO files this rules on are reached by NO glob in ANY rule file**:
+`tools/PreProcessor/save_case_type.py`, #161's authoring host, and
+`tools/PreProcessor/show_case_type.py`, #162's inspecting one. Both sit outside
 `gui-seams.md`'s tree-wide `tools/PreProcessor/gui/**` as well — so the tripwire row in
-`CLAUDE.md` is the only thing that reaches its reader, the same gap recorded for `run_batch.py`
-and `CMakeLists.txt`. It is outside `tests/test_silent_exceptions.py`'s swept tree for the same
-reason.
+`CLAUDE.md` is the only thing that reaches their reader, the same gap recorded for `run_batch.py`
+and `CMakeLists.txt`. Both are outside `tests/test_silent_exceptions.py`'s swept tree for the
+same reason, and both carry the narrow handler that file's absence argues for.
 
 **Boundaries run BOTH ways.**
 - **Outward.** Three owners sit under other rule files' globs. `models/mesh_config.py`
@@ -328,10 +329,11 @@ class of problem and authored by someone who knows that class. Read
   channel both hosts read identically; #162 builds the picker that replaces it. Unset means no
   verdict at all — **there is no default case type**, which would be a universal threshold
   wearing a different hat.
-- **ONE SEAM, FOUR FILES** (two at #160, four since #161), every cut the ~500-line standard and
-  none of them by subject: the thresholds and their advice are declared in `case_type.py` and
-  nowhere else, and `case_type_reference.py` is re-exported from it so no caller learns a new
-  name. Same cut as `mesh_config.py` / `mesh_config_validate.py` (#159), every dependency one way.
+- **ONE SEAM, FIVE FILES** (two at #160, four at #161, five since #162), every cut the
+  ~500-line standard and none of them by subject: the thresholds and their advice are declared
+  in `case_type.py` and nowhere else, the set of OWNABLE fields in `case_type_fields.py` and
+  nowhere else, and both are re-exported from the document so no caller learns a new name. Same
+  cut as `mesh_config.py` / `mesh_config_validate.py` (#159), every dependency one way.
 Gated by `tests/test_case_type_verdict.py` (14 checks and ten automated injections, each
 asserting the mutation is well-formed, that the named check reddens and that no other does; the
 counts are that file's own docstring's and are not restated here).
@@ -383,6 +385,71 @@ asserting the mutation is well-formed, that the named checks redden and that no 
 counts are that file's own docstring's and are not restated here).
   Why: `docs/design_notes/gui.md`, "A THRESHOLD IS MEASURED FROM A REFERENCE MESH".
 
+**A CASE TYPE CARRIES ITS CONFIG FIELDS AS A SPARSE OVERLAY, AND A MOVED FIELD DEVIATES THE
+VERDICT** (`services/case_type_fields.py` = the vocabulary, the apply, the deviation and the
+diff, Qt-free; `tools/PreProcessor/show_case_type.py` is the inspecting host; #162, parent
+#158). #160 and #161 grade a mesh after the fact and neither says how to PRODUCE one, so an
+operator still configured 104 fields to mesh a problem class they recognise. A case type now
+carries the settings that produced its reference mesh, and the tool notices when the operator
+moves away from them.
+- **SPARSE IS THE DESIGN, NOT AN OPTIMISATION.** A case type records only the fields it takes
+  a position on; a field it does not mention takes the ordinary `MeshConfig` default. A full
+  snapshot would make every case type in the tree disagree with the model the day a mesher
+  parameter is added, and nobody could tell which disagreement was an opinion (user story 36).
+- **THE CAPTURE IS A SUBTRACTION, and that is what makes it sparse without a tick list.** The
+  maintainer built a case they are happy with, so the fields they MOVED OFF THE DEFAULT ARE the
+  fields they have an opinion about — `capture_differences`, three of 77 for the shipped
+  O-grid. `--field` is the one way a field sitting at a default becomes an opinion.
+- **WHAT MAY BE OWNED IS DERIVED FROM THE TWO MODELS, never listed**: the SCALAR dataclass
+  fields of `MeshConfig` and `TopologyModel`, minus a declared `EXCLUDED` set stating its
+  reason per entry. A hand-written vocabulary would be a second declaration of the mesh
+  parameters, which is what `models/mesh_config_keys.py` exists to have removed.
+- **THREE KINDS ARE NOT OWNABLE, and each is somebody else's subject.** CONTAINERS (the
+  geometry list, the roles map, the group BC map) are the operator's own drawing. BINDINGS —
+  every `*_geom` / `*_segs` topology parameter, excluded by SUFFIX so a fifth family is covered
+  the day it lands — are stable segment ids into the MAINTAINER's geometry and cannot carry
+  over; roles are #164. PER-PROJECT STATE (`output_filename`, `mesh_topology_file`,
+  `bc_configured`, `topology.detached`) is a fact about one project. A name outside the
+  vocabulary is REFUSED on load, and the refusal says WHICH of those it is rather than
+  "unknown key" for a field that exists and is deliberately excluded.
+- **THE FAMILY IS A FIELD LIKE ANY OTHER**, under a `topology.` prefix in the same flat
+  overlay, because picking a case type has to answer "which family, with what parameters" as
+  well as "what size cells". One vocabulary, one apply, one deviation report.
+- **`REL_TOL` IS MEASURED OFF THE `.dat` WRITER, not picked**: `models/mesh_config_io.py`
+  formats every float at `%.6g`, so the file the mesher reads cannot represent a finer
+  difference than ~5e-7 relative. A tighter tolerance reports a deviation the operator could
+  not have made and could not undo.
+- **DEVIATION IS A COMPARISON, NOT A HISTORY.** `deviations` asks what the overlay says and
+  what the config says NOW, over the owned fields and ONLY those — so a field the case type has
+  no opinion about can be changed freely (user story 21), and putting an owned one back removes
+  its deviation (user story 20).
+- **DEVIATION DOWNGRADES STANDING, NEVER WITHHOLDS.** The STATE is unchanged, the verdict is
+  MARKED, the moved fields are NAMED rather than counted, and the only thing that moves is the
+  log grade: `DEVIATED_FLOOR` lifts a deviated `usable` from INFO to WARNING, every other state
+  being already at least that. Withholding would teach operators not to touch anything.
+- **IT IS CARRIED ON EVERY VERDICT PATH**, including the ones settled before a figure is read:
+  a folded mesh produced with the settings changed is still a folded mesh, and which settings
+  moved is the first thing anybody asks about it.
+- **THE HOST SUPPLIES THE CONFIG, because only the host has it.** `run_report(..., config=)`;
+  `None` means nobody could say and the deviation list is then EMPTY rather than invented. The
+  GUI passes `global_mesh_config` (the model the panel synced before the run), the headless
+  runner passes the `MeshConfig` it meshed with.
+- **A PATH IS NOT A KIND, here too**: `read_config` classifies through
+  `services/project_file_kind` — a `.dat`, a `.hws` workspace or a pipeline script — so this
+  seam cannot disagree with `main.py` about what a file is.
+- **`SCHEMA_VERSION` is 3 and `READABLE_VERSIONS` is `(1, 2, 3)`.** A v2 document is a v3
+  document that takes a position on no field, which is what every case type authored before
+  #162 is; the artefact has been WIDENED twice rather than replaced. A case type owning nothing
+  writes NO `fields` section, so a round trip returns the document it was given.
+- **`show_case_type.py` is a HEADLESS host**, like `save_case_type.py` beside it and for the
+  same reason: #166 owns the picker and the Trial/Generate actions. It answers the three
+  questions an operator may ask of borrowed expertise — which fields does it own, what differs
+  between two case types, and how far has my case moved.
+Gated by `tests/test_case_type_fields.py` (ten checks and nine automated injections, each
+asserting the mutation is well-formed, that the named checks redden and that no other does; the
+counts are that file's own docstring's and are not restated here).
+  Why: `docs/design_notes/gui.md`, "A CASE TYPE'S CONFIG FIELDS, AND WHAT A DEVIATION COSTS".
+
 **WHY THIS FILE AND NOT A THIRTEENTH, recorded because the opposite call has precedent.** This
 file's thesis is "is a file one stage leaves on disk still correct when the NEXT one reads it",
 and grading is a different question — which is the exact argument #153 used to split
@@ -391,9 +458,10 @@ happened because the source file had 197 characters of slack, while this one had
 the entry landed (60,000 - 22,516, re-derivable) and the
 whole entry is ~3.4k. A rule file taken for a tracer bullet would be the thinnest in the tree, and
 `services/case_type*` would still need a glob beside `services/mesh_shape_stats*` because the
-judge reads what that reader returns. **#162 and #166 are the cheap moment**: they add the picker,
-the config overlay, deviation and Trial/Generate, and that is the volume a thirteenth file is
-worth taking. By decision, not by oversight.
+judge reads what that reader returns. **#162 was named as the cheap moment and was MEASURED
+instead of assumed**: its config overlay, deviation and diff came to ~3k, and this file is still
+under 60% of `RULE_BUDGET`, so the thirteenth file is not taken yet. #166 — the picker, Trial and
+Generate — is the next place to re-measure, and the test is the budget, not the ticket number.
 
 ## Named blind spots
 
@@ -409,3 +477,15 @@ which are capability refusals.
   invisible to it.
 - **The GUI leg drives `_on_mesh_gen_finished` with a recording stand-in for the main window.**
   That the verdict is wired to a button and rendered by the log panel is not checked here.
+- **NOTHING SCALES AN APPLIED FIELD.** A case type applied to a geometry at another scale
+  produces the same numbers; the characteristic length, and the physical parameters that must
+  NOT move with it, are #163. `bl_initial_thickness` is in the shipped overlay and is exactly
+  the field that ticket will mark physical.
+- **AN OVERLAY NAMING A FAMILY CANNOT BE WRITTEN TO A `.dat` ON ITS OWN.** `save_to_file`
+  PROJECTS a named family's topology document, and every family but the H-grid refuses to build
+  one with no geometry to bind to — so applying a case type that names `ogrid` produces a config
+  that cannot be saved until #164 derives the bindings from roles. Found by the gate's own
+  round-trip leg, which carries no family for exactly this reason.
+- **THE EXCLUSION LIST IS A JUDGEMENT.** That `output_filename` is per-case and
+  `bl_growth_rate` is not is argued in the service's docstring and pinned by the gate; nothing
+  measures that the line is in the right place.

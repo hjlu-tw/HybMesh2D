@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **41,703
-characters (41,939 bytes, 2026-10-01) ≈ 10k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **42,252
+characters (42,492 bytes, 2026-10-01) ≈ 11k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**42,500**, leaving 797 characters of slack — derived by a rule the gate states at that
+**43,000**, leaving 748 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -45,7 +45,7 @@ feature commit ever ran against it, and the file drifted 110 characters in total
 the missing guard, not damage done; #78 closed it. Before #75 it was a
 ratchet that TRACKED this file rather than only descending — over every commit touching the gate
 it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
-characters while `wc -c` reports bytes, and the two differ by 236 today because of the CJK in this
+characters while `wc -c` reports bytes, and the two differ by 240 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -85,7 +85,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | GUI results (transient playback and the byte-offset zone index, the per-variable colour range, the legs of a restarted solve, the surface source) | `.claude/rules/gui-results.md` | `views/result*`, `views/surface_source_dialog.py`, `views/panels/result_panel*`, `models/result*`, `models/tecplot*`, `services/result*`, `services/surface*`, `services/analytic_shape*` — the exact globs are that file's own `paths:` list, and its header names the two controllers and the one service it also governs from outside them. Its boundaries run BOTH ways and the header measures each, so this row carries neither count: a leg's span and stem are owned by `pipeline-case.md`'s `services/case_*`, while some of this repo's `keep_on_top` calls sit in files these globs reach, whose pop-up rule is in `gui-canvas-edit.md`. |
 | GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule, the GUI module map — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the twelve, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py`, matched by `pipeline-case.md`, which carries no seam rule — and `run_batch.py`, which NO glob in ANY rule file reaches, so this row is the only thing that reaches its reader. |
 | GUI lifecycle (the app as a PROCESS: subprocess environment and the Gmsh loader path, window-layout persistence and the startup-state reversal, the ⟳ Restart ordering) | `.claude/rules/gui-lifecycle.md` | `services/env_setup*`, `services/ui_state*`, `services/gui_restart*`, `controllers/lifecycle_ctrl*`, `views/main_window*`, `gui/main.py`, `workers/**`, `tools/scripts/gmsh_*` — 24 files, verified. Two globs go beyond #77's list, recorded in that file's header. It rules directly on `CMakeLists.txt`, which NO glob in any rule file reaches, so this row is the only thing that reaches its reader. |
-| GUI file hand-off (is a file one stage leaves on disk still correct when the NEXT one reads it: the `.bnd` BCs, the project file's kind, the mesh output name, which grid a reopened case uses, the `.meta` sidecar — and, read the other way, the mesher's `.provenance.json`, which is where the Mesh Statistics panel's quality summary comes from AND what a CASE TYPE's four-state verdict grades, its thresholds being MEASURED from it) | `.claude/rules/gui-handoff.md` | `services/mesh_bc_audit*`, `services/project_file_kind*`, `services/mesh_grid_lookup*`, `services/mesh_shape_stats*`, `services/case_type*`, `views/panels/mesh_stats_panel*`, `models/mesh_output_names*`, `controllers/mesh_export_ctrl*`, `controllers/mesh_layers_ctrl*`, `controllers/solver_ctrl*`, `models/segment.py` — 14 files, verified. Three owners sit under OTHER rule files' globs (`models/mesh_config.py`, `services/pipeline_runner.py`, and the rest of what `solver_ctrl.py` does); its header names them. Its shape-summary rule also reaches `services/batch_runner.py`, `views/batch_dialog.py` and `controllers/batch_ctrl.py`, which NO glob but `gui-seams.md`'s tree-wide one covers (#132). |
+| GUI file hand-off (is a file one stage leaves on disk still correct when the NEXT one reads it: the `.bnd` BCs, the project file's kind, the mesh output name, which grid a reopened case uses, the `.meta` sidecar — and, read the other way, the mesher's `.provenance.json`, which is where the Mesh Statistics panel's quality summary comes from AND what a CASE TYPE's four-state verdict grades, its thresholds being MEASURED from it and its own CONFIG FIELDS as a sparse overlay, a moved one marking that verdict) | `.claude/rules/gui-handoff.md` | `services/mesh_bc_audit*`, `services/project_file_kind*`, `services/mesh_grid_lookup*`, `services/mesh_shape_stats*`, `services/case_type*`, `views/panels/mesh_stats_panel*`, `models/mesh_output_names*`, `controllers/mesh_export_ctrl*`, `controllers/mesh_layers_ctrl*`, `controllers/solver_ctrl*`, `models/segment.py` — 15 files, verified. Three owners sit under OTHER rule files' globs (`models/mesh_config.py`, `services/pipeline_runner.py`, and the rest of what `solver_ctrl.py` does); its header names them. Its shape-summary rule also reaches `services/batch_runner.py`, `views/batch_dialog.py` and `controllers/batch_ctrl.py`, which NO glob but `gui-seams.md`'s tree-wide one covers (#132). |
 
 **The table is load bearing, not a convenience.** Measured on Claude Code 2.1.250 (#61): a rule
 file arrives with `load_reason: path_glob_match` when a matching file is **read**, and does NOT
@@ -144,7 +144,7 @@ gate here; the full text of all four is `.claude/rules/gui-seams.md`.
   the four with none, and a human reading a diff was its whole enforcement. Measured 2026-09-09:
   **four** commits crossed it in the six days after #67 wrote it down — `98003f1` (#85),
   `306d6a1` (#91) and `8bdc36a` (#47's merge) TWICE — and 44 across 35 files over the whole
-  history. 4 of 296 files exceed it (worst 520); those four are PINNED at their measured sizes,
+  history. 4 of 297 files exceed it (worst 520); those four are PINNED at their measured sizes,
   and a pin fails both when the file grows further and when it drops back under the limit. That
   status is DERIVED, never remembered: `--sync` rewrites it from the same walk, in all three
   files that state it — here, `gui-seams.md` (which names each one) and the design note (#101).
@@ -312,9 +312,16 @@ plus any number of geometry files; `--run` then executes Run All.
 ```bash
 python3 tools/PreProcessor/save_case_type.py results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk \
     --name "Circular body, O-grid" --out config/my_case.casetype.json \
-    --advice "max=Ask for a less aggressive first cell." --override "max.unusable=200.0"
+    --advice "max=Ask for a less aggressive first cell." --override "max.unusable=200.0" \
+    --fields-from config/multiblock_ogrid.dat
 ```
-That mesh becomes the case type's REFERENCE MESH: every bound is a figure it published times a tolerance factor, and the file records which mesh, when, and which bounds were set by hand instead. `--advice` selects the figures bounded; one the mesh could not measure gets none, out loud. `examples/case_types/ogrid_circle.casetype.json` is a worked one (three thresholds, `--advice-from` a file). Ruled on by `.claude/rules/gui-handoff.md`, which NO glob reaches.
+That mesh becomes the REFERENCE MESH: every bound is a figure it published times a tolerance factor, and the file records which mesh, when, and which bounds were hand-set instead. `--advice` selects the figures bounded; one the mesh could not measure gets none, out loud. `--fields-from` records the fields that case MOVED off the default, as a SPARSE overlay — so a field no case type mentions takes the ordinary default. Worked: `examples/case_types/ogrid_circle.casetype.json`.
+
+**Inspect a case type, diff two, or measure a case's deviation (headless):**
+```bash
+python3 tools/PreProcessor/show_case_type.py <a.casetype.json> [--against b.json] [--config case.dat]
+```
+`--config` names the owned fields that moved — the comparison marking a verdict DEVIATED, which downgrades its standing and never withholds it. Both hosts: `.claude/rules/gui-handoff.md`, which NO glob reaches.
 
 **Run a batch of pipeline scripts (headless):**
 ```bash

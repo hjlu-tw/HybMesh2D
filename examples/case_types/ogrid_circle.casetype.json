@@ -1,8 +1,13 @@
 {
   "schema": "hybmesh-case-type",
-  "version": 2,
+  "version": 3,
   "name": "Circular body, O-grid",
   "metric": "quad_midline_ratio",
+  "fields": {
+    "mesh_mode": 1,
+    "bl_initial_thickness": 0.001,
+    "export_vtk": true
+  },
   "reference_meshes": [
     {
       "id": "ogrid_circle",

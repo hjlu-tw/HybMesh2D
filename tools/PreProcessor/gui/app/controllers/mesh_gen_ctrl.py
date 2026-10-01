@@ -286,8 +286,16 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
         # name. Skipped for the worker's own out-of-band sentinels, which are
         # not mesher exit codes: judging a run the user cancelled would be an
         # answer about nothing. One graded message, not one per line.
+        #
+        # The CONFIG goes with it (#162): the case type's own fields are what
+        # its thresholds were measured on, so the service compares them against
+        # what this run actually used and marks the verdict DEVIATED where they
+        # differ. `global_mesh_config` is the model the panel synced before the
+        # run, which is the config the mesher read.
         if not is_reason(rc):
-            verdict, level = case_type_verdict.run_report(expected_vtk_path, rc)
+            verdict, level = case_type_verdict.run_report(
+                expected_vtk_path, rc,
+                config=getattr(self, "global_mesh_config", None))
             if verdict:
                 self.log_report(verdict, level=level)
 

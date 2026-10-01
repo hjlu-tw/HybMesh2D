@@ -2,14 +2,16 @@
 
 The first artefact of issue #158's workflow (issue #160, the tracer bullet). A
 **case type** is the unit in which meshing expertise is stored and reused: a
-named bundle the maintainer authors once and an operator applies. At this stage
-it holds its name, the metric its numbers are about, its THRESHOLDS, the ADVICE
-to show when each one is missed, and — since #161 — the REFERENCE MESHES those
-thresholds were measured from. It does not yet carry config fields, a family or
-bindings; those arrive in #162. The file format is a versioned document so that
-it GROWS rather than being replaced, which #161 is the first test of:
-`SCHEMA_VERSION` is 2 and `READABLE_VERSIONS` still holds 1, because a v1
-document is a v2 document with no reference meshes and every bound hand-set.
+named bundle the maintainer authors once and an operator applies. It holds its
+name, the metric its numbers are about, its THRESHOLDS, the ADVICE to show when
+each one is missed, the REFERENCE MESHES those thresholds were measured from
+(#161) and — since #162 — the config FIELDS it has an opinion about, as a sparse
+overlay. It does not yet carry bindings; those are #164's, and are deliberately
+NOT ownable fields, since the ids in them point at the maintainer's geometry. The
+file format is a versioned document so that it GROWS rather than being replaced,
+which #161 and #162 are the first two tests of: `SCHEMA_VERSION` is 3 and
+`READABLE_VERSIONS` still holds 1 and 2, because a v1 document is a v3 document
+with no reference meshes, no fields and every bound hand-set.
 
 **Why thresholds live here and not in the mesher** is
 `docs/adr/0002-thresholds-live-in-case-types.md`. The mesher measures and
@@ -35,22 +37,24 @@ against the other is comparing nothing (#130). So a case type NAMES its metric,
 and `case_type_verdict.judge` refuses a mesh measured with a different one
 rather than reading it against numbers that do not describe it.
 
-WHICH CASE TYPE IS IN PLAY is deliberately NOT decided here. Applying a case
-type — picking one, assigning roles, overlaying its config fields — is #162's
-whole subject. Until then the active case type is named by the
+WHICH CASE TYPE IS IN PLAY is deliberately NOT decided here. Picking one in the
+window, and the Trial/Generate actions that act on the choice, are #166's. Until
+then the active case type is named by the
 `HYBMESH_CASE_TYPE` environment variable, which both hosts reach through
 `case_type_verdict.run_report`: one channel, no GUI chrome for #162 to unpick,
 and a run with the variable unset says nothing at all rather than inventing a
 default. A default case type would be a universal threshold wearing a different
 hat, which is the one thing ADR-0002 rules out.
 
-ONE SEAM, FOUR FILES, AND EVERY CUT IS THE ~500-LINE STANDARD rather than a
+ONE SEAM, FIVE FILES, AND EVERY CUT IS THE ~500-LINE STANDARD rather than a
 second home for the knowledge. The grading half is
 `services/case_type_verdict.py`; the figure vocabulary and the provenance are
 `services/case_type_reference.py`, re-exported from here so no caller learns a
-new name; the one step that PRODUCES a case type is
-`services/case_type_author.py`. A THRESHOLD is declared HERE and nowhere else,
-and every dependency runs one way — author -> document -> figures, and
+new name; the config overlay, what it may own and what deviates from it are
+`services/case_type_fields.py`, re-exported the same way; the one step that
+PRODUCES a case type is `services/case_type_author.py`. A THRESHOLD is declared
+HERE and nowhere else, and so is the set of OWNABLE fields there, and every
+dependency runs one way — author -> document -> figures/fields, and
 verdict -> document — so there is no cycle to unpick. The same shape #159 gave
 `mesh_config.py` and `mesh_config_validate.py`, in the prefactor for this very
 feature.
@@ -75,23 +79,30 @@ from app.services.case_type_reference import Origin
 from app.services.case_type_reference import ReferenceMesh
 from app.services.case_type_reference import opt_float
 from app.services.case_type_reference import split_key  # noqa: F401
+from app.services.case_type_fields import FieldOverlay
+from app.services.case_type_fields import apply  # noqa: F401
+from app.services.case_type_fields import deviations  # noqa: F401
+from app.services.case_type_fields import diff  # noqa: F401
+from app.services.case_type_fields import ownable_names  # noqa: F401
 
 #: The document's own name and version, written into every file and required on
 #: load. A case type is expected to GROW fields (a family, bindings, a config
 #: overlay, reference-mesh provenance), so the version is what lets a later
 #: reader tell a file it understands from one it does not.
 SCHEMA = "hybmesh-case-type"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 #: Every version this build can READ; `SCHEMA_VERSION` is the only one it
 #: WRITES. A v1 document is a v2 document carrying no reference meshes and no
-#: measured bounds — which is exactly what a hand-written case type is — so #161
-#: widened the artefact rather than replacing it, and the version is still what
-#: makes a document from a LATER build fail loudly instead of being partly read.
-READABLE_VERSIONS = (1, 2)
+#: measured bounds — which is exactly what a hand-written case type is — and a
+#: v2 document is a v3 document that takes a position on no config field, which
+#: is what every case type authored before #162 is. So the artefact has now been
+#: WIDENED twice rather than replaced, and the version is still what makes a
+#: document from a LATER build fail loudly instead of being partly read.
+READABLE_VERSIONS = (1, 2, 3)
 
-#: The environment variable naming the active case type file. INTERIM, and owned
-#: by this ticket: #162 builds the picker that replaces it.
+#: The environment variable naming the active case type file. INTERIM: #166
+#: builds the picker that replaces it.
 CASE_TYPE_ENV = "HYBMESH_CASE_TYPE"
 
 class Threshold:
@@ -211,14 +222,22 @@ class CaseType:
     `source` is where it was loaded from, kept for the same reason
     `ShapeSummary.source` is: a verdict a user questions must be traceable to the
     file that issued it.
+
+    `fields` is the SPARSE overlay of settings this case type takes a position
+    on — including the family and its parameters. Sparse is the design and not an
+    optimisation: a field it does not mention takes the ordinary default, so
+    adding a mesher field does not stale every case type in the tree. What may be
+    owned, and why bindings may not, is `services/case_type_fields.py`.
     """
 
-    __slots__ = ("name", "metric", "thresholds", "source", "references")
+    __slots__ = ("name", "metric", "thresholds", "source", "references",
+                 "fields")
 
     def __init__(self, name: str, metric: str,
                  thresholds: "list[Threshold] | None" = None,
                  source: str = "",
-                 references: "list[ReferenceMesh] | None" = None):
+                 references: "list[ReferenceMesh] | None" = None,
+                 fields: "FieldOverlay | dict | None" = None):
         if not str(name).strip():
             raise CaseTypeError("a case type must have a name")
         if not str(metric).strip():
@@ -230,6 +249,12 @@ class CaseType:
         self.thresholds = list(thresholds or [])
         self.source = source
         self.references = list(references or [])
+        # Accepts either, because every caller that builds one by hand has a
+        # plain dict and every caller that copies one has an overlay — and a
+        # rebuild that silently dropped the overlay is how `save_authored`
+        # would have written a case type with no opinion about anything.
+        self.fields = (fields if isinstance(fields, FieldOverlay)
+                       else FieldOverlay(fields))
         seen = set()
         for th in self.thresholds:
             if th.key in seen:
@@ -316,7 +341,7 @@ class CaseType:
                 "this build reads"
                 % (version, ", ".join(str(v) for v in READABLE_VERSIONS)))
         unknown = set(doc) - {"schema", "version", "name", "metric",
-                              "thresholds", "reference_meshes"}
+                              "thresholds", "reference_meshes", "fields"}
         if unknown:
             # Refused for the same reason an unknown THRESHOLD key is: a case
             # type is expected to grow fields, so a key this build does not read
@@ -334,11 +359,20 @@ class CaseType:
                    metric=str(doc.get("metric", "")),
                    thresholds=[Threshold.from_dict(t) for t in raw],
                    source=source,
-                   references=[ReferenceMesh.from_dict(r) for r in refs])
+                   references=[ReferenceMesh.from_dict(r) for r in refs],
+                   fields=FieldOverlay.from_dict(doc.get("fields")))
 
     def to_dict(self) -> dict:
         out = {"schema": SCHEMA, "version": SCHEMA_VERSION,
                "name": self.name, "metric": self.metric}
+        if self.fields:
+            # Written only when there is an opinion, for the reason
+            # `reference_meshes` is: a case type that takes no position on any
+            # field must come back out of a round trip as the document it was,
+            # not as one carrying an empty section it never had. That is also
+            # what makes "a round trip preserves exactly that set" a statement
+            # about the SET rather than about a dict that happens to be empty.
+            out["fields"] = self.fields.to_dict()
         if self.references:
             # Written only when there are any, so a hand-authored case type is
             # still the short document it was: a v1 document read by this build
@@ -350,9 +384,10 @@ class CaseType:
         return out
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
-        return ("CaseType(name=%r, metric=%r, thresholds=%d, references=%d)"
+        return ("CaseType(name=%r, metric=%r, thresholds=%d, references=%d, "
+                "fields=%d)"
                 % (self.name, self.metric, len(self.thresholds),
-                   len(self.references)))
+                   len(self.references), len(self.fields)))
 
 
 def load(path: str) -> CaseType:

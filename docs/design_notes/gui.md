@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 296, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 297, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -4027,11 +4027,118 @@ the mesh that case produced rather than of the case. **The HOST carried no injec
 runs a mutated COPY of it, so criterion 1's check is shown able to go red like every other.
 **And #168 will need more than a list append**: `Origin.reference` is one string and
 `_check_references` demands an exact `figure x factor`, so a threshold citing TWO reference meshes
-— which is what story 39's plural and #168's "corrected with evidence" ask for — is a schema 3,
-not a second entry in the list `reference_meshes` already is. And the shipped reference mesh is under `results/`, which is
+— which is what story 39's plural and #168's "corrected with evidence" ask for — is a schema
+BUMP, not a second entry in the list `reference_meshes` already is. (It was written here as
+"a schema 3"; #162 spent 3 on the config overlay, so what #168 needs is 4. The number was a
+forward guess and the correction is left visible rather than silently renumbered.) And the shipped reference mesh is under `results/`, which is
 gitignored — the case type records which mesh it was measured on and the mesh itself is
 regenerated from `config/multiblock_ogrid.dat`, so the numbers are reproducible but the file they
 were read from is not in the tree.
+
+**A CASE TYPE'S CONFIG FIELDS, AND WHAT A DEVIATION COSTS** (#162, parent #158;
+`services/case_type_fields.py`, Qt-free; `tools/PreProcessor/show_case_type.py`;
+`examples/case_types/ogrid_circle.casetype.json` regenerated at schema 3; gated by
+`tests/test_case_type_fields.py`).
+
+#160 and #161 both grade a mesh after the fact and neither says how to produce one, so an
+operator who picked a case type still faced 104 fields. This ticket is the other half: the case
+type carries the settings that produced its reference mesh, and the tool notices when the
+operator moves away from them.
+
+* **SPARSE IS THE DESIGN AND THE CAPTURE IS A SUBTRACTION.** A case type records only the fields
+  it takes a position on, because a full snapshot would make every case type in the tree
+  disagree with the model the day a mesher parameter is added — user story 36, stated as a cost
+  rather than as a preference. What makes that affordable without a tick list is that the
+  recorded set is DERIVED: the maintainer built a case they are happy with, so the fields they
+  moved off the default ARE the fields they have an opinion about. Measured on the shipped
+  O-grid `.dat`: three fields of 77 ownable ones (`mesh_mode`, `bl_initial_thickness`,
+  `export_vtk`), which is the whole of what that case says and nothing it merely holds.
+  Injection C makes the capture a full snapshot and the sparseness check goes red.
+* **THE VOCABULARY IS DERIVED FROM THE TWO MODELS, and the exclusions are the content.** The
+  scalar dataclass fields of `MeshConfig` and `TopologyModel`, minus a declared `EXCLUDED` set.
+  Three kinds are out, and each belongs to someone else: CONTAINERS are the operator's own
+  drawing; BINDINGS (`*_geom` / `*_segs`) are stable segment ids into the MAINTAINER's geometry
+  and are #164's whole subject; PER-PROJECT STATE (`output_filename`, `mesh_topology_file`,
+  `bc_configured`, `topology.detached`) is a fact about one project rather than a reusable
+  opinion. The bindings are excluded by SUFFIX rather than by name, so a fifth family's are
+  covered the day it lands — and the gate pins today's fourteen against the models' own
+  declarations in BOTH directions, which is what turns the suffix rule from a hope into a
+  measurement. Injection A stops recognising the suffix and the refusal check alone goes red.
+* **THE REFUSAL SAYS WHICH KIND IT IS.** A name outside the vocabulary is refused on load, like
+  an unknown threshold key, but "unknown key" for a field that exists and is deliberately
+  excluded would send a maintainer looking for a typo. `_why_not_ownable` answers with the
+  declared reason for an excluded field, with the binding argument for a binding, and with the
+  list only for a name that really is unknown.
+* **`REL_TOL` IS MEASURED OFF THE WRITER, AND THE FIRST NUMBER WAS WRONG.** It was 1e-9 by
+  analogy with `Origin.REL_TOL`, justified in the comment as "the `.dat` is written at `%.10g`".
+  The gate's round-trip leg failed on it: `models/mesh_config_io.py` writes `LENGTH_UNIT_METRES`
+  at `%.10g` and every OTHER float at `%.6g`, so a config the operator never touched came back
+  deviated. The constant is now 1e-6 and the comment names the writer and the format it really
+  uses. A tolerance tighter than the file's own resolution reports a deviation the operator
+  could not have made and could not undo; injection B drops it to 0.0 and the leg reddens.
+* **DEVIATION IS A COMPARISON, NOT A HISTORY.** Nothing records edits. `deviations` asks what
+  the overlay says and what the config says NOW, over the owned fields and only those — so
+  changing a field the case type has no opinion about is free (user story 21), and putting an
+  owned one back removes its deviation, which is user story 20 read literally.
+* **WHAT A DEVIATION COSTS IS ONE AUDIBLE NOTCH, AND THE STATE IS UNTOUCHED.** The thresholds
+  were measured on a mesh these settings produced, so presenting the verdict unqualified would
+  be a lie; withholding it would teach operators not to touch anything. So: the state is
+  unchanged, the headline is marked, the moved fields are NAMED rather than counted (a count is
+  a number nobody can act on), and `DEVIATED_FLOOR` lifts a deviated `usable` from INFO to
+  WARNING. Every other state is already at least WARNING and is unmoved — "downgraded" is
+  therefore a statement about the quietest case only, which is what the gate asserts over all
+  four states. **The gate declares its own grade ordering** (`_LOUDNESS`) rather than reading
+  `DEVIATED_FLOOR`: the first version compared `marked.level` against that constant, so
+  injection E — which lowers it — moved the expectation and the answer together and the check
+  passed having measured nothing.
+* **THE MARK RIDES EVERY VERDICT PATH, including the four settled before a figure is read.** A
+  folded mesh produced with the settings changed is still a folded mesh, and which settings moved
+  is the first thing anybody asks about it. Injection D stops `judge` carrying the deviations and
+  the whole mark — headline, names, grade — vanishes from the figures path alone.
+* **THE HOST SUPPLIES THE CONFIG, BECAUSE ONLY THE HOST HAS IT**, and `None` means "nobody could
+  say" rather than "nothing moved": an empty deviation list invented by a layer that did not look
+  would be the one lie this is built against. The GUI passes `global_mesh_config` — the model the
+  panel syncs before the run, which is what the mesher read — and `pipeline_runner` passes the
+  `MeshConfig` it meshed with. Neither host spells a comparison of its own.
+* **`read_config` GOES THROUGH `project_file_kind`.** A case's mesh configuration arrives as a
+  `.dat`, a `.hws` workspace or a pipeline script, and this repo has a user-reported defect from
+  deciding a kind by extension. One classifier, so the capture host cannot disagree with
+  `main.py` about what a file is — and the gate drives all three shapes against real files in
+  `config/`, because a host that only ever saw a `.dat` would work for one third of this repo's
+  own working cases.
+* **TWO HOSTS, BOTH HEADLESS, FOR `HYBMESH_CASE_TYPE`'S REASON.** `save_case_type.py` grew
+  `--fields-from` (and `--field`, for a default-valued field the maintainer still means);
+  `show_case_type.py` is new and answers the three questions an operator may ask of borrowed
+  expertise — which fields does it own (user story 24), what differs between two case types
+  (user story 37), and how far has my case moved. #158's out-of-scope list rules out
+  operator-AUTHORED case types and in the same breath allows operator-INSPECTED ones, "because
+  the deviation marking is meaningless otherwise"; this is that sentence. Injection H runs a
+  mutated COPY of the inspecting host, since the subprocess checks cannot see an in-memory
+  mutant — the shape #161's injection J took, reused rather than rediscovered.
+* **THE ARTEFACT SPLIT A THIRD TIME, AND AGAIN ON LENGTH.** `case_type_fields.py` is the fifth
+  file of one seam, re-exported from `case_type.py` so no caller learns a new name, every
+  dependency still one way. The dependency it ADDS is new in kind, though: the overlay imports
+  `models/mesh_config.py`, so the case-type seam now knows about the mesh model. That is
+  unavoidable and is the right direction — the vocabulary IS the mesh parameters, and deriving
+  it is what `models/mesh_config_keys.py` exists to have taught.
+
+**Named blind spots.** **Nothing here scales anything**: a case type applied to a geometry at
+another scale produces the same numbers, and the characteristic length — with the physical
+parameters that must not move with it — is #163. `bl_initial_thickness` is in the shipped overlay
+and is exactly the field that ticket will mark physical, so the shipped example is a live example
+of the gap. **An overlay naming a family cannot be written to a `.dat` on its own**: `save_to_file`
+projects a named family's topology document and every family but the H-grid refuses to build one
+with no geometry to bind to, so applying a case type that names `ogrid` yields a config that
+cannot be saved until #164 derives bindings from roles. Found by the gate's own round-trip leg,
+which carries no family for exactly that reason, and worked around there rather than fixed.
+**The exclusion list is a judgement**: that `output_filename` is per-case and `bl_growth_rate` is
+not is argued in the service's docstring and pinned by the gate, and nothing measures that the
+line is in the right place. **The shipped case type demonstrates no family**, because a `.dat`
+carries no topology model — the family and its parameters live in a project file, and this repo
+ships no project that uses the O-grid template — so the family half of the overlay is gated on
+constructed inputs only. **And there is still no GUI**: no picker, no Trial, no Generate, so
+"the operator can see which fields the case type owns" is measured at a headless host, which is
+where #161 deliberately left the authoring action too.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

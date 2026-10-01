@@ -243,7 +243,7 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     # The VERDICT a case type passes on this run (#160) — the SAME call the GUI
     # makes, silent when none is in play. BEFORE the guard below, which raises:
     # exit 9's `unusable` must be SAID. The grade it returns beside is the GUI's.
-    verdict, _level = case_type_verdict.run_report(vtk, rc)
+    verdict, _level = case_type_verdict.run_report(vtk, rc, config=mc)
     if verdict:
         log("[Mesh] " + verdict)
     if rc != 0:

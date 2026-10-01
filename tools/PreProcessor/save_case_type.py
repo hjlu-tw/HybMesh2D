@@ -29,6 +29,15 @@ drops that bound's tolerance factor, so the file itself shows which bounds were
 measured and which were typed; `--override max.unusable=` (an empty value)
 removes that bound altogether.
 
+`--fields-from` is the other half of the same action (#162): it reads the case's
+own mesh configuration — a `.dat`, a `.hws` workspace or a pipeline script — and
+records the fields it has MOVED OFF THE DEFAULT as the case type's sparse
+overlay. The maintainer built a case they are happy with, so the settings they
+changed ARE the settings they have an opinion about; `--field` adds one they
+deliberately set back to a default and still mean. A field the case type does
+not record takes the ordinary default when the case type is applied, which is
+what keeps adding a mesher field from staling every case type in the tree.
+
 The figure keys are the nine the mesher publishes: `median`, `p95`, `max`, and
 the same three under `layer.` and `bulk.` for each half of the wall/bulk split.
 A figure the reference mesh could not measure is REPORTED and produces no
@@ -51,6 +60,7 @@ if _GUI_DIR not in sys.path:
     sys.path.insert(0, _GUI_DIR)
 
 from app.services import case_type_author
+from app.services import case_type_fields
 from app.services.case_type import BOUNDS, CaseTypeError
 
 
@@ -107,6 +117,26 @@ def _parse_overrides(entries):
     return out
 
 
+def _read_fields(from_path, extra):
+    """The case type's sparse overlay, read off the case's own configuration.
+
+    ``None`` when no case was named, which is a case type that grades a mesh
+    without saying how to produce one — the shape every case type had before
+    #162. Naming a `--field` with no case to read it from is REFUSED rather than
+    silently ignored: the maintainer believes they recorded a field, and nothing
+    here could know what value they meant.
+    """
+    if not from_path:
+        if extra:
+            raise CaseTypeError(
+                "--field %s names a field to record but no --fields-from says "
+                "which case to read its value from"
+                % ", ".join(sorted(extra)))
+        return None
+    return case_type_fields.capture_differences(
+        case_type_fields.read_config(from_path), extra or ())
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Save a working case as a case type, with thresholds "
@@ -136,9 +166,19 @@ def main() -> int:
                          "(default: the mesh's filename stem)")
     ap.add_argument("--measured-on", default="",
                     help="the date the figures were read (default: today)")
+    ap.add_argument("--fields-from", metavar="FILE",
+                    help="the case's own mesh configuration (a .dat, a .hws or "
+                         "a pipeline script). Every field it has moved off the "
+                         "default becomes part of the case type's sparse "
+                         "overlay.")
+    ap.add_argument("--field", action="append", metavar="NAME",
+                    help="record this field as well, even where it equals the "
+                         "ordinary default; repeatable. Needs --fields-from, "
+                         "since the VALUE comes from the case.")
     args = ap.parse_args()
 
     try:
+        fields = _read_fields(args.fields_from, args.field)
         reference = case_type_author.measure_reference(
             args.mesh, ident=args.reference_id, measured_on=args.measured_on)
         result = case_type_author.author(
@@ -146,7 +186,7 @@ def main() -> int:
             _parse_advice(args.advice, args.advice_from),
             attention_factor=args.attention_factor,
             unusable_factor=args.unusable_factor,
-            overrides=_parse_overrides(args.override))
+            overrides=_parse_overrides(args.override), fields=fields)
         result = case_type_author.save_authored(result, args.out)
     except (CaseTypeError, OSError, json.JSONDecodeError) as exc:
         # NARROW on purpose, and narrower than it first read: `CaseTypeError` IS
@@ -170,6 +210,11 @@ def main() -> int:
                 parts.append("%s %.6g (%s)"
                              % (bound, value, th.origin_of(bound)))
         print("  %-13s %s" % (th.key, ", ".join(parts)))
+    for name in case_type.fields.describe():
+        # The overlay is PRINTED for the same reason the thresholds above are:
+        # a maintainer who captured a field they did not mean, or missed one
+        # they did, finds out now rather than when an operator applies it.
+        print("  field        %s" % name)
     for key, why in result.skipped:
         # Said out loud, never only logged: a maintainer who asked for a bound
         # on a figure and silently did not get one would believe they had it.
