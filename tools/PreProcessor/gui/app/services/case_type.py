@@ -174,6 +174,21 @@ class Threshold:
         return (MEASURED if self.measured_from.factor_for(bound) is not None
                 else MANUAL)
 
+    def describe_bounds(self) -> str:
+        """The bounds this threshold sets, each with where it came from.
+
+        ONE owner because BOTH hosts print it — `save_case_type.py` after
+        authoring and `show_case_type.py` when inspecting — and two copies of
+        the same line are free to render one file's thresholds two ways. The
+        figures are quality RATIOS and go out at `%.6g`, which is their own
+        precision and deliberately not the config overlay's `_show`: that one
+        renders mesh sizes, where six significant figures is the `.dat` writer's
+        limit rather than a reading convenience.
+        """
+        return ", ".join("%s %.6g (%s)"
+                         % (bound, getattr(self, bound), self.origin_of(bound))
+                         for bound in BOUNDS if getattr(self, bound) is not None)
+
     @classmethod
     def from_dict(cls, raw: dict) -> "Threshold":
         if not isinstance(raw, dict):

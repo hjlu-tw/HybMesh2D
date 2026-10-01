@@ -203,13 +203,7 @@ def main() -> int:
           % (reference.ident, reference.mesh, reference.metric,
              reference.measured_on))
     for th in case_type.thresholds:
-        parts = []
-        for bound in BOUNDS:
-            value = getattr(th, bound)
-            if value is not None:
-                parts.append("%s %.6g (%s)"
-                             % (bound, value, th.origin_of(bound)))
-        print("  %-13s %s" % (th.key, ", ".join(parts)))
+        print("  %-13s %s" % (th.key, th.describe_bounds()))
     for name in case_type.fields.describe():
         # The overlay is PRINTED for the same reason the thresholds above are:
         # a maintainer who captured a field they did not mean, or missed one

@@ -293,9 +293,12 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
         # differ. `global_mesh_config` is the model the panel synced before the
         # run, which is the config the mesher read.
         if not is_reason(rc):
+            # NOT a `getattr(..., None)`: `None` is the service's documented
+            # "nobody could say", so a renamed attribute would make the
+            # deviation marking vanish in silence rather than fail. The
+            # composed controller sets this in its own `__init__`.
             verdict, level = case_type_verdict.run_report(
-                expected_vtk_path, rc,
-                config=getattr(self, "global_mesh_config", None))
+                expected_vtk_path, rc, config=self.global_mesh_config)
             if verdict:
                 self.log_report(verdict, level=level)
 

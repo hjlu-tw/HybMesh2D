@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 40,752 / 39,810 / 35,517 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-handoff, gui-panels-config, mesher, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    Twelve rule files now — 59,576 / 56,405 / 54,994 / 51,665 / 42,037 / 39,810 / 35,517 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-handoff, gui-panels-config, mesher, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 424 / 3,595 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    ten, which have 5,006 / 8,335 / 19,248 / 20,190 / 24,483 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
+    ten, which have 5,006 / 8,335 / 17,963 / 20,190 / 24,483 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -756,7 +756,7 @@ _SOURCES = {
 # trade #153, #154 and #161 all refused. A version carrying the invocation alone is about
 # 250 and WOULD have fitted inside the old band, so this is a judgement that the clause is
 # worth the re-band and not an arithmetic impossibility. No rule file was born:
-# `gui-handoff.md` grew 33,939 -> 40,752 (+6,813) against its own 60,000, and its file
+# `gui-handoff.md` grew 33,939 -> 42,037 (+8,098) against its own 60,000, and its file
 # count moved 14 -> 15 because the artefact split a third time on the ~500-line standard.
 # That file's own "#162 is the cheap moment" note for a thirteenth rule file was
 # RE-MEASURED rather than acted on, and says so.

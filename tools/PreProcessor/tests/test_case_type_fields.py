@@ -43,8 +43,12 @@ What this pins down:
      nothing. The new field becomes OWNABLE and is not OWNED.
   5. DEVIATION NAMES THE OWNED FIELDS AND ONLY THOSE. Moving an owned field
      reports it; moving a field the case type has no opinion about reports
-     nothing; putting one back clears it; and a config written to a `.dat` and
-     read back is NOT a deviation, because the writer formats at `%.6g`.
+     nothing; putting one back clears it; a config written to a `.dat` and read
+     back is NOT a deviation, because both sides are compared AS THE WRITER
+     WOULD WRITE THEM; and the smallest edit that writer CAN carry — one `%.6g`
+     step on a 1e-3 first-cell height — IS one. Both ends, because a comparison
+     that is wrong at either is wrong, and the first version of this service was
+     wrong at the coarse one.
   6. A DEVIATED VERDICT IS STILL ISSUED, IS MARKED, AND NAMES THE FIELDS. The
      STATE is identical to the undeviated one — deviation is not a downgrade of
      the answer — and the report says which fields moved rather than how many.
@@ -54,8 +58,11 @@ What this pins down:
   8. A FIELD A CASE TYPE MAY NOT OWN IS REFUSED, AND THE REFUSAL SAYS WHY. A
      BINDING is refused because the operator's segment ids are not the
      maintainer's (#164 is roles); a per-project field is refused with its own
-     declared reason; an unknown name is refused as unknown. The FOURTEEN bindings
-     today's four families declare are pinned, against the models' own fields.
+     declared reason; an unknown name is refused as unknown. Asserted at all
+     three doors — the overlay's constructor, a FILE naming a binding, and
+     `capture`, which must refuse BEFORE it reads the name off a config. The
+     FOURTEEN bindings today's four families declare are pinned, against the
+     models' own fields.
   9. THE THREE QUESTIONS ARE REALLY ANSWERABLE, through the two headless hosts
      driven as SUBPROCESSES: `save_case_type.py --fields-from` captures an
      overlay off a `.dat`, a `.hws` and a pipeline script alike;
@@ -64,6 +71,12 @@ What this pins down:
  10. QT-FREE, in a subprocess: importing the fields service leaves PyQt6
      unimported. In-process the answer is always "loaded" once anything else
      imported it.
+ 11. THE HEADLESS HOST JUDGES THE CONFIG THE OPERATOR WROTE, not the one its own
+     stage overrode. `_run_mesh` forces `export_vtk` on and both export flags
+     are ownable, so handing the verdict that object would report a deviation on
+     every headless run of a case type owning one. Read from the SOURCE, like
+     `test_case_type_verdict.py`'s "neither host grades" check and with that
+     technique's blind spot.
 
 Known blind spots, named rather than papered over:
   - NOTHING HERE SCALES ANYTHING. A case type applied to a geometry at another
@@ -95,8 +108,11 @@ that no other check moves (`others_green`):
   A. `_binding` stops recognising a binding suffix -> check 8 fails: a case type
      could own `topology.ogrid_body_segs`, which is a stable segment id into the
      MAINTAINER's geometry.
-  B. `REL_TOL` dropped to 0.0 -> check 5 fails: a config written to a `.dat` at
-     `%.6g` and read back reports a deviation nobody made.
+  B. `DAT_PRECISION` raised to `%.17g` -> check 5 fails at the ROUNDED end: a
+     config written to a `.dat` and read back reports a deviation nobody made.
+  B2. `DAT_PRECISION` dropped to `%.2g` -> check 5 fails at the COARSE end: a
+     real edit to a first-cell height disappears. The two together are why the
+     constant is the writer's own format and not a tolerance beside it.
   C. `capture_differences` stops subtracting the default -> check 1 fails: the
      overlay is a full snapshot, which is the design this ticket exists against.
   D. `judge` stops carrying the deviations onto the verdict -> check 6 ALONE
@@ -116,11 +132,14 @@ that no other check moves (`others_green`):
      mutant -- stops printing the owned fields, and check 9 fails. It runs a
      mutated COPY of `show_case_type.py`, with the real unmutated host asserted
      green beside it.
+  J. the RUNNER -- read off disk by check 11, so no in-memory mutant reaches it
+     -- judges the config its own stage overrode, and check 11 fails.
   I. negative control: the unmutated services pass every check.
 
 Run:  python3 tools/PreProcessor/tests/test_case_type_fields.py
 Needs no build tree, no Qt and no network.
 """
+import ast
 import dataclasses
 import importlib.util
 import json
@@ -138,6 +157,8 @@ if _GUI not in sys.path:
 
 _SAVE_HOST = os.path.join("tools", "PreProcessor", "save_case_type.py")
 _SHOW_HOST = os.path.join("tools", "PreProcessor", "show_case_type.py")
+_RUNNER = os.path.join("tools", "PreProcessor", "gui", "app", "services",
+                       "pipeline_runner.py")
 _SHIPPED = os.path.join("examples", "case_types", "ogrid_circle.casetype.json")
 #: A real working case in each of the three shapes `read_config` classifies.
 _OGRID_DAT = os.path.join("config", "multiblock_ogrid.dat")
@@ -518,6 +539,33 @@ def check_deviation_names_owned_fields_only(w):
         if not isinstance(mesh_only.values["bl_initial_thickness"], float):
             out.append("the round-trip leg no longer carries a float, so it is "
                        "measuring nothing")
+        # ...and the OTHER end of the same question: the smallest edit the
+        # writer can carry must still read as one. One `%.6g` step on a 1e-3
+        # first cell is 1e-8, and a comparison lenient enough to miss it would
+        # hide a change the mesher acts on. The first version of this service
+        # floored its tolerance at 1.0 and did exactly that.
+        nudged = F.read_config(path)
+        nudged.bl_initial_thickness = float(
+            "%.6g" % (nudged.bl_initial_thickness * 1.00001))
+        if nudged.bl_initial_thickness == reread.bl_initial_thickness:
+            out.append("the nudge the leg uses is not representable in a .dat, "
+                       "so it is measuring nothing")
+        elif [d.name for d in F.deviations(mesh_only, nudged)] != \
+                ["bl_initial_thickness"]:
+            out.append("a one-step edit to bl_initial_thickness (%r -> %r) is "
+                       "not reported as a deviation"
+                       % (reread.bl_initial_thickness,
+                          nudged.bl_initial_thickness))
+    # `length_unit_metres` is the one field the writer puts out at `%.10g`, and
+    # it IS metres-per-grid-unit — Linf, and so the Reynolds number. A change
+    # finer than six significant figures must still deviate, or the costliest
+    # field in the vocabulary is the one that goes quiet.
+    unit = overlay(w, {"length_unit": "custom", "length_unit_metres": 0.0254})
+    finer = F.apply(unit)
+    finer.length_unit_metres = 0.02540001
+    if [d.name for d in F.deviations(unit, finer)] != ["length_unit_metres"]:
+        out.append("a 1e-7 change to length_unit_metres — which the .dat really "
+                   "carries, at %.10g — is not reported as a deviation")
     return out
 
 
@@ -625,6 +673,23 @@ def check_unownable_fields_are_refused(w):
                            % (name, str(exc)))
         else:
             out.append("a case type was allowed to own %s" % name)
+    # ...and it reaches `capture` BEFORE the name is read off a config, which
+    # is the door `--field` comes through: an unchecked read raises a bare
+    # AttributeError that no host catches, so the maintainer got a traceback
+    # where this message was written for them.
+    try:
+        F.capture(MeshConfig(), ["mesh_mode", "no_such_knob"])
+    except ct.CaseTypeError as exc:
+        if "not a mesh field" not in str(exc):
+            out.append("capture refused a bad name with %r" % str(exc))
+    except Exception as exc:  # deliberately broad: the DEFECT is a bare
+        # AttributeError reaching a host, so the check has to catch whatever
+        # arrives and name it rather than let the harness die on it.
+        out.append("capture raised %s for an unknown field, not CaseTypeError: "
+                   "%s" % (type(exc).__name__, exc))
+    else:
+        out.append("capture read an unknown field off a config without "
+                   "refusing it")
     # ...and the refusal reaches a FILE, not only the constructor.
     with tempfile.TemporaryDirectory() as tmp:
         base = shipped(w)
@@ -747,6 +812,63 @@ def check_the_hosts_answer(w, show_host=""):
     return out
 
 
+def check_runner_judges_what_the_operator_wrote(w, source=""):
+    """The headless host judges a config its OWN stage did not overwrite.
+
+    `_run_mesh` forces `export_vtk` (and `export_starcd`) on, because the
+    pipeline needs the files; both are ownable fields. Handing the verdict THAT
+    object makes a case type owning `export_starcd` report a deviation on every
+    headless run — a field the operator never touched and cannot put back.
+
+    Read from the SOURCE, like `test_case_type_verdict.py`'s "neither host
+    grades" check, because running this leg for real needs the mesher binary and
+    the defect is structural: the object passed is one the function wrote to.
+    The blind spot that technique carries is named in the docstring above.
+    """
+    out = []
+    src = source or _read(_RUNNER)
+    tree = ast.parse(src)
+    func = next((n for n in ast.walk(tree)
+                 if isinstance(n, ast.FunctionDef) and n.name == "_run_mesh"),
+                None)
+    if func is None:
+        return ["services/pipeline_runner.py declares no _run_mesh, so this "
+                "check is measuring nothing"]
+    # Every local name this function writes an ATTRIBUTE of — `mc.export_vtk`
+    # and friends. A name in here is a config the stage has edited.
+    written = set()
+    for node in ast.walk(func):
+        if not isinstance(node, (ast.Assign, ast.AugAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            if isinstance(target, ast.Attribute) and isinstance(target.value,
+                                                               ast.Name):
+                written.add(target.value.id)
+    calls = [n for n in ast.walk(func)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and n.func.attr == "run_report"]
+    if len(calls) != 1:
+        return ["_run_mesh makes %d run_report call(s), expected exactly one"
+                % len(calls)]
+    passed = [kw.value for kw in calls[0].keywords if kw.arg == "config"]
+    if not passed:
+        out.append("_run_mesh passes no `config=` to run_report, so no "
+                   "deviation can ever be reported headlessly")
+    elif not isinstance(passed[0], ast.Name):
+        out.append("_run_mesh passes a `config=` this check cannot resolve to a "
+                   "name; re-read it by hand")
+    elif passed[0].id in written:
+        out.append("_run_mesh judges `%s`, which it writes attributes of (%s) — "
+                   "this stage's own overrides would be reported as the "
+                   "operator's deviations"
+                   % (passed[0].id, ", ".join(sorted(written))))
+    if not written:
+        out.append("_run_mesh writes no config attribute at all, so this check "
+                   "is measuring nothing")
+    return out
+
+
 def check_qt_free(w):
     """The overlay service imports no Qt, measured where the answer is honest.
 
@@ -791,6 +913,7 @@ _ALL = {
     8: check_unownable_fields_are_refused,
     9: check_the_hosts_answer,
     10: check_qt_free,
+    11: check_runner_judges_what_the_operator_wrote,
 }
 
 _LABELS = {
@@ -804,6 +927,7 @@ _LABELS = {
     8: "check 8. a field a case type may not own is refused, and says why",
     9: "check 9. the two headless hosts answer all three questions",
     10: "check 10. the fields service is Qt-free, measured in a subprocess",
+    11: "check 11. the headless host judges the config the OPERATOR wrote",
 }
 
 _REAL = world()
@@ -816,10 +940,11 @@ for num in sorted(_ALL):
 
 
 # --- injections ---------------------------------------------------------------
-# Checks 9 and 10 launch a SUBPROCESS against the real files on disk and so
-# cannot see an in-memory mutant at all; including them in `others_green` would
-# score them as evidence when they are measuring something else.
-_SKIP_UNDER_MUTATION = (9, 10)
+# Checks 9 and 10 launch a SUBPROCESS against the real files on disk, and check
+# 11 reads a source file off it; none can see an in-memory mutant at all, so
+# including them in `others_green` would score them as evidence when they are
+# measuring something else. Each carries its own injection instead.
+_SKIP_UNDER_MUTATION = (9, 10, 11)
 
 
 def others_green(w, *reddened):
@@ -848,17 +973,29 @@ check(check_unownable_fields_are_refused(inj) and others_green(inj, 8),
       "stable segment id into the maintainer's geometry, which the operator's "
       "drawing does not have")
 
-inj = mutate("case_type_fields", "REL_TOL = 1e-6", "REL_TOL = 0.0")
-check(inj.fields.REL_TOL == 0.0,
+inj = mutate("case_type_fields", 'DAT_PRECISION = "%.6g"',
+             'DAT_PRECISION = "%.17g"')
+check(inj.fields.DAT_PRECISION == "%.17g",
       "injection B. injection is well-formed: two floats must now be bit-equal")
 check(check_deviation_names_owned_fields_only(inj) and others_green(inj, 5),
-      "injection B. check 5 ALONE fails when a `.dat` round trip counts as a "
-      "deviation — the writer formats at %.6g, so an operator who changed "
-      "nothing would be told they had")
+      "injection B. check 5 ALONE fails at the ROUNDED end — the writer formats "
+      "at %.6g, so an operator who changed nothing and saved their config would "
+      "be told they had moved a field")
+
+inj = mutate("case_type_fields", 'DAT_PRECISION = "%.6g"',
+             'DAT_PRECISION = "%.2g"')
+check(inj.fields.same(0.001, 0.0010008),
+      "injection B2. injection is well-formed: a real edit to a first-cell "
+      "height now reads as the same value")
+check(check_deviation_names_owned_fields_only(inj) and others_green(inj, 5),
+      "injection B2. check 5 ALONE fails at the COARSE end too, which is what "
+      "makes the constant the WRITER'S OWN FORMAT rather than a tolerance "
+      "beside it: the first version floored a relative tolerance at 1.0, and "
+      "0.001 -> 0.0010008 read as no deviation at all")
 
 inj = mutate("case_type_fields",
              '''    names = [n for n in ownable_names()
-             if not same(_get(config, n), _get(default, n))]''',
+             if not same(_get(config, n), _get(default, n), n)]''',
              "    names = list(ownable_names())")
 check(len(inj.fields.capture_differences(MeshConfig())) == len(
           inj.fields.ownable_names()),
@@ -928,6 +1065,24 @@ with tempfile.TemporaryDirectory() as _tmp:
     check(not check_the_hosts_answer(_REAL),
           "injection H. ...and the UNmutated host still passes it, so the "
           "failure above is the mutation and not the copy or its PYTHONPATH")
+
+# J reaches the headless HOST, which check 11 reads off disk. It is the other
+# half of H: the two checks an in-memory mutant cannot touch each carry their
+# own, so no acceptance criterion here rests on a check never shown able to fail.
+_runner_src = _read(_RUNNER)
+_runner_anchor = "run_report(vtk, rc, config=judged)"
+assert _runner_anchor in _runner_src, ("runner injection anchor not found: %r"
+                                       % _runner_anchor)
+check(check_runner_judges_what_the_operator_wrote(
+          _REAL, source=_runner_src.replace(
+              _runner_anchor, "run_report(vtk, rc, config=mc)", 1)),
+      "injection J. check 11 fails when the headless host judges the config its "
+      "OWN stage forced `export_vtk` on — a case type owning an export flag "
+      "would be reported DEVIATED on every run, naming a field the operator "
+      "never touched")
+check(not check_runner_judges_what_the_operator_wrote(_REAL),
+      "injection J. ...and the UNmutated runner still passes it, so the failure "
+      "above is the mutation and not the reader")
 
 check(not any(fn(_REAL) for num, fn in _ALL.items()),
       "injection I. negative control: the unmutated services pass every check, "

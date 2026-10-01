@@ -326,7 +326,8 @@ class of problem and authored by someone who knows that class. Read
   line when the case type came from one). It is the only record of which case type a run used,
   the interim channel below leaving none.
 - **Which case type is in play is NOT decided here.** `HYBMESH_CASE_TYPE` names it, as the one
-  channel both hosts read identically; #162 builds the picker that replaces it. Unset means no
+  channel both hosts read identically; #166 builds the picker that replaces it (#160 wrote #162
+  here and #162 landed without one). Unset means no
   verdict at all — **there is no default case type**, which would be a universal threshold
   wearing a different hat.
 - **ONE SEAM, FIVE FILES** (two at #160, four at #161, five since #162), every cut the
@@ -411,14 +412,23 @@ moves away from them.
   over; roles are #164. PER-PROJECT STATE (`output_filename`, `mesh_topology_file`,
   `bc_configured`, `topology.detached`) is a fact about one project. A name outside the
   vocabulary is REFUSED on load, and the refusal says WHICH of those it is rather than
-  "unknown key" for a field that exists and is deliberately excluded.
+  "unknown key" for a field that exists and is deliberately excluded. **`capture` checks the
+  names BEFORE reading any of them off a config**, which is the `--field` door: an unchecked
+  read raises a bare `AttributeError` no host catches, so the maintainer got a traceback where
+  that sentence was written for them.
 - **THE FAMILY IS A FIELD LIKE ANY OTHER**, under a `topology.` prefix in the same flat
   overlay, because picking a case type has to answer "which family, with what parameters" as
   well as "what size cells". One vocabulary, one apply, one deviation report.
-- **`REL_TOL` IS MEASURED OFF THE `.dat` WRITER, not picked**: `models/mesh_config_io.py`
-  formats every float at `%.6g`, so the file the mesher reads cannot represent a finer
-  difference than ~5e-7 relative. A tighter tolerance reports a deviation the operator could
-  not have made and could not undo.
+- **TWO FLOATS ARE THE SAME VALUE WHEN THEY RENDER THE SAME AT THE `.dat` WRITER'S OWN
+  FORMAT** (`DAT_PRECISION`, `%.6g`, which is what `models/mesh_config_io.py` writes), NOT
+  when they sit inside a tolerance. Both forms of a tolerance were wrong: floored at 1.0 it
+  became an absolute 1e-6 and missed `bl_initial_thickness` 0.001 -> 0.0010008; unfloored,
+  no single relative value separates `%.6g`'s own rounding error (up to 5e-6) from its
+  finest expressible change (1e-5) by more than a factor of two. Rendering answers both
+  ends, and the gate asserts both. **`LENGTH_UNIT_METRES` is written at `%.10g` and gets that
+  format** (`FINER_PRECISION`), because `length_unit_metres` IS metres-per-grid-unit — `Linf`,
+  and so the Reynolds number, which this repo has lost a run to being wrong by 1000x. A second
+  entry in that map would mean the writer grew a third precision.
 - **DEVIATION IS A COMPARISON, NOT A HISTORY.** `deviations` asks what the overlay says and
   what the config says NOW, over the owned fields and ONLY those — so a field the case type has
   no opinion about can be changed freely (user story 21), and putting an owned one back removes
@@ -432,8 +442,12 @@ moves away from them.
   moved is the first thing anybody asks about it.
 - **THE HOST SUPPLIES THE CONFIG, because only the host has it.** `run_report(..., config=)`;
   `None` means nobody could say and the deviation list is then EMPTY rather than invented. The
-  GUI passes `global_mesh_config` (the model the panel synced before the run), the headless
-  runner passes the `MeshConfig` it meshed with.
+  GUI passes `global_mesh_config` (the model the panel synced before the run) and does NOT
+  reach it through a `getattr` default, which would make a rename silence the marking instead
+  of failing. **The headless runner passes a COPY taken BEFORE its own overrides**: `_run_mesh`
+  forces `export_vtk` (and `export_starcd`) on and both are ownable, so judging the object it
+  wrote would report a deviation on every headless run, naming a field the operator never
+  touched and cannot put back. Gated by check 11, read off the runner's AST.
 - **A PATH IS NOT A KIND, here too**: `read_config` classifies through
   `services/project_file_kind` — a `.dat`, a `.hws` workspace or a pipeline script — so this
   seam cannot disagree with `main.py` about what a file is.
@@ -445,7 +459,7 @@ moves away from them.
   same reason: #166 owns the picker and the Trial/Generate actions. It answers the three
   questions an operator may ask of borrowed expertise — which fields does it own, what differs
   between two case types, and how far has my case moved.
-Gated by `tests/test_case_type_fields.py` (ten checks and nine automated injections, each
+Gated by `tests/test_case_type_fields.py` (eleven checks and ten automated injections, each
 asserting the mutation is well-formed, that the named checks redden and that no other does; the
 counts are that file's own docstring's and are not restated here).
   Why: `docs/design_notes/gui.md`, "A CASE TYPE'S CONFIG FIELDS, AND WHAT A DEVIATION COSTS".

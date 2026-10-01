@@ -202,9 +202,10 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
         raise PipelineError("HybMesh2D binary not found — run ./build.sh")
 
     mc = pcfg.build_mesh_config(geom_files)
+    # What the OPERATOR wrote, before the two overrides below (#162).
+    judged = pcfg.build_mesh_config(geom_files)
     mc.export_vtk = True
-    if need_starcd:
-        mc.export_starcd = True
+    mc.export_starcd = mc.export_starcd or need_starcd
     vtk = _mesh_output_path(mc, pcfg.name, repo)
     mc.output_filename = vtk
     os.makedirs(os.path.dirname(vtk), exist_ok=True)
@@ -243,7 +244,7 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     # The VERDICT a case type passes on this run (#160) — the SAME call the GUI
     # makes, silent when none is in play. BEFORE the guard below, which raises:
     # exit 9's `unusable` must be SAID. The grade it returns beside is the GUI's.
-    verdict, _level = case_type_verdict.run_report(vtk, rc, config=mc)
+    verdict, _level = case_type_verdict.run_report(vtk, rc, config=judged)
     if verdict:
         log("[Mesh] " + verdict)
     if rc != 0:

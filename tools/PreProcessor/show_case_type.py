@@ -44,7 +44,7 @@ if _GUI_DIR not in sys.path:
 
 from app.services import case_type as case_type_mod
 from app.services import case_type_fields
-from app.services.case_type import BOUNDS, CaseTypeError
+from app.services.case_type import CaseTypeError
 
 
 def _show(case_type) -> None:
@@ -56,13 +56,7 @@ def _show(case_type) -> None:
               % (ref.ident, ref.mesh or "(no mesh recorded)",
                  ref.measured_on or "(no date recorded)", len(ref.figures)))
     for th in case_type.thresholds:
-        parts = []
-        for bound in BOUNDS:
-            value = getattr(th, bound)
-            if value is not None:
-                parts.append("%s %.6g (%s)"
-                             % (bound, value, th.origin_of(bound)))
-        print("  threshold    %-13s %s" % (th.key, ", ".join(parts)))
+        print("  threshold    %-13s %s" % (th.key, th.describe_bounds()))
     # The FIELDS, which is what this command exists for. Said even when there
     # are none: "this case type takes no position on any setting" is an answer
     # an operator needs, and an empty section that printed nothing would read as

@@ -210,6 +210,7 @@ def world(ct_src=None, v_src=None):
                 setattr(pkg, attr, mod)
 
 
+from app.models.mesh_config import MeshConfig  # noqa: E402
 from app.services import mesh_shape_stats  # noqa: E402
 
 #: The shipped O-grid's published figures, read off its sidecar on 2026-09-30.
@@ -541,6 +542,11 @@ def check_gui_emits_verdict(w):
     class _Host(MeshGenControllerMixin):
         def __init__(self):
             self.main_window = _Any()
+            # What the real controller sets in its own `__init__`
+            # (`controller.py`), and what #162 made `_on_mesh_gen_finished`
+            # read: the config the run used, so the service can say which of
+            # the case type's own fields have moved.
+            self.global_mesh_config = MeshConfig()
             self.global_vtk_mesh = None
             self.global_vtk_path = ""
             self._pending_after_mesh = None

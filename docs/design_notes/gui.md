@@ -4064,18 +4064,41 @@ operator moves away from them.
   covered the day it lands — and the gate pins today's fourteen against the models' own
   declarations in BOTH directions, which is what turns the suffix rule from a hope into a
   measurement. Injection A stops recognising the suffix and the refusal check alone goes red.
-* **THE REFUSAL SAYS WHICH KIND IT IS.** A name outside the vocabulary is refused on load, like
-  an unknown threshold key, but "unknown key" for a field that exists and is deliberately
-  excluded would send a maintainer looking for a typo. `_why_not_ownable` answers with the
-  declared reason for an excluded field, with the binding argument for a binding, and with the
-  list only for a name that really is unknown.
-* **`REL_TOL` IS MEASURED OFF THE WRITER, AND THE FIRST NUMBER WAS WRONG.** It was 1e-9 by
-  analogy with `Origin.REL_TOL`, justified in the comment as "the `.dat` is written at `%.10g`".
-  The gate's round-trip leg failed on it: `models/mesh_config_io.py` writes `LENGTH_UNIT_METRES`
-  at `%.10g` and every OTHER float at `%.6g`, so a config the operator never touched came back
-  deviated. The constant is now 1e-6 and the comment names the writer and the format it really
-  uses. A tolerance tighter than the file's own resolution reports a deviation the operator
-  could not have made and could not undo; injection B drops it to 0.0 and the leg reddens.
+* **THE REFUSAL SAYS WHICH KIND IT IS — AND HAS TO REACH THE DOOR IT COMES THROUGH.** A name
+  outside the vocabulary is refused on load, like an unknown threshold key, but "unknown key"
+  for a field that exists and is deliberately excluded would send a maintainer looking for a
+  typo. `_why_not_ownable` answers with the declared reason for an excluded field, with the
+  binding argument for a binding, and with the list only for a name that really is unknown.
+  **`capture` read the name off the config BEFORE validating it**, so the one door a maintainer
+  actually types a name into — `--field` — raised a bare `AttributeError` that
+  `save_case_type.py`'s deliberately narrow handler cannot catch, and the sentence written for
+  that exact moment never ran. The Spec review found it. Validating first is the fix, and the
+  second check inside `FieldOverlay` is not redundant: that one is the other door, a FILE naming
+  a field it may not own.
+* **"THE SAME VALUE" IS A RENDERING, NOT A TOLERANCE — AND IT TOOK THREE GOES TO GET THERE.**
+  The first was `REL_TOL = 1e-9` by analogy with `Origin.REL_TOL`, justified in the comment as
+  "the `.dat` is written at `%.10g`". The gate's round-trip leg refuted it:
+  `models/mesh_config_io.py` writes `LENGTH_UNIT_METRES` at `%.10g` and every OTHER float at
+  `%.6g`, so a config the operator never touched came back deviated. The second was 1e-6 with
+  the inherited `max(abs(b), 1.0)` floor still on it — which the Standards review caught, and
+  which is the sharper lesson: in `Origin` the values are quality ratios whose floor IS 1.0, so
+  the clamp never bites, while here they are first-cell heights of 1e-3, so the same clamp
+  silently turned a relative test into an absolute 1e-6 and read `bl_initial_thickness`
+  0.001 -> 0.0010008 as no deviation at all. **A constant copied with its guard intact across a
+  change of UNITS is the defect, and nothing about the number says so.** Dropping the floor
+  then failed at the other end: `%.6g`'s own rounding error reaches 5e-6 relative (half a step
+  at mantissa 1.0) while its finest expressible change is 1e-5, so no single relative tolerance
+  separates "rounded by the writer" from "the smallest edit the writer can carry" by more than
+  a factor of two. The third form asks the question directly — two floats are the same value
+  when they RENDER THE SAME at `DAT_PRECISION` — which has no constant to justify, is exact at
+  both ends, and is idempotent under a round trip by construction. Injections B and B2 push the
+  format to `%.17g` and `%.2g` and redden the same check from opposite sides. **One field keeps
+  its own format** (`FINER_PRECISION`): `LENGTH_UNIT_METRES` goes out at `%.10g`, and
+  `length_unit_metres` IS metres-per-grid-unit — `Linf`, and so the Reynolds number, which this
+  repo has already lost a run to being wrong by 1000x. It was first written down as a named
+  blind spot and the Spec review was right that it is the costliest field in the vocabulary to
+  miss; the map mirrors `mesh_config_io` and a second entry would mean that writer grew a third
+  precision.
 * **DEVIATION IS A COMPARISON, NOT A HISTORY.** Nothing records edits. `deviations` asks what
   the overlay says and what the config says NOW, over the owned fields and only those — so
   changing a field the case type has no opinion about is free (user story 21), and putting an
@@ -4097,9 +4120,18 @@ operator moves away from them.
   the whole mark — headline, names, grade — vanishes from the figures path alone.
 * **THE HOST SUPPLIES THE CONFIG, BECAUSE ONLY THE HOST HAS IT**, and `None` means "nobody could
   say" rather than "nothing moved": an empty deviation list invented by a layer that did not look
-  would be the one lie this is built against. The GUI passes `global_mesh_config` — the model the
-  panel syncs before the run, which is what the mesher read — and `pipeline_runner` passes the
-  `MeshConfig` it meshed with. Neither host spells a comparison of its own.
+  would be the one lie this is built against. Neither host spells a comparison of its own — and
+  BOTH of them got the object wrong on the first pass, in opposite directions, which the review
+  found. The GUI reached `global_mesh_config` through a `getattr(..., None)`, so a rename would
+  land on the documented "nobody could say" path and the marking would vanish in silence rather
+  than fail; it is a plain attribute read now, and #160's stand-in host carries what the real
+  controller carries. The headless runner passed the config its own stage had just written to:
+  `_run_mesh` forces `export_vtk` on (and `export_starcd` when the case needs STAR-CD), both are
+  ownable fields, so a case type owning either would have been reported DEVIATED on EVERY
+  headless run — naming a field the operator never touched and could not put back. It now judges
+  a copy taken before those lines, and check 11 reads the runner's AST to assert the object
+  handed to the verdict is not one the function writes attributes of. **A stage forcing a
+  setting is not the operator deviating from one**, and nothing about either line said so.
 * **`read_config` GOES THROUGH `project_file_kind`.** A case's mesh configuration arrives as a
   `.dat`, a `.hws` workspace or a pipeline script, and this repo has a user-reported defect from
   deciding a kind by extension. One classifier, so the capture host cannot disagree with
@@ -4133,7 +4165,12 @@ cannot be saved until #164 derives bindings from roles. Found by the gate's own 
 which carries no family for exactly that reason, and worked around there rather than fixed.
 **The exclusion list is a judgement**: that `output_filename` is per-case and `bl_growth_rate` is
 not is argued in the service's docstring and pinned by the gate, and nothing measures that the
-line is in the right place. **The shipped case type demonstrates no family**, because a `.dat`
+line is in the right place. **`apply` has no production caller yet** — the Spec review's finding,
+and it is the hand-off to #166: the mechanism is built and gated over both models, but today the
+overlay's only in-tree effect is the deviation report, so "applying a case type" is proven and not
+yet performed by anything a user can press. **Check 11 reads SOURCE**, the technique
+`test_case_type_verdict.py`'s "neither host grades" check already carries with its own named
+blind spot: a third host that grew its own stage overrides is invisible to it. **The shipped case type demonstrates no family**, because a `.dat`
 carries no topology model — the family and its parameters live in a project file, and this repo
 ships no project that uses the O-grid template — so the family half of the overlay is gated on
 constructed inputs only. **And there is still no GUI**: no picker, no Trial, no Generate, so

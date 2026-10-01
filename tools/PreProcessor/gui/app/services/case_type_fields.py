@@ -74,7 +74,7 @@ SCALAR_TYPES = ("bool", "int", "float", "str")
 
 #: The two suffixes that mark a topology parameter as a BINDING into the
 #: authoring geometry. Derived rather than listed so a fifth family is covered
-#: the day it lands; the ten of today are pinned by the gate.
+#: the day it lands; the fourteen of today are pinned by the gate.
 BINDING_SUFFIXES = ("_geom", "_segs")
 
 #: Scalar fields a case type may NOT own, each with the reason. Keyed by the
@@ -94,14 +94,35 @@ EXCLUDED = {
         "provenance about one project rather than a reusable setting",
 }
 
-#: How far two floats may sit apart and still be the same value, and the number
-#: is MEASURED rather than picked: `models/mesh_config_io.py` writes every float
-#: in the mesher's `.dat` at `%.6g`, so the file the mesher actually reads cannot
-#: represent a finer difference than about 5e-7 relative. A tighter tolerance
-#: would report a deviation the operator could not have made and could not undo;
-#: a looser one would hide an edit the mesher can see. Same reason
-#: `Origin.REL_TOL` is not zero, with a different writer behind it.
-REL_TOL = 1e-6
+#: The precision `models/mesh_config_io.py` writes every float in the mesher's
+#: `.dat` at. TWO floats are the same value here when they RENDER THE SAME at
+#: it — which is the question that actually matters, "can the mesher tell these
+#: apart", rather than a tolerance standing in for it.
+#:
+#: IT REPLACED A RELATIVE TOLERANCE, and both of that tolerance's forms were
+#: wrong in a way a constant cannot fix. The first floored at 1.0, copied from
+#: `Origin.REL_TOL` where the values are quality ratios whose floor IS 1.0 so
+#: the clamp never bites; here they are first-cell heights of 1e-3 and smaller,
+#: and the clamp turned the test into an absolute 1e-6 —
+#: `bl_initial_thickness` 0.001 -> 0.0010008 read as no deviation at all, a
+#: change the `.dat` stores exactly and the mesher acts on. Dropping the floor
+#: then broke the other end: `%.6g`'s own rounding error is up to 5e-6 relative
+#: (half a step at mantissa 1.0) while its finest expressible change is 1e-5,
+#: so no single relative tolerance separates "rounded by the writer" from "the
+#: smallest edit the writer can carry" by more than a factor of two. Rendering
+#: both sides answers both: a round-tripped value renders to itself, and a
+#: one-step edit renders differently. Found in review, twice.
+#:
+#: ONE FIELD IS WRITTEN FINER, and it is the one field where missing a change
+#: is expensive: `LENGTH_UNIT_METRES` goes out at `%.10g`, and
+#: `length_unit_metres` IS metres-per-grid-unit — `Linf`, and so the Reynolds
+#: number, which this repo has already lost a run to being wrong by 1000x. So
+#: it gets the writer's own format for that line rather than a named blind
+#: spot. The map is keyed by field and is expected to stay this short: it
+#: mirrors `mesh_config_io`, and a second entry means that writer grew a third
+#: precision.
+DAT_PRECISION = "%.6g"
+FINER_PRECISION = {"length_unit_metres": "%.10g"}
 
 
 def _binding(name: str) -> bool:
@@ -179,19 +200,24 @@ def _set(config, name: str, value) -> None:
         setattr(config, name, value)
 
 
-def same(a, b) -> bool:
+def same(a, b, name: str = "") -> bool:
     """True when two overlay values are the same value.
 
-    Floats compare within `REL_TOL`; everything else is equality. `bool` is
-    checked before the numeric path because `True == 1` in Python and a case
-    type that says `export_vtk: true` has not been deviated from by a config
-    holding `1`.
+    Floats are the same when they RENDER THE SAME at the precision the `.dat`
+    writer uses for `name` — see `DAT_PRECISION` for why rendering and not a
+    tolerance. Everything else is equality. `bool` is checked before the numeric
+    path because `True == 1` in Python and a case type that says
+    `export_vtk: true` has not been deviated from by a config holding `1`.
+
+    `name` is optional because a caller comparing two loose values has none; it
+    then gets the format all but one field is written at.
     """
     if isinstance(a, bool) or isinstance(b, bool):
         return bool(a) is bool(b)
     if isinstance(a, float) or isinstance(b, float):
+        fmt = FINER_PRECISION.get(name, DAT_PRECISION)
         try:
-            return abs(float(a) - float(b)) <= REL_TOL * max(abs(float(b)), 1.0)
+            return (fmt % float(a)) == (fmt % float(b))
         except (TypeError, ValueError):
             return False
     return a == b
@@ -322,7 +348,20 @@ def read_config(path: str) -> MeshConfig:
 
 
 def capture(config, names) -> FieldOverlay:
-    """An overlay holding exactly `names`, read off a live config."""
+    """An overlay holding exactly `names`, read off a live config.
+
+    The names are checked BEFORE any of them is read, which is the whole reason
+    this is not one comprehension: `_get` on a name no model declares raises a
+    bare `AttributeError` that no host catches, so a maintainer who mistyped
+    `--field` got a traceback instead of the sentence `_why_not_ownable` was
+    written for. `FieldOverlay` checks them again and that is not redundant —
+    it is the check for the OTHER door, a file that names a field it may not own.
+    """
+    names = [str(n) for n in names]
+    types = ownable_types()
+    for name in names:
+        if name not in types:
+            raise CaseTypeError(_why_not_ownable(name))
     return FieldOverlay({n: _get(config, n) for n in names})
 
 
@@ -337,7 +376,7 @@ def capture_differences(config, extra=()) -> FieldOverlay:
     """
     default = MeshConfig()
     names = [n for n in ownable_names()
-             if not same(_get(config, n), _get(default, n))]
+             if not same(_get(config, n), _get(default, n), n)]
     for name in extra:
         if name not in names:
             names.append(str(name))
@@ -388,7 +427,7 @@ def deviations(overlay: FieldOverlay, config) -> tuple:
     out = []
     for name, wanted in overlay.values.items():
         actual = _get(config, name)
-        if not same(wanted, actual):
+        if not same(wanted, actual, name):
             out.append(Deviation(name, wanted, actual))
     return tuple(out)
 
@@ -434,7 +473,7 @@ def diff(left: FieldOverlay, right: FieldOverlay) -> tuple:
             continue
         a = left.values[name] if in_left else FieldDiff.MISSING
         b = right.values[name] if in_right else FieldDiff.MISSING
-        if in_left and in_right and same(a, b):
+        if in_left and in_right and same(a, b, name):
             continue
         out.append(FieldDiff(name, a, b))
     return tuple(out)
