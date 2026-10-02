@@ -27,15 +27,31 @@ nothing bearing the role it names, a geometry file that will not load — REFUSE
 and says which. It does not fall back to the whole drawing or to 1:1, because a
 guessed ruler produces a mesh that looks right and is the wrong size.
 
+And since #164 it also attaches the case type to YOUR OWN CURVES. A case type
+naming a topology family needs to know which of your segments is the body and
+which is the far field; its own bindings are stable segment ids into the
+MAINTAINER's geometry and cannot carry over, so what travels is the ROLE:
+
+    --role body=my_body.dat           every segment that geometry carries
+    --role farfield=my_far.dat:3,4,5  those segments, in the geometry's order
+    --role body                       accept the role this tool pre-selected
+
+The roles the case type needs are PRINTED before any of them is assigned, with
+the pre-selection and the reason for it. A pre-selected role is REFUSED until
+you confirm it, for the same reason the first cell height is: a wrong guess that
+reaches the mesher silently produces a mesh that exports, looks right, and has
+the far field's conditions on the body.
+
 Usage:
     python3 tools/PreProcessor/apply_case_type.py <case.casetype.json> \
         --to my_case.dat --out fitted.dat \
-        --confirm bl_initial_thickness
+        --confirm bl_initial_thickness --role body --role farfield
 
 `--to` is your own case — a `.dat`, a `.hws` workspace or a pipeline script. Its
 geometry list and the ROLES on it are what the ruler is read from, and everything
 the case type has no opinion about is left exactly as it is. `--out` writes the
-fitted configuration as a mesher `.dat`; without it nothing is written and this
+fitted configuration as a mesher `.dat` — and, for a case type naming a family,
+the block topology document beside it; without it nothing is written and this
 is a dry run.
 
 Headless, like the two hosts beside it: #166 owns the picker and the
@@ -59,7 +75,9 @@ if _GUI_DIR not in sys.path:
 
 from app.services import case_type as case_type_mod
 from app.services import case_type_fields
+from app.services import case_type_roles
 from app.services import case_type_scale
+from app.services import topology_binding
 from app.services.case_type import CaseTypeError
 
 
@@ -98,6 +116,39 @@ def _parse_confirmations(entries, application):
     return out
 
 
+def _parse_roles(entries, plan):
+    """`--role NAME[=GEOM[:SEGS]]` entries as `{role: spec}`.
+
+    A bare name accepts the role this tool pre-selected; `NAME=GEOM` binds every
+    segment that geometry carries and `NAME=GEOM:1,2,3` binds those. The same
+    shape `--confirm` has, deliberately: both are the operator ANSWERING a
+    question the tool asked, and two grammars for one act is two things to
+    learn.
+
+    A role the case type does not need is refused HERE as well as in the
+    service, so a typo is a sentence naming the roles it does need rather than a
+    binding that silently does nothing.
+    """
+    out = {}
+    for raw in entries or []:
+        name, sep, spec = str(raw).partition("=")
+        name = name.strip()
+        if plan.slot(name) is None:
+            raise CaseTypeError(
+                "--role %r names no role this case type needs; it needs %s"
+                % (raw, ", ".join(plan.roles) or "none"))
+        if sep and not spec.strip():
+            # REFUSED rather than read as a bare name, by `--confirm`'s own
+            # reasoning: `--role body=$GEOM` with the variable unset is the
+            # shape this catches, and silently accepting a guess for it is the
+            # one thing the confirmation exists to prevent.
+            raise CaseTypeError(
+                "--role %r gives an empty geometry; use the bare name %r to "
+                "accept the pre-selected one" % (raw, name))
+        out[name] = spec.strip()
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Fit a case type to your own geometry: geometry-driven "
@@ -115,6 +166,12 @@ def main() -> int:
                     help="confirm one physical parameter; repeatable. A bare "
                          "name accepts the offered value, NAME=VALUE gives "
                          "your own.")
+    ap.add_argument("--role", action="append",
+                    metavar="ROLE[=GEOM[:SEGS]]",
+                    help="assign one role on YOUR geometry; repeatable. A bare "
+                         "name accepts the pre-selected curve, ROLE=GEOM binds "
+                         "every segment it carries, ROLE=GEOM:1,2,3 binds "
+                         "those.")
     args = ap.parse_args()
 
     try:
@@ -143,6 +200,17 @@ def main() -> int:
                   "sizes are carried through unscaled")
         for line in application.describe():
             print("    " + line)
+        # THE ROLES ARE SHOWN BEFORE ANYTHING IS ASSIGNED, and before `apply`
+        # refuses an unconfirmed physical parameter: an operator who runs this
+        # bare must see which of their curves they are being asked for, not a
+        # refusal about a first cell height and nothing else.
+        roles = case_type_roles.plan_for(
+            case_type, config, topology_binding.context_for_config(config))
+        if roles.slots:
+            print("  roles this case type needs on your own geometry:")
+            for line in roles.describe():
+                print("    " + line)
+        assigned = _parse_roles(args.role, roles)
         # The refusal goes through `apply`, not through a check beside it: the
         # service is what makes "never applied silently" structural, and a host
         # that asked the question itself could answer it differently.
@@ -150,6 +218,11 @@ def main() -> int:
         for name in sorted(confirmed):
             print("  confirmed %s = %s"
                   % (name, case_type_fields.show_value(confirmed[name])))
+        # And the bindings are DERIVED from those roles against the operator's
+        # own segments, after the family has been written in: no id from the
+        # authoring geometry is read, because a case type carries none.
+        for binding in roles.bind(fitted, assigned):
+            print("  bound %s" % binding.describe())
         if args.out:
             fitted.save_to_file(args.out)
             print("  wrote %s" % args.out)

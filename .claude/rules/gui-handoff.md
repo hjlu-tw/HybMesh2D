@@ -18,13 +18,14 @@ paths:
 Loaded on demand when the mesh-BC audit, the project-file classifier, the case-grid lookup,
 the shape-summary reader, the CASE TYPE and its verdict, the Mesh Statistics panel, the mesh
 output-name resolver, the mesh-export / Mesh-layers / solver controller, or the segment model
-is read — **16 files**, verified to match. The `services/case_type*` glob is #160's: a case
+is read — **18 files**, verified to match. The `services/case_type*` glob is #160's: a case
 type GRADES the same `.provenance.json` this file's sixth concern already reads inward, so
 the reader and the judge sit together rather than one area's rule being split in two. It
-reaches SIX files since #163 — the document, the figures and provenance it holds, the
+reaches EIGHT files since #164 — the document, the figures and provenance it holds, the
 config overlay, the characteristic length that fits that overlay to another drawing, the
-verdict and the authoring step — all six being the ~500-line standard's cuts through one
-artefact rather than six seams. **Rules only** — the rationale (the
+verdict, the authoring step, the ROLES that bind one to the operator's own CAD and the
+pre-selection split off them — all eight being the ~500-line standard's cuts through one
+artefact rather than eight seams. **Rules only** — the rationale (the
 measurements, the dated USER-REPORTED failures, the reversals and the named blind spots) is
 `docs/design_notes/gui.md`. Read that note before overruling a rule here; when a rule changes,
 update BOTH.
@@ -44,7 +45,7 @@ That is the family resemblance, and it is why they are one file.
 **THREE files this rules on are reached by NO glob in ANY rule file**:
 `tools/PreProcessor/save_case_type.py`, #161's authoring host,
 `tools/PreProcessor/show_case_type.py`, #162's inspecting one, and
-`tools/PreProcessor/apply_case_type.py`, #163's applying one. All three sit outside
+`tools/PreProcessor/apply_case_type.py`, #163's applying one and #164's binding one. All three sit outside
 `gui-seams.md`'s tree-wide `tools/PreProcessor/gui/**` as well — so the tripwire row in
 `CLAUDE.md` is the only thing that reaches their reader, the same gap recorded for `run_batch.py`
 and `CMakeLists.txt`. All three are outside `tests/test_silent_exceptions.py`'s swept tree for the
@@ -563,6 +564,73 @@ the correctly fitted run's differ by more than 10x. That control is what makes t
 leg falsifiable without an injection.
   Why: `docs/design_notes/gui.md`, "ONE CASE TYPE FITS A GEOMETRY AT ANY SCALE".
 
+**ROLES BIND A CASE TYPE TO THE OPERATOR'S OWN CAD, AND NO AUTHORING ID SURVIVES**
+(`services/case_type_roles.py` = the slots, the plan, the resolution and the refusals;
+`services/case_type_guess.py` = the pre-selection; both Qt-free;
+`tools/PreProcessor/apply_case_type.py` is the applying host; #164, parent #158). #163's gate
+named this gap: an overlay naming a family could not be written to a `.dat` on its own, every
+family but the H-grid refusing to build a document with no geometry to bind to.
+- **A BINDING IS NEVER COPIED, IT IS DERIVED.** A binding is a stable `SegmentModel.id` into the
+  MAINTAINER's geometry and the operator's segments have entirely different ids, which is why
+  `case_type_fields.EXCLUDED` rules every `*_geom` / `*_segs` parameter unownable BY SUFFIX. What
+  travels is the ROLE; `RolePlan.bind` writes ids read off the operator's own `BindingContext`
+  and reads none from the case type, because it carries none.
+- **THE ROLE IS PER SEGMENT, which `MeshConfig.geom_roles` is not.** That map is keyed by
+  geometry FILE and answers a different question (does this curve grow a BL, is it a seed). An
+  assignment here is a set of `(geometry, segment id)` pairs; naming a whole geometry is the
+  convenience spelling of "every segment it carries". `geom_roles` is still READ as EVIDENCE for
+  the guess, never as the assignment.
+- **WHICH ROLES A FAMILY NEEDS IS DERIVED FROM `TopologyModel`**, by the family's prefix and the
+  `_segs` suffix, so a fifth family's roles arrive with its parameters. Only two things are
+  DECLARED, each with its reason: `SLOT_ROLE` (the role word a slot token means — `body`,
+  `farfield`, `seam`, the one vocabulary an operator picks from, #158's own) and `OPTIONAL` (the
+  C-grid's far field, which the family GENERATES when left unbound). A slot token nobody
+  classified is REFUSED rather than defaulting to itself, and the gate checks both directions.
+  **No family module was modified** — `.claude/rules/gui-topology.md` is full, and this mechanism
+  belongs to the case-type seam; the families keep their own role words for their own refusal
+  prose (`SECTION_ROLE` is "aerofoil").
+- **THE TOOL MAY GUESS; THE OPERATOR CONFIRMS, AND THE REFUSAL IS STRUCTURAL.** `bind` raises
+  while any pre-selected role is unanswered and names EVERY one — the shape
+  `case_type_scale.Application.apply` gives a physical parameter, for the same reason: a prompt
+  can be skipped by a second host, a raise cannot. A wrong guess reaching the mesher is a mesh
+  that generates, exports and looks right with the far field's conditions on the body.
+- **THE GUESS RANKS BY ENCLOSED AREA, NEVER BY DRAWING ORDER** (excluded by decision in #158;
+  this repo has a USER-REPORTED defect where drawing order rather than click order decided a
+  result). It abandons the RANKING whole when the candidate outlines and the slots do not
+  line up — but a role the drawing itself already records (`geom_roles`: `farfield` or
+  `wall`) survives that, because EVIDENCE is not a ranking and the count says nothing about
+  it; it is confirmed like any other offer. It offers nothing for an OPTIONAL slot — a list
+  the family documents as generated is not a question, and guessing one would block a run
+  for a curve nobody asked to bind. A refinement SEED and a no-BL obstacle are not outlines
+  a topology binds and are kept out of the pool, or every slot shifts by one.
+- **EVERY PROBLEM AT ONCE** — every missing required role and every unresolvable position in one
+  refusal, which is the DERIVED side of #138's rule for `topology_model.broken_bindings`. A
+  family's own `plan` still stops at the first, because it answers "can this run?".
+- **THE FOUR QUESTIONS ARE ASKED BY THEIR OWNER.** Whether a named geometry is loaded, carries
+  per-segment data and is a closed loop goes through `topology_binding.outline_problem` — the
+  helper three families spelled themselves until the third copy silently dropped the one clause
+  a user can act on. This module supplies only the clause that is its own (`CLOSED_NOTE`: every
+  family that binds to the CAD binds a ring). The closed question arrives WITH the helper and is
+  generic; a family's own precondition is still #165's.
+- **THE STORED ORDER IS THE GEOMETRY'S OWN**, filtered from `seg_ids` rather than kept as typed:
+  a list out of the outline's order binds every wall after the first to a different stretch of
+  curve with every id still resolving (`topology_ogrid_binding.order_problem`).
+- **ONE SEAM, EIGHT FILES**, every cut the ~500-line standard: the pre-selection split off at
+  565 lines and is re-exported from the roles module, so no caller learns a new name. What stayed
+  is everything that ACTS on a guess, so the confirmation and the thing confirmed cannot drift.
+- **`apply_case_type.py` gains `--role ROLE[=GEOM[:SEGS]]`**, the grammar `--confirm` already
+  has: a bare name accepts the pre-selection, `ROLE=GEOM` binds every segment that geometry
+  carries, `ROLE=GEOM:1,2,3` binds those. The roles a case type needs are PRINTED before any is
+  assigned and before the physical parameters are confirmed, so an operator running it bare sees
+  which curves they are being asked for rather than a refusal about a first cell height.
+Gated by `tests/test_case_type_roles.py` (twelve checks and eight automated injections, each
+asserting the mutation is well-formed, that the named checks redden and that no other does; the
+counts are that file's own docstring's and are not restated here). Its last check runs the REAL
+binary on a drawing whose segment ids are 17-20 and 31-34, from the config's OWN directory —
+the writer spells a geometry outside the repo relative to the config beside it, and the mesher
+opens what the line says relative to its own working directory.
+  Why: `docs/design_notes/gui.md`, "ROLES BIND A CASE TYPE TO THE OPERATOR'S OWN CAD".
+
 **WHY THIS FILE AND NOT A THIRTEENTH, recorded because the opposite call has precedent.** This
 file's thesis is "is a file one stage leaves on disk still correct when the NEXT one reads it",
 and grading is a different question — which is the exact argument #153 used to split
@@ -572,9 +640,13 @@ the entry landed (60,000 - 22,516, re-derivable) and the
 whole entry is ~3.4k. A rule file taken for a tracer bullet would be the thinnest in the tree, and
 `services/case_type*` would still need a glob beside `services/mesh_shape_stats*` because the
 judge reads what that reader returns. **#162 was named as the cheap moment and was MEASURED
-instead of assumed**: its config overlay, deviation and diff came to ~3k, and this file is still
-under 60% of `RULE_BUDGET`, so the thirteenth file is not taken yet. #166 — the picker, Trial and
-Generate — is the next place to re-measure, and the test is the budget, not the ticket number.
+instead of assumed**: its config overlay, deviation and diff came to ~3k, and the thirteenth file
+was not taken then. **#164 is where the budget ran out, and that is now a MEASUREMENT rather than
+a forecast**: its roles entry left this file 1,598 characters of slack (2026-10-02, in
+CHARACTERS — `wc -c` reports BYTES and the first draft of this sentence quoted those), which
+is under one block's worth — #137's own threshold was 73 and #153's 197, and this is the same order. So the
+next block here is a NEW RULE FILE, not a squeeze, and #165 and #166 should expect to take it;
+`gui-topology.md` carries the identical sentence for the same reason.
 
 ## Named blind spots
 
@@ -596,11 +668,11 @@ which are capability refusals.
   parameters cross a unit change UNCONVERTED. The operator is still asked, and the
   confirmation reports the metres value in THEIR units, so an unconverted one shows up as the
   absurd length it is. Pinned by the gate; the remedy is to declare a ruler, not to invent a unit.
-- **A ROLE IS PER GEOMETRY, NOT PER SEGMENT.** #163's acceptance says "the role-bearing
-  segments" and what exists is `MeshConfig.geom_roles`, keyed by geometry FILE. The measure
-  is a pure function of a point set either way, so a per-segment assignment would narrow
-  which points are handed in and change nothing in `case_type_scale.py` — but it is #164's,
-  and until then the ruler is read off whole geometries.
+- **THE RULER IS PER GEOMETRY EVEN THOUGH THE ROLE IS NOT.** #164 landed the per-SEGMENT role
+  and derives a binding from it, but `case_type_scale.measure_role` still measures whole files
+  bearing a `MeshConfig.geom_roles` role. The measure is a pure function of a point set either
+  way, so narrowing it to the role-bearing segments changes nothing on any shipped case — which
+  is why it was not done, and is the reason this stays a named limit rather than a defect.
 - **NOTHING JUDGES WHETHER THE DECLARED RULER IS THE RIGHT CURVE.** A case type naming the
   `body` role on a drawing whose far field also bears it (which is what a `MESH_MODE 1` case
   with two plain `GEOM_FILE` lines looks like) measures the pair — consistently at both ends,
@@ -610,11 +682,12 @@ which are capability refusals.
 - **THE LENGTH CLASSIFICATION IS A JUDGEMENT.** That `bl_initial_thickness` is physical and
   `surface_mesh_size` is not is argued in `case_type_scale.py`'s docstring; what the gate
   measures is that every `sci` field HAS a judgement, not that each one is right.
-- **AN OVERLAY NAMING A FAMILY CANNOT BE WRITTEN TO A `.dat` ON ITS OWN.** `save_to_file`
-  PROJECTS a named family's topology document, and every family but the H-grid refuses to build
-  one with no geometry to bind to — so applying a case type that names `ogrid` produces a config
-  that cannot be saved until #164 derives the bindings from roles. Found by the gate's own
-  round-trip leg, which carries no family for exactly this reason.
+- **NOTHING JUDGES WHETHER A CONFIRMED ROLE IS THE RIGHT CURVE.** #164 closed the gap that an
+  overlay naming a family could not be written to a `.dat` — the bindings are derived from roles
+  and `test_case_type_roles.py` check 12 meshes one through the real binary — but an operator who
+  confirms the far field as the body binds exactly that. Only the family's own pre-flight refusal
+  (#165) will notice; #163's gate still carries no family in its round-trip leg, which is now a
+  property of that gate rather than of the artefact.
 - **THE EXCLUSION LIST IS A JUDGEMENT.** That `output_filename` is per-case and
   `bl_growth_rate` is not is argued in the service's docstring and pinned by the gate; nothing
   measures that the line is in the right place.
