@@ -159,7 +159,38 @@ class MainWindowToolbarBuildMixin:
 
         # Mesh Generation Toolbar controls
         self.mesh_preview_btn = create_tb_btn("BC Preview", "Preview calculation domain and boundary geometries")
-        self.mesh_generate_btn = create_tb_btn("Generate", "Run HybMesh2D to generate grid")
+        # TRIAL BEFORE GENERATE, left to right, because that is the order the
+        # work happens in: look at a mesh, adjust, look again, and only then
+        # commit one (#166). Trial writes nothing the case consumes; Generate
+        # writes the mesh it produced into the case. Both are distinct from
+        # "BC Preview" to their left, which meshes nothing, and from Run All.
+        self.mesh_trial_btn = create_tb_btn(
+            "Trial", "Generate a mesh to look at, with its verdict — nothing "
+                     "is written into the case")
+        self.mesh_trial_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1e3346;
+                color: #dde2ff;
+                border: 1px solid #2d4a63;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #27455e;
+                border-color: #38bdf8;
+                color: #ffffff;
+            }
+            QPushButton:disabled {
+                background-color: #1a1f3b;
+                color: #4a4e69;
+                border-color: #1c1e36;
+            }
+        """)
+        self.mesh_generate_btn = create_tb_btn(
+            "Generate", "Write the trial mesh into the case, with the case "
+                        "type that judged it and a runnable pipeline script")
         self.mesh_generate_btn.setStyleSheet("""
             QPushButton {
                 background-color: #1e4620;
@@ -308,7 +339,8 @@ class MainWindowToolbarBuildMixin:
         ]
 
         self.mesh_tb_widgets = [
-            self.mesh_preview_btn, self.mesh_generate_btn, self.mesh_cancel_btn,
+            self.mesh_preview_btn, self.mesh_trial_btn,
+            self.mesh_generate_btn, self.mesh_cancel_btn,
             self.mesh_send_solver_btn,
             self.mesh_focus_btn, self.mesh_clear_btn, self.mesh_show_wireframe_cb, self.mesh_show_bc_cb,
             self.mesh_show_domain_cb, self.mesh_color_label, self.mesh_color_mode_combo,

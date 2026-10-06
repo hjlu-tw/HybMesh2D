@@ -6,7 +6,7 @@ from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT, is_reason
-from app.services import case_type_verdict
+from app.services import mesh_commit
 from app.utils import (find_binary_executable, repo_root, confirm,
                        report_error)
 # Re-exported so `from app.controllers.mesh_gen_ctrl import mesh_input_warning`
@@ -15,20 +15,30 @@ from app.utils import (find_binary_executable, repo_root, confirm,
 from app.controllers.mesh_gen_diag_ctrl import (  # noqa: F401
     MeshGenDiagnosticsMixin, mesh_input_warning,
 )
+from app.controllers.mesh_dispose_ctrl import MeshDispositionMixin
+from app.services.logging_setup import get_logger
+
+_log = get_logger(__name__)
 
 if TYPE_CHECKING:
     from app.models.mesh_config import MeshConfig
 
 
-class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
+class MeshGenControllerMixin(MeshGenDiagnosticsMixin, MeshDispositionMixin):
     """Run the HybMesh2D mesh generator, and show what it produced.
 
-    Two halves this class used to hold are next door and reached through it:
-    reading and writing the mesher's own ``.dat`` config through a file dialog is
-    ``mesh_config_io_ctrl.py``, and what the stage TELLS the user about an input
-    it has not run yet — or about a run that failed — is
-    ``mesh_gen_diag_ctrl.py`` (#159), inherited above so every call site and every
-    gate that reads those methods by source is untouched.
+    Three halves this class used to hold or would have held are next door and
+    reached through it: reading and writing the mesher's own ``.dat`` config
+    through a file dialog is ``mesh_config_io_ctrl.py``; what the stage TELLS the
+    user about an input it has not run yet — or about a run that failed — is
+    ``mesh_gen_diag_ctrl.py`` (#159); and what BECOMES of the mesh a run produced,
+    the Trial and Generate dispositions, is ``mesh_dispose_ctrl.py`` (#166). Both
+    are inherited above so every call site and every gate that reads those
+    methods by source is untouched.
+
+    THE GENERATION IS ONE, AND IT IS HERE. `run_mesh_generator` is the only
+    thing in the GUI that launches the mesher; Trial and Generate choose what
+    happens afterwards and never start a second one.
     """
 
     def add_mesh_tab(self):
@@ -93,8 +103,18 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
         self.log(
             "Cleared previous mesh and surface points; showing current boundaries.")
 
-    def run_mesh_generator(self):
-        """Extract GUI parameters, save to temporary config file, and execute HybMesh2D in background."""
+    def run_mesh_generator(self, *, commit: bool = False):
+        """Extract GUI parameters, save to temporary config file, and execute HybMesh2D in background.
+
+        `commit` is the DISPOSITION this run is being made for (#166): False
+        leaves the result as a trial the operator looks at, True hands it to
+        `_commit_trial` the moment it finishes. KEYWORD-ONLY on purpose — Qt
+        hands a `clicked` slot the checked state as a positional argument, so a
+        button wired straight to this method would have committed on every
+        press. The buttons are wired to `trial_mesh` / `generate_mesh` instead,
+        and this signature is what makes a future mis-wiring an error rather
+        than a silent write into the case.
+        """
         if hasattr(self, '_mesh_worker') and self._mesh_worker is not None and self._mesh_worker.isRunning():
             self.log("Mesh generation is already running. Please wait.")
             return
@@ -179,9 +199,32 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
         tmp_cfg_data.save_to_file(tmp_cfg.name)
         tmp_cfg.close()
 
+        # WHAT THIS GENERATION IS MADE FROM, taken off the file the mesher is
+        # about to read rather than off the model that produced it (#166), so a
+        # later Generate can tell whether the mesh in hand is still the mesh
+        # these settings produce. Recorded BEFORE the worker starts: afterwards
+        # the panel may already have moved.
+        self._commit_after_mesh = bool(commit)
+        try:
+            with open(tmp_cfg.name, "r", encoding="utf-8") as fh:
+                config_text = fh.read()
+        except OSError:
+            # An empty fingerprint is the "we did not check" answer, which
+            # `TrialMesh.matches` refuses — a later Generate re-meshes rather
+            # than committing something it cannot vouch for.
+            _log.warning("could not read back the mesher config just written; "
+                         "this run's trial will read as stale", exc_info=True)
+            config_text = ""
+        self._trial_fingerprint = (
+            mesh_commit.inputs_fingerprint(config_text,
+                                           self._mesh_input_paths(cfg))
+            if config_text else "")
+
         # Disable/Enable panel and toolbar trigger buttons
+        self.main_window.mesh_config_panel.trial_mesh_btn.setEnabled(False)
         self.main_window.mesh_config_panel.run_mesh_btn.setEnabled(False)
         self.main_window.mesh_config_panel.cancel_mesh_btn.setEnabled(True)
+        self.main_window.mesh_trial_btn.setEnabled(False)
         self.main_window.mesh_generate_btn.setEnabled(False)
         self.main_window.mesh_cancel_btn.setEnabled(True)
 
@@ -239,8 +282,10 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
     def _on_mesh_gen_finished(self, rc: int, tmp_cfg_name: str, expected_vtk_path: str):
         """Handle execution thread termination, load VTK result, and refresh canvas."""
         self.main_window.release_progress("mesh")
+        self.main_window.mesh_config_panel.trial_mesh_btn.setEnabled(True)
         self.main_window.mesh_config_panel.run_mesh_btn.setEnabled(True)
         self.main_window.mesh_config_panel.cancel_mesh_btn.setEnabled(False)
+        self.main_window.mesh_trial_btn.setEnabled(True)
         self.main_window.mesh_generate_btn.setEnabled(True)
         self.main_window.mesh_cancel_btn.setEnabled(False)
 
@@ -302,15 +347,31 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
         # what this run actually used and marks the verdict DEVIATED where they
         # differ. `global_mesh_config` is the model the panel synced before the
         # run, which is the config the mesher read.
+        #
+        # JUDGED ONCE, AND CARRIED (#166). `mesh_commit.judge_run` returns the
+        # rendering the log wants AND the judgement the disposition below wants,
+        # from one pass through the thresholds — asking twice would be two
+        # answers about one mesh, and the first to drift would be the one nobody
+        # is looking at.
+        commit_now, self._commit_after_mesh = self._commit_after_mesh, False
         if not is_reason(rc):
             # NOT a `getattr(..., None)`: `None` is the service's documented
             # "nobody could say", so a renamed attribute would make the
             # deviation marking vanish in silence rather than fail. The
             # composed controller sets this in its own `__init__`.
-            verdict, level = case_type_verdict.run_report(
-                expected_vtk_path, rc, config=self.global_mesh_config)
-            if verdict:
-                self.log_report(verdict, level=level)
+            trial = mesh_commit.judge_run(
+                expected_vtk_path, rc, config=self.global_mesh_config,
+                fingerprint=self._trial_fingerprint)
+            self._mesh_trial = trial
+            if trial.report:
+                self.log_report(trial.report, level=trial.level)
+            if commit_now:
+                self._commit_trial(trial)
+        elif commit_now:
+            # A cancel or a timeout is not a mesh. Say so rather than letting a
+            # Generate press end in silence.
+            self.log("[Mesh] nothing was committed: the generation did not "
+                     "finish.")
 
         # Auto-export chain (Export-before-Generate foolproofing): run the pending
         # export only if a mesh is now actually available; drop it otherwise.

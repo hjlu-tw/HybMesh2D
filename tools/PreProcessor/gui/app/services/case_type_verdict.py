@@ -42,9 +42,14 @@ moved fields are NAMED, and the only thing that moves is the log grade: a
 deviated `usable` is a WARNING rather than an INFO, because it is a pass with a
 caveat and a caveat nobody sees is not one.
 
-ONE RENDERING, TWO HOSTS. `run_report` is the single call the GUI's mesh
-controller and `services/pipeline_runner` both make, so a verdict cannot be
-WORDED one way in the window and another in a log file nobody is watching — the
+ONE RENDERING, TWO HOSTS. `run_verdict` judges and renders; `run_report` is
+that function with the judgement dropped. The headless `services/pipeline_runner`
+calls the second and the GUI's disposition (#166) the first, so a verdict cannot
+be WORDED one way in the window and another in a log file nobody is watching —
+there is one rendering and one pass through the thresholds, not two of either. A
+host still spells no state, no comparison and no grade of its own; what the GUI
+needs the object for is the DISPOSITION, and the one judgement it may act on is
+`commit_refusal`, which is spelled here beside the states it reads. The
 same arrangement `mesh_shape_stats.format_figures` already holds for the figures
 themselves. The GRADE it returns beside the text is used by the GUI only: the
 headless `log` callback takes no level (it is `print` in `run_pipeline`), and a
@@ -345,16 +350,55 @@ def report_text(verdict: Verdict) -> str:
     return "\n".join(report_lines(verdict))
 
 
-def run_report(mesh_path: str, exit_code: int,
-               case_type: case_type_mod.CaseType | None = None,
-               config=None) -> tuple:
-    """`(text, level)` for one finished run. ``("", "INFO")`` when there is none.
+def commit_refusal(verdict: "Verdict | None") -> str:
+    """Why this mesh may NOT be written into a case, or ``""`` when it may.
 
-    The ONE call both hosts make. It resolves the active case type, reads the
-    figures the run published, works out which of the case type's own fields
-    this run moved and grades the lot, so neither host holds a rule of its own
-    about any of the four — which is what keeps the GUI's verdict and the
-    headless one the same verdict.
+    ONLY `unusable` refuses (#166). `not determinable` does not: an unmeasured
+    figure is the absence of evidence, and refusing on it would mean a case type
+    whose metric this mesh does not publish could never commit anything — while
+    `needs attention` is by construction a mesh the operator is allowed to keep.
+    A run with NO case type in play (`verdict is None`) has nobody to refuse.
+
+    THE REFUSAL IS SPELLED HERE and nowhere else, for the reason the states are:
+    `.claude/rules/gui-handoff.md` holds the hosts to "neither may spell a
+    verdict state, a threshold comparison or a grade of its own", and the
+    disposition that acts on this answer is a host like any other. It returns a
+    SENTENCE rather than a bool so that "says why" (user story 17) cannot be
+    satisfied by a caller inventing its own wording.
+    """
+    if verdict is None or verdict.state != UNUSABLE:
+        return ""
+    lines = ["This mesh is %s, so it was not written into the case."
+             % verdict.state]
+    for reason in verdict.reasons:
+        lines.append("  " + reason.describe())
+        if reason.advice:
+            lines.append("    try: " + reason.advice)
+    return "\n".join(lines)
+
+
+def run_verdict(mesh_path: str, exit_code: int,
+                case_type: case_type_mod.CaseType | None = None,
+                config=None) -> tuple:
+    """`(verdict, text, level)` for one finished run — the whole of what this
+    layer can say about it, judged ONCE.
+
+    The verdict OBJECT is returned beside its rendering because a run has two
+    readers with different needs and only one judgement to go round: the log
+    wants the text and the grade, and the disposition that follows (#166) wants
+    the case type that issued it, the state it reached and the reasons, to
+    freeze into the case. Judging a second time to get them would be a second
+    answer about one mesh, and the first thing to diverge would be the one
+    nobody is looking at.
+
+    `verdict` is ``None`` on both paths that produce no judgement — no case type
+    in play, and a named case type that will not load — which is exactly the
+    condition `commit_refusal` reads as "nobody to refuse".
+
+    It resolves the active case type, reads the figures the run published,
+    works out which of the case type's own fields this run moved and grades the
+    lot, so neither host holds a rule of its own about any of the four — which
+    is what keeps the GUI's verdict and the headless one the same verdict.
 
     `config` is the `MeshConfig` the run used. Passed by the host because only
     the host has it; ``None`` means nobody could say, and the deviation report
@@ -372,9 +416,9 @@ def run_report(mesh_path: str, exit_code: int,
         except case_type_mod.CaseTypeError as exc:
             logger.warning("case type named by %s did not load: %s",
                            case_type_mod.CASE_TYPE_ENV, exc, exc_info=True)
-            return ("No verdict: %s" % exc, "WARNING")
+            return (None, "No verdict: %s" % exc, "WARNING")
         if case_type is None:
-            return ("", "INFO")
+            return (None, "", "INFO")
     # Against the FITTED overlay, not the authored one (#163): the value a case
     # type has an opinion about on THIS drawing is the one its characteristic
     # length scaled to. Comparing against the authored number would mark every
@@ -394,4 +438,18 @@ def run_report(mesh_path: str, exit_code: int,
         text += ("\n  The case type's characteristic length could not be "
                  "measured on this case (%s), so its fields were compared as "
                  "AUTHORED rather than fitted to this geometry." % why_not)
-    return (text, verdict.level)
+    return (verdict, text, verdict.level)
+
+
+def run_report(mesh_path: str, exit_code: int,
+               case_type: case_type_mod.CaseType | None = None,
+               config=None) -> tuple:
+    """`(text, level)` for one finished run. ``("", "INFO")`` when there is none.
+
+    The ONE call the headless host makes, and the SAME rendering the GUI's
+    disposition shows — it is `run_verdict` with the judgement dropped, not a
+    second path through the thresholds, so a verdict cannot be worded one way in
+    the window and another in a log file nobody is watching.
+    """
+    _verdict, text, level = run_verdict(mesh_path, exit_code, case_type, config)
+    return (text, level)

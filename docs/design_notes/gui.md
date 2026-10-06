@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 301, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 303, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -4166,7 +4166,8 @@ which carries no family for exactly that reason, and worked around there rather 
 **The exclusion list is a judgement**: that `output_filename` is per-case and `bl_growth_rate` is
 not is argued in the service's docstring and pinned by the gate, and nothing measures that the
 line is in the right place. **`apply` has no production caller yet** — the Spec review's finding,
-and it is the hand-off to #166: the mechanism is built and gated over both models, but today the
+and #166 did not become one: it ships Trial and Generate over the config the panel already holds,
+not over an applied case type. The mechanism is built and gated over both models, but today the
 overlay's only in-tree effect is the deviation report, so "applying a case type" is proven and not
 yet performed by anything a user can press. **Check 11 reads SOURCE**, the technique
 `test_case_type_verdict.py`'s "neither host grades" check already carries with its own named
@@ -4411,8 +4412,8 @@ measures the files bearing a `geom_roles` role, and the per-segment role here is
 BINDS to. A drawing whose body and far field are two files measures the same ruler either way, so
 narrowing it buys nothing on any shipped case and is not done. **Nothing judges whether the role
 is the right curve**: a confirmed assignment naming the far field as the body binds exactly that,
-and only the family's own pre-flight refusal (#165) will notice. **There is still no GUI** — no
-role panel and no Trial, #166's — so "the operator assigns and confirms" is measured at the
+and only the family's own pre-flight refusal (#165) will notice. **There is still no role panel** —
+#166 shipped Trial and Generate and not that — so "the operator assigns and confirms" is measured at the
 service and at the headless host, where #161, #162 and #163 all left their actions too. **No
 family was asked whether it LIKES the binding**: what is asserted is that a derived one is
 accepted, not that the family could have refused a bad one.
@@ -4580,11 +4581,120 @@ The C-grid's first cut DID attach its bound far field there and was corrected: t
 pointed the canvas at the far field for a refusal about the target cell size, and narrowing it to
 the problems that are really about it means reading the family's own prose back for structured data
 — the move `BindingError` carries its edge as a FIELD to avoid.
-**The GUI has no case-type picker yet** (#166's), so "the operator picks a case type and is told
+**The GUI has no case-type picker**, and #166 — which was the last ticket forecast to build one —
+shipped the Trial/Generate actions without it, so "the operator picks a case type and is told
 before pressing anything" is measured at the mesh stage's own Generate and at the headless host.
 **Check 4c's canvas drive is a subprocess over the real sources**, which no in-memory mutant reaches,
 so the two checks beside it are what an injection actually moves — stated rather than left to be
 counted.
+
+**TRIAL AND GENERATE: ONE GENERATION, TWO DISPOSITIONS** (#166, parent #158;
+`services/mesh_commit.py` = the commit, Qt-free; `controllers/mesh_dispose_ctrl.py` = the two
+actions; `controllers/mesh_gen_ctrl.py` = the one generation;
+`controllers/pipeline_io_ctrl.py` = the script both the menu and the commit write). Rules:
+`.claude/rules/gui-dispositions.md`.
+
+**Why two actions and not a Generate with a checkbox.** #158's user stories 6-10 describe an
+operator who runs a cheap thing repeatedly and a committing thing once, and the costs are not
+symmetric: a Trial they regret costs a second, a Generate they regret puts a mesh in front of a
+solver. The split is also what makes "Trial never overwrites the case's mesh" (story 46) a
+STRUCTURAL fact rather than a discipline — there is one writer of the case, it is
+`mesh_commit.commit`, and only one of the two actions reaches it.
+
+**The generation is ONE, and that was the ticket's own decision.** Generate does not recompute.
+The alternative — Generate re-runs the mesher and commits that — reads as the safer design until
+you ask what it costs when the two runs differ: the operator approved mesh A and the solver reads
+mesh B, and the verdict on disk describes neither. The defects that move with density are exactly
+the ones a verdict exists to catch (a fold, a wall first cell), so "it would come out the same" is
+the claim least worth taking on trust. **The identity is therefore checked as one**
+(`tests/test_mesh_trial_commit.py` check 4): a real Generate over a real mesher output, bytes
+compared across `.vtk` / `.vrt` / `.cel` / `.bnd`, with the host's own `run_mesh_generator`
+replaced by a recorder so that a second launch would be visible rather than inferred. Injection B
+(commit only the `.vtk`) reddens it alone, which is what makes the other three formats part of the
+claim rather than decoration — and they matter: the `.cel` is the grid the SOLVER reads.
+
+**The disposition is a keyword-only argument because Qt made it a trap.** `clicked` hands a Python
+slot the checked state POSITIONALLY. `run_mesh_generator(self, commit=False)` wired to a button
+would therefore have received `False` and worked — until anyone wired a checkable button, or until
+a second parameter was added in front of it. `*` in the signature turns that into a `TypeError`,
+and check 1 refuses any `connect(...)` naming the method at all. Not hypothetical in this repo:
+`.claude/rules/gui-canvas-edit.md` carries a user-reported defect whose cause was a Qt argument
+nobody expected to arrive.
+
+**Four files in the case, and the one that was nearly three.** `<stem>.casetype.json` carries the
+WHOLE case type document. The first sketch recorded its name and its `source` path, which is what
+`CaseType.source` already gives the verdict for traceability — and that is exactly the artefact
+#158's story 42 says is not enough: the file moves, the maintainer edits it, and six months later
+the name resolves to a different document or to nothing. A hash is worse: it proves the file
+changed and tells you nothing about what was judged. The copy is written through `case_type.save`,
+so it is a case type `case_type.load` reads back and `HYBMESH_CASE_TYPE` can name — explaining an
+old verdict is an action, not an excavation. `<stem>.verdict.json` beside it holds the RENDERED
+report rather than the ingredients for re-rendering one, which is the whole of how story 43 is
+satisfied: nothing in a finished case re-derives anything, so nothing in it can change when the
+case type moves on. **It deliberately restates no threshold number** — the bounds are in the
+document beside it, and the two copies would be free to disagree. Measured by check 7: the source
+case type is rewritten with bounds that would make that very mesh `unusable`, and the case is
+re-read byte for byte.
+
+**Only `unusable` refuses, and the other three were each considered.** `not determinable` is the
+absence of evidence — refusing on it would mean a case type whose metric this mesh does not
+publish could never commit anything, which turns a measurement gap into a wall. `needs attention`
+is by construction a mesh the operator is allowed to keep; refusing it would make the verdict a
+gate rather than a judgement, and #158's story 19 ("a deviated verdict still shown rather than
+withheld") is the same instinct one layer along. A run with NO case type is not a refusal either,
+because most of this repo's cases have none — but the host SAYS the case carries no verdict, since
+a missing file is evidence only to someone who knew to look for it. Check 8 asserts both ends: the
+folded mesh is refused with nothing written, and the `needs attention` mesh still commits.
+
+**The refusal sentence is spelled once, in `case_type_verdict.commit_refusal`.** It could have
+been a bool with the wording at the call site, and that is precisely what story 17's "and says
+why" rules out — a caller free to word it would word it as "the mesh is bad". The service returns
+the sentence, naming the measurement, the bound and the case type's own advice; `mesh_commit`
+raises it; the controller shows it verbatim. This keeps the rule
+`.claude/rules/gui-handoff.md` already states — no host spells a verdict state, a comparison or a
+grade — true of the disposition as well, which is a host like any other, and
+`test_case_type_verdict.py` check 9 now reads all THREE hosts' ASTs rather than two.
+
+**One judgement per run, which cost a seam change.** `run_report` was "the ONE call both hosts
+make" and returns `(text, level)` — everything the log needs and nothing the disposition does. The
+cheap fix was to let Generate judge a second time at commit; it is a pure function of the sidecar,
+the exit code, the config and the active case type, so the answers would agree. They would agree
+UNTIL they did not, and the one that diverges is the one written into the file nobody reads.
+`run_verdict` now judges and renders, `run_report` is that function with the judgement dropped,
+and `mesh_commit.judge_run` is what the GUI calls. The gate's "both hosts call `run_report`" check
+became "each host calls the one entry point it is entitled to and reaches past none", with
+`run_verdict` and `commit_refusal` added to what nobody may reach around.
+
+**The fingerprint fails safe, and the direction matters more than the hash.** It answers one
+question — is the mesh in hand still the mesh these settings produce — and is taken over the
+mesher's config TEXT, written by the model's own `save_to_file` so it cannot drift from what the
+binary reads, plus the content of every input that text names. Both input sources are existing
+owners (`geom_path_identity.keyed_geom_paths`, `case_sources.mesh_input_paths`) rather than a
+third loop over `geom_files`. An unreadable input hashes as MISSING instead of being skipped, and
+a fingerprint that could not be taken is the empty string, which `TrialMesh.matches` refuses — so
+every failure mode lands on "re-mesh", never on "commit something we cannot vouch for". Check 9
+drives all four: same inputs, changed config, edited geometry, deleted geometry. Injection E turns
+the input loop off and reddens it alone, which is the version of this that would have silently
+committed a mesh for the previous drawing.
+
+**`build_pipeline_config` was split out of `save_pipeline_file` rather than reimplemented.** The
+script a committed case carries has to be the document the Pipeline menu writes; a second builder
+is how a case ends up with a script that reproduces something else. The dialog and the path stayed
+with the menu action, everything deciding what is IN the script moved. Check 11 reads the
+disposition's AST for a `PipelineConfig` of its own and finds none.
+
+**Named blind spots.** The fingerprint is blind to a changed mesher BINARY, so a rebuild mid-session
+leaves a trial that reads as current — recorded rather than fixed, a trial living only for its own
+session. **The commit is not atomic**: the refusal is before any write, so a refused mesh leaves
+nothing, but a copy failing part way leaves a case holding some of the new mesh and some of the old;
+nothing stages into a temp directory and renames. **Checks 3 and 5 have no service-level injection**
+— their subject is the controller's disposition and no edit to `mesh_commit` can make a Trial write
+into the case — so injection F commits the defect directly instead, running a Trial with Generate's
+disposition. **Check 10 builds its `PipelineConfig` directly** rather than through a live
+`AppController` with a loaded CAD session, which would need a mesher run inside a Qt event loop; it
+proves the committed ARTEFACT runs, and that the GUI builds the right one is check 11's structural
+claim. **Nothing checks that a committed case stays consistent**: a later Export, a hand-edit or a
+headless run over the same output path can replace the mesh and leave the frozen verdict standing.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

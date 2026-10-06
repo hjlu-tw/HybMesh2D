@@ -126,6 +126,10 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
 
         # Row 2: Preview / Run / Cancel (Redundant, not added to layout to keep sidebar clean since they are in the top toolbar)
         self.preview_btn = make_button("BC Preview", "#1e2a38")
+        # Trial generates a mesh to look at and commits nothing; "Mesh Generate"
+        # writes it into the case (#166). Both are kept as attributes for the
+        # controller's wiring, like every button in this row.
+        self.trial_mesh_btn = make_button("Trial Mesh", "#1e3346")
         self.run_mesh_btn = make_button("Mesh Generate", "#1e4620")
         self.cancel_mesh_btn = make_button("Cancel", "#4a1c1c")
         self.cancel_mesh_btn.setEnabled(False)

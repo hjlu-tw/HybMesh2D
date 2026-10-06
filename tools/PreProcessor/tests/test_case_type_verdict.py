@@ -47,10 +47,13 @@ What this pins down:
      raising with a message that names what is wrong. A threshold key nobody
      evaluates, or a bound misspelled into a key nobody reads, is a threshold
      that silently stops biting.
-  9. NEITHER HOST GRADES ANYTHING ITSELF. Both the GUI's mesh controller and
-     `services/pipeline_runner` call `case_type_verdict.run_report`, and neither
-     file spells a verdict state, a threshold comparison or a log grade of its
-     own — which is what makes "the same service" a fact rather than a claim.
+  9. NO HOST GRADES ANYTHING ITSELF. Each of the three — `services/pipeline_runner`,
+     the GUI's mesh controller and (since #166) the disposition that acts on the
+     verdict — calls the ONE entry point it is entitled to and reaches past none,
+     and no one of them spells a verdict state, a threshold comparison or a log
+     grade of its own. That the two entry points are one pass through the
+     thresholds is `run_report`'s own body: it is `run_verdict` with the
+     judgement dropped.
  10. QT-FREE, in a subprocess: importing either service leaves PyQt6 unimported.
      In-process the answer is always "loaded" once anything else imported it.
  11. THE GUI REALLY EMITS IT, driven through `_on_mesh_gen_finished` with a
@@ -136,9 +139,23 @@ if _GUI not in sys.path:
 
 _CT_REL = "tools/PreProcessor/gui/app/services/case_type.py"
 _V_REL = "tools/PreProcessor/gui/app/services/case_type_verdict.py"
+#: Each host, and the ONE entry point into the verdict service it may use.
+#: They differ since #166: the headless runner wants the rendering, which is
+#: `run_report`; the GUI's mesh controller wants the rendering AND the judgement
+#: (which case type, which state) because a disposition follows, so it goes
+#: through `services/mesh_commit`, which asks `run_verdict` once and carries
+#: both. One pass through the thresholds either way — what is forbidden is a
+#: host deciding anything for itself, not which of the two it calls.
 _HOSTS = {
-    "pipeline_runner": "tools/PreProcessor/gui/app/services/pipeline_runner.py",
-    "mesh_gen_ctrl": "tools/PreProcessor/gui/app/controllers/mesh_gen_ctrl.py",
+    "pipeline_runner": ("tools/PreProcessor/gui/app/services/pipeline_runner.py",
+                        "case_type_verdict", "run_report"),
+    "mesh_gen_ctrl": ("tools/PreProcessor/gui/app/controllers/mesh_gen_ctrl.py",
+                      "mesh_commit", "judge_run"),
+    # The disposition is a host too (#166): it acts on the verdict, so it must
+    # not spell one. Its ONE judgement is `commit_refusal`, reached through
+    # `mesh_commit.commit`, which is why it names no verdict entry point at all.
+    "mesh_dispose_ctrl": (
+        "tools/PreProcessor/gui/app/controllers/mesh_dispose_ctrl.py", "", ""),
 }
 _SHIPPED = "examples/case_types/ogrid_circle.casetype.json"
 _EXITCODES = "include/ExitCodes.hpp"
@@ -159,7 +176,7 @@ def _read(rel):
 
 _CT_SRC = _read(_CT_REL)
 _V_SRC = _read(_V_REL)
-_HOST_SRC = {k: _read(v) for k, v in _HOSTS.items()}
+_HOST_SRC = {k: _read(v[0]) for k, v in _HOSTS.items()}
 
 # --- the world: a FRESH pair of service modules, optionally mutated ----------
 # Every check below is a pure function of this pair, which is what makes the
@@ -490,24 +507,33 @@ def _calls(tree, module, func):
             and n.func.value.id == module]
 
 
+#: What no host may reach, whichever entry point it is entitled to. `judge` and
+#: the two renderers were always here; `run_verdict` and `commit_refusal` joined
+#: at #166 — they are the service's own halves, and a host calling either would
+#: be re-deciding something it has already been handed.
+_PAST_THE_SEAM = ("judge", "judge_threshold", "report_lines", "report_text",
+                  "run_verdict", "commit_refusal")
+
+
 def check_hosts_do_not_grade(w):
-    """Both hosts call the service; neither spells a rule of its own."""
+    """Each host calls its one entry point; none spells a rule of its own."""
     _ct, vd = w
     out = []
     banned = set(vd.STATES) | {"attention", "unusable"}
-    for host, src in _HOST_SRC.items():
-        tree = ast.parse(src)
-        if not _calls(tree, "case_type_verdict", "run_report"):
-            out.append("%s does not call case_type_verdict.run_report" % host)
+    for host, (_rel, module, func) in _HOSTS.items():
+        tree = ast.parse(_HOST_SRC[host])
+        if func and not _calls(tree, module, func):
+            out.append("%s does not call %s.%s" % (host, module, func))
         literals = {n.value for n in ast.walk(tree)
                     if isinstance(n, ast.Constant) and isinstance(n.value, str)}
         spelled = sorted(literals & banned)
         if spelled:
             out.append("%s spells a verdict word of its own: %s"
                        % (host, ", ".join(spelled)))
-        for name in ("judge", "judge_threshold", "report_lines", "report_text"):
+        for name in _PAST_THE_SEAM:
             if _calls(tree, "case_type_verdict", name):
-                out.append("%s reaches past run_report to %s" % (host, name))
+                out.append("%s reaches past its entry point to %s"
+                           % (host, name))
     return out
 
 
@@ -549,6 +575,13 @@ def check_gui_emits_verdict(w):
             self.global_mesh_config = MeshConfig()
             self.global_vtk_mesh = None
             self.global_vtk_path = ""
+            # What #166 made `_on_mesh_gen_finished` read: the disposition this
+            # run was launched for, and what it was generated from. A trial, so
+            # this host commits nothing — the commit path is
+            # `test_mesh_trial_commit.py`'s subject.
+            self._mesh_trial = None
+            self._trial_fingerprint = ""
+            self._commit_after_mesh = False
             self._pending_after_mesh = None
             self.reports = []
             self.lines = []
@@ -690,7 +723,8 @@ _LABELS = {
     6: "check 6. a verdict names the measurement, the bound, the gap and the advice",
     7: "check 7. worst wins: unusable > not determinable > needs attention > usable",
     8: "check 8. a malformed case type is refused, not partly read",
-    9: "check 9. neither host grades anything itself; both call run_report",
+    9: "check 9. no host grades anything itself; each calls its one entry "
+       "point and reaches past none",
     10: "check 10. both service modules are Qt-free, measured in a subprocess",
     11: "check 11. the GUI really emits the verdict, at the service's own grade",
     12: "check 12. the headless host really emits it, before the guard that raises",

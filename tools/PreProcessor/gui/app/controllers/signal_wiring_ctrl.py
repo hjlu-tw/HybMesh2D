@@ -221,7 +221,8 @@ class SignalWiringMixin:
         mw.mesh_config_panel.save_config_btn.clicked.connect(self.save_mesh_config)
         mw.mesh_config_panel.add_active_geom_btn.clicked.connect(self.add_active_preprocessor_geometry)
         mw.mesh_config_panel.preview_btn.clicked.connect(self.preview_mesh_generator)
-        mw.mesh_config_panel.run_mesh_btn.clicked.connect(self.run_mesh_generator)
+        mw.mesh_config_panel.trial_mesh_btn.clicked.connect(self.trial_mesh)
+        mw.mesh_config_panel.run_mesh_btn.clicked.connect(self.generate_mesh)
         mw.mesh_config_panel.cancel_mesh_btn.clicked.connect(self.cancel_mesh_generator)
         mw.mesh_config_panel.geom_files_changed.connect(self.handle_mesh_geom_files_changed)
         mw.mesh_config_panel.mesh_config_changed.connect(self.handle_mesh_config_changed)
@@ -243,7 +244,12 @@ class SignalWiringMixin:
 
         # Toolbar Mesh Buttons
         mw.mesh_preview_btn.clicked.connect(self.preview_mesh_generator)
-        mw.mesh_generate_btn.clicked.connect(self.run_mesh_generator)
+        # Trial generates and judges; Generate commits what Trial produced
+        # (#166). Neither is wired to `run_mesh_generator` itself: that one
+        # takes the disposition as a KEYWORD argument precisely so a
+        # `clicked` connection cannot supply it as the checked state.
+        mw.mesh_trial_btn.clicked.connect(self.trial_mesh)
+        mw.mesh_generate_btn.clicked.connect(self.generate_mesh)
         mw.mesh_cancel_btn.clicked.connect(self.cancel_mesh_generator)
         # (#8) The per-format "Export …" buttons were removed from the mesh config
         # panel; export-to-a-path stays wired from the Results panel (below).

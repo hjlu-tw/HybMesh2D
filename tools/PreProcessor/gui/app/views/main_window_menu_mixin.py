@@ -179,8 +179,15 @@ class MainWindowMenuMixin:
         mesh_menu.addSeparator()
         add(mesh_menu, self.tr("BC Preview"), controller.preview_mesh_generator,
             mode=self._MODE_MESH)
-        add(mesh_menu, self.tr("Generate Mesh"), controller.run_mesh_generator,
-            mode=self._MODE_MESH)
+        # Trial, then Generate — one generation, two dispositions (#166).
+        add(mesh_menu, self.tr("Trial Mesh"), controller.trial_mesh,
+            mode=self._MODE_MESH,
+            tip=self.tr("Generate a mesh to look at; nothing is written into "
+                        "the case"))
+        add(mesh_menu, self.tr("Generate Mesh"), controller.generate_mesh,
+            mode=self._MODE_MESH,
+            tip=self.tr("Write the trial mesh into the case, with the case "
+                        "type that judged it and a pipeline script"))
         add(mesh_menu, self.tr("Cancel"), controller.cancel_mesh_generator,
             mode=self._MODE_MESH)
         add(mesh_menu, self.tr("Export Mesh..."), controller.export_mesh_files,

@@ -17,7 +17,6 @@
     "  python3 tools/scripts/i18n_extract.py",
     "which also reports which wrapped strings this file is missing."
   ],
-
   "": {
     "Cancel": "取消",
     "Preview": "預覽",
@@ -34,7 +33,6 @@
     "Pipeline": "流程",
     "IBM": "浸沒邊界"
   },
-
   "MainWindow": {
     "File": "檔案",
     "Edit": "編輯",
@@ -48,7 +46,6 @@
     "IBM": "浸沒邊界",
     "Build DLL": "建置 DLL",
     "Open Recent": "開啟最近使用",
-
     "New Session": "新增工作階段",
     "Create a new empty geometry workspace tab": "建立一個空白的幾何工作分頁",
     "Close Tab": "關閉分頁",
@@ -64,22 +61,17 @@
     "Save Configuration (.json)...": "儲存設定檔 (.json)…",
     "Export Resampled Geometry (.dat)...": "匯出重取樣幾何 (.dat)…",
     "Run the resampler and save the resampled boundary geometry (.dat)": "執行重取樣並儲存重取樣後的邊界幾何 (.dat)",
-
     "Log Console": "日誌主控台",
     "Show or hide the log console at the bottom": "顯示或隱藏底部的日誌主控台",
-
     "Join Edges into Polygon": "將邊接合為多邊形",
     "Merge selected end-to-end curve edges into one closed polygon (clears the 'boundary not closed' warning)": "將選取的首尾相接曲線邊合併為一個閉合多邊形（會清除「邊界未閉合」警告）",
     "Boundary Condition...": "邊界條件…",
     "Extrude to STL...": "擠出為 STL…",
-
     "Offset Geometry...": "偏移幾何…",
     "Derive a new geometry a physical distance from this one, segmented exactly as its source": "由此幾何沿法線偏移一段實體距離，產生一個分段與來源完全相同的新幾何",
     "Regenerate Offset": "重新產生偏移",
     "Re-derive this offset geometry from the source it records, after editing that source": "在編輯來源幾何後，依其記錄的來源重新推導此偏移幾何",
-
     "Run the PreProcessor and preview geometry / boundary conditions": "執行前處理器並預覽幾何／邊界條件",
-
     "Generate Mesh": "產生網格",
     "Export Mesh...": "匯出網格…",
     "Export the generated mesh (VTK / STAR-CD)": "匯出已產生的網格（VTK／STAR-CD）",
@@ -89,7 +81,6 @@
     "Add all exported PreProcessor sessions to this mesh config": "將所有已匯出的前處理工作階段加入此網格設定",
     "BC Preview": "邊界條件預覽",
     "Send Grid to Solver": "將網格送至求解器",
-
     "Run Solver": "執行求解器",
     "Export Portable Case...": "匯出可攜案例…",
     "Copy this case's INPUTS (grid / dll / work) into a self-contained folder that reruns on another machine": "將此案例的「輸入檔」（grid／dll／work）複製到一個自足的資料夾，可直接搬到另一台機器重跑",
@@ -98,42 +89,38 @@
     "Detect BC from Mesh": "從網格偵測邊界條件",
     "Initial Condition...": "初始條件…",
     "Motion...": "運動…",
-
     "Load Result...": "載入結果…",
     "Define Surface...": "定義表面…",
     "Choose which curve is 'the surface' (mesh boundary, φ iso-line, Fit Δ interface, analytic φ or CAD) and where arc length starts": "選擇哪一條曲線算是「表面」（網格邊界、φ 等值線、Fit Δ 介面格點、解析 φ 形狀或 CAD 圖形），以及弧長從哪裡開始",
     "Save PNG...": "儲存 PNG…",
-
     "Generate φ Grid": "產生 φ 網格",
     "Fit Domain to STL": "將計算域貼合 STL",
-
     "Run Full Pipeline": "執行完整流程",
     "Batch Queue...": "批次佇列…",
     "Queue several pipeline scripts and run them unattended": "將多個流程腳本排入佇列並無人監看地執行",
     "CAD resample → mesh → solver → results contour": "CAD 重取樣 → 網格 → 求解器 → 結果等值圖",
     "Load Pipeline Script...": "載入流程腳本…",
     "Save Pipeline Script...": "儲存流程腳本…",
-
     "Language": "語言",
     "The interface language will change the next time HybMesh2D starts.": "介面語言將在下次啟動 HybMesh2D 時變更。",
     "Keyboard Shortcuts": "鍵盤快捷鍵",
-    "About HybMesh2D": "關於 HybMesh2D"
+    "About HybMesh2D": "關於 HybMesh2D",
+    "Trial Mesh": "試作網格",
+    "Generate a mesh to look at; nothing is written into the case": "產生一份可供檢視的網格；不會寫入案例",
+    "Write the trial mesh into the case, with the case type that judged it and a pipeline script": "將試作網格寫入案例，並附上評定它的案例類型與流程腳本"
   },
-
   "StatusBar": {
     "Stage: %s": "階段：%s",
     "Selection: %s": "選取：%s",
     "Active workflow stage": "目前的工作流程階段",
     "What is currently selected in the active stage": "目前階段中選取的內容",
     "Background work in progress": "背景工作進行中",
-
     "CAD": "CAD",
     "Mesh": "網格",
     "Mesh Stats": "網格統計",
     "Solver": "求解器",
     "Results": "結果",
     "Immersed Solid": "浸沒固體",
-
     "Resampling geometry": "正在重取樣幾何",
     "Generating mesh": "正在產生網格",
     "Running solver": "正在執行求解器",

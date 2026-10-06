@@ -37,13 +37,12 @@ against the other is comparing nothing (#130). So a case type NAMES its metric,
 and `case_type_verdict.judge` refuses a mesh measured with a different one
 rather than reading it against numbers that do not describe it.
 
-WHICH CASE TYPE IS IN PLAY is deliberately NOT decided here. Picking one in the
-window, and the Trial/Generate actions that act on the choice, are #166's. Until
-then the active case type is named by the
-`HYBMESH_CASE_TYPE` environment variable, which both hosts reach through
-`case_type_verdict.run_report`: one channel, no GUI chrome for #162 to unpick,
-and a run with the variable unset says nothing at all rather than inventing a
-default. A default case type would be a universal threshold wearing a different
+WHICH CASE TYPE IS IN PLAY is deliberately NOT decided here. The actions that
+ACT on the choice are #166's and have landed; picking one in the window has not,
+and no open ticket owns it — the forecast named #162 and then #166 and both
+shipped without a picker, so `HYBMESH_CASE_TYPE` is the channel rather than a
+placeholder for one. Every host reaches it through this module, and a run with
+the variable unset says nothing at all rather than inventing a default. A default case type would be a universal threshold wearing a different
 hat, which is the one thing ADR-0002 rules out.
 
 ONE SEAM, FIVE FILES, AND EVERY CUT IS THE ~500-LINE STANDARD rather than a
@@ -104,8 +103,9 @@ SCHEMA_VERSION = 4
 #: document from a LATER build fail loudly instead of being partly read.
 READABLE_VERSIONS = (1, 2, 3, 4)
 
-#: The environment variable naming the active case type file. INTERIM: #166
-#: builds the picker that replaces it.
+#: The environment variable naming the active case type file, and — until some
+#: ticket owns a picker, which neither #162 nor #166 turned out to — the only
+#: channel there is. See the module docstring for why that is not a defect.
 CASE_TYPE_ENV = "HYBMESH_CASE_TYPE"
 
 class Threshold:

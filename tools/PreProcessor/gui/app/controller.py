@@ -134,6 +134,16 @@ class AppController(
         self.global_vtk_mesh = None
         self.global_vtk_path = ""
 
+        # Trial / Generate state (#166). ONE generation, two dispositions:
+        # `_mesh_trial` is the last generation and what judged it,
+        # `_trial_fingerprint` what the run in flight was made from, and
+        # `_commit_after_mesh` whether that run is a Generate. Set here rather
+        # than reached for with a default, so a disposition cannot go missing in
+        # silence — the same reason `global_mesh_config` is set here.
+        self._mesh_trial = None
+        self._trial_fingerprint = ""
+        self._commit_after_mesh = False
+
         # Solver pipeline state (Phase 3)
         self.global_solver_config = SolverConfig()
         self.global_solver_config.ensure_default_binaries()
