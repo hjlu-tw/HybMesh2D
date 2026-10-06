@@ -25,16 +25,6 @@ from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError, outline_problem
 from app.services.topology_ogrid_binding import order_problem, parse_binding
-# RE-EXPORTED, not re-declared. `drawn_ring` and `outside_point` were written
-# here for the C-grid's far field (#149) and are the containment test the
-# O-grid and the two-ring family need too (#165), so they now live in
-# `topology_preflight` — the one place a family-independent check belongs.
-# Imported under the names this module already published, because the
-# alternative to one import line is a second copy of a polygon walk, and a
-# second copy of this one would be the defect it exists to catch.
-from app.services.topology_preflight import (  # noqa: F401
-    drawn_ring, outside_point,
-)
 
 #: How many surface segments a section the C-grid can wrap is split into: the upper
 #: and the lower, meeting at the trailing edge. THREE is the blunt section, whose
@@ -226,7 +216,7 @@ def far_corners(te_xy, x_le: float, wake_len: float, radius: float) -> dict:
 
 
 def generated_ring(far: dict) -> list:
-    """The GENERATED far field's outline, as the polygon :func:`outside_point` tests.
+    """The GENERATED far field's outline, as the polygon ``outside_point`` tests.
 
     ``wk`` is left out because it lies ON the outlet plane between ``fu`` and
     ``fl``; the five remaining corners bound exactly the same region.

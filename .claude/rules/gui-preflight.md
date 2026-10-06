@@ -13,9 +13,9 @@ paths:
 
 Loaded on demand when the refusal service, a topology FAMILY module, the family registry or the
 mesh stage's diagnostics controller is read. Rules only — the rationale (the measurements, the
-injections and the named blind spots) is `docs/design_notes/gui.md`, section "A FAMILY STATES
-WHETHER IT CAN WORK WITH WHAT IT WAS GIVEN". Read that section before overruling a rule here; when
-a rule changes, update BOTH.
+injections and the named blind spots) is `docs/design_notes/gui.md`, section
+"A FAMILY STATES WHETHER IT CAN WORK WITH WHAT IT WAS GIVEN".
+Read that section before overruling a rule here; when a rule changes, update BOTH.
 
 **THE THIRTEENTH RULE FILE, AND THE FOURTH TAKEN BECAUSE ONE WAS FULL.** These rules belong beside
 `.claude/rules/gui-topology.md`'s — same families, same registry — and that file says in its own
@@ -59,12 +59,27 @@ makes each of those reachable.
   what all four agree on, which is nearly nothing. What IS shared lives in `topology_preflight`:
   `outline_refusal` (which calls `topology_binding.outline_problem` and never re-spells it) and the
   containment walk.
-- **A REFUSAL CARRIES THE CURVE, NOT ONLY THE SENTENCE** (`Refusal.geom` / `segs` / `at`), the rule
+- **A REFUSAL CARRIES THE CURVE, NOT ONLY THE SENTENCE** (`Refusal.geom` and `at`), the rule
   `BrokenBinding` already follows for a binding the panel repairs: a host must be able to point at
   the offending curve without re-parsing prose. `refusal_points` turns one into the polyline the
   mesh canvas's `highlight_segment` reads — Qt-free, so what the canvas draws is gated headlessly.
+  **THE CANVAS IS THE MESH TAB'S**, which is where the operator is when they press Generate and
+  where the geometries are previewed; #165's wording says "the CAD canvas" and the CAD tab's canvas
+  (`views/canvas*`, `.claude/rules/gui-canvas-edit.md`) is a different widget this does not touch.
+  **THERE IS NO PER-SEGMENT FIELD**: every refusal here is about a whole curve, because WHICH
+  segment is wrong is `BrokenBinding`'s question and the repair panel's. The first cut had one,
+  nothing ever set it, and a field no caller fills is an untested branch plus a promise in this
+  file — review deleted it rather than leave a fifth family to find it empty.
   `Refusal.text`'s curve prefix is CONDITIONAL, because most of these sentences already name the
-  curve and an unconditional one printed the geometry twice.
+  curve and an unconditional one printed the geometry twice. **Its needle is the BASENAME, and it
+  has to be**: the sentences name the curve in both forms — `outline_problem` embeds `g.spelling`,
+  `enclosure_refusal` the basename — and the basename is a substring of either. Spelling-as-needle
+  was tried in review and reverted, having printed the curve twice. Gate: check 3, which requires
+  every refusal to name its curve exactly once.
+- **WHAT IS SHARED LIVES IN `topology_preflight`, INCLUDING THE SHAPES THAT LOOK LIKE BOILERPLATE.**
+  `no_context_refusal` (a binding family handed a drawing nobody read) and `plan_refusal` (the
+  fall-through, and the ONE statement of why it carries no curve) were written three times each
+  before review; what stays with a family is the NOUN it binds and which curves it asks for.
 - **THE REFUSAL NAMES NO FAMILY, NO EXIT CODE, NO MODEL FIELD AND NO DOCUMENT ID.** The operator
   picked a case type, not a family; `ogrid` is a registry key and "O-grid" is the label the combo
   shows. `Refusal.family` exists for a gate and a log line and is NOT in `text()`. Gate:
@@ -151,11 +166,17 @@ makes each of those reachable.
   about the target cell size — while deciding which of `plan`'s problems are "about" it means reading
   prose back for structured data, the move `BindingError` carries its edge as a FIELD to avoid. Its
   SECTION cascade is the half that gains a curve here.
-- **THE REFUSALS ARE STRUCTURAL, NEVER POSITIONAL.** GridPro's "Causes of Bad Grids" taxonomy is the
-  source material and two of its classes are reachable from here — topology cutting a surface on the
-  concave side, and face mismatch. Positional forgiveness is not available to us (ADR-0001:
-  positions are computed, not relaxed), so a refusal is the only move and a near miss is not
-  detected at all.
+- **ONE OF GridPro's FOUR CLASSES IS ACTUALLY CHECKED, and the other three are accounted for rather
+  than cited.** *Topology cutting a surface on the concave side* — the containment walk is its
+  coarsest half (an outline that LEAVES the one around it); a body that stays inside while turning
+  hard enough for neighbouring radials to cross is not detected, and is the next thing to build.
+  *Face mismatch* — CANNOT ARISE here, which is not the same as being checked: a family emits one
+  edge named by both blocks and welds by id, so there is no second declaration to mismatch.
+  *Singular edges on surfaces* and *the singularity-count rule* — NOT checked, and not positional
+  either (the first draft dismissed them as such and review corrected it); what is missing is a
+  counter over the document a family produces, which no family computes today. Positional
+  forgiveness is unavailable for any of them (ADR-0001: positions are computed, not relaxed), so a
+  refusal is the only move and a near miss is not detected at all.
 - **A FAMILY'S OWN `plan` PROBLEM REACHES THE OPERATOR WITH NO CURVE ATTACHED** (the O-grid's and
   the two-ring's fall-through `Refusal(p.problem)`). `plan` reports one sentence and not which of
   its two or three outlines it blames, and attributing it would point at the wrong curve on the

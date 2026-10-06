@@ -654,6 +654,10 @@ check(f"13b. ...and those really are the untouched defaults (wake "
 # refusal and the repair are #137's and #138's, and the O-grid already drives every
 # one of them for a far field specifically. What is measured is the branch.
 from app.services import topology_cgrid_section as cs  # noqa: E402
+# `drawn_ring` moved to its owner in #165, the C-grid being one of three
+# families that now ask containment; named here rather than through a
+# re-export, so this gate reads the module that holds the walk.
+from app.services import topology_preflight as pf  # noqa: E402
 
 _f6, _cf = context("unit", extra=[FIX["far6"]])
 _bound = model(_f6, cgrid_far_geom=FIX["far6"])
@@ -725,7 +729,7 @@ def poly_area(ring):
 # `far_segs` empty cannot divide by a zero area here and take the file down (the
 # guarding rule 8c, 18b and 18c already follow).
 _chord_ring = [_ffg.spans[sid].point_at(0.0) for sid in _ffg.seg_ids]
-_drawn = cs.drawn_ring(_ffg)
+_drawn = pf.drawn_ring(_ffg)
 check(f"18c3. ...and the containment refusal tests the DRAWN outline, not the six "
       f"corner chords, which is the whole difference between the two paths: a "
       f"generated hexagon's sides ARE its chords, while a drawn D curves OUTWARD "

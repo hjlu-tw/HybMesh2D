@@ -40,11 +40,26 @@ this reason (#149); :func:`outside_point` and :func:`drawn_ring` MOVED here from
 ``topology_cgrid_section`` so the other two families use that walk rather than a
 second copy of it, and the C-grid still imports them under the names it had.
 
-**GridPro's "Causes of Bad Grids" is the source material**, and the two of its
-classes that are structural rather than positional are what these check:
-topology cutting a surface on the concave side, and face mismatch. Positional
-forgiveness is not available to us (ADR-0001: positions are computed, not
-relaxed), so a refusal is the only move.
+**GridPro's "Causes of Bad Grids" IS THE SOURCE MATERIAL, AND ONE OF ITS FOUR
+CLASSES IS ACTUALLY CHECKED HERE.** Said plainly because the first draft of this
+docstring claimed two and a review axis read it against the code:
+
+* *topology cutting a surface on the concave side* — the containment walk is the
+  reachable half of it. An outline that leaves the one around it has nowhere for
+  its ring to go, which is that failure at its coarsest; a body that stays inside
+  while turning hard enough for neighbouring radials to cross before they arrive
+  is NOT detected, and is the next thing to build here.
+* *face mismatch* — CANNOT ARISE on this path, which is a different statement
+  from "is checked". A family emits one edge named by both blocks and welds by
+  id (`.claude/rules/mesher-multiblock.md`), so there is no second declaration to
+  mismatch. Nothing here looks for it because nothing can produce it.
+* *singular edges on surfaces* and *the singularity-count rule* — NOT checked,
+  and not dismissed as positional either, which is what the first draft did.
+  They are structural facts about a declared topology; what is missing is a
+  counter over the document the family produces, which no family computes today.
+
+Positional forgiveness is not available to us either way (ADR-0001: positions are
+computed, not relaxed), so a refusal is the only move for any of them.
 
 NOT a second reading of ``build``'s refusal, and not a replacement for it. A
 family's ``plan`` stops at the first problem because it answers "can this run?";
@@ -61,8 +76,8 @@ from dataclasses import dataclass, replace
 from app.services.topology_binding import outline_problem
 
 __all__ = ["Refusal", "outline_refusal", "enclosure_refusal", "nesting_refusal",
-           "drawn_ring", "outside_point", "refusal_text", "refusal_points",
-           "stamp_family"]
+           "no_context_refusal", "plan_refusal", "drawn_ring", "outside_point",
+           "refusal_text", "refusal_points", "stamp_family"]
 
 
 @dataclass(frozen=True)
@@ -74,12 +89,18 @@ class Refusal:
     an exit code. ``fix`` is the action, kept apart so a host may show it on its
     own line without splitting prose.
 
-    ``geom`` / ``segs`` / ``at`` are what a host POINTS at: the geometry
-    spelling, the segments of it that are wrong (empty = the whole curve) and a
-    single coordinate worth marking. All three are optional because one family's
+    ``geom`` and ``at`` are what a host POINTS at: the geometry spelling and a
+    single coordinate worth marking. Both are optional because one family's
     refusals are about no curve at all — the H-grid declares its own corners and
     binds to nothing — and saying so by leaving them empty is better than
     inventing a curve for it.
+
+    THERE IS NO PER-SEGMENT FIELD, and the first cut had one. Nothing ever set
+    it: every refusal here is about a whole curve, because WHICH segment is
+    wrong is the question `topology_binding.BrokenBinding` already answers for
+    the panel that repairs one. A field no caller fills is an untested branch in
+    `refusal_points` and a promise in the rule file, so it was deleted rather
+    than left for a fifth family to discover empty.
 
     ``family`` is filled in by the registry dispatch (:func:`stamp_family`), not
     by the family itself: a function that had to name itself could name another.
@@ -88,12 +109,20 @@ class Refusal:
     what: str
     fix: str = ""
     geom: str = ""
-    segs: tuple[int, ...] = ()
     at: tuple[float, float] | None = None
     family: str = ""
 
     def curve(self) -> str:
-        """The offending curve as the operator sees it in the geometry list."""
+        """The offending curve as a SHORT label — its basename, never its path.
+
+        Not "what the operator sees in the geometry list", which this once
+        claimed and is not true: that list holds `cfg.geom_files` verbatim, so a
+        geometry browsed from outside the repo is an absolute path there and in
+        the families' own sentences. What this is for is a label a host can put
+        in front of one — and the long form stays inside the sentence, which is
+        `topology_binding.outline_problem`'s wording and three families' own
+        rather than this ticket's to change.
+        """
         return os.path.basename(self.geom) if self.geom else ""
 
     def text(self) -> str:
@@ -103,8 +132,15 @@ class Refusal:
         sentences already name the curve — they were written by the families
         that own them, for users — and an unconditional prefix printed the
         geometry twice in one line. So it is added only where the sentence does
-        not carry the name, which is exactly where a reader would otherwise have
-        to go and look at the dataclass.
+        not carry the name.
+
+        THE NEEDLE IS THE BASENAME, AND IT HAS TO BE. The sentences name the
+        curve in BOTH forms — `outline_problem` embeds ``g.spelling`` (which may
+        be an absolute path) while `enclosure_refusal` embeds the basename — and
+        the basename is a substring of both, so it is the one needle that finds
+        either. Spelling-as-needle was tried and reverted in review: it suppresses
+        nothing for the second shape and prints *'body.dat': the body you drew as
+        'body.dat' reaches…*, which is the duplication this rule exists to stop.
 
         The family's name is NOT in it. The operator picked a case type, not a
         family; `ogrid` is an internal identifier and this ticket rules one out
@@ -147,17 +183,17 @@ def refusal_points(ctx, refusal) -> list:
     the same call that points at a per-segment boundary condition, and this
     function stays Qt-free by returning the points rather than drawing them.
 
-    An empty ``segs`` means the WHOLE curve, which is what a refusal about a
-    geometry (not a closed loop, not inside its far field) is about.
+    THE WHOLE CURVE, always: a refusal here is about a geometry (not a closed
+    loop, not inside its far field), never about one segment of it — which is
+    `BrokenBinding`'s question and the repair panel's.
     """
     if ctx is None or refusal is None or not refusal.geom:
         return []
     g = ctx.geometry(refusal.geom)
     if g is None or not g.spans:
         return []
-    want = [s for s in g.seg_ids if not refusal.segs or s in refusal.segs]
     out: list = []
-    for sid in want:
+    for sid in g.seg_ids:
         if out:
             out.append((math.nan, math.nan))
         out += [(float(x), float(y)) for x, y in g.spans[sid].points]
@@ -165,6 +201,34 @@ def refusal_points(ctx, refusal) -> list:
 
 
 # ── the checks the families share ───────────────────────────────────────────
+
+def no_context_refusal(noun: str, curves: str) -> tuple:
+    """A binding family asked about a drawing nobody read.
+
+    Written here rather than three times because all three binding families
+    reach it and it is one sentence: what differs is the NOUN the family binds
+    (the O-grid's geometry, the C-grid's section) and WHICH curves the operator
+    is being asked to add. That is this module's own rule — what is shared lives
+    here and what is the family's own stays with it — applied to the shape a
+    review found copied verbatim.
+    """
+    return (Refusal(
+        f"this family binds to the {noun} you drew, so it needs the mesh's "
+        f"geometry list; none was supplied.",
+        fix=f"Add {curves} in Geometry Layers."),)
+
+
+def plan_refusal(problem: str) -> tuple:
+    """A family's own ``plan`` problem as a refusal, with NO curve attached.
+
+    The fall-through every binding family ends with, so the reason for the
+    missing curve is stated ONCE rather than in three comments free to disagree:
+    ``plan`` reports one sentence and not which of its two or three outlines it
+    blames, and attributing it would point the canvas at the wrong one. Its own
+    sentences name the geometry where they are about it.
+    """
+    return (Refusal(problem),) if problem else ()
+
 
 def outline_refusal(ctx, role: str, name, g, what: str = "shape",
                     closed_note: str = "") -> Refusal | None:

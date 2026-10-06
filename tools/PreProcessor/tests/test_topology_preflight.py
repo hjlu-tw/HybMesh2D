@@ -33,9 +33,12 @@ What this pins down:
   1. EVERY FAMILY ANSWERS, BOTH WAYS. All four accept a drawing they can fill
      and refuse one they cannot, driven through the registry dispatch rather
      than by calling a family by name — so a family the registry forgot is
-     invisible to no check here. And the MODE is the other half of the
-     question: the drawing check 6 proves the multi-block path must refuse is
-     NOT refused on the hybrid path, where a named family drives nothing.
+     invisible to no check here. 1a adds the criterion's own word — a family
+     whose row is a PARAMETER refusal is also handed a GEOMETRY it cannot fill
+     (the other three rows already are one, and the H-grid cannot have one: it
+     binds to nothing). And the MODE is the other half of the question: the
+     drawing check 6 proves the multi-block path must refuse is NOT refused on
+     the hybrid path, where a named family drives nothing.
   2. THE REFUSAL IS REACHED BEFORE ANY MESHER PROCESS. Driven, not read: the
      headless runner's own `_run_mesh` is called with the subprocess launcher
      replaced by a recorder, and the recorder is never called. The GUI's order
@@ -43,7 +46,10 @@ What this pins down:
      a QThread is not startable in this process.
   3. IT SPEAKS IN THE OPERATOR'S TERMS. No refusal this gate can produce names a
      family identifier, an exit code, a `TopologyModel` field, a document id or
-     the JSON the operator never opened; every one of them names an action.
+     the JSON the operator never opened; every one of them names an action; and
+     every one names its curve EXACTLY ONCE — the conditional prefix's whole
+     job, and the property neither of the two needles review weighed was gated
+     on until it was written down here.
   4. IT IDENTIFIES THE OFFENDING CURVE, AND THE GUI POINTS AT IT. The structured
      half is checked here (the geometry is one of the drawing's, the marked
      point really is outside the far field, and `refusal_points` returns that
@@ -57,7 +63,10 @@ What this pins down:
      unit-circle far field satisfies the equivalent-radius nesting both ring
      families used (0.505 < 0.9999) and pokes out to x = +-2. Asserted in three
      steps: the old ruler accepts it, the new refusal names it, and the REAL
-     MESHER refuses the document it would have produced.
+     MESHER refuses the document it would have produced. 6e is the same gap in
+     the TWO-RING family, whose three outlines nest by the same ruler: a long
+     thin seam whose equivalent radius sits neatly between the other two while
+     it crosses the body.
   7. QT-FREE, in a subprocess.
   8. EVERY PROBLEM AT ONCE, never the first — the rule `case_type_roles` and
      `topology_model.broken_bindings` already follow, because repairing a
@@ -86,6 +95,17 @@ Known blind spots, named rather than papered over:
     region is four numbers in the template rows. So acceptance criterion "the
     GUI points at the offending curve" is vacuous for one family of four, and
     check 4 says so by excluding it rather than by passing on it.
+  - THE CANVAS POINTED AT IS THE MESH TAB'S, not the CAD tab's, which is what
+    #165's wording says. It is where the operator is when they press Generate
+    and where the geometries are previewed; the substitution is named rather
+    than made silently.
+  - ONE OF GridPro's FOUR CLASSES IS ACTUALLY CHECKED. Containment is the
+    coarsest half of "cutting on the concave side"; face mismatch CANNOT ARISE
+    on this path (one edge, named by both blocks, welded by id), which is not
+    the same as being checked; singular edges and the singularity-count rule
+    are not checked at all and would need a counter over the document a family
+    produces. Nothing here ties a check to a taxonomy class, and the accounting
+    lives in `topology_preflight`'s own header.
   - NOTHING HERE RE-ASKS WHAT THE MESHER ASKS. The two sides are held at
     opposite ends — check 6c proves the mesher refuses the one document this
     ticket's new check catches — and nothing asserts the two refuse the SAME
@@ -384,6 +404,22 @@ CASES = {
                 "seam"),
 }
 
+#: The one family whose row above refuses a PARAMETER rather than a geometry and
+#: that CAN be handed a geometry it cannot fill. The O-grid's row is an open
+#: outline and the C-grid's a blunt section — both already geometries — and the
+#: H-grid has no such case by construction: it binds to nothing, so every drawing
+#: is one it can fill and its refusals are about the four numbers it declares.
+#: The seam here NESTS correctly and is cut into THREE segments where the body
+#: has four, so it is refused for its shape rather than for its position — which
+#: also keeps this check clear of the containment gap check 6 owns.
+_ODD_SEAM = write_outline(os.path.join(_TMP, "odd_seam"), 1.5,
+                          list(SEAM_IDS[:3]), 40, "wall", square=True)
+GEOMETRY_CASES = {
+    "tworing": (tworing(seam=_ODD_SEAM,
+                        tworing_seam_segs=_ids(SEAM_IDS[:3])),
+                "one to one"),
+}
+
 
 # ── 1. every family answers, both ways ──────────────────────────────────────
 
@@ -410,6 +446,21 @@ def check_1(w):
     # own worst outcome pointed the other way: a mesh the operator can have,
     # withheld over a template nothing reads. The drawing is the one check 6
     # proves the multi-block path must refuse.
+    # THE CRITERION IS ABOUT GEOMETRIES, and one row above refuses a blank name
+    # instead. That family gets a drawing it cannot fill as well; the other three
+    # rows already are one (an open outline, a blunt section) or cannot have one
+    # (the H-grid binds to nothing).
+    for name, (poor, word) in GEOMETRY_CASES.items():
+        rows = w.preflight_for_config(poor)
+        if not rows:
+            bad.append("%s accepted a GEOMETRY it cannot fill" % name)
+        elif word not in " ".join(r.text() for r in rows):
+            bad.append("%s refused a geometry without saying %r: %s"
+                       % (name, word, rows[0].text()[:90]))
+    check(not bad, "1a. and a family whose row above refuses a parameter "
+                   "refuses a GEOMETRY it cannot fill too%s"
+                   % ("" if not bad else " -- " + "; ".join(bad)))
+
     hybrid = ogrid(body=_POKE_BODY, far=_POKE_FAR)
     hybrid.mesh_mode = 0
     ok_b = not w.preflight_for_config(hybrid) and not w.mesh_preflight(hybrid)
@@ -505,10 +556,22 @@ def check_3(w):
                 bad.append("%r in %r" % (token, text[:80]))
         if "'" not in text and not r.fix:
             bad.append("nothing named and nothing to do in %r" % text[:80])
+        # NEVER THE CURVE TWICE, and never the curve not at all: the prefix is
+        # conditional for exactly this, and review tried the other needle --
+        # the SPELLING -- which suppresses nothing for a sentence that embeds
+        # the basename and prints "'body.dat': the body you drew as
+        # 'body.dat' reaches...". Both sentence shapes are in `rows`:
+        # `outline_problem` embeds `g.spelling`, `enclosure_refusal` the
+        # basename, and the two are the same curve named two ways.
+        if r.curve():
+            if text.count(r.curve()) != 1:
+                bad.append("the curve is named %d time(s) in %r"
+                           % (text.count(r.curve()), text[:80]))
     ok = bool(rows) and not bad
     check(ok, "3. all %d refusals speak in the operator's terms -- no family "
-              "identifier, exit code, model field or document id, and each "
-              "quotes something the operator can point at or change%s"
+              "identifier, exit code, model field or document id, each quotes "
+              "something the operator can point at or change, and none names "
+              "its curve twice or not at all%s"
               % (len(rows), "" if not bad else " -- " + "; ".join(bad[:3])))
     return ok
 
@@ -733,7 +796,24 @@ def check_6(w):
     check(ok_d, "6d. ...and it says so for a DEVELOPER -- a block id and a "
                 "winding -- which is why an exit code is not the answer the "
                 "ticket asks for")
-    return ok_a and ok_b and ok_b2 and ok_c and ok_d
+    # 6e. THE SAME GAP IN THE TWO-RING FAMILY, which nests THREE outlines by the
+    # same area-derived ruler. The seam here is long and thin: its equivalent
+    # radius sits neatly between the body's and the far field's, so the ordering
+    # holds, while it crosses the body on two sides.
+    thin = write_box(os.path.join(_TMP, "thin_seam"), 3.0, 0.15, list(SEAM_IDS))
+    tr = tworing(seam=thin)
+    tctx = topology_binding.context_for_config(tr)
+    radii = [tctx.geometry(g).equivalent_radius()
+             for g in (_BODY, thin, _FAR)]
+    rows = w.preflight_for_config(tr)
+    ok_e = (radii[0] < radii[1] < radii[2] and len(rows) == 1
+            and "outside the seam" in rows[0].text())
+    check(ok_e, "6e. the two-ring family's three outlines nest by the same "
+                "ruler (%.4f < %.4f < %.4f, which holds) and containment "
+                "catches the seam crossing the body: %r"
+                % (radii[0], radii[1], radii[2],
+                   rows[0].text()[:80] if rows else None))
+    return ok_a and ok_b and ok_b2 and ok_c and ok_d and ok_e
 
 
 # ── 8. every problem at once ───────────────────────────────────────────────

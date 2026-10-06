@@ -238,10 +238,17 @@ def mesh_preflight(cfg) -> str:
 
     The mode's missing input FIRST and the family's own refusal after it, in that
     order because a configuration with no input at all has nothing for a family
-    to judge. Both hosts that launch the mesher call this rather than one of its
-    halves: `missing_mesh_input` alone is what they called before #165, and a
-    host that kept calling it would be the one that still ships a drawing the
-    family cannot fill.
+    to judge.
+
+    ITS ONE CALLER IS `services/pipeline_runner.py`, and that is deliberate
+    rather than an omission — the sentence here used to claim both hosts and
+    review was right to call it false. The GUI asks the two halves APART because
+    they are graded apart there: `missing_mesh_input` is a non-blocking
+    `[WARNING]` (`mesh_gen_diag_ctrl.mesh_input_warning`, which has always been
+    advisory because the mesher gives the authoritative error), while the
+    family's refusal BLOCKS. Collapsing them in the GUI would turn one of the
+    two into the other's grade. The headless runner has no warning tier, so one
+    call is the whole question there.
     """
     why = missing_mesh_input(cfg)
     return why if why else topology_preflight.refusal_text(

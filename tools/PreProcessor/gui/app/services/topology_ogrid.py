@@ -51,7 +51,7 @@ from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError, outline_problem
 from app.services.topology_preflight import (
-    Refusal, nesting_refusal, outline_refusal,
+    nesting_refusal, no_context_refusal, outline_refusal, plan_refusal,
 )
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid_binding import (
@@ -391,10 +391,7 @@ def preflight(model, ctx=None) -> tuple:
        answer would point at the wrong curve on the canvas.
     """
     if ctx is None:
-        return (Refusal("this family binds to the geometry you drew, so it "
-                        "needs the mesh's geometry list; none was supplied.",
-                        fix="Add the body and the far field in Geometry "
-                            "Layers."),)
+        return no_context_refusal("geometry", "the body and the far field")
     body = ctx.geometry(model.ogrid_body_geom)
     far = ctx.geometry(model.ogrid_far_geom)
     pairs = ((BINDING_LISTS[0][0], model.ogrid_body_geom, body),
@@ -408,5 +405,4 @@ def preflight(model, ctx=None) -> tuple:
                               (BINDING_LISTS[1][0], far)))
     if nested:
         return nested
-    p = plan(model, ctx)
-    return (Refusal(p.problem),) if p.problem else ()
+    return plan_refusal(plan(model, ctx).problem)

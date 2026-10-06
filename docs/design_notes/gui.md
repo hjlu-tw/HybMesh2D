@@ -4478,19 +4478,44 @@ developer-facing exit before: `nx = 0` divided by zero inside `build`, `x_max ==
 of zero width, `x_max < x_min` built every block wound clockwise (the same exit 8 as above), and a
 target cell of zero derived no counts at all and raised `IndexError`.
 
-**THE REFUSAL CARRIES THE CURVE, NOT ONLY THE SENTENCE.** `Refusal` holds the geometry spelling, the
-segments and a coordinate worth marking, which is the rule `BrokenBinding` already follows for a
-binding the panel repairs: a host must be able to point at the offending curve without re-parsing
-prose. `refusal_points` turns one into the polyline the mesh canvas's `highlight_segment` already
-reads for the per-segment boundary-condition overlay, with `nan` rows between disjoint runs — so
-pointing at a refusal is a call that existed, and the Qt-free half of it is what the gate measures.
-The curve prefix on `Refusal.text` is CONDITIONAL, which was a correction rather than a design: most
-of these sentences already name the curve, because they were written by the families that own them
-for users, and the unconditional version printed the geometry twice in one line.
+**THE REFUSAL CARRIES THE CURVE, NOT ONLY THE SENTENCE.** `Refusal` holds the geometry spelling and
+a coordinate worth marking, which is the rule `BrokenBinding` already follows for a binding the panel
+repairs: a host must be able to point at the offending curve without re-parsing prose.
+`refusal_points` turns one into the polyline the mesh canvas's `highlight_segment` already reads for
+the per-segment boundary-condition overlay, with `nan` rows between disjoint runs — so pointing at a
+refusal is a call that existed, and the Qt-free half of it is what the gate measures. **The canvas is
+the MESH tab's**, which is where the operator is when they press Generate; #165's wording says "the
+CAD canvas" and the CAD tab's is a different widget this does not touch, so the substitution is named
+rather than made silently.
 
-**ONE QUESTION FOR BOTH MESHER-LAUNCHING HOSTS.** `topology_model.mesh_preflight` asks the mode's
-missing input first and the family's refusal after it; `services/pipeline_runner.py` calls that
-where it called `missing_mesh_input`, so there is no half for a host to ask. In the GUI the guard is
+**IT CARRIED A PER-SEGMENT FIELD FOR ONE DRAFT, AND NOTHING EVER SET IT.** `Refusal.segs` looked
+right beside `geom` — `BrokenBinding` has exactly that pair — but every refusal here is about a whole
+CURVE, because which SEGMENT is wrong is the repair panel's question and `BrokenBinding` already
+answers it. So the field was an untested branch in `refusal_points` and a promise in the rule file;
+review deleted it rather than leave a fifth family to find it empty. The shape is worth naming: a
+field modelled on a neighbour rather than on a caller.
+
+**THE CURVE PREFIX IS CONDITIONAL, AND ITS NEEDLE IS THE BASENAME.** Most of these sentences already
+name the curve — they were written by the families that own them, for users — and an unconditional
+prefix printed the geometry twice in one line. Review proposed the SPELLING as the needle instead,
+on the grounds that `outline_problem` embeds `g.spelling` and a basename is a substring of a path;
+implementing it produced *'body.dat': the body you drew as 'body.dat' reaches…*, because
+`enclosure_refusal` embeds the BASENAME and the spelling then matches nothing. The two sentence
+shapes name the curve two ways and the basename is the one needle that finds either, so the original
+rule stands — now with check 3 requiring every refusal to name its curve exactly once, which is the
+property neither version was gated on. What the exchange did fix is a false docstring: `curve()`
+claimed to return "the spelling they see in the geometry list" while returning the basename, and the
+list holds `cfg.geom_files` verbatim, absolute paths included.
+
+**ONE QUESTION FOR THE HEADLESS HOST, TWO GRADES FOR THE GUI — and the first draft claimed the
+former of both.** `topology_model.mesh_preflight` asks the mode's missing input first and the
+family's refusal after it; `services/pipeline_runner.py` calls that where it called
+`missing_mesh_input`, so there is no half for it to ask. Its docstring said "both hosts that launch
+the mesher call this", and review measured that false: the GUI asks the two APART, and must, because
+they are graded apart there — `mesh_input_warning` has always been a non-blocking `[WARNING]`
+(the mesher gives the authoritative error) while a family's refusal BLOCKS, so collapsing them would
+turn one into the other's grade. The headless runner has no warning tier and so has one question.
+In the GUI the guard is
 `mesh_gen_diag_ctrl._topology_preflight_refused`, called from `run_mesh_generator` LAST of the
 pre-flight and still before the worker — last because it is the most specific, and answering "your
 body is outside your far field" about a geometry file that is not on disk would send the user to the
@@ -4522,6 +4547,19 @@ outline over a curve that was now fine. The no-refusal path clears it — and cl
 guard drew, tracked by `_preflight_highlight`, because the same call is the per-segment
 boundary-condition dialog's and wiping a selection somebody else made is the same defect pointed the
 other way. Both halves are driven through a real `AppController` in check 4c.
+
+**ONE OF GridPro's FOUR CLASSES IS ACTUALLY CHECKED, and saying so took a review axis.** The ticket
+names four — topology cutting a surface on the concave side, singular edges on surfaces, face
+mismatch, the singularity-count rule — and the first draft of this work claimed two of them and
+dismissed the other two as positional. Measured against the code: the CONTAINMENT walk is the
+coarsest half of "cutting on the concave side" (an outline that leaves the one around it has nowhere
+for its ring to go), and nothing detects a body that stays inside while turning hard enough for
+neighbouring radials to cross before they arrive. FACE MISMATCH cannot arise on this path at all — a
+family emits one edge named by both blocks and welds by id — which is a different statement from
+"is checked", and the honest one. SINGULAR EDGES and the SINGULARITY-COUNT rule are structural facts
+about a declared topology, not positional ones; what is missing is a counter over the document a
+family produces, which no family computes today. Citing a taxonomy is not implementing it, and the
+difference is now written where a reader meets the claim.
 
 **Named blind spots.** **Nothing here re-asks what the mesher asks**: the two sides are held at
 opposite ends — check 6c proves the mesher refuses the one document the new check catches — and

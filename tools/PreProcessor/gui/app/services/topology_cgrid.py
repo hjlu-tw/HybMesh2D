@@ -56,11 +56,12 @@ import os
 from dataclasses import dataclass, field
 
 from app.services.topology_binding import BindingError
-from app.services.topology_preflight import Refusal
+from app.services.topology_preflight import (
+    Refusal, drawn_ring, no_context_refusal, outside_point, plan_refusal,
+)
 from app.services.topology_cgrid_section import (
     FAR_CORNERS, FAR_EDGES, FAR_ROLE, SECTION_ROLE, SURFACE_EDGES, Section,
-    drawn_ring, far_corners, far_edge_at, generated_ring, outside_point,
-    resolve_far, resolve_section,
+    far_corners, far_edge_at, generated_ring, resolve_far, resolve_section,
 )
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid_binding import broken_in_lists
@@ -487,13 +488,10 @@ def preflight(model, ctx=None) -> tuple:
     geometry where they are about it.
     """
     if ctx is None:
-        return (Refusal("this family binds to the section you drew, so it needs "
-                        "the mesh's geometry list; none was supplied.",
-                        fix="Add the section in Geometry Layers."),)
+        return no_context_refusal("section", "the section")
     g, _section, why, _edge = resolve_section(
         ctx, model.cgrid_body_geom, model.cgrid_body_segs)
     if why:
         return (Refusal(why, geom=(g.spelling if g is not None
                                    else str(model.cgrid_body_geom or ""))),)
-    p = plan(model, ctx)
-    return (Refusal(p.problem),) if p.problem else ()
+    return plan_refusal(plan(model, ctx).problem)

@@ -49,7 +49,8 @@ from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError, outline_problem
 from app.services.topology_preflight import (
-    Refusal, nesting_refusal, outline_refusal,
+    Refusal, nesting_refusal, no_context_refusal, outline_refusal,
+    plan_refusal,
 )
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid import MIN_BLOCKS, radial_law
@@ -454,10 +455,8 @@ def preflight(model, ctx=None) -> tuple:
     one geometry an operator is most likely not to have drawn.
     """
     if ctx is None:
-        return (Refusal("this family binds to the geometry you drew, so it "
-                        "needs the mesh's geometry list; none was supplied.",
-                        fix="Add the body, the seam and the far field in "
-                            "Geometry Layers."),)
+        return no_context_refusal(
+            "geometry", "the body, the seam and the far field")
     names = (model.tworing_body_geom, model.tworing_seam_geom,
              model.tworing_far_geom)
     gs = [ctx.geometry(n) for n in names]
@@ -479,5 +478,4 @@ def preflight(model, ctx=None) -> tuple:
                                    for row, g in zip(BINDING_LISTS, gs)))
     if nested:
         return nested
-    p = plan(model, ctx)
-    return (Refusal(p.problem),) if p.problem else ()
+    return plan_refusal(plan(model, ctx).problem)
