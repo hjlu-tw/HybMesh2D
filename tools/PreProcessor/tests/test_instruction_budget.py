@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 242 more of today because this repo's own prose
+bytes, which the root file has 248 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    Twelve rule files now — 59,576 / 58,402 / 56,405 / 54,994 / 51,665 / 39,810 / 35,517 / 25,539 / 23,361 / 18,944 / 15,762 / 8,969  characters (gui-topology, gui-handoff, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-lifecycle) — so "moving text into another rule file
+    13 rule files now — 59,576 / 58,402 / 56,405 / 54,994 / 51,665 / 39,810 / 35,517 / 25,539 / 23,361 / 18,944 / 15,762 / 13,047 / 8,969  characters (gui-topology, gui-handoff, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-preflight, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 424 / 1,598 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    ten, which have 3,595 / 5,006 / 8,335 / 20,190 / 24,483 / 34,461 / 36,639 / 41,056 / 44,238 / 51,031. #76 spent 3,446 of
+    eleven, which have 3,595 / 5,006 / 8,335 / 20,190 / 24,483 / 34,461 / 36,639 / 41,056 / 44,238 / 46,953 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -646,9 +646,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 43,456 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 44,366 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 43,456 taken down to the boundary above is 43,000, to
+# are its size and its slack -- and 44,366 taken down to the boundary above is 44,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -766,7 +766,23 @@ _SOURCES = {
 # count moved 14 -> 15 because the artefact split a third time on the ~500-line standard.
 # That file's own "#162 is the cheap moment" note for a thirteenth rule file was
 # RE-MEASURED rather than acted on, and says so.
-ROOT_BUDGET = 44_000
+# #165 is the ELEVENTH, and the FIRST since #137 whose cause is a rule file being BORN
+# rather than a ticket's prose: `gui-topology.md` says in its own header that it is full
+# and that "the next block here is a new rule file, not a squeeze", so the per-family
+# pre-flight refusal became `gui-preflight.md` -- the thirteenth -- and the root grew by
+# ONE TRIPWIRE ROW and nothing else: a row of 715 characters, no entry point, no Build &
+# Run block, no standard. The NET move is a few characters less, the root's own
+# self-stated figures having been re-synced in the same pass -- which is the joint fixed
+# point this derivation already names and not a second cause. The ledger's reading is unchanged
+# and this is the clean case of it -- the root ENUMERATES the rule files, so a new one
+# grows it, and there is nothing to trim because the row IS the enumeration. 751 went in
+# first and was cut to 715 by dropping the globs' long form for "the four family
+# modules", which the rule file's own `paths:` carries verbatim one layer down. NO
+# version of this row fits the old band: 43,456 leaves 544, and the band's floor needs
+# 500 left over, so a row of any length past 44 characters re-bands. That is stated
+# because it is the difference from #162, where a shorter block WOULD have fitted and the
+# re-band was a judgement rather than arithmetic.
+ROOT_BUDGET = 45_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -1408,7 +1424,7 @@ _GUI_OFFENDER = r"`[A-Za-z0-9_/]+\.py`~[\d,]+"
 _OFFENDER_LIST = r"((?:" + _GUI_OFFENDER + r",~)*" + _GUI_OFFENDER + r")"
 
 _NUM_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-              "nine", "ten", "eleven", "twelve")
+              "nine", "ten", "eleven", "twelve", "thirteen")
 
 
 def _parse_nums(text):
@@ -1435,10 +1451,14 @@ def _parse_word(text):
 def _fmt_word(values):
     """The count as the word the prose uses, falling back to digits.
 
-    A `_NUM_WORDS[13]` would be an IndexError rather than a named failure, and a gate
-    whose job is to say WHICH figure is wrong must not answer with a traceback (this
-    repo has scored an injection's crash as a pass before). Thirteen rule files is a
-    reachable state: #59 planned six and #77 made it eight.
+    An index past the end of the word list would be an IndexError rather than a named
+    failure, and a gate whose job is to say WHICH figure is wrong must not answer with
+    a traceback (this repo has scored an injection's crash as a pass before). The list
+    reached "thirteen" when #165 made that state real — it had stopped at "twelve"
+    with the comment here saying thirteen was reachable, and the sync wrote `13` into
+    the always-loaded file's prose beside eleven spelled-out rows. Extending the list
+    is what keeps the fallback a FALLBACK; it is not a promise that the next one will
+    be extended too.
     """
     n = values[0]
     return _NUM_WORDS[n].capitalize() if 0 <= n < len(_NUM_WORDS) else str(n)

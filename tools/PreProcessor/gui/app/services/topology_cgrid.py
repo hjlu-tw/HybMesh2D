@@ -56,6 +56,7 @@ import os
 from dataclasses import dataclass, field
 
 from app.services.topology_binding import BindingError
+from app.services.topology_preflight import Refusal
 from app.services.topology_cgrid_section import (
     FAR_CORNERS, FAR_EDGES, FAR_ROLE, SECTION_ROLE, SURFACE_EDGES, Section,
     drawn_ring, far_corners, far_edge_at, generated_ring, outside_point,
@@ -462,3 +463,37 @@ def broken_bindings(model, ctx) -> tuple:
     reached one step earlier.
     """
     return broken_in_lists(model, ctx, BINDING_LISTS)
+
+
+def preflight(model, ctx=None) -> tuple:
+    """Why this family cannot wrap the section it has been given, before anything
+    runs (#165).
+
+    THE SECTION'S OWN CASCADE IS :func:`resolve_section`'S and is not re-asked
+    here — it already refuses a geometry this mesh does not load, one with no
+    sidecar, an open polyline, a BLUNT trailing edge (three segments, the two
+    surfaces never meeting) and a section whose two joints sit at the same
+    station. Every one of those sentences is already in the operator's terms and
+    every one is about ONE curve, which is what this adds: the geometry spelling,
+    so the host can point at it on the canvas.
+
+    EVERYTHING ELSE :func:`plan` REFUSES CARRIES NO CURVE, deliberately — not
+    even the far field's, which this family is alone in sometimes GENERATING from
+    two lengths rather than reading off a drawing. Attaching ``p.far_geom`` there
+    would point the canvas at the far field for a refusal about the target cell
+    size, and deciding which problems are "about" it means reading the family's
+    own prose back for structured data, which is the move ``BindingError``
+    carries its edge as a FIELD to avoid. ``plan``'s own sentences name the
+    geometry where they are about it.
+    """
+    if ctx is None:
+        return (Refusal("this family binds to the section you drew, so it needs "
+                        "the mesh's geometry list; none was supplied.",
+                        fix="Add the section in Geometry Layers."),)
+    g, _section, why, _edge = resolve_section(
+        ctx, model.cgrid_body_geom, model.cgrid_body_segs)
+    if why:
+        return (Refusal(why, geom=(g.spelling if g is not None
+                                   else str(model.cgrid_body_geom or ""))),)
+    p = plan(model, ctx)
+    return (Refusal(p.problem),) if p.problem else ()

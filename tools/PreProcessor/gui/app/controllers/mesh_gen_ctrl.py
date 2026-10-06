@@ -150,6 +150,16 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin):
                 + "\n".join(f"• {e}" for e in errors))
             return
 
+        # THE FAMILY'S OWN REFUSAL, LAST OF THE PRE-FLIGHT AND STILL BEFORE THE
+        # WORKER (#165). Last because it is the most specific: a config missing a
+        # geometry file or carrying a shrinking BL has nothing for a family to
+        # judge, and answering "your body is outside your far field" about a file
+        # that is not on disk would send the user to the wrong place. The mesher
+        # would refuse this too — as `HYBMESH_ERROR 8 TOPOLOGY` naming a block id,
+        # after the run, in a sentence written for a developer.
+        if self._topology_preflight_refused(cfg):
+            return
+
         # Overrule solver output path to temporary folder to prevent generating permanent files on disk
         temp_vtk_path = os.path.abspath(os.path.join(self.temp_dir, "global_mesh.vtk"))
         expected_vtk = temp_vtk_path

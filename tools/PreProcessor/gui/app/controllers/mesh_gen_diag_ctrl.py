@@ -17,8 +17,10 @@ from __future__ import annotations
 import os
 
 from app.services.geom_path_identity import readable_geom_path
+from app.services import topology_binding, topology_model, topology_preflight
 from app.services.logging_setup import get_logger
 from app.services.mesh_modes import MESH_MODE_HYBRID, missing_mesh_input
+from app.utils import report_error
 
 __all__ = ["MeshGenDiagnosticsMixin", "mesh_input_warning"]
 
@@ -55,6 +57,58 @@ def mesh_input_warning(cfg) -> str:
 
 class MeshGenDiagnosticsMixin:
     """The mesh stage's pre-flight scan and its post-mortem read of the log."""
+
+    def _topology_preflight_refused(self, cfg) -> bool:
+        """The FAMILY's own refusal, before a worker is started (#165).
+
+        True when the run must not happen. Everything about the refusal — what
+        is wrong, which curve it is about and where on that curve — is the
+        family's answer (``topology_model.preflight_for_config``); what is here
+        is only the showing of it, which is why this method is a dozen lines and
+        contains no rule.
+
+        THE CURVE IS POINTED AT, not merely named. ``highlight_segment`` takes
+        the points with ``nan`` rows between disjoint runs, which is the contract
+        the per-segment boundary-condition overlay already uses — so a refusal
+        about two curves draws both, and the refusal's own coordinate gets the
+        marker an intersection post-mortem gets. The points come from the Qt-free
+        ``refusal_points``, so what the canvas draws is gated headlessly.
+
+        A refusal naming NO curve (the H-grid binds to nothing, and its region is
+        four numbers in the template rows) clears the overlay rather than leaving
+        the last refusal's outline on screen pointing at nothing.
+        """
+        refusals = topology_model.preflight_for_config(cfg)
+        mc = self.main_window.mesh_canvas_view
+        if not refusals:
+            # CLEAR OUR OWN, and only our own. A refusal left on the canvas after
+            # the user has fixed the drawing points at a curve that is now fine,
+            # which is worse than no overlay; but `highlight_segment` is also the
+            # per-segment boundary-condition dialog's, so the flag is what keeps
+            # this from wiping a selection somebody else made.
+            if getattr(self, "_preflight_highlight", False):
+                mc.highlight_segment(None)
+                mc.clear_error_highlights()
+                self._preflight_highlight = False
+            return False
+        msg = topology_preflight.refusal_text(refusals)
+        self.log_report("[ERROR] " + msg)
+        mc.clear_error_highlights()
+        ctx = topology_binding.context_for_config(cfg)
+        pts, marks = [], []
+        for r in refusals:
+            run = topology_preflight.refusal_points(ctx, r)
+            if run:
+                pts += ([(float("nan"), float("nan"))] if pts else []) + run
+            if r.at is not None:
+                marks.append(r.at)
+        mc.highlight_segment(pts or None)
+        for x, y in marks:
+            mc.highlight_self_intersection_point(x, y)
+        self._preflight_highlight = True
+        report_error(self.main_window, "This Case Type Cannot Mesh This Drawing",
+                     msg)
+        return True
 
     def _scan_geometry_files(self, cfg) -> tuple:
         """Log each geometry file's point count (a body that previews but is

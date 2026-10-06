@@ -25,6 +25,16 @@ from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError, outline_problem
 from app.services.topology_ogrid_binding import order_problem, parse_binding
+# RE-EXPORTED, not re-declared. `drawn_ring` and `outside_point` were written
+# here for the C-grid's far field (#149) and are the containment test the
+# O-grid and the two-ring family need too (#165), so they now live in
+# `topology_preflight` — the one place a family-independent check belongs.
+# Imported under the names this module already published, because the
+# alternative to one import line is a second copy of a polygon walk, and a
+# second copy of this one would be the defect it exists to catch.
+from app.services.topology_preflight import (  # noqa: F401
+    drawn_ring, outside_point,
+)
 
 #: How many surface segments a section the C-grid can wrap is split into: the upper
 #: and the lower, meeting at the trailing edge. THREE is the blunt section, whose
@@ -222,53 +232,6 @@ def generated_ring(far: dict) -> list:
     ``fl``; the five remaining corners bound exactly the same region.
     """
     return [far[k] for k in ("fu", "f1", "f2", "f3", "fl")]
-
-
-def drawn_ring(g) -> list:
-    """A DRAWN far field's outline, as the polygon :func:`outside_point` tests (#149).
-
-    Its own POLYLINES rather than the six corner chords, which is the whole
-    difference between the two paths: a drawn D curves OUTWARD between its joints,
-    so a chord ring would refuse a section that sits comfortably inside the shape
-    the user actually drew. The generated hexagon has no such gap — its sides ARE
-    the chords — which is why :func:`generated_ring` above is the corners.
-    """
-    return [pt for sid in g.seg_ids for pt in g.spans[sid].points[:-1]]
-
-
-def outside_point(ring, g):
-    """The first point of ``g`` the outline ``ring`` does not contain, or ``None``.
-
-    THE SECTION HAS TO BE INSIDE ITS FAR FIELD, and it is checked by walking the
-    section's own points rather than by a rule of thumb about chords: a radius that is
-    generous for a thin aerofoil at zero incidence is not for a thick one at 15
-    degrees, and a section poking through its own far field produces blocks that fold
-    rather than a refusal the user can read.
-
-    ``ring`` is a closed polygon as a list of points, so the same containment test
-    serves the generated hexagon and the drawn D — the two differ in what the ring
-    IS, which is :func:`generated_ring`'s and :func:`drawn_ring`'s answer, not in
-    how it is tested.
-    """
-    ring = list(ring)
-    # NO short-ring guard. One that returned None would report a degenerate outline
-    # as CONTAINING the section, which is the one direction this check must not fail
-    # in; with none, a ring of fewer than three points contains nothing and the
-    # caller refuses. Unreachable from either caller today (five corners and six
-    # polylines), and shaped so that it staying unreachable is not load bearing.
-    for sp in g.spans.values():
-        for pt in sp.points:
-            x, y = pt
-            hit = False
-            for k in range(len(ring)):
-                x0, y0 = ring[k]
-                x1, y1 = ring[(k + 1) % len(ring)]
-                if (y0 > y) != (y1 > y):
-                    if x < x0 + (y - y0) * (x1 - x0) / (y1 - y0):
-                        hit = not hit
-            if not hit:
-                return pt
-    return None
 
 
 def section_edge_at(pos: int) -> str:

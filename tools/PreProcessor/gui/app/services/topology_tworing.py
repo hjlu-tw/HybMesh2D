@@ -48,6 +48,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError, outline_problem
+from app.services.topology_preflight import (
+    Refusal, nesting_refusal, outline_refusal,
+)
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid import MIN_BLOCKS, radial_law
 from app.services.topology_ogrid_binding import (
@@ -432,3 +435,49 @@ def broken_bindings(model, ctx) -> tuple:
     :data:`BINDING_LISTS`'s, which is also where every refusal above takes its noun.
     """
     return broken_in_ring_lists(model, ctx, BINDING_LISTS, model.tworing_splits)
+
+
+def preflight(model, ctx=None) -> tuple:
+    """Why this family cannot split its ring on the seam it has been given,
+    before anything runs (#165).
+
+    The O-grid's three layers over THREE outlines rather than two, and the one
+    that earns its keep here is the middle: :func:`plan` nests body, seam and far
+    field by EQUIVALENT RADIUS, so a seam that crosses the body on one side and
+    the far field on the other has an equivalent radius neatly between the two
+    and is accepted. A ring that crosses is exactly what this family cannot fill,
+    and :func:`nesting_refusal` walks both neighbouring pairs rather than the
+    first, because a drawing with both wrong costs two edits and not two runs.
+
+    The SEAM's blank case keeps the family's own sentence — it names
+    :data:`OFFSET_ACTION`, which is a CAD action and not a correction, and is the
+    one geometry an operator is most likely not to have drawn.
+    """
+    if ctx is None:
+        return (Refusal("this family binds to the geometry you drew, so it "
+                        "needs the mesh's geometry list; none was supplied.",
+                        fix="Add the body, the seam and the far field in "
+                            "Geometry Layers."),)
+    names = (model.tworing_body_geom, model.tworing_seam_geom,
+             model.tworing_far_geom)
+    gs = [ctx.geometry(n) for n in names]
+    out = []
+    for (role, _f, _gf, _pre), name, g in zip(BINDING_LISTS, names, gs):
+        r = outline_refusal(ctx, role, name, g, closed_note=CLOSED_NOTE)
+        if r is not None and role == SEAM_ROLE and not str(name or "").strip():
+            r = Refusal(
+                "name the seam geometry — the middle ring the two rings meet "
+                "on. This family writes no geometry of its own.",
+                fix=f"Draw one, or make it with {OFFSET_ACTION}, which offsets "
+                    f"the body by a distance and pairs segment for segment "
+                    f"with it.")
+        if r is not None:
+            out.append(r)
+    if out:
+        return tuple(out)
+    nested = nesting_refusal(tuple((row[0], g)
+                                   for row, g in zip(BINDING_LISTS, gs)))
+    if nested:
+        return nested
+    p = plan(model, ctx)
+    return (Refusal(p.problem),) if p.problem else ()

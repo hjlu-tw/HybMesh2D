@@ -42,6 +42,12 @@ you confirm it, for the same reason the first cell height is: a wrong guess that
 reaches the mesher silently produces a mesh that exports, looks right, and has
 the far field's conditions on the body.
 
+And since #165 the FAMILY then says whether it can work with what it has been
+given, before anything is written and long before a mesher is launched. A role
+you confirmed can still be the wrong curve — naming the far field as the body
+binds exactly that, with every id resolving — and the refusal names the curve so
+you know which of your own files to redraw.
+
 Usage:
     python3 tools/PreProcessor/apply_case_type.py <case.casetype.json> \
         --to my_case.dat --out fitted.dat \
@@ -59,7 +65,8 @@ Trial/Generate actions, and a dialog authored here would be chrome to unpick.
 
 Exit code is 0 when the case type was applied, 1 when it was refused — including
 the refusal that a physical parameter is unconfirmed, which is the one this
-command exists to make unavoidable.
+command exists to make unavoidable, and the family's own pre-flight refusal,
+which is the one no amount of confirming can answer.
 """
 from __future__ import annotations
 
@@ -78,6 +85,8 @@ from app.services import case_type_fields
 from app.services import case_type_roles
 from app.services import case_type_scale
 from app.services import topology_binding
+from app.services import topology_model
+from app.services import topology_preflight
 from app.services.case_type import CaseTypeError
 
 
@@ -223,6 +232,16 @@ def main() -> int:
         # authoring geometry is read, because a case type carries none.
         for binding in roles.bind(fitted, assigned):
             print("  bound %s" % binding.describe())
+        # AND THE FAMILY THEN STATES WHETHER IT CAN WORK WITH WHAT IT HAS BEEN
+        # GIVEN (#165), before anything is written and long before a mesher is
+        # launched. #164 left this exactly here as a named blind spot: a
+        # confirmed assignment naming the far field as the body binds precisely
+        # that, and only the family's own refusal notices. The refusal names the
+        # curve, so an operator reading it knows which of their own files to
+        # redraw.
+        refused = topology_model.preflight_for_config(fitted)
+        if refused:
+            raise CaseTypeError(topology_preflight.refusal_text(refused))
         if args.out:
             fitted.save_to_file(args.out)
             print("  wrote %s" % args.out)

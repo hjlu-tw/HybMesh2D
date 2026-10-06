@@ -21,17 +21,14 @@ from app.models.mesh_config import MeshConfig
 from app.models.pipeline_config import PipelineConfig
 from app.services import (
     case_type_verdict, derived_geoms, ib_handoff, mesh_shape_stats,
-    pipeline_stages, solver_case, stl3d_case,
-)
-from app.services.derived_geoms import DerivedGeometryError
+    pipeline_stages, solver_case, stl3d_case)
 from app.services.pipeline_bc_derive import derive_bc_definitions
 from app.services.pipeline_case_sources import case_sources_for, derived_origins
 from app.services.env_setup import mesher_env, gmsh_missing_hint
 from app.services.case_files import CLI_RUN_TAG
-from app.services.mesh_modes import missing_mesh_input
-from app.services.paths import (
-    find_binary_executable, find_solver_executables, repo_root,
-)
+from app.services.topology_model import mesh_preflight
+from app.services.paths import (find_binary_executable,
+                                find_solver_executables, repo_root)
 # Qt-free process helpers (no PyQt import), so this module stays headless-safe.
 from app.workers.proc_util import stop_process
 
@@ -213,8 +210,11 @@ def _run_mesh(pcfg: PipelineConfig, repo: str, geom_files: str | list,
     # Per MODE, not per host: geom_files empty is fatal on the hybrid path and
     # normal on the multi-block one, where the topology is the input. The literal
     # geometry check that used to stand here refused square_block / hgrid_blocks
-    # outright, so the CLI could mesh a case the pipeline could not (#56).
-    why = missing_mesh_input(mc)
+    # outright, so the CLI could mesh a case the pipeline could not (#56). The
+    # FAMILY's own refusal rides the same call (#165), so no host can ask one
+    # half and ship a drawing its family cannot fill — the mesher's answer to
+    # that is an exit code written for a developer.
+    why = mesh_preflight(mc)
     if why:
         raise PipelineError(why)
     # Same refusal as the GUI pre-flight, same wording (mesh_config owns it):
@@ -413,7 +413,7 @@ def run_pipeline(pcfg: PipelineConfig, log=print, run_solver: bool = True,
     # code path anywhere. services/derived_geoms owns the rule and the refusals.
     try:
         derived_geoms.materialise_all(pcfg, repo, log)
-    except DerivedGeometryError as e:
+    except derived_geoms.DerivedGeometryError as e:
         # Never a skip: a run one geometry short meshes something the user did
         # not ask for, and on a two-ring case the geometry it drops is the seam.
         log(f"[CAD] [ERROR] {e}")

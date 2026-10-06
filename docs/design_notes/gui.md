@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 300, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 301, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -4416,6 +4416,137 @@ role panel and no Trial, #166's — so "the operator assigns and confirms" is me
 service and at the headless host, where #161, #162 and #163 all left their actions too. **No
 family was asked whether it LIKES the binding**: what is asserted is that a derived one is
 accepted, not that the family could have refused a bad one.
+
+**A FAMILY STATES WHETHER IT CAN WORK WITH WHAT IT WAS GIVEN** (#165, parent #158;
+`services/topology_preflight.py`, `services/topology_model.py`, `services/topology_hgrid.py`,
+`services/topology_ogrid.py`, `services/topology_cgrid.py`, `services/topology_tworing.py`,
+`controllers/mesh_gen_diag_ctrl.py`; rules in `.claude/rules/gui-preflight.md`)
+
+**WHAT AN EXIT CODE READS LIKE, MEASURED RATHER THAN ASSERTED.** The ticket says a refusal "is not
+an exit code: `EXIT_ERR_TOPOLOGY` fires after the operator has already committed, and its message
+is written for a developer". That was taken as a premise and then checked, by building the drawing
+`tests/test_topology_preflight.py` check 6 uses — a 4.0 x 0.2 body inside a unit-circle far field —
+and running the real mesher on the document it produces:
+
+```
+block 'q0': its corners 'b0', 'f0', 'f1', 'b1' wind clockwise (signed area -0.650000),
+so every cell in it would be inverted. Reverse its south edge's own corner pair, or swap
+the block's south and north edges.
+```
+
+Exit 8, nothing exported. Every noun in it — the block, the four corners, the south edge — is an id
+of a document the operator never opened and would not recognise if they did. What they can act on
+is *the body you drew as 'body.dat' reaches (2, -0.1), which is outside the far field 'far.dat'*,
+and which curve on the canvas that is. The mesher is not modified (ADR-0002); the refusal moves
+forward, and the gate's check 6d asserts the developer sentence is still what the mesher says, so
+the comparison stays live rather than becoming a quotation.
+
+**THE GAP THAT BOUGHT CONTAINMENT, AND WHY IT WAS INVISIBLE.** Both ring families nest their
+outlines by `GeomBinding.equivalent_radius()` — the radius of the circle with the outline's enclosed
+AREA. That is the right ruler for the radial law, which is written for a circular O-grid, and the
+wrong one for "is this inside that". MEASURED on the drawing above: the body's equivalent radius is
+**0.5046** and the far field's **0.9999**, so `far_radius > radius` holds comfortably while the body
+reaches x = ±2 and the far field stops at 1. Nothing in the repo could see it. The C-grid had
+already met this exact problem in #149 and solved it by walking the SECTION's own points against the
+far field's polyline (`outside_point`, `drawn_ring`); those two moved into `topology_preflight.py`
+so the other two families use that walk rather than a second copy of it, and
+`topology_cgrid_section.py` imports them back under the names it published. The two-ring family gets
+both neighbouring pairs — body inside seam, seam inside far field — because a seam that crosses the
+body on one side and the far field on the other has an equivalent radius neatly between the two.
+
+**WHY FOUR REFUSALS AND NOT ONE TABLE, which is the ticket's own decision restated where the first
+reader will look for it.** The preconditions genuinely differ: a closed loop for the O-grid, a SHARP
+trailing edge for the C-grid, a rectangle with four distinct corners for the H-grid, a seam strictly
+between two closed loops for the two-ring. A shared table could hold only what all four agree on,
+which is nearly nothing. What IS shared is the four-question cascade every bound outline answers —
+`topology_binding.outline_problem`, called and never re-spelled, #155's review having found a third
+hand-written copy that had dropped the one clause a user can act on — and the containment walk.
+
+**THE REGISTRY IS THE ENFORCEMENT, AND IT COST ONE WORD.** `Family.preflight` is declared with no
+default, so a fifth family that writes a build function and forgets its refusal does not CONSTRUCT.
+The acceptance criterion "a family with no refusal is caught by the gate" is therefore held by the
+dataclass rather than by a scan, which is the same move `Family.binds` makes over `broken is not
+None`. The gate still asks the weaker question that a dataclass cannot — check 5c drives every
+REGISTERED family's refusal against a drawing it should refuse, because a family whose refusal
+always answers `()` constructs perfectly and is exactly the hole the criterion names.
+
+**THE H-GRID'S REFUSALS NAME NO CURVE, AND THAT IS NOT A SHORTFALL.** It binds to nothing — the
+shipped hand-written H-grid case has no geometry file at all — so its region is four numbers in the
+template rows and its refusals name the ROW ('X Max', 'Blocks in X'). That is why `Refusal`'s three
+pointing fields are optional rather than required. Each of its three checks was a crash or a
+developer-facing exit before: `nx = 0` divided by zero inside `build`, `x_max == x_min` built blocks
+of zero width, `x_max < x_min` built every block wound clockwise (the same exit 8 as above), and a
+target cell of zero derived no counts at all and raised `IndexError`.
+
+**THE REFUSAL CARRIES THE CURVE, NOT ONLY THE SENTENCE.** `Refusal` holds the geometry spelling, the
+segments and a coordinate worth marking, which is the rule `BrokenBinding` already follows for a
+binding the panel repairs: a host must be able to point at the offending curve without re-parsing
+prose. `refusal_points` turns one into the polyline the mesh canvas's `highlight_segment` already
+reads for the per-segment boundary-condition overlay, with `nan` rows between disjoint runs — so
+pointing at a refusal is a call that existed, and the Qt-free half of it is what the gate measures.
+The curve prefix on `Refusal.text` is CONDITIONAL, which was a correction rather than a design: most
+of these sentences already name the curve, because they were written by the families that own them
+for users, and the unconditional version printed the geometry twice in one line.
+
+**ONE QUESTION FOR BOTH MESHER-LAUNCHING HOSTS.** `topology_model.mesh_preflight` asks the mode's
+missing input first and the family's refusal after it; `services/pipeline_runner.py` calls that
+where it called `missing_mesh_input`, so there is no half for a host to ask. In the GUI the guard is
+`mesh_gen_diag_ctrl._topology_preflight_refused`, called from `run_mesh_generator` LAST of the
+pre-flight and still before the worker — last because it is the most specific, and answering "your
+body is outside your far field" about a geometry file that is not on disk would send the user to the
+wrong place. `pipeline_runner.py` was exactly at the 500-line standard when this landed, so the call
+was paid for inside the file: `DerivedGeometryError` stopped having an import line of its own (the
+module it comes from was already imported) and two import blocks lost their lone closing bracket
+line. That is noted because it is the kind of edit a reader will wonder about, and because the next
+addition there has to split the file rather than find three more lines.
+
+**THE MODE IS THE OTHER HALF OF THE QUESTION, and the first cut did not ask it.**
+`preflight_for_config` originally asked only `names_a_family()`, which is a fact about the TOPOLOGY
+MODEL and says nothing about whether the run reads it. A project left in `MESH_MODE 0` with a family
+still named from an earlier session would have had its hybrid mesh refused over a template nothing
+reads — this ticket's own worst outcome pointed the other way, a mesh the operator can have withheld
+over a document no run opens. Both halves are asked now, for the reason `mesh_modes.topology_file`
+and `topology_skeleton.skeleton_for_config` ask both of theirs, and check 1b drives it on the very
+drawing check 6 proves the multi-block path must refuse.
+
+**#164'S NAMED BLIND SPOT, CLOSED.** That ticket's own note above ends "a confirmed assignment
+naming the far field as the body binds exactly that, and only the family's own pre-flight refusal
+(#165) will notice." `tools/PreProcessor/apply_case_type.py` now asks the family after it binds the
+roles and before it writes anything, and the gate drives it as a subprocess with the two roles
+SWAPPED and both CONFIRMED: every id resolves, both questions are answered, exit 1, nothing written.
+
+**THE HIGHLIGHT COMES BACK OFF, AND THAT WAS A DEFECT IN THE FIRST CUT.** `highlight_segment` has
+no owner and no expiry, so the first version drew the offending curve and left it there: the
+operator fixed the drawing, pressed Generate again, got a mesh, and was still looking at a magenta
+outline over a curve that was now fine. The no-refusal path clears it — and clears only what this
+guard drew, tracked by `_preflight_highlight`, because the same call is the per-segment
+boundary-condition dialog's and wiping a selection somebody else made is the same defect pointed the
+other way. Both halves are driven through a real `AppController` in check 4c.
+
+**Named blind spots.** **Nothing here re-asks what the mesher asks**: the two sides are held at
+opposite ends — check 6c proves the mesher refuses the one document the new check catches — and
+nothing asserts that the two refuse the SAME set of drawings. A drawing both accept that still folds
+is the next gap, and by this ticket's own rule it arrives as a regression test beside check 6.
+**Containment is containment, not usefulness**: a far field one body-length out contains the body
+and is refused by nothing, which `gui-topology.md` already records for the C-grid and which the two
+new callers inherit unchanged. **A tangent touch is not resolved**: `outside_point` is a crossing
+test, so a point lying exactly ON the outer polyline may read either way; inherited from #149 rather
+than introduced. **The containment walk is quadratic and was MEASURED rather than assumed**: 0.11 s
+at 1,000 inner points against 1,000 outer, 1.86 s at 4,000 x 4,000. It is paid once per Generate and
+never per keystroke, so it is recorded rather than bucketed by y — but a drawing an order of
+magnitude denser than anything this repo ships would make the refusal slower than the mesher run it
+saves. **A family's own `plan` problem reaches the operator with no curve attached** — all
+three binding families' fall-through — because `plan` reports one sentence and not which of its
+outlines it blames, so the pairing, block-floor and winding refusals are named but not pointed at.
+The C-grid's first cut DID attach its bound far field there and was corrected: that would have
+pointed the canvas at the far field for a refusal about the target cell size, and narrowing it to
+the problems that are really about it means reading the family's own prose back for structured data
+— the move `BindingError` carries its edge as a FIELD to avoid.
+**The GUI has no case-type picker yet** (#166's), so "the operator picks a case type and is told
+before pressing anything" is measured at the mesh stage's own Generate and at the headless host.
+**Check 4c's canvas drive is a subprocess over the real sources**, which no in-memory mutant reaches,
+so the two checks beside it are what an injection actually moves — stated rather than left to be
+counted.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

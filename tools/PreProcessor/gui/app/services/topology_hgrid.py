@@ -62,6 +62,8 @@ edge of the bottom row rather than onto one of them and left to spread.
 """
 from __future__ import annotations
 
+from app.services.topology_preflight import Refusal
+
 
 #: The template's own name for the family, as stored in the project file and as
 #: looked up in the registry. A string rather than an enum because it is persisted.
@@ -191,3 +193,56 @@ def build(model, ctx=None) -> dict:
 
     return {"format_version": 1, "corners": corners,
             "edges": edges, "blocks": blocks}
+
+
+def preflight(model, ctx=None) -> tuple:
+    """Why this family cannot fill the region it has been given, before anything
+    runs (#165).
+
+    THE H-GRID IS THE ONE FAMILY THAT BINDS TO NOTHING, so every refusal here is
+    about the RECTANGLE the user declared and none of them names a curve. That is
+    why :class:`~app.services.topology_preflight.Refusal` lets ``geom`` be empty
+    rather than making every family invent one: an H-grid's "offending curve" is
+    four numbers in the template rows, and the honest answer is to name the row.
+
+    WHAT IT CHECKS, and each one was a CRASH or a developer-facing exit before:
+    a grid of blocks needs at least one column and one row (``nx = 0`` divided by
+    zero inside :func:`build`); a region needs FOUR distinct corners (``x_max ==
+    x_min`` builds blocks of zero width, and ``x_max < x_min`` builds every one of
+    them wound clockwise, which the mesher answers with ``HYBMESH_ERROR 8`` and a
+    sentence about a block id); and a target cell size of zero derives no counts
+    at all (:func:`_cell_counts` returns ``[]`` and :func:`build` raises
+    ``IndexError``).
+
+    ``ctx`` is accepted and ignored, as :func:`build` accepts and ignores it, so
+    the registry keeps ONE call shape for every family's refusal too.
+    """
+    out = []
+    nx, ny = int(model.hgrid_nx), int(model.hgrid_ny)
+    if nx < 1 or ny < 1:
+        out.append(Refusal(
+            f"this region is divided into {nx} column(s) by {ny} row(s), and a "
+            f"grid of blocks needs at least one of each.",
+            fix="Set 'Blocks in X' and 'Blocks in Y' to 1 or more."))
+    for axis, lo, hi, lo_row, hi_row in (
+            ("left and right", float(model.hgrid_x_min),
+             float(model.hgrid_x_max), "X Min", "X Max"),
+            ("bottom and top", float(model.hgrid_y_min),
+             float(model.hgrid_y_max), "Y Min", "Y Max")):
+        if hi == lo:
+            out.append(Refusal(
+                f"the {axis} sides of the region are both at {lo:.6g}, so it is "
+                f"a line and not a rectangle — it has two corners where a block "
+                f"needs four.",
+                fix=f"Move '{hi_row}' away from '{lo_row}'."))
+        elif hi < lo:
+            out.append(Refusal(
+                f"'{hi_row}' ({hi:.6g}) is below '{lo_row}' ({lo:.6g}), so the "
+                f"region is inside out and every cell in it would be too.",
+                fix=f"Swap the two, or raise '{hi_row}' above '{lo_row}'."))
+    if float(model.hgrid_cell) <= 0.0:
+        out.append(Refusal(
+            f"the target cell size is {float(model.hgrid_cell):.6g}, and a cell "
+            f"has to be bigger than nothing.",
+            fix="Set 'Target Cell Size' to the edge length you want."))
+    return tuple(out)

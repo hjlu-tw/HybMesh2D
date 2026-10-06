@@ -50,6 +50,9 @@ import math
 from dataclasses import dataclass
 
 from app.services.topology_binding import BindingError, outline_problem
+from app.services.topology_preflight import (
+    Refusal, nesting_refusal, outline_refusal,
+)
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
 from app.services.topology_ogrid_binding import (
     BINDING_LISTS, parse_binding, ring_binding_problem,
@@ -360,3 +363,50 @@ def build(model, ctx=None) -> dict:
                                  else [f"w{k}", f"r{nxt}", f"o{k}", f"r{k}"])})
 
     return {"format_version": 1, "corners": corners, "edges": edges, "blocks": blocks}
+
+
+def preflight(model, ctx=None) -> tuple:
+    """Why this family cannot ring the body it has been given, before anything
+    runs (#165).
+
+    THREE LAYERS, in the order the operator can act on them, and each names the
+    CURVE it is about so a host can point at it:
+
+    1. the four questions every bound outline answers, asked of the body and of
+       the far field separately — so a drawing with two problems costs two edits
+       and not two runs, where :func:`plan` stops at the first;
+    2. **CONTAINMENT**, which :func:`plan` does not ask and cannot: it nests the
+       two outlines by EQUIVALENT RADIUS, an area-derived figure that is the
+       right ruler for the radial law and the wrong one for "is this inside
+       that". Measured: a 4.0 x 0.2 body has an equivalent radius of 0.505
+       against a unit circle's 0.9999, so a body reaching x = +-2 passed every
+       check this repo had and the mesher answered ``HYBMESH_ERROR 8`` with a
+       sentence about block ``q0``'s signed area. ``enclosure_refusal`` walks the
+       body's own points, which is what the C-grid has always done for its
+       section (#149) and is now shared rather than copied;
+    3. everything else :func:`plan` already refuses — the pairing, the block
+       floor, the winding — carried through verbatim so this is never a WEAKER
+       answer than ``build``'s. It carries no curve: ``plan`` reports one
+       sentence and not which of the two outlines it blames, and inventing an
+       answer would point at the wrong curve on the canvas.
+    """
+    if ctx is None:
+        return (Refusal("this family binds to the geometry you drew, so it "
+                        "needs the mesh's geometry list; none was supplied.",
+                        fix="Add the body and the far field in Geometry "
+                            "Layers."),)
+    body = ctx.geometry(model.ogrid_body_geom)
+    far = ctx.geometry(model.ogrid_far_geom)
+    pairs = ((BINDING_LISTS[0][0], model.ogrid_body_geom, body),
+             (BINDING_LISTS[1][0], model.ogrid_far_geom, far))
+    out = [r for r in (outline_refusal(ctx, role, name, g,
+                                       closed_note=CLOSED_NOTE)
+                       for role, name, g in pairs) if r is not None]
+    if out:
+        return tuple(out)
+    nested = nesting_refusal(((BINDING_LISTS[0][0], body),
+                              (BINDING_LISTS[1][0], far)))
+    if nested:
+        return nested
+    p = plan(model, ctx)
+    return (Refusal(p.problem),) if p.problem else ()

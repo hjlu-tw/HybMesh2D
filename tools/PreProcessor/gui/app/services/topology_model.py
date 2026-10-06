@@ -26,8 +26,11 @@ import os
 from dataclasses import dataclass
 
 from app.services import (
-    topology_cgrid, topology_hgrid, topology_ogrid, topology_ogrid_binding,
-    topology_tworing,
+    topology_binding, topology_cgrid, topology_hgrid, topology_ogrid,
+    topology_ogrid_binding, topology_preflight, topology_tworing,
+)
+from app.services.mesh_modes import (
+    MESH_MODE_MULTIBLOCK, missing_mesh_input,
 )
 # Re-exported, not re-declared: `from app.services.topology_model import
 # TopologyModel` is the import every caller and every gate already writes, and a
@@ -56,6 +59,17 @@ class Family:
     #: The parameter attribute prefix this family owns, which is how the
     #: parameters-to-families gate attributes a field-spec row to a family.
     prefix: str
+    #: ``(TopologyModel, BindingContext | None) -> tuple[Refusal, ...]`` — can this
+    #: family work with the geometry and the roles it has been handed (#165).
+    #: Declared with NO DEFAULT, which is the whole enforcement asked for: a
+    #: fifth family that writes a build function and forgets its refusal does
+    #: not CONSTRUCT, so there is no state in which one is silently exempt.
+    #: Beside ``build`` for the reason ``broken`` is beside it — what a family
+    #: can fill is the family's decision, so what it cannot is too, and a
+    #: shared rule table could hold only what all four agree on, which is
+    #: nearly nothing (the O-grid needs a closed loop, the C-grid a sharp
+    #: trailing edge, the H-grid a rectangle with four distinct corners).
+    preflight: object
     #: ``(TopologyModel, BindingContext) -> tuple[BrokenBinding, ...]``, or None
     #: for a family that binds to nothing (#138). Declared here for the reason
     #: ``build`` is: WHICH edges bind is the family's decision, so which of them
@@ -101,20 +115,20 @@ class Family:
 #: field-spec row per parameter, which the bidirectional gate then requires.
 FAMILIES: tuple[Family, ...] = (
     Family(topology_hgrid.FAMILY, "H-grid (rectangular blocks)",
-           topology_hgrid.build, "hgrid_"),
+           topology_hgrid.build, "hgrid_", topology_hgrid.preflight),
     Family(topology_ogrid.FAMILY, "O-grid (ring around a drawn body)",
-           topology_ogrid.build, "ogrid_",
+           topology_ogrid.build, "ogrid_", topology_ogrid.preflight,
            broken=topology_ogrid_binding.broken_bindings,
            reads_context=(("first_cell", "First Cell Height "
                            "(BL_INITIAL_THICKNESS)", "bl_initial_thickness"),)),
     Family(topology_cgrid.FAMILY, "C-grid (wake cut around a drawn aerofoil)",
-           topology_cgrid.build, "cgrid_",
+           topology_cgrid.build, "cgrid_", topology_cgrid.preflight,
            broken=topology_cgrid.broken_bindings,
            reads_context=(("first_cell", "First Cell Height "
                            "(BL_INITIAL_THICKNESS)", "bl_initial_thickness"),)),
     Family(topology_tworing.FAMILY,
            "Two-ring O-grid (a ring split at a seam you drew)",
-           topology_tworing.build, "tworing_",
+           topology_tworing.build, "tworing_", topology_tworing.preflight,
            broken=topology_tworing.broken_bindings,
            reads_context=(("first_cell", "First Cell Height "
                            "(BL_INITIAL_THICKNESS)", "bl_initial_thickness"),)),
@@ -162,6 +176,76 @@ def broken_bindings(model: TopologyModel, ctx=None) -> tuple:
     if fn is None or ctx is None:
         return ()
     return tuple(fn(model, ctx))
+
+
+def preflight(model: TopologyModel, ctx=None) -> tuple:
+    """Every reason ``model``'s family cannot work with ``ctx``'s drawing (#165).
+
+    The registry's own dispatch, so the host that refuses a run and the host that
+    shows the refusal ask the same object the projection asks and cannot come to
+    different answers about which family is in force — ``broken_bindings``'s rule
+    above, for the other question a family answers about a drawing.
+
+    Empty for a model naming no family and for a DETACHED one, through the same
+    predicate: nothing on either path is built from a family, so a refusal would
+    be about a document no run reads. A hand-written topology file is the
+    mesher's to judge, which is what ``EXIT_ERR_TOPOLOGY`` is for.
+
+    NOT a second reading of :func:`build_document`'s refusal. That one stops at
+    the first problem because it answers "can this run?"; this lists what the
+    operator has to fix and names the curve for each.
+    """
+    if not model.names_a_family():
+        return ()
+    fam = family_for(model.family)
+    if fam is None:
+        return ()
+    return topology_preflight.stamp_family(fam.name, fam.preflight(model, ctx))
+
+
+def preflight_for_config(cfg) -> tuple:
+    """:func:`preflight` for a whole ``MeshConfig``, context and all.
+
+    The ONE place that pairs a configuration with the context its family is
+    judged against, so the GUI, the headless runner and the case-type host
+    cannot build that context differently. A configuration carrying no topology
+    model, and one whose family binds to nothing, both cost no file read: the
+    context is built only when the registry says the family binds.
+
+    BOTH HALVES ARE ASKED — the MODE and a family named — for the reason
+    ``mesh_modes.topology_file`` and ``topology_skeleton.skeleton_for_config``
+    ask both of their own: a family named while the mode is hybrid drives
+    nothing, the panel hides the whole section, and nothing of what it says
+    reaches the run. Refusing a hybrid run over it would be this ticket's own
+    worst outcome pointed the other way — a mesh the operator can have, withheld
+    over a template nothing reads.
+    """
+    if cfg is None:
+        return ()
+    if int(getattr(cfg, "mesh_mode", 0) or 0) != MESH_MODE_MULTIBLOCK:
+        return ()
+    model = getattr(cfg, "topology", None)
+    if model is None or not model.names_a_family():
+        return ()
+    fam = family_for(model.family)
+    ctx = topology_binding.context_for_config(cfg) if (
+        fam is not None and fam.binds) else None
+    return preflight(model, ctx)
+
+
+def mesh_preflight(cfg) -> str:
+    """Why the mesh stage must not launch for ``cfg``, or ``""`` — ONE question.
+
+    The mode's missing input FIRST and the family's own refusal after it, in that
+    order because a configuration with no input at all has nothing for a family
+    to judge. Both hosts that launch the mesher call this rather than one of its
+    halves: `missing_mesh_input` alone is what they called before #165, and a
+    host that kept calling it would be the one that still ships a drawing the
+    family cannot fill.
+    """
+    why = missing_mesh_input(cfg)
+    return why if why else topology_preflight.refusal_text(
+        preflight_for_config(cfg))
 
 
 def build_document(model: TopologyModel, ctx=None) -> dict:
