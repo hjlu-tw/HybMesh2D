@@ -74,8 +74,12 @@ actions; `controllers/mesh_gen_ctrl.py` = the one generation).
   so "says why" cannot be satisfied by a caller inventing its own wording. **Only `unusable`
   refuses**: `not determinable` is the absence of evidence and refusing on it would stop a case
   type whose metric a mesh does not publish from ever committing, while `needs attention` is by
-  construction a mesh the operator is allowed to keep. A run with no case type has nobody to
-  refuse, and the host SAYS so rather than leaving the missing verdict file to be noticed.
+  construction a mesh the operator is allowed to keep. **`EXIT_ERR_INVERTED` refuses WITH OR
+  WITHOUT A CASE TYPE**, which is why the exit code is a parameter beside the verdict: a threshold
+  is scoped to a class of problem and a FOLD is not, and ADR-0002 states that refusal with no case
+  type in the sentence. Shipped reading "no verdict" as "nobody to refuse", so a folded mesh
+  committed whenever `HYBMESH_CASE_TYPE` was unset — the ordinary state. A run with no case type
+  still gets no verdict FILE, and the host says so rather than leaving its absence to be noticed.
 - **TWO ENTRY POINTS, ONE PASS THROUGH THE THRESHOLDS.** `case_type_verdict.run_verdict` judges and
   renders; `run_report` is that function with the judgement dropped. The headless host calls the
   second, the GUI's disposition the first — through `mesh_commit.judge_run`, which carries the
@@ -88,7 +92,13 @@ actions; `controllers/mesh_gen_ctrl.py` = the one generation).
   (`geom_path_identity.keyed_geom_paths` for the geometry, `case_sources.mesh_input_paths` for the
   block topology document; two existing owners, no third rule). **It fails SAFE**: an unreadable
   input, or a fingerprint nobody took, reads as stale, so "we did not check" can never read as "it
-  is current" and Generate re-meshes instead.
+  is current" and Generate re-meshes instead. **BOTH HALVES GO THROUGH
+  `mesh_gen_ctrl.mesher_config`**, the one transformation that turns the panel's config into the
+  one the mesher is handed (output into the temp dir, both formats forced on). Shipped with the
+  halves apart and caught in review: they differed by `EXPORT_VTK` alone, so no trial ever read as
+  current and Generate re-meshed every time while a branch logged that it had not — fail-safe, and
+  the whole fingerprint dead weight. Check 12 is what puts the producer and the consumer on one
+  path.
 - **ONE BUILDER FOR THE COMMITTED SCRIPT.** `pipeline_io_ctrl.build_pipeline_config` is what both
   the Pipeline menu's Save and the commit use; the disposition constructs no `PipelineConfig` of
   its own. Two builders is how a case ends up carrying a script that reproduces something else.
@@ -97,8 +107,8 @@ actions; `controllers/mesh_gen_ctrl.py` = the one generation).
   boundaries — "BC Preview" in the menu — meshes nothing and is untouched; the new action is named
   **Trial** for exactly that reason. Both are distinct from **Run All**, which remains the whole
   chain through the solver.
-Gated by `tests/test_mesh_trial_commit.py` (11 checks and seven injections; the counts are that
-file's own docstring's and are not restated here).
+Gated by `tests/test_mesh_trial_commit.py`; the check and injection counts are that file's own
+docstring's and are not restated here.
   Why: `docs/design_notes/gui.md`, "TRIAL AND GENERATE: ONE GENERATION, TWO DISPOSITIONS".
 
 ## Named blind spots
@@ -111,10 +121,24 @@ which are capability refusals.
   MESHER BINARY is the live instance: rebuild while a trial is in hand and Generate commits the old
   build's mesh. Recorded rather than fixed — a trial lives only for the session that made it, and
   hashing the binary on every currency check is not worth that.
+- **A TRIAL AFTER A GENERATE STILL REPOINTS THE SESSION AT ITSELF.** The commit moves
+  `global_vtk_path` to the committed mesh, so Export and Send to Solver reach what Generate
+  approved — until the next Trial, which is a generation like any other and sets it to its own
+  scratch mesh. `mesh_grid_lookup.resolve_case_grid` prefers "this session's mesh" over the
+  per-case one (`.claude/rules/gui-handoff.md`, from a user-reported defect), so a Generate, then a
+  Trial, then Send to Solver hands the solver the un-approved mesh. #158's story 8 wants otherwise;
+  #166's criterion is only that the COMMITTED mesh is untouched, which holds, so the precedence was
+  left alone rather than widened into another rule file's subject.
 - **THE COMMIT IS NOT ATOMIC.** The refusal happens before anything is written, so a refused mesh
   leaves nothing; but a copy that fails PART WAY — a full disk on the third format — leaves the
   case holding some of the new mesh and some of the old. The host reports the `OSError` and the
   operator can press Generate again; nothing stages into a temp directory and renames.
+- **A DEFECT INSIDE A FAIL-SAFE DIRECTION IS SILENT BY CONSTRUCTION.** The fingerprint halves
+  disagreeing cost nothing an operator could see: Generate re-meshed, and the mesh it then
+  committed was the mesh its own run had judged. Every acceptance criterion still held; only the
+  "without regenerating it" clause did not, and no log line or output differed. A check that
+  compares the two halves is the only thing that speaks, which is why check 12 exists and why a
+  fail-safe fallback is worth a check of its own rather than trust.
 - **THE GATE DRIVES THE REAL CONTROLLER AGAINST A RECORDING STAND-IN FOR THE MAIN WINDOW.** That
   the two buttons are on screen, enabled and in the right row is read from SOURCE (check 1) rather
   than from a window anyone opened; `smoke_headless_appcontroller.py` is what builds a real one.

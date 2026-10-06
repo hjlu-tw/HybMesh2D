@@ -180,17 +180,11 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin, MeshDispositionMixin):
         if self._topology_preflight_refused(cfg):
             return
 
-        # Overrule solver output path to temporary folder to prevent generating permanent files on disk
-        temp_vtk_path = os.path.abspath(os.path.join(self.temp_dir, "global_mesh.vtk"))
-        expected_vtk = temp_vtk_path
+        expected_vtk = self.trial_mesh_path()
 
         self.main_window.mesh_canvas_view.update_mesh_config(cfg)
 
-        import copy
-        tmp_cfg_data = copy.deepcopy(cfg)
-        tmp_cfg_data.output_filename = temp_vtk_path
-        tmp_cfg_data.export_vtk = True
-        tmp_cfg_data.export_starcd = True
+        tmp_cfg_data = self.mesher_config(cfg)
 
         # Save to temporary config file for generation
         tmp_cfg = tempfile.NamedTemporaryFile(
@@ -242,6 +236,38 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin, MeshDispositionMixin):
         # CAD resample finishing mid-run cannot hide the bar we are driving.
         self.main_window.claim_progress("mesh", determinate=True)
         self._mesh_worker.start()
+
+    def trial_mesh_path(self) -> str:
+        """Where a trial run writes. The session temp dir, wiped on exit.
+
+        Public and named because three things depend on it being ONE answer: the
+        run's own output, the file the disposition commits FROM, and the output
+        name baked into the config the fingerprint is taken over.
+        """
+        return os.path.abspath(os.path.join(self.temp_dir, "global_mesh.vtk"))
+
+    def mesher_config(self, cfg: MeshConfig) -> MeshConfig:
+        """`cfg` as the MESHER is handed it, never as the panel holds it.
+
+        A copy with the output retargeted into the session temp dir and both
+        export formats forced on, so a run leaves no permanent file and the
+        STAR-CD triple exists for the commit whatever the panel has toggled.
+
+        THE ONE TRANSFORMATION, and it is one because the fingerprint is taken
+        over the resulting TEXT. #166's review found the halves apart: the run
+        fingerprinted this config and `_fingerprint_of` fingerprinted the panel's,
+        so the two differed by `EXPORT_VTK` alone, no trial ever read as current,
+        and Generate re-meshed every time while a branch said it had not. The
+        defect was invisible because nothing put the producer and the consumer of
+        a fingerprint on the same path; `test_mesh_trial_commit.py` check 12 now
+        does.
+        """
+        import copy
+        out = copy.deepcopy(cfg)
+        out.output_filename = self.trial_mesh_path()
+        out.export_vtk = True
+        out.export_starcd = True
+        return out
 
     def _on_mesh_gen_progress(self, pct: int):
         self.main_window.set_progress("mesh", pct)

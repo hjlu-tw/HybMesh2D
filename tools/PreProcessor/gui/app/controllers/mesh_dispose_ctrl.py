@@ -106,14 +106,17 @@ class MeshDispositionMixin:
     def _fingerprint_of(self, cfg) -> str:
         """`cfg` as the mesher would read it, plus its inputs, as one digest.
 
-        Serialised through the model's own writer into the session temp dir —
-        the same `save_to_file` the run itself uses — rather than through a
-        second spelling of the `.dat` format that could agree with the mesher
-        today and not tomorrow.
+        Through `mesher_config` and the model's own writer, which is what the RUN
+        does — not through `cfg` as the panel holds it. The two are not the same
+        document: the run forces both export formats on and retargets the output
+        into the temp dir, so fingerprinting the panel's copy differed by
+        `EXPORT_VTK` alone, no trial ever read as current, and Generate re-meshed
+        every time while the branch above said it had not. #166's review found it;
+        `test_mesh_trial_commit.py` check 12 is what would have.
         """
         probe = os.path.join(self.temp_dir, "fingerprint_para.dat")
         try:
-            cfg.save_to_file(probe)
+            self.mesher_config(cfg).save_to_file(probe)
             with open(probe, "r", encoding="utf-8") as fh:
                 text = fh.read()
         except OSError as exc:
@@ -131,9 +134,9 @@ class MeshDispositionMixin:
     def _commit_trial(self, trial):
         """Write `trial` into the case, and say what landed where."""
         dest = self._get_expected_vtk_path(self.global_mesh_config)
+        pipeline = self._commit_pipeline()
         try:
-            written = mesh_commit.commit(trial, dest,
-                                         pipeline=self._commit_pipeline())
+            written = mesh_commit.commit(trial, dest, pipeline=pipeline)
         except mesh_commit.CommitRefused as exc:
             # The service's own sentence, not a second wording of it: it names
             # the measurement, the bound and the case type's advice.
@@ -151,9 +154,21 @@ class MeshDispositionMixin:
                          "The mesh could not be written into the case.",
                          detail=str(exc))
             return
+        # The case's mesh is now the one in hand, so every later action that
+        # reads "the last generated mesh" — Export, Send to Solver — reaches the
+        # file Generate approved rather than the scratch copy it was made from.
+        self.global_vtk_path = dest
         root = repo_root()
         self.log("[Mesh] committed into the case:\n"
                  + "\n".join("  " + os.path.relpath(p, root) for p in written))
+        if pipeline is None:
+            # SAID. "Generate leaves a runnable pipeline script" is an acceptance
+            # criterion, and the commonest way to leave none is not an exception
+            # but an empty GUI — no CAD session to describe, which a `MESH_MODE 1`
+            # case declaring its own corners legitimately is.
+            self.log("[Mesh] [WARNING] no pipeline script was left beside this "
+                     "mesh: there is no CAD session to describe. Load or draw "
+                     "the geometry and press Generate again to get one.")
         if trial.verdict is None:
             # SAID, not left to be noticed. A case with no verdict file was
             # judged by nobody, and the operator should learn that here rather
@@ -168,6 +183,13 @@ class MeshDispositionMixin:
         committed case carries and the one a user saves by hand are the same
         document — and a failure to build one costs the operator the script,
         never the mesh they just approved.
+
+        ``None`` has two causes and the CALLER says so for both: an exception,
+        and the builder's own answer when there is no active CAD session to
+        describe. The second is not an error — a `MESH_MODE 1` case whose
+        topology declares its own corners legitimately has no CAD at all — but a
+        committed case silently missing its script is the acceptance criterion
+        going quiet, which is what #166's Spec review found.
         """
         try:
             return self.build_pipeline_config()

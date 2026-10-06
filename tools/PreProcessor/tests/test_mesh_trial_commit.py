@@ -46,9 +46,14 @@ What this pins down:
   7. AN EDIT TO A CASE TYPE DOES NOT CHANGE A FINISHED CASE'S VERDICT. The
      source case type is rewritten with bounds that would flip the state; the
      committed record and the embedded document are re-read byte for byte.
-  8. GENERATE REFUSES AN UNUSABLE MESH AND SAYS WHY. `EXIT_ERR_INVERTED` raises
-     `CommitRefused` naming the exit code and quoting the case type's own
-     advice, and NOTHING is written — the case directory is still empty.
+  8. GENERATE REFUSES AN UNUSABLE MESH AND SAYS WHY — WITH OR WITHOUT A CASE
+     TYPE. `EXIT_ERR_INVERTED` raises `CommitRefused` naming the exit code, and
+     NOTHING is written. The no-case-type leg is the one that shipped broken:
+     with `HYBMESH_CASE_TYPE` unset — the ordinary state, nothing having
+     replaced that channel — there is no verdict to be `unusable`, and reading
+     that as "nobody to refuse" committed the folded mesh ADR-0002 exists
+     against. `needs attention` still commits, so the verdict stays a judgement
+     rather than a gate.
   9. THE FINGERPRINT DECIDES WHETHER A TRIAL IS STILL CURRENT. The same config
      matches; a changed config, an edited geometry file and a deleted one each
      do not. A fingerprint nobody took never matches, so "we did not check"
@@ -60,6 +65,23 @@ What this pins down:
      `build_pipeline_config`, the same verb the Pipeline menu's Save uses, and
      the disposition constructs no `PipelineConfig` of its own — two builders is
      how a case ends up carrying a script that reproduces something else.
+ 12. THE TWO HALVES OF THE FINGERPRINT AGREE. The real `run_mesh_generator` is
+     driven with only its worker class replaced, and the value it RECORDS is
+     compared with the one the next Generate TAKES. They were derived from
+     different documents until #166's review — the mesher's config against the
+     panel's, differing by `EXPORT_VTK` alone — so no trial ever read as current
+     and Generate re-meshed every time while a branch logged that it had not.
+     Nothing saw it because no check put the producer and the consumer on one
+     path: the host stand-in overrides the generator and check 4 sets the
+     disposition by hand.
+ 13. `services/mesh_commit` IS QT-FREE, in a subprocess. In-process the answer is
+     always "loaded" once anything else imported PyQt6.
+ 14. A COMMIT IS AUDIBLE AND LEAVES THE SESSION HOLDING WHAT IT APPROVED. A case
+     that gets no pipeline script SAYS so — the commonest cause is not an
+     exception but an empty GUI, which a `MESH_MODE 1` case declaring its own
+     corners legitimately is — and `global_vtk_path` moves to the committed mesh,
+     so Export and Send to Solver reach the file Generate approved rather than
+     the scratch copy it was made from.
 
 Known blind spots, named rather than papered over:
   - Checks 3-9 drive the REAL controller methods against a recording stand-in
@@ -91,6 +113,9 @@ other check moves:
      solver actually reads would be left in a temp dir that is wiped on exit.
   C. the refusal dropped from `commit` -> check 8 fails, and the folded mesh
      ADR-0002 exists against lands in the case looking entirely normal.
+  C2. the exit code no longer reaching `commit_refusal` -> check 8 fails on its
+     no-case-type leg ALONE, which is the defect as it shipped: a fold refused
+     while a case type is named and committed while none is.
   D. the frozen report emptied out of the verdict record -> check 7 fails: a
      record that carries no judgement cannot survive the case type moving on.
   E. `inputs_fingerprint` ignoring the files the config names -> check 9 fails,
@@ -101,6 +126,10 @@ other check moves:
      edit to `mesh_commit` can make a Trial write into the case, so the defect
      is committed directly instead of being argued about.
   G. negative control: the unmutated module passes every check.
+  H. the Generate half fingerprinting the PANEL's config rather than the one the
+     mesher is handed -> check 12 fails. Not a source mutation either, and for
+     the same reason as F: the two halves live in two mixins and no edit to
+     `mesh_commit` can pull them apart, so the pre-fix consumer is handed in.
 
   Check 5 has no injection of its own. Its defect is the same one F commits —
   a disposition reaching a run that was not a Generate — and it is not vacuous
@@ -330,7 +359,7 @@ def make_host(commit_mod, cfg, temp_dir, pipeline=None):
         def config_from_panel(self, _name):
             return self.global_mesh_config
 
-        def build_pipeline_config(self, name=""):
+        def build_pipeline_config(self):
             return pipeline
 
         def run_mesh_generator(self, *, commit=False):
@@ -662,6 +691,25 @@ def check_unusable_is_refused(w):
             out.append("the refusal does not say WHY — it names no exit code")
         if ADVICE_MAX in said or ADVICE_MEDIAN in said:
             pass        # advice is welcome; its absence is the thing checked
+        # AND WITH NO CASE TYPE AT ALL, which is the ordinary state: nothing has
+        # replaced `HYBMESH_CASE_TYPE` and no ticket owns a picker. There is no
+        # verdict to be `unusable` then, and reading that as "nobody to refuse"
+        # committed the folded mesh ADR-0002 states must never get through —
+        # "the verdict layer, not the mesher, is what refuses to let it
+        # through", with no case type named in the sentence.
+        bare = os.path.join(tmp, "bare")
+        os.makedirs(bare)
+        host3 = _generate(w, tmp, bare, vtk,
+                          exit_code=case_type_verdict.EXIT_ERR_INVERTED)
+        left3 = sorted(snapshot(bare))
+        if left3:
+            out.append("with no case type in play, a folded mesh was committed: "
+                       "%s" % ", ".join(left3))
+        if not any("not written into the case" in text
+                   for text, _lvl in host3.reports):
+            out.append("with no case type in play, nothing refused the folded "
+                       "mesh out loud")
+
         # A `needs attention` mesh is NOT refused: the operator is allowed to
         # keep one, and refusing it would make the verdict a gate rather than a
         # judgement.
@@ -734,6 +782,131 @@ def check_pipeline_script_runs(w):
     return out
 
 
+class _NoWorker:
+    """A `MeshGenWorker` that connects, starts and never launches anything.
+
+    Check 12 has to run `run_mesh_generator` for real — the fingerprint it
+    records is the thing under test — and everything after the config is written
+    is a QThread and a subprocess. Replacing the worker CLASS is the smallest cut
+    that leaves the whole config-and-fingerprint half untouched.
+    """
+
+    def __init__(self, *_a, **_k):
+        self.log_signal = self.progress_signal = self.finished_signal = _Any()
+
+    def start(self):
+        pass
+
+    def isRunning(self):
+        return False
+
+
+def check_fingerprint_halves_agree(w, consumer=None):
+    """The run RECORDS a fingerprint; the next Generate TAKES one. One value.
+
+    The producer and the consumer are in different mixins and were derived from
+    different documents until #166's review: the run fingerprinted the config as
+    the MESHER is handed it (output retargeted, both formats forced on) and the
+    disposition fingerprinted the panel's own, so they differed by `EXPORT_VTK`
+    alone. Every comparison failed, `_current_trial` always answered None, and
+    Generate silently re-meshed every time — failing safe, and making the whole
+    fingerprint dead weight while a log line claimed otherwise.
+
+    Nothing could see it, because no check put the two on one path: the host
+    stand-in OVERRIDES `run_mesh_generator`, and check 4 sets the disposition by
+    hand. This one runs the real method with only the worker replaced.
+
+    `consumer` is the half that TAKES the fingerprint, a parameter only so
+    injection H can supply the pre-fix one: no edit to `mesh_commit` can put the
+    two halves back out of step, so the defect is committed directly rather than
+    argued about — injection F's shape.
+    """
+    if not os.path.isfile(_MESHER):
+        return []
+    out = []
+    import app.controllers.mesh_gen_ctrl as gen
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = MeshConfig()
+        cfg.output_filename = os.path.join(tmp, "case", "mesh_probe.*")
+        # A config the panel has moved off the run's own defaults, so the two
+        # halves have something to disagree about.
+        cfg.export_vtk = False
+        cfg.export_starcd = False
+        host = make_host(w, cfg, tmp)
+        real_worker = gen.MeshGenWorker
+        gen.MeshGenWorker = _NoWorker
+        try:
+            # NOT the stand-in's recorder: the real method, off the mixin.
+            gen.MeshGenControllerMixin.run_mesh_generator(host, commit=False)
+            recorded = host._trial_fingerprint
+            taken = (consumer or host._fingerprint_of)(cfg)
+        finally:
+            gen.MeshGenWorker = real_worker
+            release(host)
+        if not recorded:
+            out.append("the run recorded no fingerprint at all, so this check "
+                       "would pass vacuously")
+        elif recorded != taken:
+            out.append("the run recorded %s and the next Generate takes %s — no "
+                       "trial can ever read as current, and Generate re-meshes "
+                       "every time" % (recorded[:12], taken[:12]))
+    return out
+
+
+def check_commit_service_is_qt_free(_w):
+    """`services/mesh_commit` imports no Qt, measured in a subprocess.
+
+    In-process the answer is always "loaded" once anything else imported PyQt6,
+    which is why this is a child process rather than a `sys.modules` test. The
+    module is claimed Qt-free by `.claude/rules/gui-dispositions.md`; until #166's
+    review nothing held it, `test_case_type_verdict.py` check 10 covering only the
+    two case-type services.
+    """
+    mod = "app.services.mesh_commit"
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; __import__(%r); print('PyQt6' in sys.modules)" % mod],
+        cwd=_GUI, capture_output=True, text=True)
+    if proc.returncode != 0 or proc.stdout.strip() != "False":
+        return ["%s is not Qt-free (rc=%d, said %r)"
+                % (mod, proc.returncode, proc.stdout.strip())]
+    return []
+
+
+def check_commit_is_audible_and_in_hand(w):
+    """A commit SAYS what it could not leave, and repoints the session at it.
+
+    Two things #166's Spec review found quiet. `build_pipeline_config` answers
+    ``None`` whenever there is no active CAD session — which a `MESH_MODE 1`
+    case declaring its own corners legitimately has none of — and the commit
+    then left no script and said nothing, while "Generate leaves a runnable
+    pipeline script" is an acceptance criterion. And `global_vtk_path` still
+    pointed at the scratch mesh the commit was made FROM, so every later action
+    that reads "the last generated mesh" reached the temp copy rather than the
+    file Generate approved.
+    """
+    if not os.path.isfile(_MESHER):
+        return []
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        vtk = make_mesh(os.path.join(tmp, "trial"))
+        case = os.path.join(tmp, "case")
+        os.makedirs(case)
+        # pipeline=None is what the real builder returns with no CAD session.
+        host = _generate(w, tmp, case, vtk, pipeline=None)
+        if os.path.isfile(os.path.join(case, "mesh_probe.pipeline.json")):
+            out.append("a script was written although none was built")
+        said = "\n".join(host.lines)
+        if "no pipeline script was left" not in said:
+            out.append("the commit left no pipeline script and did not say so")
+        dest = os.path.join(case, "mesh_probe.vtk")
+        if os.path.abspath(host.global_vtk_path) != os.path.abspath(dest):
+            out.append("after a Generate the session's mesh path is %r, not the "
+                       "committed %r — Export and Send to Solver would reach the "
+                       "scratch copy" % (host.global_vtk_path, dest))
+    return out
+
+
 def check_one_pipeline_builder(_w):
     out = []
     tree = ast.parse(_SRC["dispose"])
@@ -768,6 +941,9 @@ _ALL = {
     9: check_fingerprint_decides_currency,
     10: check_pipeline_script_runs,
     11: check_one_pipeline_builder,
+    12: check_fingerprint_halves_agree,
+    13: check_commit_service_is_qt_free,
+    14: check_commit_is_audible_and_in_hand,
 }
 
 _LABELS = {
@@ -789,6 +965,11 @@ _LABELS = {
     10: "check 10. the committed pipeline script runs and regenerates the mesh",
     11: "check 11. one builder for the committed script, shared with the "
         "Pipeline menu",
+    12: "check 12. the fingerprint the RUN records and the one the next Generate "
+        "TAKES are the same value",
+    13: "check 13. services/mesh_commit is Qt-free, measured in a subprocess",
+    14: "check 14. a commit says what it could not leave, and repoints the "
+        "session at the mesh it approved",
 }
 
 _REAL = world()
@@ -806,7 +987,10 @@ for num in sorted(_ALL):
 # `run_pipeline.sh`, which cannot see an in-memory mutant at all. Excluding them
 # from `others_green` keeps a check that is measuring something else from being
 # scored as evidence about this one.
-_SKIP_UNDER_MUTATION = (1, 2, 10, 11)
+# 13 imports the REAL module from disk in a child process and cannot see an
+# in-memory mutant at all; 12 drives the real controller, whose fingerprint
+# comes from the injected module and so DOES move under one.
+_SKIP_UNDER_MUTATION = (1, 2, 10, 11, 13)
 
 
 def others_green(w, *reddened):
@@ -838,12 +1022,19 @@ if os.path.isfile(_MESHER):
           "the STAR-CD triple the solver reads would stay in a temp dir wiped "
           "on exit")
 
-    inj = mutate("    refusal = case_type_verdict.commit_refusal(trial.verdict)",
-                 "    refusal = \"\"")
+    inj = mutate("    refusal = case_type_verdict.commit_refusal(trial.verdict, "
+                 "trial.exit_code)", "    refusal = \"\"")
     check(check_unusable_is_refused(inj) and others_green(inj, 8),
           "injection C. check 8 ALONE fails when the refusal is dropped, and "
           "the folded mesh ADR-0002 exists against lands in the case looking "
           "entirely normal")
+
+    inj = mutate("commit_refusal(trial.verdict, trial.exit_code)",
+                 "commit_refusal(trial.verdict)")
+    check(check_unusable_is_refused(inj) and others_green(inj, 8),
+          "injection C2. check 8 ALONE fails when the exit code stops reaching "
+          "the refusal — the defect as it shipped, a fold refused while a case "
+          "type is named and committed while none is")
 
     inj = mutate('        "report": trial.report,', '        "report": "",')
     check(check_an_edit_cannot_rewrite_history(inj) and others_green(inj, 7),
@@ -867,6 +1058,23 @@ if os.path.isfile(_MESHER):
           "injection F. check 3 fails when a Trial carries Generate's "
           "disposition — the one way the case can be written behind the "
           "operator's back, and the one a service mutation cannot produce")
+
+    # Injection H, like F, is not a source mutation: the halves are in two
+    # mixins and `mesh_commit` cannot pull them apart. The PRE-FIX consumer is
+    # handed in instead — the panel's own config rather than the one the mesher
+    # is handed — which is literally the code this review replaced.
+    def _pre_fix_consumer(cfg):
+        import app.controllers.mesh_dispose_ctrl as dispose
+        probe = os.path.join(tempfile.gettempdir(), "prefix_para.dat")
+        cfg.save_to_file(probe)
+        with open(probe, encoding="utf-8") as fh:
+            text = fh.read()
+        return dispose.mesh_commit.inputs_fingerprint(text, [])
+
+    check(check_fingerprint_halves_agree(_REAL, consumer=_pre_fix_consumer),
+          "injection H. check 12 fails when the Generate half fingerprints the "
+          "PANEL's config instead of the one the mesher is handed — the defect "
+          "that made every trial read as stale while a branch claimed otherwise")
 
     check(not any(fn(_REAL) for num, fn in _ALL.items()),
           "injection G. negative control: the unmutated module passes every "

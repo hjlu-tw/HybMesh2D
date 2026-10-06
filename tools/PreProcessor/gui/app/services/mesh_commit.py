@@ -225,7 +225,9 @@ def commit(trial: TrialMesh, dest_mesh: str, pipeline=None,
     ``None`` when the host has no script to leave; `when` is the timestamp
     recorded, defaulting to now in UTC.
     """
-    refusal = case_type_verdict.commit_refusal(trial.verdict)
+    # The exit code goes WITH the verdict: a folded mesh is refused even when
+    # no case type named this run and there is no verdict to be unusable.
+    refusal = case_type_verdict.commit_refusal(trial.verdict, trial.exit_code)
     if refusal:
         raise CommitRefused(refusal)
     if not trial.usable:

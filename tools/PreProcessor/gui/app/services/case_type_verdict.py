@@ -252,6 +252,21 @@ def judge_threshold(threshold: case_type_mod.Threshold, summary) -> Reason:
     return Reason(threshold.key, USABLE, measured=value)
 
 
+def inverted_reason() -> Reason:
+    """The one sentence about a FOLDED mesh, written once.
+
+    Read by `judge`, which makes it a verdict, and by `commit_refusal`, which
+    has to refuse a fold even when no case type named this run and there is
+    therefore no verdict at all. Two spellings of it would be two accounts of
+    the same fact, and the second would be the one the operator saw.
+    """
+    return Reason(
+        "inverted cells", UNUSABLE,
+        detail="the mesher exited %d — this mesh holds inverted cells, and it "
+               "was exported under its ordinary name anyway so that the fold "
+               "can be looked at" % EXIT_ERR_INVERTED)
+
+
 def _undeterminable(case_type, key: str, detail: str,
                     deviations: tuple = ()) -> Verdict:
     """A verdict settled before any threshold was read. One shape, four causes.
@@ -280,12 +295,8 @@ def judge(case_type: case_type_mod.CaseType, summary, exit_code: int = 0,
     """
     deviations = tuple(deviations or ())
     if exit_code == EXIT_ERR_INVERTED:
-        return Verdict(UNUSABLE, case_type, [Reason(
-            "inverted cells", UNUSABLE,
-            detail="the mesher exited %d — this mesh holds inverted cells, and "
-                   "it was exported under its ordinary name anyway so that the "
-                   "fold can be looked at" % EXIT_ERR_INVERTED)],
-            deviations=deviations)
+        return Verdict(UNUSABLE, case_type, [inverted_reason()],
+                       deviations=deviations)
     if exit_code != 0:
         return _undeterminable(
             case_type, "the run",
@@ -350,14 +361,23 @@ def report_text(verdict: Verdict) -> str:
     return "\n".join(report_lines(verdict))
 
 
-def commit_refusal(verdict: "Verdict | None") -> str:
+def commit_refusal(verdict: "Verdict | None", exit_code: int = 0) -> str:
     """Why this mesh may NOT be written into a case, or ``""`` when it may.
 
     ONLY `unusable` refuses (#166). `not determinable` does not: an unmeasured
     figure is the absence of evidence, and refusing on it would mean a case type
     whose metric this mesh does not publish could never commit anything — while
     `needs attention` is by construction a mesh the operator is allowed to keep.
-    A run with NO case type in play (`verdict is None`) has nobody to refuse.
+
+    `EXIT_ERR_INVERTED` REFUSES WITH OR WITHOUT A CASE TYPE, which is why the
+    exit code is a parameter beside the verdict. A run with no case type has no
+    verdict and so nothing to be `unusable`, and the first version of this
+    function read that as "nobody to refuse" — so a folded mesh committed into
+    the case whenever `CASE_TYPE_ENV` was unset, which is the ordinary state,
+    nothing having replaced that channel. ADR-0002 states the refusal
+    unconditionally and is right to: a THRESHOLD is scoped to a class of problem
+    and a FOLD is not, so the one answer that needs no case type behind it is
+    this one. Found by #166's Spec review.
 
     THE REFUSAL IS SPELLED HERE and nowhere else, for the reason the states are:
     `.claude/rules/gui-handoff.md` holds the hosts to "neither may spell a
@@ -366,11 +386,14 @@ def commit_refusal(verdict: "Verdict | None") -> str:
     SENTENCE rather than a bool so that "says why" (user story 17) cannot be
     satisfied by a caller inventing its own wording.
     """
-    if verdict is None or verdict.state != UNUSABLE:
+    if verdict is not None and verdict.state == UNUSABLE:
+        reasons = verdict.reasons
+    elif verdict is None and exit_code == EXIT_ERR_INVERTED:
+        reasons = [inverted_reason()]
+    else:
         return ""
-    lines = ["This mesh is %s, so it was not written into the case."
-             % verdict.state]
-    for reason in verdict.reasons:
+    lines = ["This mesh is %s, so it was not written into the case." % UNUSABLE]
+    for reason in reasons:
         lines.append("  " + reason.describe())
         if reason.advice:
             lines.append("    try: " + reason.advice)

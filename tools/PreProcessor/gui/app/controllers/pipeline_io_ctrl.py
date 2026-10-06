@@ -25,7 +25,7 @@ _log = get_logger(__name__)
 class PipelineIoControllerMixin:
     """Read/write the pipeline script; apply a loaded one onto the GUI state."""
 
-    def build_pipeline_config(self, name: str = ""):
+    def build_pipeline_config(self):
         """The pipeline script describing the GUI's current state, unsaved.
 
         Split out of :meth:`save_pipeline_file` for #166: a committed case
@@ -75,8 +75,7 @@ class PipelineIoControllerMixin:
                 "could not read the current contour variable for the "
                 "script", exc_info=True)
 
-        name = name or os.path.splitext(
-            session.display_name.lstrip("*"))[0] or "pipeline"
+        name = os.path.splitext(session.display_name.lstrip("*"))[0] or "pipeline"
         # EVERY open session, in TAB order: a script built from only the active tab
         # silently dropped the rest of a multi-geometry case (airfoil + ground
         # plane, multi-element wing), and the dropped geometries were unrecoverable

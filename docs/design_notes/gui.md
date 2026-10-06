@@ -4683,7 +4683,46 @@ is how a case ends up with a script that reproduces something else. The dialog a
 with the menu action, everything deciding what is IN the script moved. Check 11 reads the
 disposition's AST for a `PipelineConfig` of its own and finds none.
 
-**Named blind spots.** The fingerprint is blind to a changed mesher BINARY, so a rebuild mid-session
+**The two halves of the fingerprint shipped APART, and the review is what found it.** The run
+fingerprinted the config as the MESHER is handed it — `mesher_config`'s copy, output retargeted
+into the temp dir and both export formats forced on — while `_fingerprint_of` fingerprinted the
+config as the PANEL holds it. `mesh_config_io` writes `EXPORT_VTK` and `OUTPUT_FILENAME`, so the
+two texts always differed, every comparison failed, `_current_trial` always answered `None`, and
+Generate re-meshed every single time while the branch above it logged "committing the trial mesh
+already in hand; nothing is re-meshed". **It cost nothing an operator could see**, which is the
+whole reason it survived: the re-mesh is what then committed, so the mesh that landed was still the
+mesh its own run had judged, every acceptance criterion but "without regenerating it" held, and no
+output differed by a byte. The defect was a dead mechanism and a false log line. **Nothing could
+see it because no check put the producer and the consumer on one path**: the gate's host stand-in
+OVERRIDES `run_mesh_generator`, and check 4 sets the disposition by hand. The fix is one
+transformation, `mesher_config`, called by both; check 12 drives the real `run_mesh_generator`
+with only its worker class replaced and compares the value it records with the one the next
+Generate takes, and injection H hands in the pre-fix consumer to show it reddens. The general
+lesson is the one worth keeping: **a defect inside a fail-safe fallback is silent by construction**,
+so the fallback is where a check is worth most, not least.
+
+**Two things the Spec review found QUIET rather than wrong.** First, `commit_refusal` read "no
+verdict" as "nobody to refuse", so with `HYBMESH_CASE_TYPE` unset — which this very ticket records
+as the ordinary state, nothing having replaced that channel — a folded mesh committed into the
+case. ADR-0002 states the refusal with no case type in the sentence, and it is right to: a
+threshold is scoped to a class of problem and a FOLD is not, so the exit code is the one answer
+that needs no case type behind it. The exit code is now a parameter beside the verdict, the
+folded-mesh sentence is written once (`inverted_reason`) and read by both `judge` and the refusal,
+and check 8 grew a no-case-type leg with injection C2 to redden it. The gate was blind because
+every leg of check 8 set `HYBMESH_CASE_TYPE` — the environment the defect could not survive.
+Second, `build_pipeline_config` answers `None` when there is no active CAD session, which a
+`MESH_MODE 1` case declaring its own corners legitimately has none of; the commit then left no
+script and said nothing, while "Generate leaves a runnable pipeline script" is an acceptance
+criterion. It says so now, and check 14 reads the line. The same check pins the other half of that
+review finding: the commit repoints `global_vtk_path` at the committed mesh, so Export and Send to
+Solver reach what Generate approved rather than the scratch copy it was made from.
+
+**Named blind spots.** A TRIAL AFTER A GENERATE still repoints the session at its own scratch mesh,
+and `resolve_case_grid` prefers that over the per-case file, so Generate → Trial → Send to Solver
+hands the solver an un-approved mesh. #158's story 8 wants otherwise; #166's criterion is only that
+the COMMITTED mesh is untouched, which holds, and that precedence is `gui-handoff.md`'s, set by a
+user-reported defect — so it was left alone rather than widened into another rule file's subject.
+The fingerprint is blind to a changed mesher BINARY, so a rebuild mid-session
 leaves a trial that reads as current — recorded rather than fixed, a trial living only for its own
 session. **The commit is not atomic**: the refusal is before any write, so a refused mesh leaves
 nothing, but a copy failing part way leaves a case holding some of the new mesh and some of the old;
