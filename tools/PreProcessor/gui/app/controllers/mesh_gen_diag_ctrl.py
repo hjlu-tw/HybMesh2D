@@ -8,6 +8,13 @@ reports point counts and bounds, and the post-mortem that reads an intersection
 out of the mesher's own log and points at it on the canvas. None of the three
 starts, stops or inspects a worker.
 
+ONE OF THE THREE NOW ENDS IN AN OFFER RATHER THAN ONLY IN A REFUSAL (#167). When
+the family in force cannot fill the drawing, the pre-flight asks the operator
+whether to mesh it on the HYBRID path instead and, if they accept, lets the run
+through as a FALLBACK. That is still diagnosis and still starts no worker: what
+it decides is whether its caller may, and what the caller is then handed. The
+rules for the downgrade itself live in `services/mesh_fallback.py`.
+
 Mixed into :class:`~app.controllers.mesh_gen_ctrl.MeshGenControllerMixin` rather
 than wired into ``controller.py`` beside it, so ``self._scan_geometry_files`` and
 ``self._try_highlight_self_intersection_error`` resolve exactly as they did and
@@ -20,7 +27,8 @@ from app.services.geom_path_identity import readable_geom_path
 from app.services import topology_binding, topology_model, topology_preflight
 from app.services.logging_setup import get_logger
 from app.services.mesh_modes import MESH_MODE_HYBRID, missing_mesh_input
-from app.utils import report_error
+from app.services import mesh_fallback
+from app.utils import confirm, report_error
 
 __all__ = ["MeshGenDiagnosticsMixin", "mesh_input_warning"]
 
@@ -59,40 +67,55 @@ class MeshGenDiagnosticsMixin:
     """The mesh stage's pre-flight scan and its post-mortem read of the log."""
 
     def _topology_preflight_refused(self, cfg) -> bool:
-        """The FAMILY's own refusal, before a worker is started (#165).
+        """The FAMILY's own refusal, before a worker is started (#165, #167).
 
         True when the run must not happen. Everything about the refusal — what
         is wrong, which curve it is about and where on that curve — is the
         family's answer (``topology_model.preflight_for_config``); what is here
-        is only the showing of it, which is why this method is a dozen lines and
-        contains no rule.
+        is the showing of it, and the OFFER that follows it.
 
-        THE CURVE IS POINTED AT, not merely named. ``highlight_segment`` takes
-        the points with ``nan`` rows between disjoint runs, which is the contract
-        the per-segment boundary-condition overlay already uses — so a refusal
-        about two curves draws both, and the refusal's own coordinate gets the
-        marker an intersection post-mortem gets. The points come from the Qt-free
-        ``refusal_points``, so what the canvas draws is gated headlessly.
+        A refusal is no longer the end of the road (#167). It is shown, the
+        curve is pointed at, and the operator is then asked whether to mesh the
+        drawing on the hybrid path instead. Accepting makes this return False —
+        the run goes ahead, as a FALLBACK — and sets ``self._mesh_fallback``,
+        which is what `mesh_gen_ctrl.mesher_config` reads to hand the mesher a
+        hybrid configuration and what the committed case records.
 
         A refusal naming NO curve (the H-grid binds to nothing, and its region is
         four numbers in the template rows) clears the overlay rather than leaving
         the last refusal's outline on screen pointing at nothing.
         """
         refusals = topology_model.preflight_for_config(cfg)
-        mc = self.main_window.mesh_canvas_view
         if not refusals:
-            # CLEAR OUR OWN, and only our own. A refusal left on the canvas after
-            # the user has fixed the drawing points at a curve that is now fine,
-            # which is worse than no overlay; but `highlight_segment` is also the
-            # per-segment boundary-condition dialog's, so the flag is what keeps
-            # this from wiping a selection somebody else made.
-            if getattr(self, "_preflight_highlight", False):
-                mc.highlight_segment(None)
-                mc.clear_error_highlights()
-                self._preflight_highlight = False
+            self._clear_preflight_highlight()
+            # The family can fill this drawing now, so an acceptance given for a
+            # refusal that no longer exists must not keep downgrading the run.
+            self._mesh_fallback = None
             return False
         msg = topology_preflight.refusal_text(refusals)
+        if self._mesh_fallback is not None and self._mesh_fallback.reason == msg:
+            # ACCEPTED ALREADY, for exactly this reason. Said again anyway, on
+            # every run: a Trial costs about a second, and the one line telling
+            # the operator their mesh is not structured must not be something
+            # they saw once and scrolled past.
+            self.log_report("[Mesh] " + self._mesh_fallback.note(),
+                            level="WARNING")
+            return False
         self.log_report("[ERROR] " + msg)
+        self._draw_preflight_refusal(cfg, refusals)
+        return not self._offer_hybrid_fallback(cfg, refusals, msg)
+
+    def _draw_preflight_refusal(self, cfg, refusals) -> None:
+        """Point at every offending curve, and mark the coordinate it names.
+
+        ``highlight_segment`` takes the points with ``nan`` rows between disjoint
+        runs, which is the contract the per-segment boundary-condition overlay
+        already uses — so a refusal about two curves draws both, and the
+        refusal's own coordinate gets the marker an intersection post-mortem
+        gets. The points come from the Qt-free ``refusal_points``, so what the
+        canvas draws is gated headlessly.
+        """
+        mc = self.main_window.mesh_canvas_view
         mc.clear_error_highlights()
         ctx = topology_binding.context_for_config(cfg)
         pts, marks = [], []
@@ -106,8 +129,61 @@ class MeshGenDiagnosticsMixin:
         for x, y in marks:
             mc.highlight_self_intersection_point(x, y)
         self._preflight_highlight = True
-        report_error(self.main_window, "This Case Type Cannot Mesh This Drawing",
-                     msg)
+
+    def _clear_preflight_highlight(self) -> None:
+        """Clear OUR OWN overlay, and only our own.
+
+        A refusal left on the canvas after the user has fixed the drawing points
+        at a curve that is now fine, which is worse than no overlay; but
+        ``highlight_segment`` is also the per-segment boundary-condition
+        dialog's, so the flag is what keeps this from wiping a selection
+        somebody else made.
+        """
+        if getattr(self, "_preflight_highlight", False):
+            mc = self.main_window.mesh_canvas_view
+            mc.highlight_segment(None)
+            mc.clear_error_highlights()
+            self._preflight_highlight = False
+
+    def _offer_hybrid_fallback(self, cfg, refusals, msg: str) -> bool:
+        """Ask whether to mesh this drawing on the hybrid path. True if accepted.
+
+        THE DOWNGRADE IS NEVER SILENT (#167), so this is a question and not a
+        policy: someone who does not know whether their mesh is structured
+        cannot reason about anything downstream of it. Declining leaves the run
+        refused exactly as it was before this ticket.
+
+        A host with nobody to ask gets no offer — `confirm` resolves to
+        ``headless_default`` on a screenless platform and that default is
+        **False** here, so an unattended GUI refuses rather than substituting a
+        mesh of a different kind. The headless pipeline never reaches this code
+        at all; it asks `topology_model.mesh_preflight` and still refuses.
+        """
+        why_not = mesh_fallback.unavailable(cfg)
+        if why_not:
+            # THE DOWNGRADE IS NOT ALWAYS AVAILABLE, and offering one that
+            # cannot run would spend the operator's acceptance on nothing. The
+            # live case is a `MESH_MODE 1` config with an empty geometry list,
+            # which is legal there and leaves the hybrid path nothing to grow a
+            # boundary layer from.
+            self._mesh_fallback = None
+            report_error(self.main_window,
+                         "This Case Type Cannot Mesh This Drawing",
+                         msg + "\n\nNo hybrid fallback can be offered for this "
+                         "case either: " + why_not + ".")
+            return False
+        if not confirm(self.main_window, mesh_fallback.OFFER_TITLE,
+                       mesh_fallback.offer_question(msg),
+                       headless_default=False):
+            self._mesh_fallback = None
+            self.log("[Mesh] no fallback mesh was generated; fix the drawing "
+                     "or pick a different case type.")
+            return False
+        self._mesh_fallback = mesh_fallback.accepted(refusals)
+        # The overlay goes: the run is going ahead, and a curve still marked red
+        # beside a finished mesh reads as an error in it.
+        self._clear_preflight_highlight()
+        self.log_report("[Mesh] " + self._mesh_fallback.note(), level="WARNING")
         return True
 
     def _scan_geometry_files(self, cfg) -> tuple:

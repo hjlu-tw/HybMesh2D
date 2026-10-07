@@ -42,6 +42,13 @@ WHAT A COMMITTED CASE CARRIES, and why each file is separate rather than one:
   (user story 43). It holds no threshold numbers of its own: the bounds are in
   the embedded document beside it, and two copies of one number is how they
   come to disagree.
+* ``<stem>.fallback.json`` — written INSTEAD of the two above when the mesh
+  came off the hybrid FALLBACK path (#167), and saying so in as many words: no
+  family could fill the drawing, the operator accepted a downgrade, the mesh is
+  not structured and the case type's thresholds do not apply to it. The three
+  slots are reconciled on every commit rather than merely written, so a case
+  cannot keep the previous Generate's record standing beside a mesh of the
+  other kind.
 * ``<stem>.pipeline.json`` — a runnable script that regenerates the mesh
   (user story 44), written by the host's own `PipelineConfig`. Taken as an
   object with a `save_to_file` method rather than imported, so this module
@@ -63,7 +70,8 @@ import json
 import os
 import shutil
 
-from app.services import case_sources, case_type, case_type_verdict
+from app.services import (case_sources, case_type, case_type_verdict,
+                          mesh_fallback)
 from app.services.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -77,8 +85,13 @@ MESH_EXTS = (".vtk", ".vrt", ".cel", ".bnd")
 #: What a committed case's own three files are called, keyed by what they hold.
 #: `<stem>` is the mesh's, so a directory holding two meshes carries two sets
 #: rather than one that the second Generate overwrites.
+#: `fallback` is the FOURTH and is mutually exclusive with the first two: a
+#: fallback mesh carries no verdict and embeds no case type (#167), and `commit`
+#: reconciles all four every time so a Generate can never leave one set standing
+#: as the record of a mesh the other set describes.
 SIDECAR_EXTS = {"case_type": ".casetype.json",
                 "verdict": ".verdict.json",
+                "fallback": ".fallback.json",
                 "pipeline": ".pipeline.json"}
 
 VERDICT_SCHEMA = "hybmesh-case-verdict"
@@ -105,10 +118,11 @@ class TrialMesh:
     """
 
     __slots__ = ("mesh_path", "exit_code", "fingerprint", "verdict", "report",
-                 "level")
+                 "level", "fallback")
 
     def __init__(self, mesh_path: str, exit_code: int, fingerprint: str = "",
-                 verdict=None, report: str = "", level: str = "INFO"):
+                 verdict=None, report: str = "", level: str = "INFO",
+                 fallback=None):
         self.mesh_path = mesh_path
         self.exit_code = exit_code
         self.fingerprint = fingerprint
@@ -121,6 +135,12 @@ class TrialMesh:
         #: the same words.
         self.report = report
         self.level = level
+        #: `mesh_fallback.Fallback` when this generation ran on the HYBRID
+        #: fallback path because no family could fill the drawing (#167), else
+        #: ``None``. Carried on the TRIAL rather than read off the session at
+        #: commit time: it is a fact about the generation that happened, and the
+        #: mesh Generate commits is the mesh Trial produced.
+        self.fallback = fallback
 
     @property
     def usable(self) -> bool:
@@ -161,7 +181,7 @@ def inputs_fingerprint(config_text: str, input_paths) -> str:
 
 
 def judge_run(mesh_path: str, exit_code: int, config=None,
-              fingerprint: str = "") -> TrialMesh:
+              fingerprint: str = "", fallback=None) -> TrialMesh:
     """Judge one finished generation ONCE and carry the answer.
 
     The single call the GUI's mesh controller makes after a run. It reaches
@@ -169,7 +189,20 @@ def judge_run(mesh_path: str, exit_code: int, config=None,
     disposition that follows needs the judgement itself — the case type to
     embed, the state to refuse on — and judging twice to get it would be two
     answers about one mesh.
+
+    A FALLBACK RUN IS NOT JUDGED AT ALL, and the thresholds are not merely
+    ignored — they are never read (#167). The case type's bounds were measured
+    on structured quads and this mesh is triangles and boundary-layer quads, so
+    there is no comparison to make; `mesh_fallback.NO_VERDICT` stands where the
+    verdict would have been, at WARNING, because the absence of a judgement is
+    itself something the operator has to be told. The exit code still travels
+    on the trial, so `commit` refuses a FOLDED fallback mesh exactly as it
+    refuses a folded structured one.
     """
+    if fallback is not None:
+        return TrialMesh(mesh_path, exit_code, fingerprint=fingerprint,
+                         verdict=None, report=fallback.note(),
+                         level="WARNING", fallback=fallback)
     verdict, report, level = case_type_verdict.run_verdict(
         mesh_path, exit_code, config=config)
     return TrialMesh(mesh_path, exit_code, fingerprint=fingerprint,
@@ -243,7 +276,22 @@ def commit(trial: TrialMesh, dest_mesh: str, pipeline=None,
     written = _copy_mesh_files(trial.mesh_path, dest_mesh)
     sidecars = sidecar_paths(dest_mesh)
 
-    if trial.verdict is not None:
+    # THE THREE RECORD SLOTS ARE RECONCILED, never just written. Whichever two
+    # do not apply are REMOVED, because a case whose mesh was replaced by a
+    # Generate of a different kind would otherwise keep the previous one's
+    # record standing beside it — and a verdict file next to a fallback mesh is
+    # a judgement of a mesh that no longer exists.
+    if trial.fallback is not None:
+        # NO VERDICT AND NO EMBEDDED CASE TYPE (#167): the thresholds were
+        # measured on structured quads, so there is nothing here for them to
+        # grade. The record says that in as many words rather than leaving the
+        # missing verdict to be noticed.
+        _write_json(sidecars["fallback"],
+                    mesh_fallback.fallback_record(trial.fallback, dest_mesh,
+                                                  when))
+        written.append(sidecars["fallback"])
+        _remove_stale(sidecars["case_type"], sidecars["verdict"])
+    elif trial.verdict is not None:
         # The WHOLE document (user story 42). `case_type.save` is the one
         # writer, so the embedded copy is a case type `case_type.load` reads
         # back — not a report about one.
@@ -252,12 +300,14 @@ def commit(trial: TrialMesh, dest_mesh: str, pipeline=None,
         _write_json(sidecars["verdict"],
                     verdict_record(trial, dest_mesh, when))
         written.append(sidecars["verdict"])
+        _remove_stale(sidecars["fallback"])
     else:
         # SAID by its absence being explicit: a case with no verdict file was
         # judged by nobody, which a reader must be able to tell apart from one
         # whose judgement went missing. The host logs it; stale files from an
         # earlier Generate must not be left behind to answer for this one.
-        _remove_stale(sidecars["case_type"], sidecars["verdict"])
+        _remove_stale(sidecars["case_type"], sidecars["verdict"],
+                      sidecars["fallback"])
 
     if pipeline is not None:
         pipeline.save_to_file(sidecars["pipeline"])

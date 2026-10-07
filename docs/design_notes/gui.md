@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 303, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 304, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -4734,6 +4734,102 @@ disposition. **Check 10 builds its `PipelineConfig` directly** rather than throu
 proves the committed ARTEFACT runs, and that the GUI builds the right one is check 11's structural
 claim. **Nothing checks that a committed case stays consistent**: a later Export, a hand-edit or a
 headless run over the same output path can replace the mesh and leave the frozen verdict standing.
+
+**A SHAPE NO FAMILY COVERS IS A DOWNGRADE, NOT A DEAD END** (#167, parent #158;
+`services/mesh_fallback.py` = every sentence the operator reads and the config transformation,
+Qt-free; `controllers/mesh_gen_diag_ctrl.py` = the offer, beside the refusal that prompts it;
+`services/mesh_commit.py` = the record a committed case carries;
+`controllers/mesh_dispose_ctrl.py` and `controllers/pipeline_io_ctrl.py` = the script that
+describes the run that happened). Rules: `.claude/rules/gui-dispositions.md`.
+
+**What #165 left open.** That ticket gave every family a pre-flight refusal in the operator's own
+terms, which closed one hole and opened another: an operator whose drawing no family can fill was
+left holding a sentence and nothing to press. Their options were to redraw the geometry until a
+family accepts it, or to join the queue behind the single maintainer. The hybrid path will mesh
+nearly anything, and the whole of this ticket is offering it to them.
+
+**THE TRIGGER IS THE FAMILY IN FORCE, AND THE FIRST DESIGN WAS A SURVEY OF ALL FOUR.** The
+criterion says "when every family refuses" and that reading was implemented first. It cannot work,
+and the reason is measured rather than argued: the **H-GRID BINDS TO NOTHING** — `Family.binds` is
+False for it, its refusals are about its own parameter rows ('X Max', 'Blocks in X') and it never
+looks at a curve — so it ACCEPTS every drawing in this repo, including the blunt-trailing-edge
+section the C-grid refuses, which it would mesh as a bare rectangle of blocks ignoring the body
+entirely. A survey would have found an accepting family every time, "every family refuses" would
+never have been true, and the fallback would never have been offered at all. The other three are
+no better as witnesses: a family the operator never configured refuses because its bindings are
+empty, which is a fact about the CONFIGURATION and not about the shape, so counting it as "this
+family cannot cover your geometry" would be an overclaim printed to the operator. The operator
+picked ONE case type naming ONE family; that family refusing is "no family applies" in the world
+they are in. `test_mesh_fallback.py` check 1d MEASURES the H-grid's acceptance rather than
+restating the argument, so the day a fifth family changes it the gate says so.
+
+**The drawing the gate is built on is the motivating one.** A NACA 0012 drawn with a BLUNT trailing
+edge: the CAD stage emits it as three segments — upper surface, lower surface and the base between
+them — so the two surfaces never meet and there is no single trailing-edge corner for four C-grid
+blocks to share. MEASURED: the structured run of that drawing cannot even be WRITTEN, because
+`save_config_to_file` projects the family's document and the C-grid raises `BindingError` from
+inside it, so no mesher ever starts. The fallback runs the real binary to completion on the shipped
+`config/Background_para.dat` parameters — rc 0, 7,663 vertices, 15,053 elements, 11,883 far-field
+triangles — and the mesher's own banner prints the sentence this ticket depends on: *triangle edge
+ratio … NOT comparable with MESH_MODE 1's quad midline ratio*.
+
+**WHY THE DOWNGRADE CLEARS THE FAMILY AND NOT ONLY THE MODE**, which the first cut did not.
+`mesh_config_io.save_config_to_file` PROJECTS a named family's document whenever
+`names_a_family()` is true and asks the MODE nowhere; a family that cannot build raises from inside
+that call and nothing is written. So a mode-only downgrade dies in the config WRITER, before the
+mesher it is downgrading to is ever launched, on precisely the drawings this exists for — which is
+the same failure the operator already had, arriving one layer further in. Check 3b writes both
+configurations and compares what each raises, so the reason is a measurement in the gate rather
+than a sentence here. Clearing the family also makes the committed script honest: it describes a
+hybrid run, because that is the run that produced the mesh beside it.
+
+**THE CASCADE IN INJECTION B IS THE DESIGN.** Breaking `as_hybrid`'s mode reddens six checks, not
+one, because `unavailable` asks `missing_mesh_input` about the configuration `as_hybrid` produces
+— one definition of what the fallback run IS, serving both the offer and the run. Declared at its
+measured width rather than narrowed, with check 3a named as the one that is specifically about the
+mode. Injection A is three checks for the same reason.
+
+**AN INJECTION THAT REDDENED NOTHING, AND WHAT IT CHANGED.** The first version of injection D
+emptied `NOT_STRUCTURED` out, expecting checks 1, 5 and 6 to fail. Every one of them stayed green:
+they all asked `w.NOT_STRUCTURED in text`, and the empty string is a substring of everything. The
+checks were vacuous for exactly the mutation they existed to catch. `says_not_structured` is what
+closed it — it asks for the module's own sentence AND for the acceptance criterion's own words
+("labelled as not structured"), so pinning the phrase pins the criterion rather than this repo's
+prose — and the injection became the realistic defect instead: the clause reworded out of the
+sentence. It now reddens five checks, which is the enumerated label list doing its job.
+
+**WHY THE ACCEPTANCE IS KEYED ON ITS REASON.** Re-asking on every Trial would make a modal box the
+price of a one-second iteration, and never re-asking would let an acceptance given for one drawing
+authorise a downgrade of another. The key is `topology_preflight.refusal_text`'s output VERBATIM:
+an unchanged refusal is not re-asked, any change to what the family objects to is, and the family
+coming to accept the drawing drops the acceptance outright. The LABEL is said again on every run
+regardless, because a line seen once and scrolled past is not a label. `_settle_fallback` closes
+the one hole that leaves: Generate may commit a trial already in hand WITHOUT running a pre-flight,
+so an operator who accepted a fallback and then switched the panel to the hybrid path by hand would
+have had the run recorded as a downgrade they never made — the two configurations produce identical
+mesher text, so the fingerprint would not have noticed.
+
+**A `ValueError` joined the fingerprint's `OSError`.** `_fingerprint_of` catches what it cannot
+take a fingerprint from and answers "stale", which makes Generate re-mesh — the safe direction.
+`save_to_file` projects, and a projection raises `BindingError` (a `ValueError`), and a trial in
+hand while the configuration has become unbuildable is a state the fallback makes reachable. Both
+answers are the same one: we could not check.
+
+**Named blind spots.** "The existing hybrid path's behaviour is unchanged" is held at the GUI level
+by check 10 and NOT by `golden_mesh.py`: this ticket touched no C++ at all, and the comparator was
+run by hand for the record — **21 cases, 21 SAME, 0 DIFF, worst coordinate deviation 0.000e+00**,
+one of the 21 being the `isolated_corner` NO-MESH outcome rather than a mesh. A gate that ran it
+would be timing 21 mesher cases to prove something no edit here can reach. **The acceptance lives
+for the session**: a committed case carries its `<stem>.fallback.json` and reopening it tells the
+GUI nothing, so the next Trial asks again — the safe direction, and the reason the fallback is a
+record rather than restored state. **Nothing labels the Mesh Statistics panel**, by decision: it is
+handed a mesh and its `.provenance.json` and cannot tell a fallback from an ordinary hybrid run,
+and labelling every hybrid mesh in the tree "fallback" would be the same lie pointed the other way;
+its shape-metric tip already says the two paths measure different quantities. **Checks 6-8 drive
+the real commit over SYNTHETIC trial bytes** — `commit` copies and never reads a mesh — so the only
+check needing a build tree is check 4, whose claim is that a real mesher really produces a mesh
+here. **Nothing here judges the QUALITY of a fallback mesh**, which is the point: the thresholds do
+not apply to it.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

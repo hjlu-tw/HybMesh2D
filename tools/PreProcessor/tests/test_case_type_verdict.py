@@ -582,6 +582,12 @@ def check_gui_emits_verdict(w):
             self._mesh_trial = None
             self._trial_fingerprint = ""
             self._commit_after_mesh = False
+            # And what #167 added beside them: which PATH the run in flight was
+            # started on. `None` is the ordinary case and the one this host is
+            # about — a fallback run is judged by nobody, which is
+            # `test_mesh_fallback.py` check 5's subject.
+            self._mesh_fallback = None
+            self._trial_fallback = None
             self._pending_after_mesh = None
             self.reports = []
             self.lines = []

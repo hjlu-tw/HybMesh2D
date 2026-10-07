@@ -6,7 +6,7 @@ from app.models.vtk_mesh import VTKMesh
 from app.models.mesh_config import MeshConfig
 from app.workers.mesh_gen_run import MeshGenWorker
 from app.workers.exit_codes import RC_CANCELLED, RC_TIMEOUT, is_reason
-from app.services import mesh_commit
+from app.services import mesh_commit, mesh_fallback
 from app.utils import (find_binary_executable, repo_root, confirm,
                        report_error)
 # Re-exported so `from app.controllers.mesh_gen_ctrl import mesh_input_warning`
@@ -199,6 +199,11 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin, MeshDispositionMixin):
         # these settings produce. Recorded BEFORE the worker starts: afterwards
         # the panel may already have moved.
         self._commit_after_mesh = bool(commit)
+        # WHICH PATH THIS RUN IS ON, frozen with the disposition. The pre-flight
+        # above is the only thing that sets `_mesh_fallback`, and a run that
+        # finishes after the operator has gone back to the panel must still be
+        # judged and recorded as the run it actually was (#167).
+        self._trial_fallback = self._mesh_fallback
         try:
             with open(tmp_cfg.name, "r", encoding="utf-8") as fh:
                 config_text = fh.read()
@@ -251,7 +256,9 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin, MeshDispositionMixin):
 
         A copy with the output retargeted into the session temp dir and both
         export formats forced on, so a run leaves no permanent file and the
-        STAR-CD triple exists for the commit whatever the panel has toggled.
+        STAR-CD triple exists for the commit whatever the panel has toggled —
+        and, for an ACCEPTED hybrid fallback, the mode and the family dropped so
+        the mesher is handed the path the operator agreed to (#167).
 
         THE ONE TRANSFORMATION, and it is one because the fingerprint is taken
         over the resulting TEXT. #166's review found the halves apart: the run
@@ -267,6 +274,12 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin, MeshDispositionMixin):
         out.output_filename = self.trial_mesh_path()
         out.export_vtk = True
         out.export_starcd = True
+        if self._mesh_fallback is not None:
+            # THE DOWNGRADE IS PART OF THIS TRANSFORMATION, and belongs here for
+            # the reason the two above do: the fingerprint is taken over the
+            # resulting TEXT, so a fallback run and a structured run of the same
+            # panel configuration cannot read as the same generation (#167).
+            out = mesh_fallback.as_hybrid(out)
         return out
 
     def _on_mesh_gen_progress(self, pct: int):
@@ -380,6 +393,7 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin, MeshDispositionMixin):
         # answers about one mesh, and the first to drift would be the one nobody
         # is looking at.
         commit_now, self._commit_after_mesh = self._commit_after_mesh, False
+        trial_fallback, self._trial_fallback = self._trial_fallback, None
         if not is_reason(rc):
             # NOT a `getattr(..., None)`: `None` is the service's documented
             # "nobody could say", so a renamed attribute would make the
@@ -387,7 +401,8 @@ class MeshGenControllerMixin(MeshGenDiagnosticsMixin, MeshDispositionMixin):
             # composed controller sets this in its own `__init__`.
             trial = mesh_commit.judge_run(
                 expected_vtk_path, rc, config=self.global_mesh_config,
-                fingerprint=self._trial_fingerprint)
+                fingerprint=self._trial_fingerprint,
+                fallback=trial_fallback)
             self._mesh_trial = trial
             if trial.report:
                 self.log_report(trial.report, level=trial.level)

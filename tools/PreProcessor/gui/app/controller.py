@@ -143,6 +143,13 @@ class AppController(
         self._mesh_trial = None
         self._trial_fingerprint = ""
         self._commit_after_mesh = False
+        # The accepted HYBRID FALLBACK, when no family can fill the drawing and
+        # the operator has agreed to a downgrade (#167). `_mesh_fallback` is the
+        # acceptance currently in force and `_trial_fallback` the one the run in
+        # flight was started under; both `None` for the ordinary case, and set
+        # here for the same reason the three above are.
+        self._mesh_fallback = None
+        self._trial_fallback = None
 
         # Solver pipeline state (Phase 3)
         self.global_solver_config = SolverConfig()

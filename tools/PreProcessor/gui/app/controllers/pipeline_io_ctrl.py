@@ -25,7 +25,7 @@ _log = get_logger(__name__)
 class PipelineIoControllerMixin:
     """Read/write the pipeline script; apply a loaded one onto the GUI state."""
 
-    def build_pipeline_config(self):
+    def build_pipeline_config(self, mesh_cfg=None):
         """The pipeline script describing the GUI's current state, unsaved.
 
         Split out of :meth:`save_pipeline_file` for #166: a committed case
@@ -36,6 +36,13 @@ class PipelineIoControllerMixin:
         what is IN the script is here.
 
         Returns ``None`` when there is no active geometry to describe.
+
+        ``mesh_cfg`` overrides the mesh section, and has exactly one caller:
+        the commit of a hybrid FALLBACK mesh, which must leave a script that
+        reproduces the run that happened rather than the panel it came from
+        (#167, `controllers/mesh_dispose_ctrl.py`). An override rather than a
+        second builder, so there stays one document that the Pipeline menu's
+        Save and a committed case both come from.
         """
         session = self.active_session()
         if session is None:
@@ -63,7 +70,7 @@ class PipelineIoControllerMixin:
         # every user edit, so these are never stale, and reading the widgets back
         # would be the one direction the data flow does not have. Note the stl3d
         # section below has always read its model.
-        mesh_cfg = self.global_mesh_config
+        mesh_cfg = (self.global_mesh_config if mesh_cfg is None else mesh_cfg)
         solver_cfg = self.global_solver_config
         results = {}
         try:

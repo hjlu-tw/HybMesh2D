@@ -1,18 +1,22 @@
 ---
 paths:
   - tools/PreProcessor/gui/app/services/mesh_commit*
+  - tools/PreProcessor/gui/app/services/mesh_fallback*
   - tools/PreProcessor/gui/app/controllers/mesh_dispose_ctrl*
   - tools/PreProcessor/gui/app/controllers/mesh_gen_ctrl*
+  - tools/PreProcessor/gui/app/controllers/mesh_gen_diag_ctrl*
   - tools/PreProcessor/gui/app/controllers/pipeline_io_ctrl*
 ---
 
-# Trial and Generate: one generation, two dispositions
+# Trial and Generate: one generation, two dispositions — and the hybrid fallback
 
-Loaded on demand when the commit service, the disposition controller, the mesh-generation
-controller or the pipeline-script reader/writer is read. Rules only — the rationale (the
-measurements, the injections and the named blind spots) is `docs/design_notes/gui.md`, section
-"TRIAL AND GENERATE: ONE GENERATION, TWO DISPOSITIONS".
-Read that section before overruling a rule here; when a rule changes, update BOTH.
+Loaded on demand when the commit service, the FALLBACK service, the disposition controller, the
+mesh-generation controller, the mesh stage's diagnostics controller or the pipeline-script
+reader/writer is read. Rules only — the rationale (the
+measurements, the injections and the named blind spots) is `docs/design_notes/gui.md`, sections
+"TRIAL AND GENERATE: ONE GENERATION, TWO DISPOSITIONS" and, for the second block below, "A SHAPE
+NO FAMILY COVERS IS A DOWNGRADE, NOT A DEAD END".
+Read the matching section before overruling a rule here; when a rule changes, update BOTH.
 
 **THE FOURTEENTH RULE FILE, AND THE FIFTH TAKEN BECAUSE ONE WAS FULL.** These rules belong beside
 `.claude/rules/gui-handoff.md`'s — same case type, same verdict, same question about what a file
@@ -23,13 +27,16 @@ should expect to take it". #165 took `gui-preflight.md`; this is #166's. The pre
 figure for that file's remaining room is quoted here: it would be a number about another file that
 nothing re-measures, which is the staleness `test_instruction_budget.py` check 7 exists against.
 
-**THIS FILE OVERLAPS RATHER THAN PARTITIONS.** `services/mesh_commit*` is reached by no other rule
-file's globs, and `controllers/mesh_dispose_ctrl*` by none but `gui-seams.md`'s tree-wide one. The
-other two are shared on purpose: `controllers/mesh_gen_ctrl*` is also `gui-preflight.md`'s call
-site and `pipeline-case.md`'s mesh-stage host, and `controllers/pipeline_io_ctrl*` is
-`pipeline-case.md`'s and `gui-panels-config.md`'s. A session editing either loads several rule
-files and needs each: what the stage REFUSES before it runs is there, what becomes of the mesh
-AFTER it runs is here.
+**THIS FILE OVERLAPS RATHER THAN PARTITIONS.** `services/mesh_commit*` and
+`services/mesh_fallback*` are reached by no other rule file's globs, and
+`controllers/mesh_dispose_ctrl*` by none but `gui-seams.md`'s tree-wide one. The other three are
+shared on purpose: `controllers/mesh_gen_ctrl*` is also `gui-preflight.md`'s call site and
+`pipeline-case.md`'s mesh-stage host, `controllers/mesh_gen_diag_ctrl*` is `gui-preflight.md`'s
+(added here by #167, which gave that file's refusal an OFFER), and
+`controllers/pipeline_io_ctrl*` is `pipeline-case.md`'s and `gui-panels-config.md`'s. A session
+editing any of them loads several rule files and needs each: what the stage REFUSES before it runs
+is `gui-preflight.md`'s, what it OFFERS when it has refused and what becomes of the mesh AFTER it
+runs are here.
 
 **These rules also govern files OUTSIDE the globs above, which cannot hand a reader the text**:
 `views/main_window_toolbar_build_mixin.py` and `views/main_window_toolbar_mixin.py` (the two
@@ -111,6 +118,70 @@ Gated by `tests/test_mesh_trial_commit.py`; the check and injection counts are t
 docstring's and are not restated here.
   Why: `docs/design_notes/gui.md`, "TRIAL AND GENERATE: ONE GENERATION, TWO DISPOSITIONS".
 
+**A SHAPE NO FAMILY COVERS IS A DOWNGRADE, NOT A DEAD END** (#167, parent #158;
+`services/mesh_fallback.py` = every sentence and the config transformation, Qt-free;
+`controllers/mesh_gen_diag_ctrl.py` = the offer; `services/mesh_commit.py` = the record)
+
+- **THE TRIGGER IS THE FAMILY IN FORCE REFUSING, NOT A SURVEY OF ALL FOUR**, and the criterion's
+  own words ("when every family refuses") are satisfied because exactly one family is ever in
+  play. A survey CANNOT work and the reason is measured: the H-GRID BINDS TO NOTHING
+  (`Family.binds` is False), its refusals are about its own parameter rows, and it therefore
+  ACCEPTS every drawing in this repo — including one it would mesh as a bare rectangle of blocks
+  ignoring the body. "Every family refuses" would never have been true and the fallback would
+  never have been offered. The other three are no better as witnesses: an unconfigured family
+  refuses because its bindings are empty, a fact about the configuration and not about the shape.
+  Gate: `tests/test_mesh_fallback.py` check 1d, which MEASURES the H-grid accepting the drawing
+  the C-grid refuses rather than asserting the argument.
+- **IT IS NEVER SUBSTITUTED SILENTLY, AND THAT IS THE WHOLE RULE.** Someone who does not know
+  whether their mesh is structured cannot reason about anything downstream of it. So the offer is
+  a `confirm` the operator answers, with `headless_default=False`: a host with nobody to ask
+  REFUSES. The headless pipeline never reaches the offer at all — it asks
+  `topology_model.mesh_preflight` and still refuses, which is this same rule where there is no
+  operator rather than an omission. Gate: check 2, and injection H, which records the answer and
+  then ignores it.
+- **THE ACCEPTANCE IS KEYED ON THE REASON IT WAS GIVEN FOR.** `Fallback.reason` is
+  `topology_preflight.refusal_text`'s output VERBATIM, so an unchanged refusal is not re-asked
+  (a Trial costs about a second) while any change to what the family objects to is. The label is
+  said again on EVERY run regardless, because a line seen once and scrolled past is not a label.
+  `_settle_fallback` drops an acceptance the configuration no longer needs on a Generate that
+  runs no pre-flight of its own. Gate: check 9, injection F.
+- **THE DOWNGRADE CLEARS THE FAMILY AS WELL AS THE MODE**, and the second half is not tidiness:
+  `mesh_config_io.save_config_to_file` PROJECTS a named family's document whenever
+  `names_a_family()` is true, asking the MODE nowhere, and a family that cannot build raises from
+  inside that call. A mode-only downgrade therefore dies in the config WRITER, before the mesher
+  it is downgrading to is ever launched, on precisely the drawings this exists for. MEASURED:
+  check 3b writes both and compares what each raises.
+- **THE TRANSFORMATION LIVES IN `mesher_config`**, beside the output retarget and the forced
+  export formats, for the reason those two are there: the fingerprint is taken over the resulting
+  TEXT, so a fallback run and a structured run of the same panel configuration cannot read as the
+  same generation. The PANEL is never mutated — the downgrade belongs to the run, and the
+  operator's configuration still says what they asked for.
+- **NO VERDICT IS ISSUED, AND THE THRESHOLDS ARE NEVER READ.** Not ignored — never consulted:
+  `judge_run` short-circuits before `case_type_verdict.run_verdict`, because the bounds were
+  measured on structured quads and the mesher's own banner says the two paths' cell-shape metrics
+  are different quantities. `mesh_fallback.NO_VERDICT` stands where the verdict would be, at
+  WARNING. A FOLD is still refused: `commit_refusal` needs no case type behind it (ADR-0002), and
+  a downgrade buys no exemption. Gate: checks 5 and 7.
+- **WHERE A FALLBACK MESH IS LABELLED — the complete list, enumerated and not promised.** The
+  question that offers it; the GUI log on EVERY fallback generation, Trial and Generate alike;
+  the verdict slot; the committed `<stem>.fallback.json`; and the committed `<stem>.pipeline.json`,
+  which is a `MESH_MODE 0` script. The Mesh Statistics panel is deliberately NOT on it: it is
+  handed a mesh and its `.provenance.json` and cannot tell a fallback from an ordinary hybrid run,
+  and labelling every hybrid mesh in the tree "fallback" is the same lie pointed the other way.
+- **THE COMMITTED RECORD SLOTS ARE RECONCILED, NEVER JUST WRITTEN.** `<stem>.fallback.json` is
+  mutually exclusive with `<stem>.casetype.json` and `<stem>.verdict.json`, and `commit` removes
+  whichever two do not apply — a verdict file beside a fallback mesh is a judgement of a mesh that
+  no longer exists. Gate: check 6b, both directions.
+- **THE COMMITTED SCRIPT DESCRIBES THE RUN THAT HAPPENED.** `build_pipeline_config` gained a
+  `mesh_cfg` override with exactly ONE caller, the fallback commit; a script carrying the panel's
+  `MESH_MODE 1` would be refused by the family the moment anyone ran it, leaving a committed case
+  holding a mesh beside a script that cannot reproduce it. An override rather than a second
+  builder, which the rule above forbids. Gate: check 8, which also reads the AST for a
+  `PipelineConfig` built on the spot.
+Gated by `tests/test_mesh_fallback.py`; the check and injection counts are that file's own
+docstring's and are not restated here.
+  Why: `docs/design_notes/gui.md`, "A SHAPE NO FAMILY COVERS IS A DOWNGRADE, NOT A DEAD END".
+
 ## Named blind spots
 
 One list per rule file (`docs/agents/rule-file-style.md` rule 5). These are this file's coverage
@@ -142,6 +213,15 @@ which are capability refusals.
 - **THE GATE DRIVES THE REAL CONTROLLER AGAINST A RECORDING STAND-IN FOR THE MAIN WINDOW.** That
   the two buttons are on screen, enabled and in the right row is read from SOURCE (check 1) rather
   than from a window anyone opened; `smoke_headless_appcontroller.py` is what builds a real one.
+- **THE ACCEPTANCE LIVES FOR THE SESSION AND NOTHING READS IT BACK.** A case committed yesterday
+  carries its `<stem>.fallback.json`, and reopening it tells the GUI nothing: the next Trial asks
+  again from scratch. That is the safe direction (an acceptance is never inherited) and it is also
+  why the record is a record rather than state.
+- **"THE EXISTING HYBRID PATH IS UNCHANGED" IS HELD AT THE GUI LEVEL, NOT BY `golden_mesh.py`.**
+  #167 touched no C++ at all, and the comparator was run by hand for the record (21 cases, 0 DIFF,
+  worst coordinate deviation 0.000e+00, one of the 21 a NO-MESH outcome). `test_mesh_fallback.py`
+  check 10 is what a gate can hold: a hybrid-mode configuration reaches no offer, `mesher_config`
+  leaves it alone, and an unjudged commit still writes no sidecar.
 - **NOTHING CHECKS THAT A COMMITTED CASE IS STILL CONSISTENT LATER.** Whether the mesh beside a
   frozen verdict is still the mesh that verdict judged is nobody's question once Generate returns:
   a later Export, a hand-edit or a headless `run_pipeline.sh` over the same output path can replace

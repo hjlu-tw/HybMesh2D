@@ -344,6 +344,12 @@ def make_host(commit_mod, cfg, temp_dir, pipeline=None):
             self._mesh_trial = None
             self._trial_fingerprint = ""
             self._commit_after_mesh = False
+            # The hybrid-fallback state the composed controller declares in its
+            # own `__init__` (#167). Set here for the same reason the three
+            # above are: these are read directly, never with a default, so that
+            # a renamed one fails loudly instead of disabling a disposition.
+            self._mesh_fallback = None
+            self._trial_fallback = None
             self.lines = []
             self.reports = []
             #: Every launch of the generator. Check 4's whole point is that this
@@ -359,7 +365,7 @@ def make_host(commit_mod, cfg, temp_dir, pipeline=None):
         def config_from_panel(self, _name):
             return self.global_mesh_config
 
-        def build_pipeline_config(self):
+        def build_pipeline_config(self, mesh_cfg=None):
             return pipeline
 
         def run_mesh_generator(self, *, commit=False):
