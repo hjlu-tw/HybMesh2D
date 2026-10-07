@@ -18,14 +18,17 @@ paths:
 Loaded on demand when the mesh-BC audit, the project-file classifier, the case-grid lookup,
 the shape-summary reader, the CASE TYPE and its verdict, the Mesh Statistics panel, the mesh
 output-name resolver, the mesh-export / Mesh-layers / solver controller, or the segment model
-is read — **18 files**, verified to match. The `services/case_type*` glob is #160's: a case
+is read — **19 files**, verified to match. The `services/case_type*` glob is #160's: a case
 type GRADES the same `.provenance.json` this file's sixth concern already reads inward, so
 the reader and the judge sit together rather than one area's rule being split in two. It
-reaches EIGHT files since #164 — the document, the figures and provenance it holds, the
-config overlay, the characteristic length that fits that overlay to another drawing, the
-verdict, the authoring step, the ROLES that bind one to the operator's own CAD and the
-pre-selection split off them — all eight being the ~500-line standard's cuts through one
-artefact rather than eight seams. **Rules only** — the rationale (the
+reaches NINE files since #168 — the document, the figures and provenance it holds, the
+EVIDENCE a set of reference meshes gives one figure, the config overlay, the characteristic
+length that fits that overlay to another drawing, the verdict, the authoring step, the ROLES
+that bind one to the operator's own CAD and the pre-selection split off them — all nine being
+the ~500-line standard's cuts through one artefact rather than nine seams. **What those
+numbers REST ON, and how one that judged wrong is corrected, is `.claude/rules/gui-evidence.md`
+(#168)**, whose four globs are all under this file's `services/case_type*`: a session editing
+any of them loads both. **Rules only** — the rationale (the
 measurements, the dated USER-REPORTED failures, the reversals and the named blind spots) is
 `docs/design_notes/gui.md`. Read that note before overruling a rule here; when a rule changes,
 update BOTH.
@@ -43,7 +46,9 @@ whose labels nothing carries, a quality figure measuring a quantity the mesher n
 That is the family resemblance, and it is why they are one file.
 
 **THREE files this rules on are reached by NO glob in ANY rule file**:
-`tools/PreProcessor/save_case_type.py`, #161's authoring host,
+`tools/PreProcessor/save_case_type.py`, #161's authoring host — SHARED with
+`.claude/rules/gui-evidence.md`, which carries what it prints about a threshold's support
+(#168), the overlap being declared in both headers —
 `tools/PreProcessor/show_case_type.py`, #162's inspecting one, and
 `tools/PreProcessor/apply_case_type.py`, #163's applying one and #164's binding one. All three sit outside
 `gui-seams.md`'s tree-wide `tools/PreProcessor/gui/**` as well — so the tripwire row in
@@ -646,7 +651,9 @@ a forecast**: its roles entry left this file 1,598 characters of slack (2026-10-
 CHARACTERS — `wc -c` reports BYTES and the first draft of this sentence quoted those), which
 is under one block's worth — #137's own threshold was 73 and #153's 197, and this is the same order. So the
 next block here is a NEW RULE FILE, not a squeeze, and #165 and #166 should expect to take it;
-`gui-topology.md` carries the identical sentence for the same reason.
+`gui-topology.md` carries the identical sentence for the same reason. **Three tickets have since
+done exactly that** — #165's `gui-preflight.md`, #166's `gui-dispositions.md` and #168's
+`gui-evidence.md` — so the forecast is now a measurement, and a fourth should expect the same.
 
 ## Named blind spots
 
@@ -657,7 +664,10 @@ which are capability refusals.
 - **Nothing judges whether a TOLERANCE FACTOR is right.** #161 closed the half of this that was
   about the shipped case type — its bounds are now measurements times a factor, with one
   deliberate override — and what is gated is that a bound really IS the product, not that the
-  product is a good place for a bound. #168 is what corrects a misjudged one with evidence.
+  product is a good place for a bound. #168 has since landed the way a misjudged one is
+  CORRECTED — by adding a reference mesh, never by editing the number — and moved this limit one
+  layer out rather than closing it: nothing judges whether a reference mesh deserves its kind
+  either. The rules are `.claude/rules/gui-evidence.md`.
 - **The "neither host grades" check reads SOURCE**, so a third host that grew its own grading is
   invisible to it.
 - **The GUI leg drives `_on_mesh_gen_finished` with a recording stand-in for the main window.**

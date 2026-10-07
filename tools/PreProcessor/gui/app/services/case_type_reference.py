@@ -23,10 +23,25 @@ silently ignored, because a threshold nobody evaluates is worse than none.
 WHERE THE NUMBERS CAME FROM is #161's half, and it is what makes a threshold a
 DEMONSTRATION rather than an invented number: a `ReferenceMesh` is a mesh the
 maintainer judged good, recorded with the figures it published, and an `Origin`
-is one threshold's claim to have been derived from one of them times a tolerance
+is one threshold's claim to have been derived from them times a tolerance
 factor. ADR-0002's first consequence states the rule this implements — "a
 misjudged verdict is corrected by adding a reference mesh, not by hand-editing
 the number (which would throw the traceability away)".
+
+A CASE TYPE RESTS ON MORE THAN ONE MESH (#168). A case type starts from one
+reference mesh, which is a thin basis: it has an opinion about what that mesh
+happened to exercise and none about anything else. When a verdict judges wrong,
+the maintainer adds the offending mesh — as a further EXEMPLAR, a mesh the
+thresholds must keep accepting, or as a COUNTER-EXAMPLE, one they must now
+reject — and the bounds move. What a SET of them derives, and whether a document
+obeys that derivation, is `services/case_type_evidence.py` — `Evidence` and
+`check_derivations` / `check_standing` — and NOT this module: that arithmetic
+needs a `Threshold`'s factor and a `ReferenceMesh`'s figure together, so it fits
+neither the document nor the vocabulary and was given a file of its own. What is
+here is the vocabulary that derivation is expressed in: the figure keys, the two
+KINDS a reference mesh can be, the `Origin` that records which meshes a bound
+rests on and times what, and `exceeds` — the one comparison both that module and
+`case_type_verdict` ask.
 """
 from __future__ import annotations
 
@@ -72,6 +87,30 @@ MANUAL = "manual"
 #: third band could not reach `Origin` and miss `Threshold`.
 BOUNDS = ("attention", "unusable")
 
+#: What a reference mesh is EVIDENCE OF (#168). An EXEMPLAR is a mesh the
+#: thresholds must accept — the only kind there was before this ticket, which is
+#: why it is the default and why no v1-v4 document has to say so. A
+#: COUNTER-EXAMPLE is a mesh they must REJECT: the maintainer saw a verdict judge
+#: it wrongly usable, and the correction is to add the mesh rather than to edit
+#: the number it got wrong.
+EXEMPLAR = "exemplar"
+COUNTER = "counter-example"
+KINDS = (EXEMPLAR, COUNTER)
+
+
+def exceeds(value, bound) -> bool:
+    """Does `value` cross `bound`? THE comparison, written once (#168).
+
+    `case_type_verdict.judge_threshold` asks it of a finished mesh, and
+    `case_type_evidence` asks it of every reference mesh a case type declares —
+    which is what makes "every exemplar is accepted and every counter-example is
+    rejected" a statement about the SAME rule the verdict applies, rather than a
+    second opinion that is free to drift from it. STRICTLY greater: a figure
+    sitting exactly ON its bound has not crossed it, and a derivation that wants
+    to reject a mesh must therefore put the bound strictly below its figure.
+    """
+    return bound is not None and value is not None and value > bound
+
 
 def check_bound(bound: str) -> str:
     """`bound` if it names one, else raise. One owner, two askers.
@@ -110,20 +149,29 @@ def figures_for(summary, set_name: str):
 
 
 class Origin:
-    """WHICH reference mesh a threshold's bounds were measured from, and times what.
+    """WHICH reference meshes a threshold's bounds rest on, and times what.
 
     This is what makes a threshold a DEMONSTRATION rather than an invented
     number (#161, ADR-0002's first consequence): the maintainer knows which mesh
-    is good, and does not necessarily know what its p95 is. A bound is that
-    mesh's own published figure times a TOLERANCE FACTOR, so it is a band rather
-    than a knife edge, and six months later the number is still traceable to the
-    mesh it came from.
+    is good, and does not necessarily know what its p95 is. A bound is those
+    meshes' own published figures times a TOLERANCE FACTOR, so it is a band
+    rather than a knife edge, and six months later the number is still traceable
+    to the meshes it came from.
 
-    IT HOLDS NO FIGURE. The measured value lives once, in the named
-    `ReferenceMesh`'s own `figures`, and the bound is re-derived from it — so the
-    file cannot disagree with itself about what the reference mesh measured. That
-    check needs the case type's reference list, which is why it is
-    `CaseType.__init__` that performs it and not this class.
+    `references` IS THE SUPPORT, AND IT IS A LIST (#168). A case type that rests
+    on one mesh has an opinion about what that mesh happened to exercise and none
+    about anything else, so a misjudged verdict is corrected by ADDING a mesh —
+    and from then on the threshold rests on every reference that published its
+    figure, exemplars and counter-examples alike. That is user story 39 held by
+    the file rather than by a memory: the ids are written down beside the number.
+    A v1-v4 document spells one id as `reference`, which is read as a support of
+    one; this build writes `references` and nothing else.
+
+    IT HOLDS NO FIGURE. The measured values live once, in the named
+    `ReferenceMesh`'s own `figures`, and the bound is re-derived from them — so
+    the file cannot disagree with itself about what a reference mesh measured.
+    That check needs the case type's reference list, which is why it is
+    `case_type_evidence.check_derivations` that performs it and not this class.
 
     A FACTOR IS WHAT MAKES A BOUND MEASURED. Present for a bound, that bound was
     derived; absent while the bound is set, the maintainer typed it — which is
@@ -139,7 +187,7 @@ class Origin:
     one.
     """
 
-    __slots__ = ("reference", "attention_factor", "unusable_factor")
+    __slots__ = ("references", "attention_factor", "unusable_factor")
 
     #: How far a stated bound may sit from `value * factor` and still be read as
     #: that product. Machine-written files round-trip exactly through JSON, so
@@ -148,12 +196,23 @@ class Origin:
     #: the factor and let it read as an override.
     REL_TOL = 1e-9
 
-    def __init__(self, reference: str, attention_factor: float | None = None,
+    def __init__(self, references, attention_factor: float | None = None,
                  unusable_factor: float | None = None):
-        if not str(reference).strip():
+        # A bare string is a support of ONE, which is what every call site that
+        # derives a bound from a single mesh writes and what a v1-v4 document
+        # spells. Accepted here rather than normalised by each caller, so there
+        # is one answer to "what is a support" and not one per reader.
+        if isinstance(references, str):
+            references = [references]
+        idents = tuple(str(r).strip() for r in references or ())
+        if not idents or not all(idents):
             raise CaseTypeError(
                 "a threshold's origin names no reference mesh; provenance that "
                 "does not say which mesh is not provenance")
+        if len(set(idents)) != len(idents):
+            raise CaseTypeError(
+                "a threshold's origin names %s twice; a support that counts one "
+                "mesh as two is not a support" % (idents,))
         # Parsed BEFORE being compared, so a factor that is not a number raises
         # `CaseTypeError` like every other malformed field rather than a bare
         # `ValueError` out of the comparison, which no caller is catching.
@@ -161,8 +220,9 @@ class Origin:
                    "unusable": opt_float(unusable_factor)}
         if all(f is None for f in factors.values()):
             raise CaseTypeError(
-                "a threshold's origin names reference mesh %r but no tolerance "
-                "factor, so no bound was derived from it" % (reference,))
+                "a threshold's origin names reference mesh(es) %s but no "
+                "tolerance factor, so no bound was derived from them"
+                % ", ".join(idents))
         for name, factor in factors.items():
             if factor is not None and factor < 1.0:
                 raise CaseTypeError(
@@ -170,7 +230,7 @@ class Origin:
                     "figure the reference mesh published, so the mesh the "
                     "maintainer judged good would fail the case type it "
                     "authored" % (name, factor))
-        self.reference = str(reference).strip()
+        self.references = idents
         self.attention_factor = factors["attention"]
         self.unusable_factor = factors["unusable"]
 
@@ -184,17 +244,30 @@ class Origin:
             raise CaseTypeError(
                 "threshold %r: `measured_from` must be an object, got %r"
                 % (key, raw))
-        unknown = set(raw) - {"reference", "attention_factor", "unusable_factor"}
+        unknown = set(raw) - {"reference", "references", "attention_factor",
+                              "unusable_factor"}
         if unknown:
             raise CaseTypeError(
                 "threshold %r: unknown key(s) in `measured_from`: %s"
                 % (key, ", ".join(sorted(unknown))))
-        return cls(reference=str(raw.get("reference", "")),
+        if "reference" in raw and "references" in raw:
+            # Both spellings at once is a document that may disagree with
+            # itself about its own provenance, which is the one thing this
+            # class exists to make impossible.
+            raise CaseTypeError(
+                "threshold %r: `measured_from` spells its support both as "
+                "`reference` and as `references`; one of the two is the one "
+                "that is read, and a reader cannot be asked to guess which"
+                % key)
+        raw_refs = raw.get("references", raw.get("reference", ""))
+        if isinstance(raw_refs, list):
+            raw_refs = [str(r) for r in raw_refs]
+        return cls(references=raw_refs,
                    attention_factor=opt_float(raw.get("attention_factor")),
                    unusable_factor=opt_float(raw.get("unusable_factor")))
 
     def to_dict(self) -> dict:
-        out = {"reference": self.reference}
+        out = {"references": list(self.references)}
         for bound in BOUNDS:
             factor = self.factor_for(bound)
             if factor is not None:
@@ -202,8 +275,9 @@ class Origin:
         return out
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
-        return ("Origin(reference=%r, attention_factor=%r, unusable_factor=%r)"
-                % (self.reference, self.attention_factor, self.unusable_factor))
+        return ("Origin(references=%r, attention_factor=%r, unusable_factor=%r)"
+                % (self.references, self.attention_factor,
+                   self.unusable_factor))
 
 
 class ReferenceMesh:
@@ -216,6 +290,15 @@ class ReferenceMesh:
     read, and the figures themselves. A reference recorded as a path alone would
     say nothing once that mesh is regenerated.
 
+    `kind` is what the mesh is evidence OF (#168): an `EXEMPLAR` the thresholds
+    must accept, or a `COUNTER-EXAMPLE` they must reject. It is recorded on the
+    MESH rather than on the threshold because it is a fact about the mesh — the
+    maintainer judged it good or judged it bad — and one mesh cannot be good
+    evidence for one figure and bad evidence for another. Every case type
+    authored before #168 declares exemplars only, which is why `EXEMPLAR` is the
+    default and why a v1-v4 document needs no new key to keep meaning what it
+    said.
+
     `figures` holds ONLY what the reference mesh actually measured. A figure the
     mesher could not measure is ABSENT, never a negative number carried forward
     — `include/CellShape.hpp` writes a set's three figures negative together with
@@ -226,10 +309,15 @@ class ReferenceMesh:
     """
 
     __slots__ = ("ident", "mesh", "provenance", "metric", "measured_on",
-                 "figures")
+                 "figures", "kind")
 
     def __init__(self, ident: str, metric: str, figures: dict,
-                 mesh: str = "", provenance: str = "", measured_on: str = ""):
+                 mesh: str = "", provenance: str = "", measured_on: str = "",
+                 kind: str = EXEMPLAR):
+        if kind not in KINDS:
+            raise CaseTypeError(
+                "reference mesh %r is a %r, which is not a kind of evidence; "
+                "expected one of %s" % (ident, kind, ", ".join(KINDS)))
         if not str(ident).strip():
             raise CaseTypeError(
                 "a reference mesh must have an id; thresholds name it to say "
@@ -262,6 +350,7 @@ class ReferenceMesh:
         self.ident = str(ident).strip()
         self.metric = str(metric).strip()
         self.figures = clean
+        self.kind = kind
         self.mesh = str(mesh)
         self.provenance = str(provenance)
         self.measured_on = str(measured_on)
@@ -276,7 +365,7 @@ class ReferenceMesh:
             raise CaseTypeError("a reference mesh must be an object, got %r"
                                 % (raw,))
         unknown = set(raw) - {"id", "mesh", "provenance", "metric",
-                              "measured_on", "figures"}
+                              "measured_on", "figures", "kind"}
         if unknown:
             raise CaseTypeError("reference mesh %r carries unknown key(s): %s"
                                 % (raw.get("id"), ", ".join(sorted(unknown))))
@@ -285,10 +374,17 @@ class ReferenceMesh:
                    figures=raw.get("figures", {}),
                    mesh=str(raw.get("mesh", "")),
                    provenance=str(raw.get("provenance", "")),
-                   measured_on=str(raw.get("measured_on", "")))
+                   measured_on=str(raw.get("measured_on", "")),
+                   kind=str(raw.get("kind", EXEMPLAR)))
 
     def to_dict(self) -> dict:
         out = {"id": self.ident, "metric": self.metric}
+        if self.kind != EXEMPLAR:
+            # Written only when it is NOT the default, so a case type that
+            # declares exemplars only comes back out of a round trip as the
+            # document it was — the same rule `fields` and `reference_meshes`
+            # already follow in `CaseType.to_dict`.
+            out["kind"] = self.kind
         for name in ("mesh", "provenance", "measured_on"):
             if getattr(self, name):
                 out[name] = getattr(self, name)
@@ -297,5 +393,5 @@ class ReferenceMesh:
         return out
 
     def __repr__(self) -> str:  # pragma: no cover - diagnostics only
-        return ("ReferenceMesh(ident=%r, metric=%r, figures=%d)"
-                % (self.ident, self.metric, len(self.figures)))
+        return ("ReferenceMesh(ident=%r, kind=%r, metric=%r, figures=%d)"
+                % (self.ident, self.kind, self.metric, len(self.figures)))

@@ -1,6 +1,6 @@
 {
   "schema": "hybmesh-case-type",
-  "version": 3,
+  "version": 5,
   "name": "Circular body, O-grid",
   "metric": "quad_midline_ratio",
   "fields": {
@@ -26,15 +26,37 @@
         "bulk.p95": 1.877756,
         "bulk.max": 1.881891
       }
+    },
+    {
+      "id": "cgrid_naca0012",
+      "metric": "quad_midline_ratio",
+      "kind": "counter-example",
+      "mesh": "results/meshes/multiblock_cgrid/mesh_multiblock_cgrid.vtk",
+      "provenance": "results/meshes/multiblock_cgrid/mesh_multiblock_cgrid.provenance.json",
+      "measured_on": "2026-10-07",
+      "figures": {
+        "median": 4.832007,
+        "p95": 148.005672,
+        "max": 3147.957636,
+        "layer.median": 5.59829,
+        "layer.p95": 523.160759,
+        "layer.max": 3147.957636,
+        "bulk.median": 4.403685,
+        "bulk.p95": 103.819747,
+        "bulk.max": 909.360929
+      }
     }
   ],
   "thresholds": [
     {
       "key": "median",
       "attention": 2.7689655,
-      "unusable": 5.537931,
+      "unusable": 2.9865990333218484,
       "measured_from": {
-        "reference": "ogrid_circle",
+        "references": [
+          "ogrid_circle",
+          "cgrid_naca0012"
+        ],
         "attention_factor": 1.5,
         "unusable_factor": 3.0
       },
@@ -45,7 +67,10 @@
       "attention": 49.151802,
       "unusable": 200.0,
       "measured_from": {
-        "reference": "ogrid_circle",
+        "references": [
+          "ogrid_circle",
+          "cgrid_naca0012"
+        ],
         "attention_factor": 1.5
       },
       "advice": "The worst cell is in the wall band and its ratio is the azimuthal spacing over BL_INITIAL_THICKNESS. Either ask for a less aggressive first cell or put more points round the body; this number is arithmetic, not a defect to smooth away."
@@ -55,7 +80,10 @@
       "attention": 2.816634,
       "unusable": 5.633268,
       "measured_from": {
-        "reference": "ogrid_circle",
+        "references": [
+          "ogrid_circle",
+          "cgrid_naca0012"
+        ],
         "attention_factor": 1.5,
         "unusable_factor": 3.0
       },

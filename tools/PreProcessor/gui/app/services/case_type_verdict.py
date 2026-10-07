@@ -241,11 +241,15 @@ def judge_threshold(threshold: case_type_mod.Threshold, summary) -> Reason:
         return Reason(threshold.key, NOT_DETERMINABLE, advice=threshold.advice,
                       detail="the mesher looked and could not measure it")
     value = float(getattr(figures, field))
-    if threshold.unusable is not None and value > threshold.unusable:
+    # `exceeds` rather than a comparison written here: `case_type_evidence` asks
+    # the SAME question of every reference mesh a case type declares, so that
+    # "every exemplar is accepted and every counter-example rejected" (#168) is
+    # a statement about this rule and not a second opinion free to drift.
+    if case_type_mod.exceeds(value, threshold.unusable):
         return Reason(threshold.key, UNUSABLE, measured=value,
                       bound=threshold.unusable, bound_name="unusable",
                       advice=threshold.advice)
-    if threshold.attention is not None and value > threshold.attention:
+    if case_type_mod.exceeds(value, threshold.attention):
         return Reason(threshold.key, NEEDS_ATTENTION, measured=value,
                       bound=threshold.attention, bound_name="needs-attention",
                       advice=threshold.advice)

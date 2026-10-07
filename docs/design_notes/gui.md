@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 304, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 305, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -4909,6 +4909,145 @@ the real commit over SYNTHETIC trial bytes** — `commit` copies and never reads
 check needing a build tree is check 4, whose claim is that a real mesher really produces a mesh
 here. **Nothing here judges the QUALITY of a fallback mesh**, which is the point: the thresholds do
 not apply to it.
+
+**A MISJUDGED THRESHOLD IS CORRECTED WITH EVIDENCE** (#168, parent #158;
+`services/case_type_evidence.py` NEW and Qt-free, `services/case_type_reference.py` and
+`services/case_type_author.py` widened, `services/case_type.py` at schema 5,
+`services/case_type_verdict.py` re-pointed at one comparison;
+`tools/PreProcessor/add_reference_mesh.py` NEW; `examples/case_types/ogrid_circle.casetype.json`
+corrected; gated by `tests/test_case_type_evidence.py`).
+
+The ticket that closes the blind spot #161's section above names. A case type starts from ONE
+reference mesh, which is a thin basis: it has an opinion about what that mesh happened to
+exercise and no opinion about anything else. When a verdict turns out to be wrong, the maintainer
+adds the offending mesh and the thresholds move. Hand-editing the number would work and would
+throw away the thing the measurement bought — a threshold whose origin is still visible six
+months later, which is ADR-0002's first consequence and user stories 38 and 39.
+
+* **#161'S FORWARD GUESS WAS RIGHT ABOUT THE SHAPE AND WRONG ABOUT THE NUMBER, TWICE OVER, AND
+  BOTH CORRECTIONS ARE LEFT VISIBLE.** That section predicted "a schema BUMP, not a second entry
+  in the list `reference_meshes` already is", then corrected its own "schema 3" to 4 because #162
+  had spent 3. #163 then spent 4 on the characteristic length, so what #168 actually took is
+  **5** — the same forward-guess failure mode recorded a second time rather than silently
+  renumbered. The structural half of the prediction held exactly: `Origin.reference` became
+  `Origin.references`, a tuple.
+* **THE DERIVATION MOVED OUT OF THE DOCUMENT, AND THE SPLIT IS THE ~500-LINE STANDARD AGAIN.**
+  `CaseType._check_references` was the only scope holding a `Threshold`'s factor and a
+  `ReferenceMesh`'s figure together; once the derivation became a function of a SET it needed a
+  home of its own, and `case_type.py` was at 461 lines against the standard. So
+  `services/case_type_evidence.py` holds `Evidence` (what a set of reference meshes says about
+  ONE figure) and `check_derivations` / `check_standing` (whether a document obeys it), and
+  `CaseType._check_references` delegates — which FREED lines in the document rather than adding
+  them. Dependency one way: document -> evidence -> figures. The fourth cut through one artefact,
+  and the fourth on length rather than subject.
+* **THE SEPARATING BOUND IS THE WHOLE MECHANISM.** `base` is the WORST figure any exemplar
+  published, `cap` the BEST any counter-example did. A bound is `base * factor`, held down to
+  `sqrt(base * cap)` when a counter-example would otherwise sit under it. The geometric midpoint
+  is strictly between by construction, so every exemplar stays accepted and every counter-example
+  is rejected — **and that is a property of the arithmetic rather than of the step that applied
+  it**, which is why `check_standing` can assert it on LOAD and a hand-edited document that
+  accepts a mesh it declares it must reject is refused. Halfway in log space is a CHOICE, named
+  in the blind spots: pulling the bound to just under `cap` would reject by a hair and pretend to
+  know where the boundary is, which is the same argument that made #161 multiply by a factor
+  instead of using the figure itself.
+* **A KEY THAT SEPARATES NOTHING PLACES NO BOUND, and getting that wrong would have made the
+  feature unusable.** The first design refused any counter-example whose figure sat below an
+  exemplar's on ANY bounded key. Measured against the real meshes in this tree, that refuses
+  almost everything: the C-grid is 96x the O-grid's `max` and only 2.6x its `bulk.median`, and a
+  mesh that is worse in the way that matters is routinely no worse in three other figures. The
+  rule is therefore per KEY, and the contradiction is only when NO key separates them — which is
+  also exactly what the ticket's acceptance means by "required to both accept and reject the same
+  figures". The H-grid, better than the exemplars everywhere, is the gate's case for it.
+* **CRITERIA 5 AND 6 COLLIDE, AND THE REFUSAL IS WHERE THEY ARE RECONCILED.** A hand-set bound
+  may not be recomputed; a counter-example must be rejected. When the only figure that could
+  reject it is one the maintainer overrode, both cannot hold — so the ADDITION is refused and the
+  override is NAMED as the obstacle. Silently recomputing breaks the first rule, silently
+  accepting leaves a counter-example that corrects nothing, and a refusal that does not say which
+  bound is the maintainer's leaves them with no move to make. The same collision has a second
+  shape, found by the gate rather than by reasoning: a further EXEMPLAR can push a recomputed
+  `attention` above a hand-set `unusable`, which `Threshold` refuses correctly and with a message
+  about the band rather than about the override — `_rederived` now catches that and re-raises
+  naming the hand-set bound.
+* **ONE COMPARISON, AND THE VERDICT GAVE UP ITS OWN.** "Every exemplar is accepted and every
+  counter-example rejected" is only worth asserting if `rejected` means here what it means in
+  `judge_threshold`, so `case_type_reference.exceeds` became the single owner and the verdict
+  calls it. Strictly greater, which is what forces a derivation that wants to reject a mesh to put
+  the bound strictly BELOW its figure — the reason the separating bound is a midpoint and not
+  `cap` itself.
+* **THE SUPPORT IS BOTH DERIVED AND STORED, WHICH IS A REDUNDANCY ON PURPOSE.** `Origin` could
+  have held nothing but factors, the support being computable from the references. It stores the
+  ids anyway, because user story 39's question is asked of the FILE by a person reading it six
+  months later, and `check_derivations` holds the stored list to the derived one in both
+  directions so the two cannot drift. That check started as three — an undeclared reference, one
+  publishing nothing, one bearing on the figure and not named — and **collapsing them to one was
+  forced by an injection**: deleting the undeclared-reference refusal reddened nothing, because
+  the set comparison a line later caught the same document.
+* **THE SHIPPED EXAMPLE WAS CORRECTED, AND ONE ADDITION WAS LEFT OUT DELIBERATELY.**
+  `examples/case_types/ogrid_circle.casetype.json` now rests on the O-grid as an exemplar and
+  `results/meshes/multiblock_cgrid` as a counter-example; its `median` unusable bound came down
+  from 5.537931 to 2.9866 (the separating bound between 1.845977 and 4.832007) and its hand-set
+  `max` unusable 200.0 is untouched, which is criteria 1, 2, 3 and 5 visible in one file. Adding
+  `multiblock_tworing_offset` as a FURTHER EXEMPLAR was tried and dropped: it is a real
+  improvement to the basis — it moves `median` and `bulk.p95` — but with the counter-example
+  beside it the two land on the same separating value and the `median` threshold loses its
+  needs-attention band entirely. Honest, and not what a shipped example should teach, so the
+  artefact shows one correction and the gate shows the rest.
+* **AN ALREADY-FINISHED CASE NEEDED NO CODE AT ALL, AND THAT IS THE FINDING.** #166 already
+  embeds the whole case type and freezes the rendered verdict beside a committed mesh, so
+  correcting the file an operator borrowed rewrites nothing that has already been judged. Check 4
+  proves it through the real `mesh_commit.commit` — both sidecars byte-identical, the embedded
+  copy still judging that mesh the way it was judged — and the leg that makes it non-vacuous is
+  the other one: the CORRECTED case type judges the same mesh differently. Injection H removes
+  the embedding and reddens it alone.
+* **A COUNTER-EXAMPLE COULD WIDEN A BOUND, AND REVIEW FOUND IT.** `cap` was the minimum over
+  EVERY counter-example, so adding one that sits BELOW the exemplars on a figure dropped that
+  figure's cap under `base`, `separates` went False, the hold-down vanished wholesale and the
+  bound sprang back to `base * factor` — discarding the restraint an earlier counter-example had
+  placed, without a word. Measured on the shipped file: a mesh separable on `bulk.p95` and not on
+  `median` took `median`'s unusable bound from 2.9866 back to 5.53793. The fix is one clause —
+  `cap` is the minimum over the counters ABOVE `base`, never over all of them — and it also
+  cleaned up the symptom that should have given it away earlier: the H-grid refusal quoted a
+  median bound of 5.53793 while the file said 2.9866, because `standing_failures` runs on the
+  re-derived thresholds and was reporting the widened ones. **The lesson is about where the
+  gate was pointed**: every check drove a case type FORWARD from one authored state, and none
+  compared two successive corrections, so a bound that moved the wrong way between them was
+  invisible. Check 11 is that comparison, and its injection is the defect restored.
+* **A CLOSED BAND IS NOW REPORTED, which the first version left to be noticed.** Review's other
+  finding was that the hold-down applies to `attention` as well, so a counter-example close to
+  the exemplars lands both bounds on the separating value and `needs attention` becomes
+  unreachable for that figure — against #158's "Verdict states are four, not three". The
+  BEHAVIOUR is kept, because it is what the evidence supports: with the good mesh at 1.846 and
+  the bad one at 2.4 there is no third band a measurement could justify, and inventing one is
+  precisely what this ticket exists to stop. What was wrong was the silence, so `AddResult.notes`
+  carries the sentence and the host prints it as a `cost:` line. The blind spot stays, narrowed:
+  nothing stops a maintainer closing every band, and no gate counts how many are left open.
+* **TWO INJECTIONS CAME BACK INERT, AND BOTH FOR THE SAME REASON IN TWO DISGUISES: THE GATE WAS
+  NOT LOOKING AT THE MUTANT.** The kind-dropping injection was inert because every reference mesh
+  in the gate was constructed by hand, so `measure_reference` — the step that is handed the kind —
+  was reached by nothing; the fixtures now go through the real measuring step off a real sidecar.
+  The one-comparison injection was inert because check 8 parsed `case_type_verdict.py` off DISK,
+  so no in-memory mutant could change what it read; the world now carries the source it was built
+  from. This is the class file this repo already keeps — a stub shadowing the mutation, a fixture
+  that cannot falsify — met twice in one afternoon. A third injection was REMOVED rather than
+  retargeted: making `_rederived` keep the old support reddened six of ten checks, because the
+  file's own coherence check then refuses every addition.
+* **A PRE-EXISTING PIN WENT RED AND WAS LOOSENED RATHER THAN BUMPED.**
+  `tests/test_case_type_scale.py` check 8 asserted `SCHEMA_VERSION != 4` under the label "the
+  document grew; it was not replaced" — a check whose own subject is widening, pinned so that the
+  next widening fails it. It now asserts at least 4, that 3 is still readable and that the version
+  this build writes is one it reads. The same shape as `test_case_type_author.py` check 9, which
+  pinned "exactly one reference mesh" and now asks for exactly one EXEMPLAR.
+
+**Named blind spots.** Nothing judges whether a reference mesh DESERVES its kind — that the
+C-grid is a mesh the shipped case type should reject is the maintainer's judgement, and the
+mechanism exists to record a judgement rather than to form one; this is #161's "nothing judges
+whether a tolerance factor is right" moved one layer out. The separating bound's PLACE is argued
+and nowhere measured. A counter-example close to the exemplars leaves a figure with no
+needs-attention band, which is honest and is why the shipped example adds one mesh. The
+floating-point edge — two meshes so close that the midpoint does not round strictly between them
+— is REFUSED rather than handled, and nothing in the gate constructs it. And no GUI action
+authors or corrects a case type: `add_reference_mesh.py` is headless like the two hosts beside
+it, the window has Trial and Generate and no author and no picker, and no open ticket owns one.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

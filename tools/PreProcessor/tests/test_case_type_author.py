@@ -127,10 +127,18 @@ _HOST = os.path.join("tools", "PreProcessor", "save_case_type.py")
 _SHIPPED = os.path.join("examples", "case_types", "ogrid_circle.casetype.json")
 
 #: name -> repo-relative source, in DEPENDENCY order: the figures and the
-#: provenance, then the document, then the authoring step.
+#: provenance, the derivation over a SET of them, then the document, then the
+#: authoring step.
 _RELS = [
     ("app.services.case_type_reference",
      "tools/PreProcessor/gui/app/services/case_type_reference.py"),
+    # #168's evidence module sits BETWEEN them, and it has to be rebuilt with
+    # the rest: it holds the derivation `CaseType.__init__` checks, so a mutant
+    # trio that left the real one in place would raise the REAL module's
+    # `CaseTypeError` — a different class object from the mutant's — and every
+    # check that catches one would see the exception escape instead.
+    ("app.services.case_type_evidence",
+     "tools/PreProcessor/gui/app/services/case_type_evidence.py"),
     ("app.services.case_type",
      "tools/PreProcessor/gui/app/services/case_type.py"),
     ("app.services.case_type_author",
@@ -380,10 +388,12 @@ def check_provenance_round_trip(w):
         out.append("a fully measured reference recorded %d of %d figures"
                    % (len(got.figures), len(ct.FIGURE_KEYS)))
     for th in back.thresholds:
-        if th.measured_from is None or th.measured_from.reference != ref.ident:
+        if (th.measured_from is None
+                or th.measured_from.references != (ref.ident,)):
             out.append("threshold %s no longer names the mesh it came from"
                        % th.key)
-        elif back.reference(th.measured_from.reference) is None:
+        elif any(back.reference(i) is None
+                 for i in th.measured_from.references):
             out.append("threshold %s names a reference the file does not carry"
                        % th.key)
     return out
@@ -405,7 +415,7 @@ def check_override_is_distinguishable(w):
     if by_key["max"].origin_of("attention") != ct.MEASURED:
         out.append("the UNtouched bound of an overridden threshold reads %r"
                    % by_key["max"].origin_of("attention"))
-    if by_key["max"].measured_from.reference != ref.ident:
+    if by_key["max"].measured_from.references != (ref.ident,):
         out.append("an override threw the reference away")
     if by_key["median"].attention is not None:
         out.append("an empty override did not REMOVE the bound: %r"
@@ -586,7 +596,7 @@ def check_incoherent_file_is_refused(w):
         doc["thresholds"][0]["measured_from"]["attention_factor"] = 0.5
 
     def stray_reference(doc):
-        doc["thresholds"][0]["measured_from"]["reference"] = "nosuch"
+        doc["thresholds"][0]["measured_from"]["references"] = ["nosuch"]
 
     def unpublished_figure(doc):
         doc["reference_meshes"][0]["figures"].pop(doc["thresholds"][0]["key"])
@@ -649,9 +659,15 @@ def check_hand_written_still_legal(w):
             out.append("a hand-written bound reads %r, not %r"
                        % (hand.thresholds[0].origin_of(bound), ct.MANUAL))
     shipped = ct.load(os.path.join(_REPO, _SHIPPED))
-    if len(shipped.references) != 1:
-        return out + ["%s declares %d reference meshes, not 1"
-                      % (_SHIPPED, len(shipped.references))]
+    # AT LEAST ONE EXEMPLAR, not exactly one reference. #168 added a
+    # counter-example to the shipped file, and pinning the count would make
+    # this check — whose subject is that the shipped example is MEASURED rather
+    # than typed — fail on every correction made with evidence, which is the
+    # one thing the artefact is supposed to accept.
+    exemplars = [r for r in shipped.references if r.kind == ct.EXEMPLAR]
+    if len(exemplars) != 1:
+        return out + ["%s declares %d exemplar reference mesh(es), not 1"
+                      % (_SHIPPED, len(exemplars))]
     origins = [(t.key, b, t.origin_of(b)) for t in shipped.thresholds
                for b in ct.BOUNDS if getattr(t, b) is not None]
     measured = [o for o in origins if o[2] == ct.MEASURED]
@@ -663,7 +679,7 @@ def check_hand_written_still_legal(w):
         out.append("%s carries %d hand-set bound(s); the shipped example is "
                    "meant to demonstrate exactly one override: %s"
                    % (_SHIPPED, len(manual), manual))
-    ref = shipped.references[0]
+    ref = exemplars[0]
     for th in shipped.thresholds:
         if ref.figure(th.key) is None:
             out.append("%s bounds %s, which its reference mesh never published"
@@ -769,14 +785,27 @@ check(check_incoherent_file_is_refused(inj) and others_green(inj, 8),
       "product it claims to be — the invariant that makes `measured` a fact "
       "about the file rather than a claim about how it was produced")
 
-inj = mutate("case_type_reference",
-             "            if factor is not None and factor < 1.0:",
-             "            if False:")
+_LOW_FACTOR = "            if factor is not None and factor < 1.0:"
+_STANDING = """        raise CaseTypeError("case type %r contradicts its own evidence: %s"
+                            % (name, "; ".join(failures)))"""
+inj = mutate("case_type_reference", _LOW_FACTOR, "            if False:")
+check(not check_authored_type_produces_verdicts(inj) and others_green(inj, 8),
+      "injection B. removing the factor-below-1.0 refusal alone does NOT redden "
+      "check 7 any more, and that is the finding rather than a gap: #168's "
+      "standing check refuses the same document from the other side, because a "
+      "bound under its exemplar's own figure IS a case type rejecting the mesh "
+      "it was measured from. Asserted so this redundancy cannot be removed "
+      "silently — B2 below is what shows check 7 can still go red")
+inj = mutate("case_type_evidence", _STANDING, "        pass")
+inj = world(case_type_reference=_SRC["app.services.case_type_reference"]
+            .replace(_LOW_FACTOR, "            if False:", 1),
+            case_type_evidence=_SRC["app.services.case_type_evidence"]
+            .replace(_STANDING, "        pass", 1))
 check(check_authored_type_produces_verdicts(inj) and others_green(inj, 7, 8),
-      "injection B. check 7 fails when a tolerance factor below 1.0 is allowed: "
-      "the mesh the maintainer judged good would fail the case type measured "
-      "from it. Check 8 moves with it and is asserted, that document being the "
-      "same defect written down")
+      "injection B2. check 7 fails when BOTH refusals are gone: the mesh the "
+      "maintainer judged good would fail the case type measured from it. Check "
+      "8 moves with it and is asserted, that document being the same defect "
+      "written down")
 
 inj = mutate("case_type_author", "        if figures is None or not figures.measured:",
              "        if figures is None:")
@@ -790,7 +819,7 @@ check(others_green(inj, 6),
 inj = mutate("case_type", '''        return (MEASURED if self.measured_from.factor_for(bound) is not None
                 else MANUAL)''', "        return MEASURED")
 check(inj[0].Threshold("max", "a", attention=2.0, unusable=5.0,
-                      measured_from=inj[0].Origin("r", attention_factor=1.0)
+                      measured_from=inj[0].Origin(["r"], attention_factor=1.0)
                       ).origin_of("unusable") == inj[0].MEASURED,
       "injection D. injection is well-formed: a bound with no factor beside it "
       "now claims to have been measured")
@@ -799,12 +828,8 @@ check(check_override_is_distinguishable(inj) and others_green(inj, 4, 9),
       "measurement. Check 9 moves with it and is asserted: it reads the same "
       "answer off the shipped file and off a v1 document")
 
-inj = mutate("case_type", '''                    raise CaseTypeError(
-                    "threshold %r was measured from reference mesh %r, which "
-                    "this case type does not declare; provenance pointing at "
-                    "nothing is not provenance" % (th.key, origin.reference))'''
-             .replace("                    raise", "                raise"),
-             "                continue")
+inj = mutate("case_type_evidence", "        if named != seen.idents:",
+             "        if False:")
 check(check_incoherent_file_is_refused(inj) and others_green(inj, 8),
       "injection E. check 8 ALONE fails when a threshold may name a reference "
       "mesh the case type does not declare — provenance pointing at nothing")
@@ -814,7 +839,7 @@ inj = mutate("case_type", '''        if self.measured_from is not None:
              "        if False:\n            pass")
 check("measured_from" not in inj[0].Threshold(
           "max", "a", attention=2.0,
-          measured_from=inj[0].Origin("r", attention_factor=1.0)).to_dict(),
+          measured_from=inj[0].Origin(["r"], attention_factor=1.0)).to_dict(),
       "injection F. injection is well-formed: a written threshold no longer "
       "carries where it came from")
 check(check_bounds_are_measured(inj) and check_provenance_round_trip(inj)

@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **45,385
-characters (45,639 bytes, 2026-10-07) ≈ 11k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **46,811
+characters (47,069 bytes, 2026-10-07) ≈ 12k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**46,000**, leaving 615 characters of slack — derived by a rule the gate states at that
+**47,500**, leaving 689 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -45,7 +45,7 @@ feature commit ever ran against it, and the file drifted 110 characters in total
 the missing guard, not damage done; #78 closed it. Before #75 it was a
 ratchet that TRACKED this file rather than only descending — over every commit touching the gate
 it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
-characters while `wc -c` reports bytes, and the two differ by 254 today because of the CJK in this
+characters while `wc -c` reports bytes, and the two differ by 258 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -84,10 +84,11 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 | GUI pre-flight — whether a family can work with the geometry and roles it was handed, BEFORE anything runs (the refusal per family, the curve it names, containment rather than equivalent radius, the one question both mesher-launching hosts ask) | `.claude/rules/gui-preflight.md` | `services/topology_preflight*`, the four family modules, `services/topology_model*`, `controllers/mesh_gen_diag_ctrl*` — the exact globs are that file's own `paths:` list, and its header names the three hosts it governs from outside them. The THIRTEENTH rule file and the FOURTH taken because one was FULL: six of its seven globs are the row above's, the intended overlap — what a family BUILDS is there, what it REFUSES is here. |
 | GUI canvas and editing (the owner of the edge being edited, the outline re-fit, global undo, duplicate/transform closure, the one-polyline discrete geometry, the parametric NACA aerofoil and the shape-parameter tables, the DERIVED offset geometry and its record of where it came from, pop-up stacking) | `.claude/rules/gui-canvas-edit.md` | `views/canvas*`, `services/edge_edit*`, `services/shape_refit*`, `services/naca_airfoil*`, `services/geometry_offset*`, `models/derived_geometry*`, `views/offset_dialog*`, `services/canvas_tools*`, `models/shape_spec*`, `commands/**`, `app/popup_stack.py`, `views/panels/edge_props_naca*` — plus TWO outside the GUI tree, `tools/PreProcessor/include/NacaAirfoil*` and `tools/PreProcessor/src/main.cpp`, named outright rather than left to another file's `src/**` — the exact globs are that file's own `paths:` list, and its header names the controllers, views and dialogs it also governs from outside them — pop-up stacking reaches every module that shows a modeless pop-up, none of them under a glob of that file, and the header carries the count so this row cannot disagree with it. One glob is WIDER than the area: `commands/config_cmds.py`'s other half is in `gui-panels-config.md`. |
 | GUI results (transient playback and the byte-offset zone index, the per-variable colour range, the legs of a restarted solve, the surface source) | `.claude/rules/gui-results.md` | `views/result*`, `views/surface_source_dialog.py`, `views/panels/result_panel*`, `models/result*`, `models/tecplot*`, `services/result*`, `services/surface*`, `services/analytic_shape*` — the exact globs are that file's own `paths:` list, and its header names the two controllers and the one service it also governs from outside them. Its boundaries run BOTH ways and the header measures each, so this row carries neither count: a leg's span and stem are owned by `pipeline-case.md`'s `services/case_*`, while some of this repo's `keep_on_top` calls sit in files these globs reach, whose pop-up rule is in `gui-canvas-edit.md`. |
-| GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule, the GUI module map — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the 14, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py`, matched by `pipeline-case.md`, which carries no seam rule — and `run_batch.py`, which NO glob in ANY rule file reaches, so this row is the only thing that reaches its reader. |
+| GUI seams and the four repo-wide standards (the Qt-free seam, the user-log service, the graded message helpers, signal guards, error handling, the scroll-wheel rule, the GUI module map — plus the FULL text of the four standards pinned one line each below) | `.claude/rules/gui-seams.md` | `tools/PreProcessor/gui/**` — deliberately the widest glob of the 15, because these rules bind every GUI file rather than one area's. Two of the four standards reach files it does NOT cover, which is why they are pinned below as well: parity rules on `include/BLParams.hpp` and `Config.hpp`, matched by `mesher.md`, which carries no parity rule; and the Qt-free seam governs `tools/PreProcessor/run_pipeline.py`, matched by `pipeline-case.md`, which carries no seam rule — and `run_batch.py`, which NO glob in ANY rule file reaches, so this row is the only thing that reaches its reader. |
 | GUI lifecycle (the app as a PROCESS: subprocess environment and the Gmsh loader path, window-layout persistence and the startup-state reversal, the ⟳ Restart ordering) | `.claude/rules/gui-lifecycle.md` | `services/env_setup*`, `services/ui_state*`, `services/gui_restart*`, `controllers/lifecycle_ctrl*`, `views/main_window*`, `gui/main.py`, `workers/**`, `tools/scripts/gmsh_*` — 24 files, verified. Two globs go beyond #77's list, recorded in that file's header. It rules directly on `CMakeLists.txt`, which NO glob in any rule file reaches, so this row is the only thing that reaches its reader. |
 | GUI file hand-off (is a file one stage leaves on disk still correct when the NEXT one reads it: the `.bnd` BCs, the project file's kind, the mesh output name, which grid a reopened case uses, the `.meta` sidecar — and, read the other way, the mesher's `.provenance.json`, which is where the Mesh Statistics panel's quality summary comes from AND what a CASE TYPE's four-state verdict grades, its thresholds being MEASURED from it and its own CONFIG FIELDS as a sparse overlay, a moved one marking that verdict, and ROLES bind one to the operator's own segments) | `.claude/rules/gui-handoff.md` | `services/mesh_bc_audit*`, `services/project_file_kind*`, `services/mesh_grid_lookup*`, `services/mesh_shape_stats*`, `services/case_type*`, `views/panels/mesh_stats_panel*`, `models/mesh_output_names*`, `controllers/mesh_export_ctrl*`, `controllers/mesh_layers_ctrl*`, `controllers/solver_ctrl*`, `models/segment.py` — 18 files, verified. Three owners sit under OTHER rule files' globs (`models/mesh_config.py`, `services/pipeline_runner.py`, and the rest of what `solver_ctrl.py` does); its header names them. Its shape-summary rule also reaches `services/batch_runner.py`, `views/batch_dialog.py` and `controllers/batch_ctrl.py`, which NO glob but `gui-seams.md`'s tree-wide one covers (#132). |
 | GUI Trial and Generate (ONE generation and two dispositions: what Trial never writes, what Generate commits into the case — the whole case type, the frozen verdict and a runnable script — the refusal it gates on, the fingerprint deciding whether the mesh in hand is still the one these settings produce, and the HYBRID FALLBACK a refusal now OFFERS when no family covers the drawing: accepted rather than received, never judged by a case type's thresholds, and labelled not structured wherever it is shown or recorded) | `.claude/rules/gui-dispositions.md` | `services/mesh_commit*`, `services/mesh_fallback*`, `controllers/mesh_dispose_ctrl*` and the mesh-generation, mesh-diagnostics and pipeline-script controllers — the exact globs are that file's own `paths:` list, and its header names the five view and wiring modules it also governs from outside them. The FOURTEENTH rule file and the FIFTH taken because one was FULL: `gui-handoff.md` said in its own header that #165 and #166 should expect to take one, and both did. |
+| What a case type's thresholds REST ON, and how one that judged wrong is corrected: a reference mesh is an EXEMPLAR the thresholds must accept or a COUNTER-EXAMPLE they must reject, a bound is the worst exemplar times a factor held down to the separating bound, a key that separates nothing places none, a hand-set bound is never recomputed and is NAMED when it blocks an addition | `.claude/rules/gui-evidence.md` | the evidence service, the figures-and-provenance module, the authoring step and the case-type document — the exact globs are that file's own `paths:` list, and its header names the two headless hosts it governs from outside them. The FIFTEENTH rule file and the SIXTH taken because one was FULL; all four of its globs are `gui-handoff.md`'s as well, the intended overlap — what a case type IS is there, what its numbers rest on is here. |
 
 **The table is load bearing, not a convenience.** Measured on Claude Code 2.1.250 (#61): a rule
 file arrives with `load_reason: path_glob_match` when a matching file is **read**, and does NOT
@@ -96,7 +97,7 @@ went through with the rule unloaded. The glob alone therefore cannot make "I did
 a rule" unreachable; this table is what does. **Read the row's rule file before editing or creating
 a file in its area.**
 
-**14 rule files now, and NO area of residue is left.** #59 planned six, derived from this
+**15 rule files now, and NO area of residue is left.** #59 planned six, derived from this
 file's section HEADINGS; deriving them from the text instead needed eight, and the two extra
 (#77's `gui-lifecycle.md` and `gui-handoff.md`) hold 13,894 characters this file used to carry
 for areas the original partition assigned to nobody. The ninth (#89) is the first taken for
@@ -148,7 +149,7 @@ gate here; the full text of all four is `.claude/rules/gui-seams.md`.
   the four with none, and a human reading a diff was its whole enforcement. Measured 2026-09-09:
   **four** commits crossed it in the six days after #67 wrote it down — `98003f1` (#85),
   `306d6a1` (#91) and `8bdc36a` (#47's merge) TWICE — and 44 across 35 files over the whole
-  history. 4 of 304 files exceed it (worst 520); those four are PINNED at their measured sizes,
+  history. 4 of 305 files exceed it (worst 520); those four are PINNED at their measured sizes,
   and a pin fails both when the file grows further and when it drops back under the limit. That
   status is DERIVED, never remembered: `--sync` rewrites it from the same walk, in all three
   files that state it — here, `gui-seams.md` (which names each one) and the design note (#101).
@@ -327,6 +328,13 @@ python3 tools/PreProcessor/apply_case_type.py <a.casetype.json> --to my_case.dat
     --out fitted.dat --confirm bl_initial_thickness --role body --role farfield
 ```
 Geometry-driven sizes scale with the characteristic length and far-field bounds map about the body's own centre; a PHYSICAL parameter (the BL first cell height, set by Reynolds and y+) never scales and is REFUSED until confirmed. A ruler it cannot measure on your drawing refuses rather than guessing. A case type naming a topology FAMILY binds to YOUR curves by ROLE: `--role body` takes the pre-selection, `--role body=mine.dat[:3,4]` your own; an unconfirmed or missing one refuses.
+
+**Correct a case type's thresholds with evidence (headless):**
+```bash
+python3 tools/PreProcessor/add_reference_mesh.py <a.casetype.json> <mesh.vtk> \
+    [--counter-example] [--reference-id ID] [--dry-run]
+```
+A further EXEMPLAR is a mesh the thresholds must keep accepting; a COUNTER-EXAMPLE is one they must now reject, and every MEASURED bound is re-derived from the whole set. A hand-set bound is never recomputed, and is NAMED when it is what blocks the addition. A mesh no figure separates from the exemplars is refused. Rules: `.claude/rules/gui-evidence.md`.
 
 **Inspect a case type, diff two, or measure a case's deviation (headless):**
 ```bash

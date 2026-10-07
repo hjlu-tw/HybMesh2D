@@ -56,11 +56,19 @@ def _show(case_type) -> None:
     if case_type.source:
         print("  from %s" % case_type.source)
     for ref in case_type.references:
-        print("  reference mesh '%s': %s, measured %s (%d figure(s))"
-              % (ref.ident, ref.mesh or "(no mesh recorded)",
+        # The KIND leads, because it reverses the sentence: an exemplar is a
+        # mesh these thresholds must accept and a counter-example one they must
+        # reject, and reading one as the other inverts what every bound means.
+        print("  %-15s '%s': %s, measured %s (%d figure(s))"
+              % (ref.kind, ref.ident, ref.mesh or "(no mesh recorded)",
                  ref.measured_on or "(no date recorded)", len(ref.figures)))
     for th in case_type.thresholds:
         print("  threshold    %-13s %s" % (th.key, th.describe_bounds()))
+        # WHICH reference meshes this bound rests on (#168, user story 39) —
+        # the question this command exists to answer six months later, and the
+        # reason a misjudged threshold is corrected by adding a mesh rather
+        # than by editing the number.
+        print("               %-13s %s" % ("", case_type.describe_support(th)))
     if case_type.characteristic is not None:
         print("  characteristic length: %s"
               % case_type.characteristic.describe())

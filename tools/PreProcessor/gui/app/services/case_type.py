@@ -4,14 +4,16 @@ The first artefact of issue #158's workflow (issue #160, the tracer bullet). A
 **case type** is the unit in which meshing expertise is stored and reused: a
 named bundle the maintainer authors once and an operator applies. It holds its
 name, the metric its numbers are about, its THRESHOLDS, the ADVICE to show when
-each one is missed, the REFERENCE MESHES those thresholds were measured from
-(#161) and — since #162 — the config FIELDS it has an opinion about, as a sparse
-overlay. It does not yet carry bindings; those are #164's, and are deliberately
-NOT ownable fields, since the ids in them point at the maintainer's geometry. The
-file format is a versioned document so that it GROWS rather than being replaced,
-which #161 and #162 are the first two tests of: `SCHEMA_VERSION` is 3 and
-`READABLE_VERSIONS` still holds 1 and 2, because a v1 document is a v3 document
-with no reference meshes, no fields and every bound hand-set.
+each one is missed, the REFERENCE MESHES those thresholds rest on (#161, and
+since #168 a SET of them with a KIND each), and — since #162 — the config FIELDS
+it has an opinion about, as a sparse overlay. It does not yet carry bindings;
+those are #164's, and are deliberately NOT ownable fields, since the ids in them
+point at the maintainer's geometry. The file format is a versioned document so
+that it GROWS rather than being replaced, which #161, #162, #163 and #168 are
+the four tests of so far: `SCHEMA_VERSION` is 5 and `READABLE_VERSIONS` still
+holds every one before it, because a v1 document is a v5 document with no
+reference meshes, no fields, no characteristic length and every bound hand-set.
+Each of those four WIDENED the artefact; none replaced it.
 
 **Why thresholds live here and not in the mesher** is
 `docs/adr/0002-thresholds-live-in-case-types.md`. The mesher measures and
@@ -45,16 +47,18 @@ placeholder for one. Every host reaches it through this module, and a run with
 the variable unset says nothing at all rather than inventing a default. A default case type would be a universal threshold wearing a different
 hat, which is the one thing ADR-0002 rules out.
 
-ONE SEAM, FIVE FILES, AND EVERY CUT IS THE ~500-LINE STANDARD rather than a
-second home for the knowledge. The grading half is
-`services/case_type_verdict.py`; the figure vocabulary and the provenance are
-`services/case_type_reference.py`, re-exported from here so no caller learns a
-new name; the config overlay, what it may own and what deviates from it are
+ONE SEAM, AND EVERY CUT IS THE ~500-LINE STANDARD rather than a second home for
+the knowledge. The grading half is `services/case_type_verdict.py`; the figure
+vocabulary and the provenance are `services/case_type_reference.py`, re-exported
+from here so no caller learns a new name; what a SET of reference meshes derives,
+and whether a document obeys it, is `services/case_type_evidence.py` (#168); the
+config overlay, what it may own and what deviates from it are
 `services/case_type_fields.py`, re-exported the same way; the one step that
-PRODUCES a case type is `services/case_type_author.py`. A THRESHOLD is declared
-HERE and nowhere else, and so is the set of OWNABLE fields there, and every
-dependency runs one way — author -> document -> figures/fields, and
-verdict -> document — so there is no cycle to unpick. The same shape #159 gave
+PRODUCES or CORRECTS a case type is `services/case_type_author.py`. A THRESHOLD
+is declared HERE and nowhere else, the set of OWNABLE fields in the overlay and
+nowhere else, and the DERIVATION in the evidence module and nowhere else — so
+every dependency runs one way, author -> document -> evidence -> figures, with
+verdict -> document beside it, and there is no cycle to unpick. The same shape #159 gave
 `mesh_config.py` and `mesh_config_validate.py`, in the prefactor for this very
 feature.
 """
@@ -67,7 +71,12 @@ import os
 # `case_type.CaseTypeError` are what the verdict service, both hosts and the
 # gates already name, and the split below them is a file-length cut rather than
 # a new seam for a caller to learn.
+from app.services import case_type_evidence
 from app.services.case_type_reference import BOUNDS
+from app.services.case_type_reference import COUNTER  # noqa: F401
+from app.services.case_type_reference import EXEMPLAR  # noqa: F401
+from app.services.case_type_reference import KINDS  # noqa: F401
+from app.services.case_type_reference import exceeds  # noqa: F401
 from app.services.case_type_reference import FIGURE_KEYS
 from app.services.case_type_reference import figures_for  # noqa: F401
 from app.services.case_type_reference import MANUAL
@@ -92,7 +101,7 @@ from app.services.case_type_fields import ownable_names  # noqa: F401
 #: overlay, reference-mesh provenance), so the version is what lets a later
 #: reader tell a file it understands from one it does not.
 SCHEMA = "hybmesh-case-type"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 #: Every version this build can READ; `SCHEMA_VERSION` is the only one it
 #: WRITES. A v1 document is a v2 document carrying no reference meshes and no
@@ -101,7 +110,7 @@ SCHEMA_VERSION = 4
 #: is what every case type authored before #162 is. So the artefact has now been
 #: WIDENED twice rather than replaced, and the version is still what makes a
 #: document from a LATER build fail loudly instead of being partly read.
-READABLE_VERSIONS = (1, 2, 3, 4)
+READABLE_VERSIONS = (1, 2, 3, 4, 5)
 
 #: The environment variable naming the active case type file, and — until some
 #: ticket owns a picker, which neither #162 nor #166 turned out to — the only
@@ -178,7 +187,11 @@ class Threshold:
                 else MANUAL)
 
     def describe_bounds(self) -> str:
-        """The bounds this threshold sets, each with where it came from.
+        """The bounds this threshold sets, each with whether it was measured.
+
+        WHICH meshes it rests on is `CaseType.describe_support`, not this: the
+        support is derived from the case type's reference list and a threshold
+        does not hold one.
 
         ONE owner because BOTH hosts print it — `save_case_type.py` after
         authoring and `show_case_type.py` when inspecting — and two copies of
@@ -289,58 +302,27 @@ class CaseType:
         self._check_references()
 
     def _check_references(self) -> None:
-        """Every measured bound really IS its reference's figure times its factor.
+        """Every bound follows from the evidence, and the evidence is coherent.
 
-        The one invariant that makes "derived, not typed" a fact about the FILE
-        rather than a claim about how it was produced. It lives here because it
-        is the only scope holding both halves: a `Threshold` knows its factor, a
-        `ReferenceMesh` knows its figure, and neither alone can multiply them.
+        THREE invariants, and `services/case_type_evidence.py` owns the
+        arithmetic behind all three: every measured bound really IS what its
+        reference meshes derive, every exemplar is accepted by the case type
+        measured from it, and every counter-example is rejected by it (#168).
+        They are checked HERE because this is the only scope holding both halves
+        — a `Threshold` knows its factor, a `ReferenceMesh` knows its figure —
+        and they are not WRITTEN here because the derivation needs neither this
+        document's name nor anything else it holds.
         """
-        by_id = {}
         for ref in self.references:
-            if ref.ident in by_id:
-                raise CaseTypeError(
-                    "case type %r declares two reference meshes called %r; a "
-                    "threshold naming it could not say which"
-                    % (self.name, ref.ident))
             if ref.metric != self.metric:
                 raise CaseTypeError(
                     "reference mesh %r was measured with %s and case type %r is "
                     "about %s, which are different quantities"
                     % (ref.ident, ref.metric, self.name, self.metric))
-            by_id[ref.ident] = ref
-        for th in self.thresholds:
-            origin = th.measured_from
-            if origin is None:
-                continue
-            ref = by_id.get(origin.reference)
-            if ref is None:
-                raise CaseTypeError(
-                    "threshold %r was measured from reference mesh %r, which "
-                    "this case type does not declare; provenance pointing at "
-                    "nothing is not provenance" % (th.key, origin.reference))
-            value = ref.figure(th.key)
-            if value is None:
-                raise CaseTypeError(
-                    "threshold %r was measured from reference mesh %r, which "
-                    "published no %s — a figure that mesh could not measure "
-                    "cannot have a bound derived from it"
-                    % (th.key, ref.ident, th.key))
-            for bound in BOUNDS:
-                factor = origin.factor_for(bound)
-                if factor is None:
-                    continue
-                want = value * factor
-                stated = getattr(th, bound)
-                if abs(stated - want) > Origin.REL_TOL * max(abs(want), 1.0):
-                    raise CaseTypeError(
-                        "threshold %r states a %s bound of %r, but reference "
-                        "mesh %r measured %r and the %s_factor is %r, which "
-                        "gives %r. A bound that is not its own derivation is a "
-                        "hand-set one: drop the factor and it reads as the "
-                        "override it is"
-                        % (th.key, bound, stated, ref.ident, value, bound,
-                           factor, want))
+        case_type_evidence.check_derivations(self.name, self.references,
+                                             self.thresholds)
+        case_type_evidence.check_standing(self.name, self.references,
+                                          self.thresholds)
 
     def reference(self, ident: str) -> "ReferenceMesh | None":
         """The declared reference mesh with this id, or ``None``."""
@@ -348,6 +330,33 @@ class CaseType:
             if ref.ident == ident:
                 return ref
         return None
+
+    def evidence_for(self, key: str):
+        """What this case type's reference meshes say about one figure.
+
+        The answer to "which reference meshes does this threshold rest on"
+        (#168, user story 39) — DERIVED from the references rather than read off
+        the threshold, so the two cannot disagree. `check_derivations` is what
+        holds the stored support to this same answer.
+        """
+        return case_type_evidence.Evidence.over(self.references, key)
+
+    def describe_support(self, threshold: "Threshold") -> str:
+        """One line naming the meshes a threshold rests on, and their kinds.
+
+        ONE owner because BOTH inspecting hosts print it — `show_case_type.py`
+        and `add_reference_mesh.py` — and a second copy would be free to render
+        one file's provenance two ways. The kind is shown because it reverses
+        the sentence: a mesh this threshold must ACCEPT and one it must REJECT
+        are both support, and reading one as the other inverts what the number
+        means.
+        """
+        seen = self.evidence_for(threshold.key)
+        if not seen.idents:
+            return "rests on no reference mesh: hand-written"
+        by_id = {r.ident: r for r in self.references}
+        return "rests on " + ", ".join(
+            "%s (%s)" % (i, by_id[i].kind) for i in seen.idents)
 
     @classmethod
     def from_dict(cls, doc: dict, source: str = "") -> "CaseType":

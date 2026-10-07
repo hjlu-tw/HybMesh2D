@@ -689,7 +689,16 @@ def check_every_length_is_classified(w):
 # ── 8. the document grew; it was not replaced ──────────────────────────────
 def check_document_round_trips(w):
     bad = []
-    if w.case_type.SCHEMA_VERSION != 4 or 3 not in w.case_type.READABLE_VERSIONS:
+    # AT LEAST 4, not EXACTLY 4. The claim this check makes is that the
+    # document GROWS — so pinning the version #163 happened to leave behind
+    # would make the next widening fail the very check that asserts widening is
+    # how this artefact changes. #168 was that next widening, and it is what
+    # found this. What must hold is that v3 is still readable, that the version
+    # this build WRITES is one it reads, and that #163's own step is still in
+    # the history rather than having been rolled back.
+    if (w.case_type.SCHEMA_VERSION < 4
+            or 3 not in w.case_type.READABLE_VERSIONS
+            or w.case_type.SCHEMA_VERSION not in w.case_type.READABLE_VERSIONS):
         bad.append("the schema is at %r reading %r; #163 WIDENS the document "
                    "rather than replacing it"
                    % (w.case_type.SCHEMA_VERSION, w.case_type.READABLE_VERSIONS))
@@ -1002,7 +1011,7 @@ _LABELS = {
     6: "check 6. the length-unit system is used, not duplicated: the unit is "
        "the drawing's, and a physical parameter keeps its value in metres",
     7: "check 7. every `sci` field is classified, both directions",
-    8: "check 8. a v4 document round-trips and a v3 one still loads at 1:1",
+    8: "check 8. the current document round-trips and a v3 one still loads at 1:1",
     9: "check 9. deviation is measured against the FITTED numbers",
     10: "check 10. the headless hosts answer: authored, refused, applied",
     11: "check 11. the scale service is Qt-free, measured in a subprocess",

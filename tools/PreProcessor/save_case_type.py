@@ -242,6 +242,10 @@ def main() -> int:
              reference.measured_on))
     for th in case_type.thresholds:
         print("  %-13s %s" % (th.key, th.describe_bounds()))
+        # The support, from the same owner `show_case_type.py` and
+        # `add_reference_mesh.py` print — one mesh today, and whatever #168's
+        # corrections add to it tomorrow.
+        print("  %-13s %s" % ("", case_type.describe_support(th)))
     if case_type.characteristic is not None:
         # Printed beside the thresholds for the same reason they are: a ruler
         # measured off the wrong curve fits every size wrongly, and the only
