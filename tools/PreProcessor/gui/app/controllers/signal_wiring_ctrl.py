@@ -229,6 +229,9 @@ class SignalWiringMixin:
         mw.mesh_config_panel.topology_changed.connect(self.handle_topology_changed)
         mw.mesh_config_panel.add_all_sessions_btn.clicked.connect(self.add_all_sessions_to_mesh)
         mw.mesh_config_panel.export_mesh_requested.connect(self.export_mesh_files)  # #5
+        # Applying the chosen case type: its own controller, because it refuses,
+        # asks one confirmation and may have to point at a curve (#170).
+        mw.mesh_config_panel.apply_case_type_requested.connect(self.apply_case_type)
         # Domain Source = Custom geometry hides the rectangle box + its BC colours;
         # selecting a geometry in the list highlights it on the mesh canvas.
         mw.mesh_config_panel.domain_source_changed.connect(

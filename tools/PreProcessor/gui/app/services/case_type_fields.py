@@ -222,6 +222,20 @@ def _get(config, name: str):
     return getattr(config, name)
 
 
+def value_of(config, name: str):
+    """What a live config CURRENTLY holds for an overlay field.
+
+    `_get`'s public face, and the one a host outside this module may call.
+    #170's apply report needs the `was` beside every `now`, and
+    :func:`deviations` cannot supply it: that one answers "which owned fields has
+    the operator moved" and so returns only the rows that differ. Exported rather
+    than letting the host reach for `_get`, by `case_type_picker.stored_spelling`'s
+    own finding — a private helper copied or imported across modules is a rule
+    with nothing holding its two readings in step.
+    """
+    return _get(config, name)
+
+
 def _set(config, name: str, value) -> None:
     if name.startswith(TOPOLOGY_PREFIX):
         setattr(config.topology, name[len(TOPOLOGY_PREFIX):], value)

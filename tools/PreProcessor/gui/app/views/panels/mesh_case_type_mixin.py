@@ -36,11 +36,16 @@ from __future__ import annotations
 import os
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFileDialog, QFormLayout, QWidget
+from PyQt6.QtWidgets import QFileDialog, QFormLayout, QHBoxLayout, QWidget
 
 from app.models.mesh_config import MeshConfig
-from app.services import case_type_picker
-from app.utils import align_form_labels, block_signals
+from app.services import case_type_apply, case_type_picker
+from app.services.case_type_reference import CaseTypeError
+from app.services.logging_setup import get_logger
+from app.utils import align_form_labels, block_signals, make_button
+from app.views.panels.case_type_roles_table import CaseTypeRolesTable
+
+logger = get_logger(__name__)
 
 
 class MeshConfigCaseTypeMixin:
@@ -57,6 +62,32 @@ class MeshConfigCaseTypeMixin:
         self._spec_rows(form, "casetype")
         align_form_labels(form, 130)
         self._layout.addWidget(holder)
+
+        # What the MODEL holds for roles the table below is not showing — a case
+        # type the operator looked at and moved away from. Kept so switching
+        # case types does not lose the assignment made for the other one.
+        self._case_type_roles_held = {}
+        # The roles the chosen case type needs on THIS drawing, and the one
+        # action that applies it (#170). Below the read-out because the read-out
+        # says what the case type has an opinion about and this says what it
+        # needs from the operator before it may act on one.
+        self.case_type_roles_table = CaseTypeRolesTable()
+        self._layout.addWidget(self.case_type_roles_table)
+        row = QWidget()
+        hb = QHBoxLayout(row)
+        hb.setContentsMargins(0, 0, 0, 4)
+        hb.addStretch()
+        self.apply_case_type_btn = make_button("Apply Case Type…", "#1e3346")
+        self.apply_case_type_btn.setToolTip(
+            "Write this case type's settings into the configuration, fitted to "
+            "your geometry's own scale, and bind its topology family to the "
+            "curves you assigned above. The boundary-layer first cell height is "
+            "physical rather than geometric, so it is never applied without "
+            "being confirmed. One undo step; nothing is written if anything is "
+            "refused.")
+        hb.addWidget(self.apply_case_type_btn)
+        self._layout.addWidget(row)
+        self.apply_case_type_btn.clicked.connect(self.apply_case_type_requested)
 
         self._populate_case_types()
         self.case_type_file.currentIndexChanged.connect(self._on_case_type_picked)
@@ -181,13 +212,18 @@ class MeshConfigCaseTypeMixin:
         refreshes, and a second call would be the Browse dialog's own emit coming
         round twice.
 
-        PER KEYSTROKE, which is affordable and is checked rather than assumed:
-        with no case type chosen `summary` returns a constant, and with one it is
-        a small JSON load plus `case_type_scale.fit`, which returns immediately
-        unless the case type declares a characteristic length. That last case is
-        the one that reads geometry, and it is the same cost — and the same
-        house pattern — as `_refresh_topology_counts`, which builds a binding
-        context per keystroke behind `Family.binds`.
+        PER KEYSTROKE, which is affordable and is MEASURED rather than assumed
+        — and the figure moved with #170, so the old sentence here ("a small
+        JSON load plus `case_type_scale.fit`") is now wrong and is corrected
+        rather than left standing. With no case type chosen `summary` returns a
+        constant. With one, this slot now costs the summary AND a whole
+        `case_type_apply.plan`: a second case-type load, `case_type_scale.plan`
+        and a binding context with `guess_roles`' area ranking over it.
+        Measured on a drawing of two 2,000-point outlines: **1.3 ms** for the
+        plan, 0.7 ms for the context alone, 0.2 ms for the summary. That is the
+        same cost class — and the same house pattern — as
+        `_refresh_topology_counts`, which already builds a binding context per
+        keystroke behind `Family.binds`.
         """
         from app.views.panels.field_widgets import wire_specs
         from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
@@ -228,3 +264,58 @@ class MeshConfigCaseTypeMixin:
                 return
             cfg = self.get_config()
         lbl.setText(case_type_picker.summary(cfg))
+        self._refresh_case_type_roles(cfg)
+
+    # ── the roles ────────────────────────────────────────────────────────
+    def _refresh_case_type_roles(self, cfg):
+        """Show the roles the chosen case type needs on `cfg`'s own drawing.
+
+        ONE PLAN, built here and read by the table — the same shape
+        `_refresh_topology_counts` has, and the same per-keystroke cost class:
+        it builds a binding context, which that one already does behind
+        `Family.binds`. The table itself rebuilds only when the SHAPE changes,
+        so the keystroke cost is this plan and not a widget teardown.
+
+        A case type that will not load leaves the table saying there is nothing
+        to assign rather than raising into a keystroke handler: the picker's
+        read-out above has already said WHY in the loader's own words, and a
+        second copy of that sentence here would be a second wording of it.
+        """
+        table = getattr(self, "case_type_roles_table", None)
+        if table is None:
+            return
+        try:
+            plan = case_type_apply.plan(cfg)
+        except (CaseTypeError, OSError) as exc:
+            logger.debug("no role plan for this configuration: %s", exc,
+                         exc_info=True)
+            plan = None
+        self._case_type_roles_held = dict(
+            getattr(cfg, "case_type_roles", None) or {})
+        table.set_plan(plan, self._case_type_roles_held)
+        # ENABLED WHENEVER A CASE TYPE IS CHOSEN, not when a plan was built. A
+        # plan fails for reasons the operator can act on and is owed in words —
+        # the file will not load, or its characteristic length cannot be
+        # measured on this drawing — and a button that silently greys out says
+        # none of them. Pressing it produces the refusal, naming which.
+        self.apply_case_type_btn.setEnabled(bool(case_type_picker.chosen(cfg)))
+
+    def _read_case_type_roles(self, cfg):
+        """Author `cfg.case_type_roles` from the table. The panel's own residue.
+
+        A role the table does not SHOW keeps whatever the model already held —
+        switching case types must not lose an assignment made for the other one,
+        which is `case_type_apply.ApplyPlan.ignored`'s rule on the reading side.
+        `_loading` is not consulted: `get_config` is never called mid-population
+        (`_refresh_case_type_summary` passes the configuration being written
+        instead), and the table's own values are whatever was last selected
+        either way.
+        """
+        table = getattr(self, "case_type_roles_table", None)
+        if table is None:
+            return
+        shown = table.shown_roles()
+        kept = {r: v for r, v in (self._case_type_roles_held or {}).items()
+                if r not in shown}
+        kept.update(table.read())
+        cfg.case_type_roles = kept

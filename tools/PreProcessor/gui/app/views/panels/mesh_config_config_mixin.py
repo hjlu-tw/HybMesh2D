@@ -338,6 +338,10 @@ class MeshConfigConfigMixin:
         # two-spellings-one-file state the model just removed. The role is keyed by
         # the spelling that SURVIVED the add, or it would key a dropped duplicate
         # and be pruned away with it.
+        # The case-type role assignment, authored by the composite table in the
+        # section above (#170) — the panel's own residue like the three below,
+        # and declared in MESH_EXTRA_AUTHORED for the same reason.
+        self._read_case_type_roles(cfg)
         cfg.set_geom_files([])
         cfg.geom_roles = {}
         for row in range(self.geom_list_widget.count()):

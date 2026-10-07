@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 308, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 312, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -5216,6 +5216,173 @@ type: `save_case_type.py` and `add_reference_mesh.py` are still headless, which 
 of Scope. One more, and it is about the SEAM rather than the feature: `tests/test_qt_free_seam.py`
 is import-based, so `case_type_picker`'s duck-typed widget calls and its one widget attribute are
 invisible to it — a second service that started writing widget state would be too.
+
+**ROLES THE OPERATOR ASSIGNS, AND APPLYING A CASE TYPE TO THEIR OWN DRAWING** (#170, parent
+#158; rules in `.claude/rules/gui-apply.md`, which is the sixteenth rule file). #169's picker
+said in its own docstring that it SELECTS WHAT JUDGES and applies nothing, "because every part
+of applying needs ROLES, and roles are #170". That was literally true and measurable:
+`case_type_roles`, `case_type_guess`, `case_type_scale` and `case_type_fields` had **no GUI
+caller whatsoever** — their only non-test host in the repo was
+`tools/PreProcessor/apply_case_type.py`, which is headless. #158's headline story ("pick a
+named case type instead of configuring 104 fields") was therefore still unmet in the window
+after six tickets of machinery.
+
+**THE FOUR DESIGN QUESTIONS, AND WHAT WAS CHOSEN.** The ticket was filed deliberately coarse
+with five open questions; four were decided before any code was written, and the fifth was
+already answered by the tree.
+
+- **WHERE THE ROLE LIVES: `MeshConfig.case_type_roles`, not an attribute on `Segment`.** The
+  stored value is `{role: spec}` where a spec is `"geom"`, `"geom:1,2,3"` or `""` — `--role`'s
+  own grammar, so the window and the headless host express an assignment identically rather
+  than in two spellings. A `Segment.case_type_role` would have touched every `.hws`, put a
+  case-type word on a mesh-stage model, and still had to be re-derived into `(geom, seg ids)`
+  specs at bind time; `services/case_type_roles.py` argues against the mixing in as many words.
+  Being a `MeshConfig` field is what makes the rest fall out rather than be arranged — the
+  panel->model sync, the undo snapshot, the `.hws` and the pipeline script are all
+  `to_dict()` — which is `case_type_file`'s own argument one ticket earlier.
+  **It needs no entry in `case_type_fields.EXCLUDED`**, and that is worth stating because the
+  first instinct was to add one: `ownable_types` admits only `SCALAR_TYPES`, so a container is
+  structurally invisible to an overlay. `geom_roles` and `group_bc` are the precedent.
+- **WHERE THE ASSIGNMENT HAPPENS: a table in the Mesh panel** (`views/panels/case_type_roles_table.py`),
+  not the canvas. Selecting a curve to give it a role is the more direct gesture and was
+  declined: this repo has a USER-REPORTED defect in which drawing order rather than click order
+  decided a result, and #158 excludes drawing-order conventions by name. A row that NAMES the
+  geometry and its segments cannot be read two ways.
+- **ONE ACTION WITH ONE INTERRUPT**, not two actions. Applying the fields and binding the family
+  separately leaves a reachable half-applied state — a run whose numbers came from a case type
+  and whose topology did not — that nothing records and the deviation marking has no word for.
+  `services/case_type_apply.py::apply` writes everything or nothing; the interrupt is
+  `views/case_type_apply_dialog.py`, and it exists because story 23 demands the first cell
+  height be confirmed on EVERY application.
+- **THE OWNED FIELDS ARE OVERWRITTEN, shown first, and undoable in one step.** Merging (keeping
+  any field the operator had already moved) was the rejected alternative, for a reason that is
+  not conservatism: it creates a third state where some owned fields are the case type's and
+  some are not, with nothing recording which — which is exactly the question the deviation
+  marking exists to answer, so it would blur its own denominator. Story 21 ("a starting point,
+  not a cage") is answered the other way round: after applying, any field may be moved again
+  and #169's read-out marks it MOVED the moment it is.
+- **THE FIFTH QUESTION WAS ALREADY ANSWERED BY THE TREE.** The ticket asked whether #165's
+  pre-flight refusal surfaces here or in its own ticket, on the premise that it "likewise
+  reaches no GUI". That premise was stale by two tickets: `controllers/mesh_gen_diag_ctrl.py`
+  has shown the refusal and pointed at the curve since #165, and #167 turned it into an offer.
+  What #170 adds is the TIMING — stories 25-27 say "before pressing anything", and a pre-flight
+  that only fires at Generate tells the operator after they have committed.
+
+**NOTHING IS WRITTEN UNTIL EVERYTHING PASSES, and the deep copy is why.**
+`case_type_fields.apply` mutates its config in place and `RolePlan.bind` mutates
+`config.topology`, so applying to the live object and then discovering the family cannot fill
+the drawing would leave the operator's own numbers overwritten at the exact moment they most
+need them back. `apply` therefore works on `copy.deepcopy(config)` and hands it over only if
+the overlay, the binding and the pre-flight all succeed. This is check 6 of the gate, and
+injection A restores the defect by replacing the copy with the live object — which reddens
+check 6's PRE-FLIGHT half specifically, the half that can only be reached after a write.
+
+**EVERY PROBLEM AT ONCE, ACROSS THREE SERVICES.** `case_type_roles.RolePlan` already states
+that rule WITHIN one service; `apply` applies it across three, so an unconfirmed role, an
+unresolvable segment and an unconfirmed first cell height arrive in ONE refusal. The headless
+host reaches the same three in three separate raises and therefore costs three runs to clear
+them — measured, not supposed, and left alone as a named blind spot rather than rewritten
+inside a ticket about the window. The PRE-FLIGHT is a second round by construction and not by
+choice: a family can only be asked whether it can fill a drawing once the bindings exist.
+
+**TWO DEFECTS THE GATE FOUND BEFORE THE FEATURE SHIPPED**, both in the first cut and both
+invisible to any check that existed:
+
+- **THE APPLY WAS NOT UNDOABLE AT ALL.** It went through `push_panel_config`, which is the
+  single funnel for a programmatic push and so runs inside `suppress_project_undo` — correct
+  for every other caller and wrong for this one, where the push IS the user's action. Worse, the
+  obvious repair does not work: `suppress_project_undo` CLEARS a pending burst on the way out,
+  so capturing `_project_undo_before` before the push leaves it dropped. The order that works is
+  capture `_project_config_state()`, push, THEN set `_project_undo_before` and call
+  `flush_project_snapshot()` — which reuses the project recorder rather than writing a second
+  author of `UpdateProjectStateCmd`. Check 10 drives a real `AppController` and would have
+  caught nothing had it only asserted that the panel changed.
+- **A VALUE-ONLY REFRESH MOVED THE CARET.** #169 wired the case-type read-out to refresh on
+  EVERY field edit, and the roles table hangs off the same refresh — so every keystroke handed
+  the table the configuration just read back OUT of its own widgets. The SHAPE KEY already kept
+  the widgets alive, which is the half that was designed in; what was missed is that `_select`
+  then wrote the value back with `QLineEdit.setText`, which resets the caret, and the spec is
+  NORMALISED on the way through (`17,18` comes back as `17, 18`) so the text genuinely differed
+  every time. Typing a second segment id was impossible. The fix is to compare what the row
+  would READ against what it is being asked to show, by VALUE (`_same_spec`) and not by string,
+  and skip an agreeing row. Measured on the live table before the fix: cursor position 3 became
+  6 on a two-character edit.
+
+**AND TWO MORE THE REVIEW FOUND, both invisible to the gate as it then stood.** The Standards
+axis caught both; neither had a check, and both now do (13 and 14).
+
+- **THE CONFIRMATION DIALOG HAD NO HEADLESS EARLY-RETURN.** `gui-seams.md` grants exactly two
+  bespoke-dialog exemptions from the graded helpers and records that "both make the headless
+  early-return themselves"; this was a third bespoke dialog and it had none, so an unattended
+  caller would have blocked on an event loop with no display. The gate could not see it: check 12
+  swaps the dialog CLASS for a stub, which is the right way to drive the controller's wiring and
+  exactly the wrong way to measure the dialog. The guard went on the dialog rather than at the call
+  site, by that rule's own wording, and check 13 drives the REAL one.
+- **THE "APPLIED AS AUTHORED" FALLBACK WAS UNREACHABLE, AND WOULD HAVE BEEN WRONG.** `plan` called
+  `case_type_scale.plan` and then `fit` beside it, carrying `fit`'s reason into the report. `fit`
+  returns a non-empty reason ONLY by catching the `CaseTypeError` that `plan` raises — which the
+  line above had already let escape — so the branch was dead on arrival and `describe()`'s sentence
+  about it could never render. Worse than dead: had it worked it would have been the wrong rule
+  here. `fit` falls back to the authored numbers because it is comparing fields for a read-out;
+  an act that WRITES them must refuse, or a case type authored on a 1 m body puts its 0.02 surface
+  size on a 10 mm one — `case_type_scale`'s own "A RULER THAT CANNOT BE READ REFUSES", which
+  `apply_case_type.py` has always obeyed. Removing the second call also halved the per-keystroke
+  cost, `fit` having re-run `plan` internally. Check 14 pins the refusal AND the absence of the
+  fallback.
+
+Two smaller corrections came with them. The Apply button was disabled whenever a plan could not be
+built, which greys it out for every reason the operator could act on and states none — it is now
+live whenever a case type is chosen, and pressing it produces the refusal that names which. And
+all four messages were `report_error`: Critical is for data at risk, and the deep copy means
+nothing on any path here ever is.
+
+**AND ONE DEFECT IN THE GATE ITSELF, worth recording because it is the class this repo keeps
+hitting.** Check 8's "no authoring id survives" assertion searched the serialised topology for
+each authoring id AS TEXT, and `"0` matched the scaled cell size `0.025` — so a correct result
+reported the leak it was looking for. Parsing the binding strings into an integer set is the
+fix. A detector that fails on a correct result is worse than no detector, because the failure
+is read as the defect.
+
+**THE CONFIRMATION SHOWS THE WHOLE ACT.** `views/case_type_apply_dialog.py` has to stop the
+operator anyway, so it is where the `was -> now` list (story 24), the scale line and the
+bindings are shown rather than discovered afterwards. Its spin box is pre-filled and EDITABLE,
+which is `--confirm NAME=VALUE`'s grammar — confirming and correcting are one act, because a
+question whose only answer is "yes" is a button people learn to click — and
+`ApplyPlan.changes` folds the confirmations in, so the report describes the value that will
+actually be applied. Injection F removes that fold and check 9 goes red: the dialog would
+describe the offered value and apply the corrected one. It is a `SciDoubleSpinBox` because a
+y+~1 first cell on a chord-normalised body is routinely 1e-7 and a fixed-notation box silently
+clamps it — in the one dialog whose whole subject is that number.
+
+**THE TABLE'S OWN RULE: ABSENT IS NOT CONFIRMED.** A role on `(not assigned)` writes NO entry,
+which is the state `RolePlan.bind` already refuses on, so the structural refusal is untouched by
+any widget. Injection D makes `read` return the empty spec for an unassigned row and check 2
+goes red — that one mutation turns "I have not answered yet" into "I confirm your guess", which
+is the wrong guess reaching the mesher: a mesh that generates, exports and looks right while
+carrying the far field's conditions on the body. There is no confirm checkbox, because the
+combo's first real row IS the pre-selection with `Guess.why` in its own text, and selecting it
+is the confirmation (`--role body`, bare).
+
+**A ROLE THIS CASE TYPE DOES NOT NEED IS KEPT AND NOT USED** (`ApplyPlan.ignored`). Switching
+case types changes which roles exist; handing the leftovers to `RolePlan.resolve` makes each one
+a refusal, so merely having looked at a second case type would be an error. Dropping them
+instead would lose the operator's work for the first. They stay on the model, they are excluded
+from the assignment, and they are named out loud. Injection C removes the filter and check 11
+goes red.
+
+**Named blind spots.** TWO HOSTS NOW APPLY and only the window uses this service, so a rule
+added here and not to `apply_case_type.py` drifts silently — that host's refusal ordering is its
+own documented contract, driven as a subprocess by `tests/test_case_type_roles.py`. THE RULER IS
+STILL READ OFF WHOLE GEOMETRIES (`case_type_scale.measure_role` measures per FILE while the role
+assigned here is per SEGMENT), inherited from #164 and unchanged because every shipped case
+measures the same ruler either way. NOTHING JUDGES WHETHER A CONFIRMED ROLE IS THE RIGHT CURVE
+except the family's own pre-flight, so a family with a weak one — the H-grid binds nothing and
+has no containment test to fail — accepts an assignment nothing checks. THE TABLE OFFERS EVERY
+GEOMETRY rather than only the closed outlines a ring can bind, deliberately: a curve missing
+from the list with no reason given is the silence this seam exists against, and
+`topology_binding.outline_problem` is where the reason lives. And `ApplyPlan.ready()` IS READ
+TWICE — once by the controller before the dialog opens and once inside `apply` — which cannot
+disagree today because nothing moves in between, but would the day a dialog let a role change.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

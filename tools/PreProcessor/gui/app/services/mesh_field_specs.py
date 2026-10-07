@@ -309,6 +309,11 @@ MESH_EXTRA_AUTHORED = frozenset({
     "length_unit", "length_unit_metres", "length_unit_name",
     # The geometry list: one QListWidget, one entry per geometry, roles in item data.
     "geom_files", "geom_roles",
+    # The case-type role table: one composite widget, one row per role the family
+    # in force needs, rebuilt whenever that family changes (#170). Not a spec row
+    # for the reason the picker's `choices` is empty — the rows come from the
+    # drawing and the case type at run time, not from a table written at import.
+    "case_type_roles",
     # Label -> BC-type map, keyed by LABEL rather than by segment, self-healed from
     # each geometry's .meta trailer.
     "group_bc",

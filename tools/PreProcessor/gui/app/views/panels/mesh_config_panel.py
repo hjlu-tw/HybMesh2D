@@ -55,6 +55,13 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
     # #5: emitted by the Output "Export mesh…" button to save the generated mesh.
     export_mesh_requested = pyqtSignal()
 
+    # Emitted by the case-type section's "Apply Case Type…" button (#170). A
+    # signal rather than a direct call because applying is ONE act that refuses,
+    # asks for a confirmation and may have to point at a curve on the canvas —
+    # none of which a panel can do. `controllers/case_type_apply_ctrl.py` is the
+    # host; this panel only says that the operator asked.
+    apply_case_type_requested = pyqtSignal()
+
     # Per-item data role storing the geometry's mesh role (seed dict or None)
     _ROLE_DATA = Qt.ItemDataRole.UserRole + 1
 

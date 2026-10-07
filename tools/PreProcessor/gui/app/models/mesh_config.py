@@ -111,6 +111,30 @@ class MeshConfig(ConfigValidationMixin, GeomListMixin):
     # a different action, needs roles, and is not this field.
     case_type_file: str = ""
 
+    # WHICH OF THE OPERATOR'S CURVES FILLS EACH ROLE THE CASE TYPE NEEDS (#170),
+    # as `{role: spec}` where a spec is `"geom"` (every segment that geometry
+    # carries) or `"geom:1,2,3"` (those, in the geometry's own order) and `""`
+    # means "the one the tool pre-selected, confirmed". That is `--role`'s own
+    # grammar verbatim, so the window and `apply_case_type.py` express an
+    # assignment identically rather than in two spellings of it.
+    #
+    # PRESENT IS CONFIRMED, ABSENT IS NOT. A role the operator has not answered
+    # for simply has no entry, which is what `case_type_roles.RolePlan.bind`
+    # already refuses on — so the confirmation stays a property of the service
+    # rather than of a dialog somebody can forget to show.
+    #
+    # NOT `geom_roles`, which is a different vocabulary answering a different
+    # question (does this curve grow a boundary layer, is it a seed) and is keyed
+    # by geometry FILE while a family binds a LIST of segments; the two are kept
+    # apart for `services/case_type_roles.py`'s reason.
+    #
+    # Key-less like `case_type_file` above and UNOWNABLE by a case type for a
+    # second reason: `case_type_fields.ownable_types` admits only scalars, so a
+    # container is structurally invisible to an overlay — which is right here,
+    # these being the operator's own curves and the one thing that cannot carry
+    # over from the authoring drawing.
+    case_type_roles: dict = field(default_factory=dict)
+
     # Section 0b: Units
     # The unit EVERY length in this config is expressed in — domain bounds, mesh
     # sizes, BL thickness, seed radii. The mesher never converts them (it only
@@ -270,6 +294,7 @@ class MeshConfig(ConfigValidationMixin, GeomListMixin):
         # reproduces the VERDICT and not just the geometry" true with no edit in
         # `pipeline_config`.
         d["case_type_file"] = self.case_type_file
+        d["case_type_roles"] = self.case_type_roles
         # The topology template, named here like the four above because it has no
         # `.dat` KEY for `_key_map()` to find it by — the mesher never sees a
         # parameter, it sees the document one produced (#134). Without this line the
@@ -326,6 +351,9 @@ class MeshConfig(ConfigValidationMixin, GeomListMixin):
         # "no case type chosen" instead of None, which `case_type_picker.chosen`
         # would then have to defend against on every read.
         self.case_type_file = str(d.get("case_type_file", "") or "")
+        # `or {}` so an explicit JSON null lands as an empty container, which is
+        # `geom_roles`' own reasoning one field up.
+        self.case_type_roles = d.get("case_type_roles", {}) or {}
         # ABSENT MEANS THE DEFAULT MODEL, in both directions (#135). A project
         # file written before templates existed has no section and must load
         # exactly as it did, which a fresh default satisfies; and because
