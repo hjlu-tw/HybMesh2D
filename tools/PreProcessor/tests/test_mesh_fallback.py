@@ -85,7 +85,11 @@ What this pins down:
      on a Generate that runs no pre-flight of its own.
  10. THE ORDINARY PATHS ARE UNCHANGED. A hybrid-mode configuration reaches no
      offer, `mesher_config` leaves it alone, `judge_run` with no fallback still
-     judges, and `commit` still writes the case type and the verdict.
+     judges, and an unjudged commit leaves NO sidecar — checked over a case
+     that already holds a fallback record, because over a fresh directory it
+     passed on nothing (a review axis measured exactly that: deleting the
+     `.fallback.json` argument from the unjudged `_remove_stale` reddened
+     nothing at all).
  11. `services/mesh_fallback` IS QT-FREE, in a subprocess.
 
 Known blind spots, named rather than papered over:
@@ -115,11 +119,11 @@ fails AND that no other check moves:
      rather than narrowed to one — 3b names the writer, 4 is the mesh that
      never arrives, 8 is the script the committed case would carry.
   B. `as_hybrid` leaving the MODE at multi-block -> checks 1, 2, 3, 4, 8 and 9
-     fail. IT CASCADES, and the cascade is the design: `unavailable` asks
+     fail. IT CASCADES, and the cascade is the design: `unavailable_because` asks
      `missing_mesh_input` about the configuration `as_hybrid` produces, so one
      definition of what the fallback run IS serves both the offer and the run.
      Check 3a is the one that names the mode itself.
-  C. `unavailable` always answering "" -> check 1 fails: a downgrade offered for
+  C. `unavailable_because` always answering "" -> check 1 fails: a downgrade offered for
      a configuration the hybrid path cannot mesh either, spending the
      operator's acceptance on a run that cannot succeed.
   D. the not-structured CLAUSE reworded out of the sentence -> checks 1, 2, 5,
@@ -139,6 +143,15 @@ fails AND that no other check moves:
      "silently substituted" looks like from inside the host. It reddens one
      check because check 1 deliberately asks only whether the question was put
      and what it said, never what the answer then decided.
+  I. `_remove_stale` never reaching the `.fallback.json` slot -> checks 6 and
+     10 fail: a committed case keeps the record of a mesh it no longer holds.
+     A LEVER on the real `mesh_commit` rather than a source mutation, because
+     that file's mutant harness is `test_mesh_trial_commit.py`'s and a second
+     copy of it here would be the duplication this repo's own rules refuse.
+  J. `commit_refusal` reading "no verdict" as "nobody to refuse" -> check 7
+     fails, alone. #166's own shipped defect arriving in the fallback's shape:
+     a fallback mesh has NO verdict by construction, so this is precisely
+     where that reading would come back and let a folded one into the case.
 
 Run:  python3 tools/PreProcessor/tests/test_mesh_fallback.py
 Needs a build tree for check 4 alone. Checks 6-8 drive the real commit over
@@ -458,6 +471,14 @@ def snapshot(directory):
 #: substituted" looks like from inside the host.
 _IGNORE_THE_ANSWER = False
 
+#: THREE OF THE RULES LIVE IN `mesh_commit`, NOT IN `mesh_fallback`, so no
+#: mutation of the module `world()` rebuilds can reach them. Rather than carry
+#: a second mutant harness for a file `test_mesh_trial_commit.py` already owns,
+#: each is injected as a LEVER on the real `mesh_commit` — which is how
+#: `_IGNORE_THE_ANSWER` already handles the one rule that lives in the
+#: controller. Set by `injected(..., lever=...)` and cleared in its `finally`.
+_LEVERS = {}
+
 
 def ask(host, cfg, answer, real=False):
     """Drive the real pre-flight with `confirm` answering `answer`.
@@ -486,6 +507,39 @@ def ask(host, cfg, answer, real=False):
 
 def _tmpdir():
     return tempfile.mkdtemp(dir=_TMP)
+
+
+def pull_lever(name):
+    """Install one `mesh_commit` lever; return the function that removes it.
+
+    `"stale"` -- `_remove_stale` that never reaches the `.fallback.json` slot,
+    so a commit of the other kind leaves the previous record standing beside a
+    mesh it does not describe.
+    `"norefuse"` -- `commit_refusal` reading "no verdict" as "nobody to refuse",
+    which is #166's own shipped defect arriving in the fallback's shape: a
+    fallback mesh HAS no verdict by construction, so this is where it would
+    come back.
+    """
+    import app.services.mesh_commit as commit_mod
+    if name == "stale":
+        real = commit_mod._remove_stale
+
+        def blind(*paths):
+            return real(*[p for p in paths
+                          if not p.endswith(".fallback.json")])
+
+        commit_mod._remove_stale = blind
+        return lambda: setattr(commit_mod, "_remove_stale", real)
+    if name == "norefuse":
+        verdict_mod = commit_mod.case_type_verdict
+        real = verdict_mod.commit_refusal
+
+        def lenient(verdict, exit_code=0):
+            return "" if verdict is None else real(verdict, exit_code)
+
+        verdict_mod.commit_refusal = lenient
+        return lambda: setattr(verdict_mod, "commit_refusal", real)
+    raise AssertionError("no such lever: %r" % (name,))
 
 
 def says_not_structured(w, text):
@@ -547,8 +601,9 @@ def check_1(w):
     none_cfg = no_geometry()
     none_host = make_host(none_cfg, _tmpdir())
     none_blocked, none_asked = ask(none_host, none_cfg, True)
-    if not w.unavailable(none_cfg):
-        out.append("1c: `unavailable` says the hybrid path could mesh a case "
+    if not w.unavailable_because(none_cfg):
+        out.append("1c: `unavailable_because` says the hybrid path could mesh a "
+                   "case "
                    "with no geometry at all")
     if none_asked.calls:
         out.append("1c: a fallback was offered for a case the hybrid path "
@@ -581,7 +636,7 @@ def check_2(w):
         out.append("2a: the operator declined and the run went ahead anyway")
     if host._mesh_fallback is not None:
         out.append("2a: a declined offer left a fallback in force")
-    if not any("no fallback" in line for line in host.lines):
+    if not any(w.DECLINED in line for line in host.lines):
         out.append("2a: a declined offer said nothing")
     # 2b. nobody to ask: the REAL confirm, headless.
     h2 = make_host(cfg, _tmpdir())
@@ -970,11 +1025,18 @@ def check_9(w):
     # 9d. and so does switching the panel to the hybrid path, which a Generate
     # over a trial already in hand reaches without running a pre-flight.
     host._mesh_fallback = accepted
-    host._settle_fallback(hybrid_drawing())
+    moved = hybrid_drawing()
+    host._settle_fallback(moved)
     if host._mesh_fallback is not None:
         out.append("9d: a fallback survived the panel moving to the hybrid "
-                   "path, so the case would be recorded as a downgrade the "
-                   "operator never made")
+                   "path")
+    # The CONSEQUENCE, which is what `_settle_fallback` is actually for: a
+    # stale acceptance would keep TRANSFORMING the configuration, handing the
+    # mesher a family-less run for a drawing the operator deliberately moved.
+    # Asserting the flag alone would not have said so.
+    if host.mesher_config(moved).topology.family != "cgrid":
+        out.append("9d: the stale acceptance was still rewriting the "
+                   "configuration the mesher is handed")
     host._mesh_fallback = accepted
     host._settle_fallback(cfg)
     if host._mesh_fallback is None:
@@ -998,14 +1060,26 @@ def check_10(w):
         out.append("the transformation changed a run that is not a fallback "
                    "(mode=%r family=%r)"
                    % (handed.mesh_mode, handed.topology.family))
-    # a run with no case type and no fallback still carries no sidecar at all.
+    # A run with no case type and no fallback carries no sidecar at all — and
+    # that is checked over a case that ALREADY HOLDS a fallback record, not
+    # over a fresh directory. A review axis measured the fresh-directory
+    # version: deleting the `.fallback.json` argument from `commit`'s unjudged
+    # `_remove_stale` reddened NOTHING here, because there was never a record
+    # for it to fail to remove. The third slot needs the same both-directions
+    # treatment as check 6b's first two.
     src = fake_trial(_tmpdir())
     dest = os.path.join(_tmpdir(), "mesh_case.vtk")
-    commit_mod.commit(commit_mod.TrialMesh(src, 0), dest)
     stem = os.path.splitext(dest)[0]
+    commit_mod.commit(commit_mod.TrialMesh(
+        src, 0, fallback=w.Fallback("the section is blunt.", "cgrid")), dest)
+    if not os.path.isfile(stem + ".fallback.json"):
+        out.append("the fallback commit this leg is built on wrote no record, "
+                   "so the stale check below would pass on nothing")
+    commit_mod.commit(commit_mod.TrialMesh(src, 0), dest)
     for ext in (".casetype.json", ".verdict.json", ".fallback.json"):
         if os.path.isfile(stem + ext):
-            out.append("an unjudged ordinary commit wrote a %s" % ext)
+            out.append("an unjudged ordinary commit left a %s standing beside "
+                       "a mesh it does not describe" % ext)
     return out
 
 
@@ -1078,12 +1152,17 @@ def injected(label, src, reddens, note, lever=None):
         mod, restore = world(src)
     else:
         mod, restore = world()
-    if lever is not None:
+    undo = None
+    if lever == "accept":
         _IGNORE_THE_ANSWER = True
+    elif lever is not None:
+        undo = pull_lever(lever)
     try:
         res = run_all(mod, quiet=True)
     finally:
         _IGNORE_THE_ANSWER = False
+        if undo is not None:
+            undo()
         restore()
     red = sorted(n for n, ok in res.items() if not ok)
     check(red == sorted(reddens),
@@ -1110,7 +1189,7 @@ injected("B", mutate("    out.mesh_mode = MESH_MODE_HYBRID\n",
          [1, 2, 3, 4, 8, 9],
          "`as_hybrid` leaves the MODE at multi-block, so the downgrade is the "
          "same run that was just refused. IT CASCADES, and the cascade is the "
-         "design rather than a weakness of the injection: `unavailable` asks "
+         "design rather than a weakness of the injection: `unavailable_because` asks "
          "`missing_mesh_input` about the configuration `as_hybrid` produces, "
          "so one definition of what the fallback run IS serves both the offer "
          "and the run -- break it and the offer closes too. Check 3a is the "
@@ -1118,7 +1197,8 @@ injected("B", mutate("    out.mesh_mode = MESH_MODE_HYBRID\n",
 injected("C", mutate("    return missing_mesh_input(as_hybrid(cfg))",
                      "    return \"\""),
          [1],
-         "`unavailable` always says the hybrid path can run, so a case with no "
+         "`unavailable_because` always says the hybrid path can run, so a "
+         "case with no "
          "geometry at all is offered a mesh it cannot produce")
 injected("D", mutate(
     '    "This mesh is NOT structured. It was generated on the hybrid path — "',
@@ -1142,7 +1222,16 @@ injected("F", mutate('    return Fallback(reason=refusal_text(rows), family=fami
          "never expires")
 injected("H", None, [2],
          "the offer is ACCEPTED WITHOUT ASKING -- what a silent substitution "
-         "looks like from inside the host", lever=True)
+         "looks like from inside the host", lever="accept")
+injected("I", None, [6, 10],
+         "`_remove_stale` never reaching the `.fallback.json` slot, so a "
+         "committed case keeps a record of a mesh it no longer holds. A "
+         "review axis MEASURED this one going green before check 10 grew its "
+         "stale leg", lever="stale")
+injected("J", None, [7],
+         "`commit_refusal` reading 'no verdict' as 'nobody to refuse' -- "
+         "#166's own shipped defect arriving in the fallback's shape, since a "
+         "fallback mesh has no verdict by construction", lever="norefuse")
 
 print("--- injection G: negative control ---", flush=True)
 _CTRL, _CTRL_RESTORE = world()

@@ -98,8 +98,7 @@ class MeshGenDiagnosticsMixin:
             # every run: a Trial costs about a second, and the one line telling
             # the operator their mesh is not structured must not be something
             # they saw once and scrolled past.
-            self.log_report("[Mesh] " + self._mesh_fallback.note(),
-                            level="WARNING")
+            self._say_fallback(self._mesh_fallback)
             return False
         self.log_report("[ERROR] " + msg)
         self._draw_preflight_refusal(cfg, refusals)
@@ -159,7 +158,7 @@ class MeshGenDiagnosticsMixin:
         mesh of a different kind. The headless pipeline never reaches this code
         at all; it asks `topology_model.mesh_preflight` and still refuses.
         """
-        why_not = mesh_fallback.unavailable(cfg)
+        why_not = mesh_fallback.unavailable_because(cfg)
         if why_not:
             # THE DOWNGRADE IS NOT ALWAYS AVAILABLE, and offering one that
             # cannot run would spend the operator's acceptance on nothing. The
@@ -169,21 +168,19 @@ class MeshGenDiagnosticsMixin:
             self._mesh_fallback = None
             report_error(self.main_window,
                          "This Case Type Cannot Mesh This Drawing",
-                         msg + "\n\nNo hybrid fallback can be offered for this "
-                         "case either: " + why_not + ".")
+                         mesh_fallback.unavailable_text(msg, why_not))
             return False
         if not confirm(self.main_window, mesh_fallback.OFFER_TITLE,
                        mesh_fallback.offer_question(msg),
                        headless_default=False):
             self._mesh_fallback = None
-            self.log("[Mesh] no fallback mesh was generated; fix the drawing "
-                     "or pick a different case type.")
+            self.log("[Mesh] " + mesh_fallback.DECLINED)
             return False
         self._mesh_fallback = mesh_fallback.accepted(refusals)
         # The overlay goes: the run is going ahead, and a curve still marked red
         # beside a finished mesh reads as an error in it.
         self._clear_preflight_highlight()
-        self.log_report("[Mesh] " + self._mesh_fallback.note(), level="WARNING")
+        self._say_fallback(self._mesh_fallback)
         return True
 
     def _scan_geometry_files(self, cfg) -> tuple:

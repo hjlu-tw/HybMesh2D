@@ -4763,6 +4763,14 @@ picked ONE case type naming ONE family; that family refusing is "no family appli
 they are in. `test_mesh_fallback.py` check 1d MEASURES the H-grid's acceptance rather than
 restating the argument, so the day a fifth family changes it the gate says so.
 
+**AND THE STRONGEST HALF OF THAT ARGUMENT WAS MISSING UNTIL A REVIEW AXIS SUPPLIED IT.** #158's
+own Out of Scope list says *"Automatic topology derivation. Nothing inspects a geometry and
+proposes a family or its parameters. The operator picks a case type; the tool may pre-select
+roles, and that is all."* A four-family survey IS that derivation, one answer short of proposing
+one — so the literal criterion is not merely unworkable, it is excluded by the parent ticket. The
+first draft argued only the H-grid measurement, which is the weaker case: it says the survey would
+not WORK, where the parent says it must not be BUILT.
+
 **The drawing the gate is built on is the motivating one.** A NACA 0012 drawn with a BLUNT trailing
 edge: the CAD stage emits it as three segments — upper surface, lower surface and the base between
 them — so the two surfaces never meet and there is no single trailing-edge corner for four C-grid
@@ -4784,7 +4792,7 @@ than a sentence here. Clearing the family also makes the committed script honest
 hybrid run, because that is the run that produced the mesh beside it.
 
 **THE CASCADE IN INJECTION B IS THE DESIGN.** Breaking `as_hybrid`'s mode reddens six checks, not
-one, because `unavailable` asks `missing_mesh_input` about the configuration `as_hybrid` produces
+one, because `unavailable_because` asks `missing_mesh_input` about the configuration `as_hybrid` produces
 — one definition of what the fallback run IS, serving both the offer and the run. Declared at its
 measured width rather than narrowed, with check 3a named as the one that is specifically about the
 mode. Injection A is three checks for the same reason.
@@ -4809,13 +4817,50 @@ so an operator who accepted a fallback and then switched the panel to the hybrid
 have had the run recorded as a downgrade they never made — the two configurations produce identical
 mesher text, so the fingerprint would not have noticed.
 
+**A CHECK THAT PASSED ON NOTHING, FOUND BY MEASUREMENT RATHER THAN BY READING.** The Standards
+axis deleted `sidecars["fallback"]` from `commit`'s UNJUDGED `_remove_stale` call and ran both
+gates: `test_mesh_fallback.py` ALL PASS, `test_mesh_trial_commit.py` all checks passed. Check 10
+committed its unjudged trial into a FRESH directory, so there was never a stale record for
+`_remove_stale` to fail to remove — the check was true by construction for exactly the mutation it
+existed to catch, the same shape as injection D's first version one paragraph up. It now commits a
+fallback first and the unjudged trial over the same stem, and injection I is the lever that holds
+it. The lesson is the one this repo keeps relearning: **a check whose fixture cannot exhibit the
+defect is not a check**, and only an injection says which ones those are.
+
+**TWO SENTENCES THAT WERE NOT WHERE THE RULE SAID THEY WERE.** The rule block and the commit
+message both said `services/mesh_fallback.py` holds "every sentence", while the declined-offer
+line and the no-fallback-available message were composed in
+`controllers/mesh_gen_diag_ctrl.py`. An `every` claim the code contradicts is the staleness class
+this repo keeps `test_instruction_budget.py` for, and nothing gated this one. Both moved —
+`DECLINED` and `unavailable_text` — and the three sites that log the per-run label collapsed into
+`_say_fallback`, which pairs the component prefix with the one grade.
+
+**WHAT `_settle_fallback` ACTUALLY CLOSES**, after the Spec axis measured the claim. Its first
+docstring said it stopped a fallback record being written for a run the operator never
+downgraded; that is false, because the commit reads `TrialMesh.fallback` and not the session flag,
+so in the stated scenario the record is still written. It is also the wrong thing to want: the
+mesh in hand really was produced on the hybrid path and really is not structured. What the flag
+being stale would actually break is the TRANSFORMATION — `mesher_config` would keep clearing the
+family off a drawing the operator deliberately moved, changing the next RUN. Check 9d now asserts
+that consequence rather than the flag.
+
 **A `ValueError` joined the fingerprint's `OSError`.** `_fingerprint_of` catches what it cannot
 take a fingerprint from and answers "stale", which makes Generate re-mesh — the safe direction.
 `save_to_file` projects, and a projection raises `BindingError` (a `ValueError`), and a trial in
 hand while the configuration has become unbuildable is a state the fallback makes reachable. Both
 answers are the same one: we could not check.
 
-**Named blind spots.** "The existing hybrid path's behaviour is unchanged" is held at the GUI level
+**Named blind spots.** **RUN ALL DOES NOT CARRY AN ACCEPTANCE GIVEN ON THE MESH TAB** — found by
+the Spec axis. It reaches the mesher through `services/pipeline_runner.py`, which asks
+`mesh_preflight` and refuses with no offer; correct for a host with nobody to ask, and surprising
+for an operator who meshed the same drawing as a fallback two clicks away, with nothing telling
+them why. #167's criteria are about Trial and Generate — its own "Blocked by" says so — and #166
+holds Run All separate, so this is recorded rather than widened into another ticket's subject.
+**A STAGED SOLVER CASE LABELS THE FALLBACK ONLY INDIRECTLY**: `case_sources.mesh_provenance_paths`
+stages the mesher's own `.provenance.json` and not the `<stem>.fallback.json` beside it, so what
+survives into the case is the provenance's `Mesh Mode : 0` rather than the sentence. The staging's
+contents belong to `.claude/rules/pipeline-case.md`.
+"The existing hybrid path's behaviour is unchanged" is held at the GUI level
 by check 10 and NOT by `golden_mesh.py`: this ticket touched no C++ at all, and the comparator was
 run by hand for the record — **21 cases, 21 SAME, 0 DIFF, worst coordinate deviation 0.000e+00**,
 one of the 21 being the `isolated_corner` NO-MESH outcome rather than a mesh. A gate that ran it

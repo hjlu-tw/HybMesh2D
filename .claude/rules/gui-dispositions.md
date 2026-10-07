@@ -130,8 +130,11 @@ docstring's and are not restated here.
   ignoring the body. "Every family refuses" would never have been true and the fallback would
   never have been offered. The other three are no better as witnesses: an unconfigured family
   refuses because its bindings are empty, a fact about the configuration and not about the shape.
-  Gate: `tests/test_mesh_fallback.py` check 1d, which MEASURES the H-grid accepting the drawing
-  the C-grid refuses rather than asserting the argument.
+  **AND #158 EXCLUDES THE SURVEY BY NAME**: its Out of Scope list says "Automatic topology
+  derivation. Nothing inspects a geometry and proposes a family or its parameters", and asking all
+  four which could fill a drawing IS that derivation one answer short of proposing one. That is
+  the stronger half and a review axis supplied it. Gate: `tests/test_mesh_fallback.py` check 1d,
+  which MEASURES the H-grid accepting the drawing the C-grid refuses rather than asserting it.
 - **IT IS NEVER SUBSTITUTED SILENTLY, AND THAT IS THE WHOLE RULE.** Someone who does not know
   whether their mesh is structured cannot reason about anything downstream of it. So the offer is
   a `confirm` the operator answers, with `headless_default=False`: a host with nobody to ask
@@ -144,7 +147,13 @@ docstring's and are not restated here.
   (a Trial costs about a second) while any change to what the family objects to is. The label is
   said again on EVERY run regardless, because a line seen once and scrolled past is not a label.
   `_settle_fallback` drops an acceptance the configuration no longer needs on a Generate that
-  runs no pre-flight of its own. Gate: check 9, injection F.
+  runs no pre-flight of its own — and what that closes is the TRANSFORMATION, not the bookkeeping:
+  a stale acceptance would hand the mesher a family-less run for a drawing the operator
+  deliberately moved. A trial already GENERATED as a fallback keeps `TrialMesh.fallback` and still
+  commits its record, which is correct rather than stale — that mesh really is the unstructured
+  one. The first wording claimed otherwise and a review axis measured it. Gate: check 9, whose 9d
+  asserts the consequence (`mesher_config` stops rewriting the config) and not only the flag;
+  injection F.
 - **THE DOWNGRADE CLEARS THE FAMILY AS WELL AS THE MODE**, and the second half is not tidiness:
   `mesh_config_io.save_config_to_file` PROJECTS a named family's document whenever
   `names_a_family()` is true, asking the MODE nowhere, and a family that cannot build raises from
@@ -162,6 +171,13 @@ docstring's and are not restated here.
   are different quantities. `mesh_fallback.NO_VERDICT` stands where the verdict would be, at
   WARNING. A FOLD is still refused: `commit_refusal` needs no case type behind it (ADR-0002), and
   a downgrade buys no exemption. Gate: checks 5 and 7.
+- **EVERY SENTENCE THE OPERATOR READS IS `services/mesh_fallback.py`'S, INCLUDING THE TWO THAT
+  ARE NOT ABOUT THE DOWNGRADE ITSELF.** `DECLINED` (what a turned-down offer says) and
+  `unavailable_text` (a refusal plus why no downgrade can answer it) were authored at the call
+  site in the first cut while this very rule claimed otherwise — an `every`-claim the code
+  contradicted, which is the staleness class this repo keeps a gate for. The host owns the
+  component prefix and the GRADE and nothing else, which is `gui-seams.md`'s split; `_say_fallback`
+  is the one place that pairs them, because three call sites said the same thing three times.
 - **WHERE A FALLBACK MESH IS LABELLED — the complete list, enumerated and not promised.** The
   question that offers it; the GUI log on EVERY fallback generation, Trial and Generate alike;
   the verdict slot; the committed `<stem>.fallback.json`; and the committed `<stem>.pipeline.json`,
@@ -171,7 +187,10 @@ docstring's and are not restated here.
 - **THE COMMITTED RECORD SLOTS ARE RECONCILED, NEVER JUST WRITTEN.** `<stem>.fallback.json` is
   mutually exclusive with `<stem>.casetype.json` and `<stem>.verdict.json`, and `commit` removes
   whichever two do not apply — a verdict file beside a fallback mesh is a judgement of a mesh that
-  no longer exists. Gate: check 6b, both directions.
+  no longer exists. ALL THREE directions, the third included: an UNJUDGED commit removes the
+  fallback record too. Gate: check 6b and check 10's stale leg, plus injection I — check 10 used
+  to commit into a fresh directory and so passed on nothing, measured by a review axis that
+  deleted the argument and watched the whole gate stay green.
 - **THE COMMITTED SCRIPT DESCRIBES THE RUN THAT HAPPENED.** `build_pipeline_config` gained a
   `mesh_cfg` override with exactly ONE caller, the fallback commit; a script carrying the panel's
   `MESH_MODE 1` would be refused by the family the moment anyone ran it, leaving a committed case
@@ -213,6 +232,12 @@ which are capability refusals.
 - **THE GATE DRIVES THE REAL CONTROLLER AGAINST A RECORDING STAND-IN FOR THE MAIN WINDOW.** That
   the two buttons are on screen, enabled and in the right row is read from SOURCE (check 1) rather
   than from a window anyone opened; `smoke_headless_appcontroller.py` is what builds a real one.
+- **RUN ALL DOES NOT CARRY AN ACCEPTANCE GIVEN ON THE MESH TAB.** It reaches the mesher through
+  `services/pipeline_runner.py`, which asks `topology_model.mesh_preflight` and refuses with no
+  offer — correct for a headless host and surprising for an operator who has just meshed the same
+  drawing as a fallback two clicks away, and nothing tells them why. #167's criteria are about
+  Trial and Generate (its own "Blocked by" says so) and #166 holds Run All separate, so this is
+  recorded rather than widened. Found by a review axis.
 - **THE ACCEPTANCE LIVES FOR THE SESSION AND NOTHING READS IT BACK.** A case committed yesterday
   carries its `<stem>.fallback.json`, and reopening it tells the GUI nothing: the next Trial asks
   again from scratch. That is the safe direction (an acceptance is never inherited) and it is also

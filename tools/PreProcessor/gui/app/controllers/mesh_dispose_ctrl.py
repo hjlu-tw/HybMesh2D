@@ -112,19 +112,39 @@ class MeshDispositionMixin:
         self._settle_fallback(cfg)
         return trial if trial.matches(self._fingerprint_of(cfg)) else None
 
+    def _say_fallback(self, fb) -> None:
+        """The ONE line that says a mesh is not structured, at the ONE grade.
+
+        Three call sites reach it — the run that accepts the downgrade, every
+        later run under the same acceptance, and the commit — and all three say
+        the same thing at the same grade, because it is one fact and the first
+        of three copies to drift would be the one an operator happened to read.
+        The SENTENCE is `mesh_fallback`'s; what is here is the component prefix
+        and the grade, which is the caller's to own (`.claude/rules/gui-seams.md`).
+        """
+        self.log_report("[Mesh] " + fb.note(), level="WARNING")
+
     def _settle_fallback(self, cfg) -> None:
         """Drop an accepted hybrid fallback the configuration no longer needs.
 
         NON-INTERACTIVE, and that is the whole of it: the OFFER belongs to the
         pre-flight, which only a generation reaches, while Generate may commit a
-        trial without running one. The hole it closes is narrow and real —
-        accept a fallback, Trial, then switch the panel to the hybrid path by
-        hand. `mesher_config` would still be applying the downgrade, so the
-        fingerprint would still match (the configuration it produces is
-        identical either way) and the committed case would carry a fallback
-        record for a run the operator never downgraded. Asking
-        `preflight_for_config` is the same question the pre-flight asks, minus
-        the dialog: no refusal, no fallback.
+        trial without running one.
+
+        WHAT IT CLOSES, stated precisely because the first wording overclaimed
+        and a review axis measured it: an acceptance no longer justified must
+        not keep TRANSFORMING the configuration. `mesher_config` applies the
+        downgrade off this flag, so a stale one would hand the mesher a
+        family-less config for a drawing the operator has since fixed or moved
+        to the hybrid path deliberately — changing the next run, not merely the
+        bookkeeping. Asking `preflight_for_config` is the same question the
+        pre-flight asks, minus the dialog: no refusal, no fallback.
+
+        WHAT IT DOES NOT CLOSE, and must not: a TRIAL already generated as a
+        fallback keeps `TrialMesh.fallback`, so committing it still writes the
+        record. That is correct rather than stale — the mesh in hand really was
+        produced on the hybrid path and really is not structured, and clearing
+        the flag here would be the lie pointed the other way.
         """
         if self._mesh_fallback is None:
             return
@@ -208,7 +228,7 @@ class MeshDispositionMixin:
             # moment the mesh becomes the case's, and a committed case whose
             # mesh is not structured is the one fact its owner must not have to
             # reconstruct from a sidecar they did not know to open.
-            self.log_report("[Mesh] " + trial.fallback.note(), level="WARNING")
+            self._say_fallback(trial.fallback)
         elif trial.verdict is None:
             # SAID, not left to be noticed. A case with no verdict file was
             # judged by nobody, and the operator should learn that here rather

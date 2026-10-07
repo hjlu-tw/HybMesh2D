@@ -28,6 +28,15 @@ counting it as "this family cannot cover your geometry" would be an overclaim
 printed to the operator. The operator picked ONE case type, which names ONE
 family; that family refusing IS "no family applies" in the world they are in.
 
+**AND THE SURVEY IS OUT OF SCOPE BY NAME.** #158's own Out of Scope list says
+*"Automatic topology derivation. Nothing inspects a geometry and proposes a
+family or its parameters. The operator picks a case type; the tool may
+pre-select roles, and that is all."* Asking all four families which could fill a
+drawing IS that derivation, one answer short of proposing one. So the literal
+criterion is not merely unworkable, it is excluded by the parent ticket — which
+is the stronger half of this argument and was missing from the first draft of
+it.
+
 **IT IS NEVER SUBSTITUTED SILENTLY, AND THAT IS THE WHOLE RULE.** Someone who
 does not know whether their mesh is structured cannot reason about anything
 downstream of it — not the verdict, not the solver settings, not a comparison
@@ -61,6 +70,14 @@ from an ordinary hybrid run — and labelling every hybrid mesh in the tree
 "fallback" would be the same lie pointed the other way. Its shape-metric tip
 already says the two paths measure different quantities.
 
+**AND ONE PLACE WHERE THE LABEL IS ONLY INDIRECT, named rather than claimed.** A
+solver case built from a fallback mesh stages the mesher's own
+`.provenance.json` (`case_sources.mesh_provenance_paths`) and NOT the
+`<stem>.fallback.json` beside it, so what the staged case records is the
+provenance's `Mesh Mode : 0` rather than the sentence. The staging's contents
+are `.claude/rules/pipeline-case.md`'s subject and widening them is that rule
+file's decision, not this one's.
+
 **NO VERDICT IS ISSUED, AND THE REASON IS STATED.** A case type's thresholds were
 measured on a reference mesh of structured quads; the mesher's own report says in
 as many words that the two paths' cell-shape metrics are different quantities and
@@ -77,11 +94,17 @@ import os
 from dataclasses import dataclass
 
 from app.services.mesh_modes import MESH_MODE_HYBRID, missing_mesh_input
+# AT MODULE LEVEL, not deferred into `accepted`. The first cut imported it in
+# the function body with no reason given, which `.claude/rules/gui-seams.md`
+# calls out in as many words ("a deferred import is still a dependency"):
+# measured, there is no cycle and both modules are Qt-free.
+from app.services.topology_preflight import refusal_text
 from app.services.topology_params import FAMILY_NONE
 
-__all__ = ["Fallback", "NOT_STRUCTURED", "NO_VERDICT", "OFFER_TITLE",
-           "FALLBACK_SCHEMA", "FALLBACK_SCHEMA_VERSION", "accepted",
-           "as_hybrid", "fallback_record", "offer_question", "unavailable"]
+__all__ = ["Fallback", "DECLINED", "NOT_STRUCTURED", "NO_VERDICT",
+           "OFFER_TITLE", "FALLBACK_SCHEMA", "FALLBACK_SCHEMA_VERSION",
+           "accepted", "as_hybrid", "fallback_record", "offer_question",
+           "unavailable_because", "unavailable_text"]
 
 FALLBACK_SCHEMA = "hybmesh-mesh-fallback"
 FALLBACK_SCHEMA_VERSION = 1
@@ -105,6 +128,14 @@ NO_VERDICT = (
     "structured quads, and the two paths measure different quantities "
     "(quad_midline_ratio against tri_edge_ratio), so none of them is applied to "
     "a fallback mesh. Judge this one on the mesher's own figures.")
+
+#: What the operator is told when they turn the downgrade down. Here rather than
+#: at the call site because EVERY sentence about the fallback is this module's —
+#: the first cut left this one and :func:`unavailable_text` in
+#: `controllers/mesh_gen_diag_ctrl.py`, which made that claim false in the rule
+#: file that states it.
+DECLINED = ("No fallback mesh was generated. Fix the drawing, or pick a case "
+            "type whose family can fill it.")
 
 
 @dataclass(frozen=True)
@@ -151,7 +182,6 @@ def accepted(refusals) -> Fallback:
     dispatched to (`topology_preflight.stamp_family`), so there is one answer to
     "which family refused" and a caller cannot supply a different one.
     """
-    from app.services.topology_preflight import refusal_text
     rows = list(refusals or ())
     family = next((r.family for r in rows if r.family), "")
     return Fallback(reason=refusal_text(rows), family=family)
@@ -166,6 +196,17 @@ def offer_question(reason: str) -> str:
     """
     return ("%s\n\n%s\n\n%s\n\nGenerate the hybrid fallback mesh instead?"
             % (reason, NOT_STRUCTURED, NO_VERDICT))
+
+
+def unavailable_text(reason: str, why_not: str) -> str:
+    """The whole message when a refusal cannot be answered with a downgrade.
+
+    The refusal AND why there is no way round it, in one message rather than
+    two: the operator needs both to know what to do next, and a second dialog
+    is how the first one learns to be dismissed.
+    """
+    return ("%s\n\nNo hybrid fallback can be offered for this case either: "
+            "%s." % (reason, why_not))
 
 
 def as_hybrid(cfg):
@@ -187,7 +228,7 @@ def as_hybrid(cfg):
     return out
 
 
-def unavailable(cfg) -> str:
+def unavailable_because(cfg) -> str:
     """Why no fallback can be offered for ``cfg`` either, or ``""``.
 
     Asked through `missing_mesh_input` on the config the fallback would actually
