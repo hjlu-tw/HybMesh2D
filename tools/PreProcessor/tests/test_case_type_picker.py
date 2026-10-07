@@ -54,10 +54,12 @@ The fourteen checks, in the order the operator meets them:
       cannot have anyone judge an unstructured mesh against bounds measured on
       structured quads (#167's rule, reached by #169's new route).
 
-THREE INJECTIONS, run in-process at the end of this file so they run on every CI
-run rather than by hand. Each monkeypatches the MODULE attribute the production
-code resolves at call time, asserts the probe was green first, and requires the
-named check's probe to go red and then green again after the restore:
+FOUR INJECTIONS, run in-process at the end of this file so they run on every CI
+run rather than by hand. A, B and C monkeypatch the MODULE attribute the
+production code resolves at call time, assert the probe was green first, and
+require the named check's probe to go red and then green again after the
+restore. D is a DISCONNECT instead, because the defect it restores is a missing
+wire and there is no module attribute to swap for one:
 
   A. `case_type_picker.catalogue` dropping every unloadable entry -> check 4's
      disabled row disappears. That is the exact silence the rule exists against:
@@ -397,6 +399,28 @@ with tempfile.TemporaryDirectory() as _tmp:
           "second way to set the variable (%r)"
           % (_verdicts[0].splitlines()[0] if _verdicts else _reports,))
 
+    # ...AND THE PICKER REACHES THE MODEL BY THE ROUTE A USER USES. Check 7
+    # assigns `global_mesh_config.case_type_file` directly, so it proves the
+    # judging and not the wiring; this drives a real `AppController`'s panel the
+    # way a click does and reads the model back.
+    # The SHIPPED case type, because it is already a row of a fresh panel: a
+    # pre-populate would leave the combo ALREADY on the row this check is about
+    # to select, and `setCurrentIndex` to the current index emits nothing — which
+    # is how this check's own first draft reported the leg broken while it works.
+    _ctl = AppController()
+    _w = _ctl.main_window.mesh_config_panel.case_type_file
+    _row = next((i for i in range(_w.count())
+                 if str(_w.itemData(i) or "") == _SHIPPED), -1)
+    _before = _ctl.global_mesh_config.case_type_file
+    _w.setCurrentIndex(_row)
+    check(_row > 0 and _before == ""
+          and _ctl.global_mesh_config.case_type_file == _SHIPPED,
+          "7. ...and PICKING it in the live panel reaches the model through "
+          "`undo_ctrl._wire_widget_edits` -> `on_panel_edited`, which is the "
+          "route a click takes and the one check 7 above assumes (row=%d, "
+          "before=%r, after=%r)"
+          % (_row, _before, _ctl.global_mesh_config.case_type_file))
+
     # ══ 8. precedence, in BOTH directions ═════════════════════════════════
     _env_ct = write_case_type(os.path.join(_tmp, "from_env.casetype.json"),
                               name="From the environment")
@@ -475,6 +499,26 @@ with tempfile.TemporaryDirectory() as _tmp:
     # overlay. A second derivation here would be free to disagree with the
     # judgement the operator then reads, which is the whole failure this seam is
     # shaped around.
+    # THE DEVIATION HALF IS LIVE OR IT IS A LIE, and `set_config` alone cannot
+    # say so: this check edits the WIDGET the way an operator does, which is the
+    # path the read-out was blind to until the review measured it. Putting the
+    # value back must clear the mark too — user story 20 read literally.
+    panel.bl_initial_thickness.setValue(0.001)
+    _settled = panel.case_type_summary.text()
+    panel.bl_initial_thickness.setValue(0.05)
+    _after_edit = panel.case_type_summary.text()
+    panel.bl_initial_thickness.setValue(0.001)
+    _after_undo = panel.case_type_summary.text()
+    check("MOVED" not in _settled and "MOVED" in _after_edit
+          and "0.05" in _after_edit and "MOVED" not in _after_undo,
+          "10. ...and it FOLLOWS a field edit on the live panel, not only a "
+          "`set_config` — an operator who moves an owned field and goes on "
+          "reading 'None of them has been moved' is this ticket's own silence "
+          "one layer in (settled=%r, edited=%r, put back=%r)"
+          % ("MOVED" in _settled, "MOVED" in _after_edit,
+             "MOVED" in _after_undo))
+    panel.set_config(_cfg)
+
     _loaded = case_type.load(_owning)
     _wanted, _scale, _why = case_type_scale.fit(_loaded, _cfg)
     _service = {d.name for d in case_type_fields.deviations(_wanted, _cfg)}
@@ -683,6 +727,61 @@ injected("injection C. `for_config` ignores its config and reads only the "
          "environment — the pre-#169 behaviour exactly",
          "for_config", lambda config=None: case_type.active_case_type(),
          _probe_precedence)
+
+
+def _probe_live_readout():
+    """True when the read-out stops following a field edit on the live panel."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ct = write_case_type(os.path.join(tmp, "live.casetype.json"),
+                             fields={"bl_initial_thickness": 0.001})
+        cfg = MeshConfig()
+        cfg.case_type_file = ct
+        cfg.bl_initial_thickness = 0.001
+        panel.set_config(cfg)
+        before = panel.case_type_summary.text()
+        panel.bl_initial_thickness.setValue(0.05)
+        after = panel.case_type_summary.text()
+        panel.set_config(MeshConfig())
+        return not ("MOVED" not in before and "MOVED" in after)
+
+
+# INJECTION D is a DISCONNECT rather than a monkeypatch: the defect it restores
+# is a missing wire, and there is no module attribute to swap for one. The real
+# slot is disconnected from every widget it was wired to and reconnected after,
+# which is why this one does not go through `injected`.
+def _toggle_refresh_wiring(connect: bool) -> int:
+    from app.views.panels.field_widgets import edit_signal
+    from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
+    from app.views.panels.mesh_field_specs import MESH_SPECS
+    n = 0
+    for spec in list(MESH_SPECS) + list(PANEL_BL_SPECS):
+        if spec.attr in ("case_type_file", "case_type_summary"):
+            continue
+        widget = getattr(panel, spec.attr, None)
+        if widget is None:
+            continue
+        sig = edit_signal(widget, spec)
+        if sig is None:
+            continue
+        try:
+            if connect:
+                sig.connect(panel._on_field_edited)
+            else:
+                sig.disconnect(panel._on_field_edited)
+            n += 1
+        except TypeError:
+            pass
+    return n
+
+
+_cut = _toggle_refresh_wiring(False)
+check(_cut > 0 and _probe_live_readout(),
+      "injection D. the per-edit refresh disconnected (%d widgets) — the "
+      "read-out stops following an edit and goes on saying nothing moved, "
+      "which is what shipped until the Spec review measured it" % _cut)
+_toggle_refresh_wiring(True)
+check(not _probe_live_readout(),
+      "injection D. ...and reconnecting really puts it back")
 
 
 print()

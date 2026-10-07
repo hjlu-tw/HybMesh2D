@@ -128,9 +128,13 @@ class MeshConfigCaseTypeMixin:
             return
         w = self.case_type_file
         if w.currentData() != case_type_picker.BROWSE:
+            # The moment a pick lands on a real row is the moment the value to
+            # fall back to from `Browse…` changes, and it is the ONE place that
+            # is true outside a programmatic write.
+            case_type_picker.remember_choice(w)
             self._refresh_case_type_summary()
             return
-        previous = getattr(w, "_case_type_stored", "") or ""
+        previous = case_type_picker.read_choice(w)
         path, _filt = QFileDialog.getOpenFileName(
             self, "Select a case type",
             os.path.dirname(case_type_picker.resolve(previous)) or "",
@@ -154,6 +158,57 @@ class MeshConfigCaseTypeMixin:
         """
         self._populate_case_types(keep=case_type_picker.chosen(cfg))
         self._refresh_case_type_summary(cfg)
+
+    def _wire_case_type_refresh(self):
+        """Refresh the read-out on EVERY field edit, not only on a `set_config`.
+
+        THE DEVIATION HALF IS LIVE OR IT IS A LIE. Without this the read-out was
+        rendered at construction, at `set_config` and on a pick — so an operator
+        who moved an owned field went on reading "None of them has been moved on
+        this run", which is the exact silence #169 exists to close, one layer in.
+        Measured on the live panel before the fix: with the case type owning
+        `bl_initial_thickness = 0.001`, typing 0.05 moved the model and left the
+        read-out word for word unchanged.
+
+        WIRED LAST, from the panel's `__init__`, because this traverses widgets
+        every section builder has to have created first — the same position
+        `_apply_unit_suffixes` holds, and for the same reason. The BL rows are
+        wired HERE too and the ORDER is load bearing: `_wire_bl_widgets` ran
+        earlier, so its handler has already written `_global_bl` by the time this
+        slot reads the configuration back.
+
+        The picker's own two rows are skipped: `_on_case_type_picked` already
+        refreshes, and a second call would be the Browse dialog's own emit coming
+        round twice.
+
+        PER KEYSTROKE, which is affordable and is checked rather than assumed:
+        with no case type chosen `summary` returns a constant, and with one it is
+        a small JSON load plus `case_type_scale.fit`, which returns immediately
+        unless the case type declares a characteristic length. That last case is
+        the one that reads geometry, and it is the same cost — and the same
+        house pattern — as `_refresh_topology_counts`, which builds a binding
+        context per keystroke behind `Family.binds`.
+        """
+        from app.views.panels.field_widgets import wire_specs
+        from app.views.panels.mesh_bl_field_specs import PANEL_BL_SPECS
+        from app.views.panels.mesh_field_specs import MESH_SPECS
+        from app.services.topology_field_specs import TOPOLOGY_SPECS
+        mine = {"case_type_file", "case_type_summary"}
+        for table in (MESH_SPECS, PANEL_BL_SPECS, TOPOLOGY_SPECS):
+            wire_specs(self, [sp for sp in table if sp.attr not in mine],
+                       self._on_field_edited)
+
+    def _on_field_edited(self, *_args):
+        """A field changed: re-render the read-out. A NAMED slot, not a lambda.
+
+        Named for two reasons. Qt hands an edit signal its own payload — a float
+        from a spin box, an index from a combo — which `_refresh_case_type_summary`
+        would read as its `cfg` argument and then describe a configuration nobody
+        has; and a lambda cannot be DISCONNECTED by a gate, so injection D in
+        `tests/test_case_type_picker.py` could not restore the defect this wiring
+        closes.
+        """
+        self._refresh_case_type_summary()
 
     # ── the read-out ─────────────────────────────────────────────────────
     def _refresh_case_type_summary(self, cfg=None):

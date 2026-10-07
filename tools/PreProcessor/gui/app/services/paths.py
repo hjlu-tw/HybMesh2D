@@ -54,6 +54,37 @@ def repo_root() -> str:
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../.."))
 
 
+def repo_relative(abs_path: str) -> str:
+    """`abs_path` as it should be WRITTEN DOWN: repo-relative when it is inside.
+
+    The spelling rule every stored path in this app obeys, and the reason is
+    portability in both directions: a repo-relative spelling is what
+    `mesh_config_io` emits, what a saved workspace carries and what keeps an
+    exported case package runnable from another checkout, while an absolute one
+    is right for a file the user keeps outside the tree.
+
+    It keeps the SPELLING it was given and only re-bases it, which is what
+    separates it from `geom_path_identity.stored_geom_path`: that one
+    canonicalises (realpath) first, because a geometry entry's job is to answer
+    "which file is this?" as well as "how is it written down", and canonicalising
+    a path the user typed is right there and wrong here — a topology document and
+    a case type are named once and read back, never compared against a second
+    spelling of themselves.
+
+    ONE OWNER since #169. `topology_detach._stored` was the first copy and
+    `case_type_picker.stored_spelling` the second, byte-identical down to the
+    Windows comment; both now delegate here, where `repo_root` already lives.
+    """
+    if not abs_path:
+        return ""
+    root = repo_root()
+    try:
+        rel = os.path.relpath(abs_path, root)
+    except ValueError:                       # a different drive on Windows
+        return abs_path
+    return rel if not rel.startswith(os.pardir) else abs_path
+
+
 def find_binary_executable(bin_name: str) -> str | None:
     """Locate binary executable in PATH environment or local build candidates."""
     path_run = shutil.which(bin_name)

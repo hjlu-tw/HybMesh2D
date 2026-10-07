@@ -124,20 +124,15 @@ class Entry:
 def stored_spelling(abs_path: str) -> str:
     """`abs_path` as it should be written down: repo-relative when it is inside.
 
-    `services/topology_detach.py::_stored`'s rule, applied to the other path a
-    mesh config carries. It is written out again rather than imported because
-    that module's subject is a topology document and importing a private helper
-    across two unrelated features is a dependency neither of them wants; the
-    RULE is one line and is stated in both docstrings.
+    ONE OWNER, `services/paths.py::repo_relative`, which is where `repo_root`
+    already lives. The first draft copied `topology_detach._stored` out by hand
+    — byte-identical down to its Windows comment — with a docstring arguing that
+    importing a private helper across two unrelated features was the worse
+    dependency. It was right about the private helper and wrong about the
+    remedy: both modules already import `paths`, so the rule had a home and two
+    copies of it had nothing holding them in step.
     """
-    if not abs_path:
-        return ""
-    root = paths.repo_root()
-    try:
-        rel = os.path.relpath(abs_path, root)
-    except ValueError:                       # different drive on Windows
-        return abs_path
-    return rel if not rel.startswith(os.pardir) else abs_path
+    return paths.repo_relative(abs_path)
 
 
 def resolve(stored: str) -> str:
@@ -332,23 +327,47 @@ def committed_note(mesh_path: str) -> str:
 # against `opts["choices"]`, which for this row would be a snapshot of the tree
 # taken at import time and wrong by the first Browse.
 
+#: Where the combo keeps the last REAL selection. On the widget because the
+#: field-spec `read`/`write` pair is handed nothing else, and named through a
+#: constant so the one place that reads it and the two that write it are
+#: greppable. See the blind spot in `.claude/rules/gui-dispositions.md`: this is
+#: the one module under `services/` that touches a widget's own state, and the
+#: Qt-free gate is import-based, so no check watches the shape.
+LAST_CHOICE_ATTR = "_case_type_stored"
+
+
 def read_choice(w) -> str:
-    """The stored spelling the combo currently holds.
+    """The stored spelling the combo currently holds. PURE — it remembers nothing.
 
     THE SENTINEL NEVER REACHES THE MODEL. `Browse…` is a row the operator
     selects in order to leave it, and a `get_config()` landing in that moment —
     the panel->model sync is wired to the same `currentIndexChanged` — would
     otherwise write a value no loader can resolve into the workspace. The last
-    real selection is kept on the widget and answered instead, which is also
-    what makes "cancelling restores the previous choice" a property of the value
-    rather than of the handler getting there first.
+    real selection is answered instead, which is what makes "cancelling restores
+    the previous choice" a property of the VALUE rather than of the handler
+    getting there first.
+
+    It used to record that value itself, which made a function named "read" a
+    writer and left `_populate_case_types` — a pure caller — installing state as
+    a side effect. `remember_choice` is now that act, and it has two callers: a
+    programmatic write, and the panel's own pick handler.
     """
     data = w.currentData()
     if data is None or data == BROWSE:
-        return str(getattr(w, "_case_type_stored", "") or "")
-    stored = str(data)
-    w._case_type_stored = stored
-    return stored
+        return str(getattr(w, LAST_CHOICE_ATTR, "") or "")
+    return str(data)
+
+
+def remember_choice(w) -> None:
+    """Record what the combo now shows as the choice to fall back to.
+
+    Called by the panel the moment a pick lands on a real row. The sentinel is
+    skipped, which is the whole point: the value to fall back to is the one it
+    had BEFORE `Browse…` was selected.
+    """
+    data = w.currentData()
+    if data is not None and data != BROWSE:
+        setattr(w, LAST_CHOICE_ATTR, str(data))
 
 
 def write_choice(w, value) -> None:
@@ -361,7 +380,7 @@ def write_choice(w, value) -> None:
     `(none)` would turn "your case type has moved" into "you never chose one".
     """
     stored = str(value or "").strip()
-    w._case_type_stored = stored
+    setattr(w, LAST_CHOICE_ATTR, stored)
     for i in range(w.count()):
         if str(w.itemData(i) or "") == stored:
             w.setCurrentIndex(i)

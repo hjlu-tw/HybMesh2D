@@ -2,10 +2,12 @@
 
 Cut out of `services/case_type_fields.py` by #169, under that seam's own stated
 rule: "ONE SEAM, AND EVERY CUT IS THE ~500-LINE STANDARD rather than a second
-home for the knowledge" (`services/case_type.py`'s docstring). It is the eighth
-module of the case-type seam and the smallest, and it is a cut rather than a new
-idea — `read_config` is RE-EXPORTED from `case_type_fields`, so no caller learns
-a new name, exactly as `case_type.py` re-exports `FIGURE_KEYS` and `apply`.
+home for the knowledge" (`services/case_type.py`'s docstring). It is the
+smallest module of the case-type seam, and it is a cut rather than a new idea —
+`read_config` is RE-EXPORTED from `case_type_fields`, so no caller learns a new
+name, exactly as `case_type.py` re-exports `FIGURE_KEYS` and `apply`. No count
+of the seam's files is stated here: `ls services/case_type*` answers it, and a
+number restated in eleven docstrings is the staleness this repo gates for.
 
 WHY IT IS ITS OWN QUESTION. Everything left in `case_type_fields` is about what
 a case type may have an OPINION about — which fields are ownable, what an

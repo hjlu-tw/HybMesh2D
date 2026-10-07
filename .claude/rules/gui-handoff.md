@@ -338,8 +338,8 @@ class of problem and authored by someone who knows that class. Read
   `HYBMESH_CASE_TYPE`, which is the DEFAULT when it names none. Neither channel invents one, so
   **there is no default case type**, which would be a universal threshold wearing a different
   hat. The rules are `.claude/rules/gui-dispositions.md`.
-- **ONE SEAM, FIVE FILES** (two at #160, four at #161, five since #162), every cut the
-  ~500-line standard and none of them by subject: the thresholds and their advice are declared
+- **ONE SEAM, EVERY CUT THE ~500-LINE STANDARD**, none of them by subject (no file count: see the
+  roles block below): the thresholds and their advice are declared
   in `case_type.py` and nowhere else, the set of OWNABLE fields in `case_type_fields.py` and
   nowhere else, and both are re-exported from the document so no caller learns a new name. Same
   cut as `mesh_config.py` / `mesh_config_validate.py` (#159), every dependency one way.
@@ -550,7 +550,7 @@ type's lengths belong to the SIZE of the body and which to the FLOW over it.
   had — and still asks for its physical parameters to be confirmed, that question being about
   physics rather than scale. A case type declaring none writes NO `characteristic_length`
   section. The artefact has now been WIDENED three times rather than replaced.
-- **ONE SEAM, SIX FILES**, every cut the ~500-line standard: `case_type_scale.py` is
+- **ONE SEAM, EVERY CUT THE ~500-LINE STANDARD** (no count; see the roles block): `case_type_scale.py` is
   re-exported from the document (`CharacteristicLength`, `Application`, `plan`) so no caller
   learns a new name, and the dependency still runs one way — scale -> fields -> figures,
   document -> scale, verdict -> scale.
@@ -620,9 +620,11 @@ family but the H-grid refusing to build a document with no geometry to bind to.
 - **THE STORED ORDER IS THE GEOMETRY'S OWN**, filtered from `seg_ids` rather than kept as typed:
   a list out of the outline's order binds every wall after the first to a different stretch of
   curve with every id still resolving (`topology_ogrid_binding.order_problem`).
-- **ONE SEAM, EIGHT FILES**, every cut the ~500-line standard: the pre-selection split off at
-  565 lines and is re-exported from the roles module, so no caller learns a new name. What stayed
-  is everything that ACTS on a guess, so the confirmation and the thing confirmed cannot drift.
+- **ONE SEAM, EVERY CUT THE ~500-LINE STANDARD**: the pre-selection split off at 565 lines and is
+  re-exported from the roles module, so no caller learns a new name. What stayed is everything
+  that ACTS on a guess, so the confirmation and the thing confirmed cannot drift. **No file COUNT
+  is stated here or in the two blocks above**: each quoted one (five, six, eight) and #169's two
+  cuts made all three wrong at once. `ls services/case_type*` answers it; nothing re-derives it.
 - **`apply_case_type.py` gains `--role ROLE[=GEOM[:SEGS]]`**, the grammar `--confirm` already
   has: a bare name accepts the pre-selection, `ROLE=GEOM` binds every segment that geometry
   carries, `ROLE=GEOM:1,2,3` binds those. The roles a case type needs are PRINTED before any is

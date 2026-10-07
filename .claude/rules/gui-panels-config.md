@@ -108,9 +108,12 @@ Load-bearing rules:
   `tests/test_bl_dialog_sections.py` check 14 pins that precondition by AST over the dialog's own
   MRO, so a visibility helper added there fails the build instead of silently finding no label.
   Anywhere else a wrapped cell orphans its label.
-- **Three escape hatches, each used by exactly one field and named with its reason in the gate**:
-  `read`/`write` on a spec (`ascii_combo`), `panel_choices` (`bl_concave_method`), `host_writes`
-  (`output_filename`).
+- **Three escape hatches, each user NAMED WITH ITS REASON in the gate** (`ESCAPE_HATCHES`):
+  `panel_choices` (`bl_concave_method`) and `host_writes` (`output_filename`) still have exactly
+  one field each; `read`/`write` on a spec has TWO since #169 — `ascii_combo`, a three-item combo
+  behind a bool, and `case_type_file`, a combo whose rows are the TREE at run time, so the generic
+  `choice` path would match against a snapshot of a directory taken at import time. The gate's
+  list is the rule; the COUNT is not, which is why this line no longer states one.
 - **One spec means one tooltip**; the Edit-BL dialog's '?' shows that prose **plus the
   `.dat`/`Config.hpp` KEY** (the KEY used to be the only help 20 of 21 fields had, and giving every
   spec a tip silently killed the `spec.tip or key` fallback — gate check 12).

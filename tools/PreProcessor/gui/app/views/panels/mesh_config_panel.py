@@ -212,4 +212,9 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         self._update_domain_source_visibility()
         # Last, so it wins over every finer visibility rule above.
         self._apply_mode_visibility()
+        # And the case-type read-out follows every field edit (#169): its
+        # deviation half is about fields the sections above own, so it can only
+        # be wired once they exist — `_apply_unit_suffixes`' own position, and
+        # for the same reason.
+        self._wire_case_type_refresh()
     # Geometry-list / role handlers + get_config/set_config: MeshConfigConfigMixin.

@@ -119,13 +119,15 @@ def reattach(model, mesh_config) -> None:
 
 
 def _stored(abs_path: str) -> str:
-    """``abs_path`` as it should be written down: repo-relative when it is inside."""
-    root = paths.repo_root()
-    try:
-        rel = os.path.relpath(abs_path, root)
-    except ValueError:                       # different drive on Windows
-        return abs_path
-    return rel if not rel.startswith(os.pardir) else abs_path
+    """``abs_path`` as it should be written down: repo-relative when it is inside.
+
+    The RULE moved to ``services/paths.py`` in #169, which is where ``repo_root``
+    already lives: a second path a mesh config carries (the case type) wanted the
+    same answer, and the copy that was made of this function was byte-identical
+    down to its Windows comment. This stays as the name this module's own
+    docstring and gate refer to.
+    """
+    return paths.repo_relative(abs_path)
 
 
 def provenance(model, mesh_config=None) -> list:

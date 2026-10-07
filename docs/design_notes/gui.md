@@ -5175,6 +5175,33 @@ is the ~500-line standard rather than a second home for the knowledge") and the 
 real cut rather than a convenient one — everything left in `case_type_fields` is about what a case
 type may have an OPINION about, and `read_config` answers a question about FILE KINDS.
 
+**THE READ-OUT SHIPPED STALE, AND THE GATE PASSED ON THE DEFECT.** #169's Spec review measured it
+on the live panel: with the case type owning `bl_initial_thickness = 0.001`, typing 0.05 moved the
+model and left the read-out saying "None of them has been moved on this run", word for word.
+`_refresh_case_type_summary` had three callers — construction, a pick, and `set_config` — and an
+ordinary field edit is none of them. Check 10 could not see it, because it drove `set_config` with
+the moved value already baked in; the acceptance criterion ("the ones this run has moved") was
+satisfied by the one path that is not the one an operator takes. The fix is a traversal of the
+panel's three field-spec tables wired LAST from `__init__`, and the lesson is this repo's own: **a
+check whose fixture cannot exhibit the defect is not a check**, and only driving the widget the way
+a user drives it says which ones those are. Injection D is what now holds it, and it is a
+DISCONNECT rather than a monkeypatch — the defect is a missing wire, so there is no module
+attribute to swap for one; it reports the number of widgets it disconnected (53) so an injection
+that matched nothing cannot read as the check working.
+
+**TWO MORE THINGS THE REVIEW FOUND, both in the first cut and both fixed.** `read_choice` was a
+function named "read" that WROTE: it recorded the last real selection on the widget as a side
+effect, so `_populate_case_types` — a pure caller — installed state without meaning to. It is pure
+now, and `remember_choice` is the act, with two callers (a programmatic write, and the panel's pick
+handler). And `stored_spelling` was `topology_detach._stored` copied out by hand, byte-identical
+down to its Windows comment, with a docstring arguing that importing a private helper across two
+unrelated features was the worse dependency. It was right about the private helper and wrong about
+the remedy: both modules already import `services/paths.py`, which owns `repo_root`, so the rule
+had a home. It is `paths.repo_relative` now and both delegate. Note what it is NOT:
+`geom_path_identity.stored_geom_path` canonicalises (realpath) first, because a geometry entry must
+also answer "which file is this?"; a topology document and a case type are named once and read
+back, never compared against a second spelling of themselves.
+
 **Named blind spots.** The CATALOGUE is one directory, scanned when the section is built and on
 every `set_config`: a file dropped into `examples/case_types/` while the window is open appears
 only at the next `set_config`, and one removed stays listed until then — there is no configurable
@@ -5186,7 +5213,9 @@ reference-mesh provenance (#169's own Out of Scope: that is what a maintainer re
 where a number came from, and `show_case_type.py` answers it), so the window can call a mesh
 `unusable` and never say which mesh the bound was measured from. And nothing here AUTHORS a case
 type: `save_case_type.py` and `add_reference_mesh.py` are still headless, which is #158's own Out
-of Scope.
+of Scope. One more, and it is about the SEAM rather than the feature: `tests/test_qt_free_seam.py`
+is import-based, so `case_type_picker`'s duck-typed widget calls and its one widget attribute are
+invisible to it — a second service that started writing widget state would be too.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

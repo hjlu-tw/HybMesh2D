@@ -262,11 +262,34 @@ Qt-free; `views/panels/mesh_case_type_mixin.py` = the section at the top of the 
 - **THE SENTINEL NEVER REACHES THE MODEL.** `Browse…` is a row the operator selects in order to
   leave it, so `read_choice` answers with the last real selection whatever the combo shows — a
   defence of the VALUE and not of the handler getting there first, because the panel→model sync is
-  wired to the same `currentIndexChanged`. Cancelling restores the previous choice; choosing a file
-  is what ADDS it to the list. The picker emits nothing of its own: `undo_ctrl._wire_widget_edits`
-  already connects every `QComboBox.currentIndexChanged` on this panel to `on_panel_edited`, and
-  `mesh_config_changed` would reload every geometry preview for a pick that cannot have changed a
-  geometry file.
+  wired to the same `currentIndexChanged`. That value is recorded by `remember_choice`, which the
+  panel calls the moment a pick lands on a real row, and by `write_choice`; `read_choice` is PURE,
+  having shipped as a function named "read" that wrote. Cancelling restores the previous choice;
+  choosing a file is what ADDS it to the list. The picker emits nothing of its own:
+  `undo_ctrl._wire_widget_edits` already connects every `QComboBox.currentIndexChanged` on this
+  panel to `on_panel_edited`, and `mesh_config_changed` would reload every geometry preview for a
+  pick that cannot have changed a geometry file.
+- **THE READ-OUT FOLLOWS EVERY FIELD EDIT, NOT ONLY A `set_config`.** Its deviation half is about
+  fields the sections BELOW it own, so a render at construction, at `set_config` and on a pick
+  leaves an operator who has just moved an owned field reading "None of them has been moved on this
+  run" — this ticket's own silence one layer in, measured on the live panel and found by #169's Spec
+  review rather than by its gate. `_wire_case_type_refresh` traverses the panel's three field-spec
+  tables LAST, from `__init__`, where `_apply_unit_suffixes` already stands and for the same reason;
+  the slot is NAMED (`_on_field_edited`) rather than a lambda, because Qt would hand
+  `_refresh_case_type_summary` a spin box's float as its `cfg` and because a lambda cannot be
+  disconnected by a gate. Per keystroke, and affordable by construction: with no case type chosen
+  the summary is a constant, and with one it is a small JSON load plus a `case_type_scale.fit` that
+  returns at once unless a characteristic length is declared. Gate: check 10's LIVE leg and
+  injection D, which is a DISCONNECT rather than a monkeypatch — the defect is a missing wire and
+  there is no module attribute to swap for one.
+- **THE PICKER'S `read`/`write` PAIR TOUCHES A WIDGET FROM `services/`, AND THAT IS A RECORDED
+  EXCEPTION.** The three traversals in `views/panels/field_widgets.py` are where Qt widgets are
+  normally read and written; the precedent for a spec-level pair, `stl3d_field_specs.ascii_combo`,
+  lives under `views/panels/`. This one cannot: `MESH_SPECS` is in `services/` so the `.dat` key map
+  can derive from it headlessly, and importing anything from `views/panels/` runs that package's
+  `__init__` and pulls in eight Qt panels. So the pair is duck-typed — `currentData`, `itemData`,
+  `insertItem`, `setCurrentIndex` — and the last real selection lives on the widget under
+  `LAST_CHOICE_ATTR`, named through a constant so its one reader and two writers are greppable.
 - **THE SECTION IS SHOWN IN EVERY MESH MODE.** A case type's thresholds are scoped by METRIC, not
   by mode: `judge` already refuses a mesh measured with a different quantity and answers `not
   determinable`. Restricting the UI to `MESH_MODE 1` would express that rule a second time in a
@@ -353,6 +376,11 @@ which are capability refusals.
   an operator who moves off it cannot select it again from the list; they can still reach the file
   through `Browse…`, and the summary and the Trial both name what is wrong with it. That is the
   safe direction and it is not a free one.
+- **`tests/test_qt_free_seam.py` IS IMPORT-BASED, SO NOTHING WATCHES THE DUCK TYPING.** The sweep
+  asks whether a `services/` module imports Qt; `case_type_picker` does not, and its widget calls
+  and its one widget attribute are invisible to it. A second service that started writing widget
+  state would be invisible in exactly the same way. Recorded rather than gated: a check would have
+  to recognise widget method names, which is the fragile version of that gate.
 - **THE SUMMARY DOES NOT SHOW THRESHOLDS OR REFERENCE-MESH PROVENANCE.** #169's own Out of Scope:
   that is what a maintainer reads when tracing where a number came from, `show_case_type.py`
   answers it, and an operator does not need it mid-Trial. The consequence is that the window can
