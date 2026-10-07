@@ -6,7 +6,8 @@ from app.models.mesh_config_keys import _KEY_MAP
 # is no cycle to defer around, and a deferred import hides a real dependency --
 # the seam gate's own lesson (`tests/test_qt_free_seam.py`: "a deferred import is
 # still a dependency"). Gated by tests/test_geom_files_identity.py check 8.
-from app.services.geom_path_identity import canonical_geom_path, dedupe_geom_paths
+from app.services.geom_path_identity import (dedupe_geom_paths,
+                                             stored_geom_path)
 # Module level for the reason stated just above: Qt-free, no cycle to defer
 # around (nothing in the topology modules imports this one), and a deferred
 # import would hide that the writer now has a second producer behind it.
@@ -363,25 +364,27 @@ def config_to_text(cfg, path: str = "", topology_path: str = "") -> str:
     if cfg.output_filename:
         lines.append(f"OUTPUT_FILENAME {cfg.output_filename}")
 
-    from app.services.paths import repo_root
-    project_root = repo_root()
-    cfg_dir = os.path.dirname(os.path.abspath(path)) if path else project_root
     domain_emitted = False   # at most one DOMAIN_FILE (the backend keeps one)
     # By IDENTITY: two spellings of one file used to emit two GEOM_FILE lines,
     # i.e. hand the mesher a doubled boundary. And the resolution base is the
     # repo, never the process cwd -- os.path.abspath made the same entry name a
     # different file depending on where the GUI was launched from.
+    #
+    # ONE spelling rule, and it is the identity service's own
+    # (`stored_geom_path`): repo-relative for a file INSIDE the repo, canonical
+    # ABSOLUTE for one outside it. The branch this replaced wrote an out-of-repo
+    # geometry relative to the CONFIG FILE's directory, which no host can
+    # resolve: the mesher opens a GEOM_FILE against its own working directory,
+    # and every host in this repo runs it from the repo root while writing the
+    # config into a system temp dir (`pipeline_runner._run_mesh`,
+    # `mesh_gen_ctrl`). So the entry pointed one level above the repo instead of
+    # at the drawing. Latent since 2026-06-12 and invisible on macOS, where
+    # `/var` -> `/private/var` made the relative climb saturate at `/` and land
+    # on the right file anyway; it is why three tests went red on CI's Linux
+    # only (#167). `stored_geom_path`'s own docstring already CLAIMED this was
+    # what the writer did.
     for gf in dedupe_geom_paths(cfg.geom_files):
-        abs_gf = canonical_geom_path(gf)
-
-        # Real containment test (avoids matching siblings like HybMesh_old)
-        if abs_gf == project_root or abs_gf.startswith(project_root + os.sep):
-            rel_path = os.path.relpath(abs_gf, project_root)
-        else:
-            try:
-                rel_path = os.path.relpath(abs_gf, cfg_dir)
-            except ValueError:
-                rel_path = gf
+        rel_path = stored_geom_path(gf) or gf
 
         role = cfg.role_of(gf)
         role_name = role.get("role") if role else None

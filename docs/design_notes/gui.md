@@ -2009,6 +2009,40 @@ that directory beside the probe path and the KILLER removes it, checked both way
 before, gone after). What the doors used to prove as a side effect — that the package is the tree
 these scans read — is asserted directly now, against the one walk both roots go through.
 
+**THE WRITE SIDE HAD A SECOND RULE NOBODY DECLARED, AND A SYMLINK HID IT FOR FOUR MONTHS (#167).**
+`stored_geom_path`'s docstring already said what the config writer did — *"a geometry OUTSIDE the
+repo ... gets the canonical absolute one, which is also what the config writer falls back to"* —
+and it was FALSE. `mesh_config_io` had its own branch, written 2026-06-12 and predating the verb:
+inside the repo, repo-relative; outside it, `os.path.relpath(geom, <the config's own directory>)`.
+Nothing resolves an entry that way. The mesher opens a `GEOM_FILE` against its own working
+directory, and BOTH hosts run it from the repo root while writing the config into a system temp dir
+(`pipeline_runner._run_mesh` uses a bare `NamedTemporaryFile`, `mesh_gen_ctrl` the session's temp
+dir), so a geometry outside this checkout — the ordinary case for an operator whose `.dat` lives in
+their own documents — was named one level ABOVE the repo. A real defect on the shipped headless
+path, not a test artefact.
+
+**Why nobody saw it.** On macOS a temp directory is under `/var`, a symlink to `/private/var`, and
+the two sides of that `relpath` disagreed by exactly that hop: the climb overshot, the extra `..`
+saturated at `/`, and the remainder `/private/var/.../x.dat` named the right file from ANY cwd. The
+defect was therefore invisible on the only machine this repo is developed on, and surfaced the day
+three tests started running the real mesher on a drawing in a temp dir (#166's fallback check 4,
+#165's preflight 6c/6d) — on CI's Linux, where `/tmp` is not a symlink. Both the diagnosis and the
+gate had to take that accident into account: `test_geom_files_identity.py` check 5b REALPATHS its
+own temp dir, and it was measured first with the symlink left in, where the assertion that matters
+— the entry resolves from the repo root — passes on the defect.
+
+**The fix is a subtraction.** The branch is gone and the writer calls `stored_geom_path`, so there
+is ONE spelling rule and it is the identity service's. Verified to change nothing for in-repo
+cases: `config_to_text` is byte-identical before and after across four shipped configs, which is
+what makes this a latent-path fix rather than a behaviour change. The third CI failure was
+unrelated in mechanism and identical in kind — `test_case_type_fields.py`'s workspace leg read
+`config/pipeline/cyl0d5_Rot1d0.hws`, a file `.gitignore` excludes BY NAME as "a GUI session's
+default name, accepted once and committed", so that leg and the two injections over it ran on the
+author's machine and nowhere else. The fixture is BUILT in the test now, from
+`config/Background_para.dat` through the model's own `to_dict` into the container
+`project_state_ctrl` writes — and from the hybrid case rather than another multi-block one because
+the `--against` leg needs the two captures to disagree, 14 moved fields against 3.
+
 **THE MESH SUMMARY HAD TWO IMPLEMENTATIONS, AND THEY DID NOT MEASURE THE SAME THING (#131,
 parent #128).** The rule is `.claude/rules/gui-handoff.md`'s, and the reader it turns on is
 `services/mesh_shape_stats.py` (Qt-free: the sidecar read is the half a headless test can

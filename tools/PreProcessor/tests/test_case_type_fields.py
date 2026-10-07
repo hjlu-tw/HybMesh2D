@@ -165,7 +165,13 @@ _SHIPPED = os.path.join("examples", "case_types", "ogrid_circle.casetype.json")
 #: A real working case in each of the three shapes `read_config` classifies.
 _OGRID_DAT = os.path.join("config", "multiblock_ogrid.dat")
 _PIPELINE = os.path.join("config", "pipeline", "multiblock_cgrid_demo.json")
-_WORKSPACE = os.path.join("config", "pipeline", "cyl0d5_Rot1d0.hws")
+#: The mesh section the WORKSPACE leg of check 9 is built from. A source rather
+#: than a workspace, because this repo ships no `.hws`: the only one it had was a
+#: GUI session's default name that `.gitignore` excludes BY NAME, so the leg that
+#: read it ran on the machine that happened to have the file and nowhere else.
+#: The hybrid case is chosen because it moves 14 fields where the `.dat` leg
+#: moves 3 — the `--against` diff needs the two to disagree about something.
+_WS_SOURCE = os.path.join("config", "Background_para.dat")
 
 #: name -> repo-relative source, in DEPENDENCY order: the figures, the overlay,
 #: the document, the verdict.
@@ -737,20 +743,32 @@ def check_the_hosts_answer(w, show_host=""):
         with open(advice_file, "w", encoding="utf-8") as fh:
             json.dump({"median": "Put more points round the body."}, fh)
 
+        # THE WORKSPACE KIND, BUILT HERE rather than read off a shipped file —
+        # see `_WS_SOURCE`. The container is the shape `project_state_ctrl`
+        # writes (`format_version` / `sessions` / `project.mesh_config`, which
+        # is what `project_file_kind.looks_like_workspace` answers on), and the
+        # section inside it comes through the model's own `to_dict`, so this is
+        # the document the GUI saves and not a hand-typed lookalike.
+        ws_file = os.path.join(tmp, "case.hws")
+        with open(ws_file, "w", encoding="utf-8") as fh:
+            json.dump({"format_version": 2, "sessions": [], "project": {
+                "mesh_config": w.fields.read_config(
+                    os.path.join(_REPO, _WS_SOURCE)).to_dict()}}, fh)
+
         written = {}
         # ONE capture per file KIND, because `read_config` classifies by content
         # and a host that only ever saw a `.dat` would be a host that works for
         # one third of this repo's own working cases.
         for label, source, expect in (
-                ("dat", _OGRID_DAT, SHIPPED_FIELDS),
-                ("pipeline", _PIPELINE, None),
-                ("workspace", _WORKSPACE, None)):
+                ("dat", os.path.join(_REPO, _OGRID_DAT), SHIPPED_FIELDS),
+                ("pipeline", os.path.join(_REPO, _PIPELINE), None),
+                ("workspace", ws_file, None)):
             dest = os.path.join(tmp, "%s.casetype.json" % label)
             proc = run(os.path.join(_REPO, _SAVE_HOST), mesh,
                        "--name", "From a %s" % label, "--out", dest,
                        "--advice-from", advice_file,
                        "--reference-id", "demo", "--measured-on", "2026-09-30",
-                       "--fields-from", os.path.join(_REPO, source))
+                       "--fields-from", source)
             if proc.returncode != 0:
                 out.append("%s --fields-from %s exited %d: %s"
                            % (_SAVE_HOST, source, proc.returncode, proc.stderr))

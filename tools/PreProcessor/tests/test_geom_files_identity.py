@@ -213,6 +213,46 @@ geom_lines = [ln.strip() for ln in text.splitlines()
 check(len(geom_lines) == 1,
       f"5. two spellings of one file emit ONE GEOM_FILE line (got {geom_lines})")
 
+# ── 5b. ...and the entry it writes RESOLVES WHERE THE MESHER WILL READ IT ──
+# The mesher opens a GEOM_FILE against its own working directory, and every host
+# in this repo runs it from the REPO ROOT (`services/pipeline_runner._run_mesh`,
+# `workers/mesh_gen_run`) while writing the config into a system temp dir. So an
+# entry is correct only when it resolves from there -- which is check 9's rule,
+# repo-relative inside the repo and canonical ABSOLUTE outside it -- and not
+# when it resolves from beside the config file. The writer used to emit
+# `os.path.relpath(geom, cfg_dir)` for an out-of-repo geometry, i.e. a path that
+# pointed one level above the repo instead of at the drawing. It survived four
+# months because on macOS a temp dir is under `/var` -> `/private/var`, which
+# makes that relative climb saturate at `/` and land on the right file anyway;
+# CI's Linux is where it finally bit, taking three gates red with it (#167).
+# REALPATH'd on purpose: `tmp` is a system temp dir, and on macOS that is under
+# `/var` -> `/private/var`. The pre-fix writer relativised the CANONICAL path
+# against the ABSPATH of the config's directory, so those two spellings differed
+# by one symlink hop, the climb overshot, ".." saturated at "/" and the entry
+# landed on the right file from any cwd at all. Measured: with `tmp` as handed
+# out, the first check below PASSES on the defect. Taking the symlink out of the
+# fixture is what makes this gate say the same thing on both platforms.
+_outside_dir = os.path.realpath(tmp)
+_outside = os.path.join(_outside_dir, "outside_the_repo.dat")
+with open(_outside, "w", encoding="utf-8") as _fh:
+    _fh.write("0 0\n1 0\n1 1\n")
+_cfg5b = MeshConfig()
+_cfg5b.add_geom_file(_outside)
+_cfg5b_dir = os.path.join(_outside_dir, "a_case")
+os.makedirs(_cfg5b_dir, exist_ok=True)
+_entry = ""
+for _ln in mesh_config_io.config_to_text(
+        _cfg5b, os.path.join(_cfg5b_dir, "para.dat")).splitlines():
+    if _ln.strip().startswith("GEOM_FILE"):
+        _entry = _ln.split(None, 1)[1].split()[0]
+_from_repo = os.path.realpath(os.path.join(_REPO, _entry))
+check(bool(_entry) and _from_repo == os.path.realpath(_outside),
+      f"5b. a geometry OUTSIDE the repo is written so the mesher's own cwd -- "
+      f"the repo root -- opens THAT file ({_entry!r} -> {_from_repo!r})")
+check(os.path.isabs(_entry) and _entry == gpi.stored_geom_path(_outside),
+      f"5b. ...and the spelling is the identity service's, not a second rule "
+      f"beside it (want {gpi.stored_geom_path(_outside)!r}, got {_entry!r})")
+
 # ── 6. a missing geometry is refused, by name, by BOTH hosts ────────────
 # The question is filesystem state, so it is NOT inside validate() -- that stays
 # a pure function of the config (a fictional filename is a legitimate fixture

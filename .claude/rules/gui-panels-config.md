@@ -246,6 +246,18 @@ BACK — the three residues #104 closed, plus the read-side rule that closing th
   canonicalises, but a stored `<cwd>/results/…` stops naming the same file the moment the GUI is
   launched from elsewhere. Gated by `tests/test_geom_files_identity.py` check 9, by AST over
   `add_geom_file` / `set_geom_files`.
+- **The CONFIG WRITER emits that same spelling, because the mesher resolves a `GEOM_FILE` against
+  its own cwd and every host runs it from the REPO ROOT** (`services/pipeline_runner._run_mesh`,
+  `workers/mesh_gen_run`) while writing the config into a SYSTEM TEMP DIR. So `mesh_config_io`
+  calls `stored_geom_path` rather than carrying a second rule: a geometry outside the repo is
+  written ABSOLUTE. It used to be written `os.path.relpath(geom, <the config's own directory>)`,
+  which no host can resolve — the entry pointed one level above the repo instead of at the
+  drawing, for every operator whose `.dat` lives outside this checkout. Latent from 2026-06-12 to
+  #167 and INVISIBLE on macOS, where a temp dir under `/var` -> `/private/var` makes that relative
+  climb overshoot, saturate at `/` and land on the right file anyway; CI's Linux is where it bit,
+  taking three gates red. Gated by `tests/test_geom_files_identity.py` check 5b, whose fixture
+  REALPATHS its temp dir for exactly that reason — measured: with the symlink left in, 5b's first
+  assertion PASSES on the defect.
 - **A reader RESOLVES an entry before opening it**: `os.path.exists(gf)` / `np.loadtxt(gf)` on the
   raw string answers about the process cwd. This is what makes the repo-relative store above safe
   rather than a silent "the preview vanished", and it is TWO rules, not one, because the readers
