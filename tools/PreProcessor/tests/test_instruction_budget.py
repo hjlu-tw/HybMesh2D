@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 258 more of today because this repo's own prose
+bytes, which the root file has 260 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    15 rule files now — 59,576 / 59,334 / 56,405 / 54,994 / 51,665 / 40,904 / 35,517 / 25,539 / 23,361 / 20,980 / 18,944 / 15,762 / 15,090 / 12,131 / 8,969  characters (gui-topology, gui-handoff, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-seams, gui-canvas-edit, gui-dispositions, mesher-quality, gui-results, gui-preflight, gui-evidence, gui-lifecycle) — so "moving text into another rule file
-    is not a legal evasion" only bites for a move larger than the 424 / 666 of
+    15 rule files now — 59,576 / 59,355 / 56,405 / 54,994 / 51,665 / 40,904 / 35,517 / 30,682 / 25,539 / 23,361 / 18,944 / 15,762 / 15,090 / 12,159 / 8,969  characters (gui-topology, gui-handoff, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-dispositions, gui-seams, gui-canvas-edit, mesher-quality, gui-results, gui-preflight, gui-evidence, gui-lifecycle) — so "moving text into another rule file
+    is not a legal evasion" only bites for a move larger than the 424 / 645 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    thirteen, which have 3,595 / 5,006 / 8,335 / 19,096 / 24,483 / 34,461 / 36,639 / 39,020 / 41,056 / 44,238 / 44,910 / 47,869 / 51,031. #76 spent 3,446 of
+    thirteen, which have 3,595 / 5,006 / 8,335 / 19,096 / 24,483 / 29,318 / 34,461 / 36,639 / 41,056 / 44,238 / 44,910 / 47,841 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -652,9 +652,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 46,811 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 46,957 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 46,811 taken down to the boundary above is 46,500, to
+# are its size and its slack -- and 46,957 taken down to the boundary above is 46,500, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something

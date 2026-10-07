@@ -64,6 +64,7 @@ from __future__ import annotations
 # inside the function that needs it most.
 from app.services import case_type as case_type_mod
 from app.services import case_type_fields
+from app.services import case_type_picker
 from app.services import case_type_scale
 from app.services import mesh_shape_stats
 from app.services.logging_setup import get_logger
@@ -99,6 +100,15 @@ STATES = tuple(_RANK)
 # (`.claude/rules/gui-seams.md`), and this is that caller's one answer.
 _LEVELS = {USABLE: "INFO", NEEDS_ATTENTION: "WARNING",
            UNUSABLE: "ERROR", NOT_DETERMINABLE: "WARNING"}
+
+#: What a run with NO case type in play says. SAID rather than left silent
+#: (#169, user story 3): this layer returned ``""`` while nothing but
+#: `HYBMESH_CASE_TYPE` could select one, so a Trial printed nothing and silence
+#: read as approval. Spelled HERE because no host spells a verdict, and "there
+#: is no verdict" is an answer about the thresholds like any other.
+NO_CASE_TYPE = ("No case type is in play, so this mesh was generated and not "
+                "judged. Pick one in the Mesh panel to have it graded against "
+                "a problem class.")
 
 #: The grade a DEVIATED verdict may not sit below. It only ever lifts `usable`
 #: — every other state is already at least this — which is exactly the
@@ -436,16 +446,23 @@ def run_verdict(mesh_path: str, exit_code: int,
     A case type that was NAMED and will not load comes back as a message rather
     than as silence: the operator asked for a judgement and must be told why
     there is none.
+
+    WHICH case type is in play is `case_type_picker.for_config`'s answer and not
+    this function's (#169): the configuration's own choice wins and
+    `HYBMESH_CASE_TYPE` is the default when it names none, so the GUI picker, a
+    committed pipeline script and a batch queue's one environment variable are
+    three uses of one rule. NOTHING IS SILENT ANY MORE: no case type in play
+    returns `NO_CASE_TYPE`, so a Trial says what is not happening.
     """
     if case_type is None:
         try:
-            case_type = case_type_mod.active_case_type()
+            case_type = case_type_picker.for_config(config)
         except case_type_mod.CaseTypeError as exc:
-            logger.warning("case type named by %s did not load: %s",
-                           case_type_mod.CASE_TYPE_ENV, exc, exc_info=True)
+            logger.warning("the case type this run names did not load: %s",
+                           exc, exc_info=True)
             return (None, "No verdict: %s" % exc, "WARNING")
         if case_type is None:
-            return (None, "", "INFO")
+            return (None, NO_CASE_TYPE, "INFO")
     # Against the FITTED overlay, not the authored one (#163): the value a case
     # type has an opinion about on THIS drawing is the one its characteristic
     # length scaled to. Comparing against the authored number would mark every
@@ -471,7 +488,7 @@ def run_verdict(mesh_path: str, exit_code: int,
 def run_report(mesh_path: str, exit_code: int,
                case_type: case_type_mod.CaseType | None = None,
                config=None) -> tuple:
-    """`(text, level)` for one finished run. ``("", "INFO")`` when there is none.
+    """`(text, level)` for one finished run; `NO_CASE_TYPE` when there is none.
 
     The ONE call the headless host makes, and the SAME rendering the GUI's
     disposition shows — it is `run_verdict` with the judgement dropped, not a

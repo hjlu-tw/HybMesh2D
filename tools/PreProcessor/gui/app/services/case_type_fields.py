@@ -38,8 +38,10 @@ the duplication `models/mesh_config_keys.py` was built to remove.
   `mesh_topology_file` (a path into the maintainer's tree; the FAMILY and its
   parameters are what carries over, and #139 made that path the one home for a
   hand-maintained document), `bc_configured` (whether the operator has touched
-  the BC panel — a case type cannot have an opinion about what somebody did) and
-  `topology.detached` (that THIS project abandoned its template).
+  the BC panel — a case type cannot have an opinion about what somebody did),
+  `topology.detached` (that THIS project abandoned its template) and
+  `case_type_file` (which case type is in play — a path into the maintainer's
+  tree again, and one a case type could set would let it replace its own judge).
 
 **THE FAMILY IS A FIELD LIKE ANY OTHER.** `topology.family` and the four
 families' parameters are in the same flat overlay as the mesh fields, under a
@@ -57,7 +59,11 @@ standing downgraded, never withheld.
 from __future__ import annotations
 
 from app.models.mesh_config import MeshConfig
-from app.services import project_file_kind
+# RE-EXPORTED, not merely used: `case_type_fields.read_config` is the name all
+# three headless hosts already write, and the split below it is a file-length
+# cut (#169) rather than a new seam for a caller to learn — the shape
+# `case_type.py` uses for `FIGURE_KEYS` and `apply`.
+from app.services.case_type_config import read_config  # noqa: F401
 from app.services.case_type_reference import CaseTypeError
 from app.services.field_spec import model_types
 from app.services.topology_params import TopologyModel
@@ -89,6 +95,10 @@ EXCLUDED = {
     "bc_configured":
         "GUI state — whether the operator has touched the BC panel. A case type "
         "cannot have an opinion about what somebody did",
+    "case_type_file":
+        "which case type to judge with (#169): a path into the maintainer's own "
+        "tree, which is `mesh_topology_file`'s reason above, and — the harder "
+        "half — a case type that could set it would replace its own judge",
     TOPOLOGY_PREFIX + "detached":
         "records that THIS project stopped projecting its template, which is "
         "provenance about one project rather than a reusable setting",
@@ -333,38 +343,6 @@ def show_value(value) -> str:
     if isinstance(value, str):
         return repr(value) if value else "(blank)"
     return str(value)
-
-
-def read_config(path: str) -> MeshConfig:
-    """The mesh config a file holds — a `.dat`, a `.hws` workspace or a script.
-
-    A PATH IS NOT A KIND, which this repo has a user-reported defect for: the
-    classification goes through `services/project_file_kind`, the one owner, so
-    this host cannot disagree with `main.py` about what a file is. A `.dat` is
-    what is left when the file is not a JSON object at all.
-
-    It exists here rather than in a host because BOTH hosts need it — the
-    authoring step captures an overlay from a working case, and the inspecting
-    step compares a case type against one — and two readers would be free to
-    disagree about where a workspace keeps its mesh section.
-    """
-    config = MeshConfig()
-    doc = project_file_kind.peek_json_object(path)
-    if doc is None:
-        config.load_from_file(path)
-        return config
-    if project_file_kind.looks_like_workspace(doc):
-        section = (doc.get("project") or {}).get("mesh_config")
-    elif project_file_kind.looks_like_pipeline(doc):
-        section = doc.get("mesh")
-    else:
-        raise CaseTypeError(
-            "'%s' is a JSON document but neither a workspace nor a pipeline "
-            "script, so there is no mesh configuration in it to read" % path)
-    if not isinstance(section, dict):
-        raise CaseTypeError("'%s' carries no mesh configuration" % path)
-    config.load_from_dict(section)
-    return config
 
 
 def capture(config, names) -> FieldOverlay:

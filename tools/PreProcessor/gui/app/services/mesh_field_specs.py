@@ -21,6 +21,7 @@ equals what the panel's remaining hand-written ``get_config`` code actually assi
 """
 from __future__ import annotations
 
+from app.services import case_type_picker
 from app.services.field_spec import FieldSpec
 from app.services.mesh_modes import (
     MESH_MODE_CHOICES, MESH_MODE_HYBRID, MESH_MODE_MULTIBLOCK,
@@ -28,6 +29,9 @@ from app.services.mesh_modes import (
 
 _GROWTH = dict(lo=0.01, hi=10.0, dec=4)
 _HINT_STYLE = "color:#6fae7a; font-size:10px;"
+#: The case-type read-out. Dimmer and smaller than a value row because it is
+#: prose the operator reads once per configuration change, not a control.
+_SUMMARY_STYLE = "color:#8a93ad; font-size:10px;"
 
 #: Gmsh's algorithm numbers are sparse and the item text keeps its "N: " prefix, so the
 #: combo reads exactly as it did when the numbers were positional.
@@ -47,6 +51,41 @@ _MB_SPLIT_RULES = [(0, "0: Alternating by index parity"),
                    (3, "3: Randomized (hashed, reproducible from the seed)")]
 
 MESH_SPECS: tuple[FieldSpec, ...] = (
+    # ── Which case type JUDGES this run ──────────────────────────────────────
+    # The first rows of the panel and the only ones above the unit selector
+    # (#169). NO ``key=``: the mesher never sees this parameter and must not —
+    # a threshold is scoped to a class of problem and the mesher refuses to
+    # grade (ADR-0002) — which is also what keeps the row invisible to the
+    # ``.dat`` parity gate. ``topo_family`` next door has the same shape.
+    #
+    # Its ``choices`` list is EMPTY and its read/write pair is on the spec, for
+    # one reason: the rows come from the tree at run time
+    # (``examples/case_types/*.casetype.json``, plus whatever ``Browse…`` adds),
+    # so the generic ``choice`` path — which matches a value against
+    # ``opts["choices"]`` — would be matching against a snapshot of the
+    # directory taken at import time and wrong from the first Browse onward.
+    # ``fallback`` stays declared so a value the combo cannot offer still has a
+    # defined answer; here that is "no case type", which is an honest state.
+    FieldSpec("case_type_file", "choice", "Case Type",
+              "Which case type JUDGES the next Trial: the problem class whose "
+              "thresholds this mesh is graded against, and whose advice is "
+              "shown when one is missed. It does NOT apply that case type's "
+              "settings — nothing here changes a mesh parameter. '(none)' is "
+              "the state every project is in until you pick one, and it means "
+              "the mesh is generated and not judged. Shipped case types are "
+              "listed; 'Browse…' takes one a maintainer sent you from anywhere "
+              "on disk. Your choice is saved with the workspace and written "
+              "into the pipeline script a Generate leaves behind, so "
+              "regenerating the mesh reproduces the verdict and not only the "
+              "geometry.",
+              group="casetype",
+              opts=dict(choices=[], fallback=""),
+              read=case_type_picker.read_choice,
+              write=case_type_picker.write_choice),
+    FieldSpec("case_type_summary", "label", "", "",
+              model=None, group="casetype",
+              opts=dict(bare=True, style=_SUMMARY_STYLE)),
+
     # ── Which generation path runs ───────────────────────────────────────────
     FieldSpec("mesh_mode", "choice", "Mesh Mode",
               "Which generation path runs. Hybrid grows boundary-layer quads from "

@@ -147,5 +147,5 @@ which are capability refusals.
   place no bound at all and the addition is refused as inseparable. Nothing constructs that case
   in the gate; it is reasoned from the arithmetic.
 - **NO GUI ACTION AUTHORS OR CORRECTS A CASE TYPE.** `add_reference_mesh.py` is headless, like
-  `save_case_type.py` and `show_case_type.py` beside it. The GUI has Trial and Generate (#166)
-  and no author and no picker, and no open ticket owns one.
+  `save_case_type.py` and `show_case_type.py` beside it. #169 gave the window a PICKER — which
+  selects what judges and writes nothing — and authoring stays #158's own Out of Scope.

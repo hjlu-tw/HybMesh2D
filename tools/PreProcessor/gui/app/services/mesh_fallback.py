@@ -225,6 +225,15 @@ def as_hybrid(cfg):
     if model is not None:
         model.family = FAMILY_NONE
         model.detached = False
+    # AND THE CASE TYPE GOES WITH THE FAMILY (#169). "No verdict is issued, and
+    # the thresholds are never read" is this module's rule, and `judge_run`
+    # short-circuits before them on the live run — but the COMMITTED SCRIPT is
+    # built from this same copy, and a script naming a case type would have
+    # anyone who re-ran it headlessly judge an unstructured mesh against bounds
+    # measured on structured quads. Cleared HERE because this is the one
+    # transformation that says "this run is a downgrade"; a second clear at the
+    # script builder would be that rule written twice.
+    out.case_type_file = ""
     return out
 
 

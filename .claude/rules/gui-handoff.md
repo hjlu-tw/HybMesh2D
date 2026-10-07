@@ -333,11 +333,11 @@ class of problem and authored by someone who knows that class. Read
 - **A verdict NAMES the file that issued it** (`CaseType.source`, printed as the report's last
   line when the case type came from one). It is the only record of which case type a run used,
   the interim channel below leaving none.
-- **Which case type is in play is NOT decided here.** `HYBMESH_CASE_TYPE` names it, as the one
-  channel every host reads identically, and nothing has replaced it: the forecast named #162,
-  then #166, and both landed without a picker. Unset means no
-  verdict at all — **there is no default case type**, which would be a universal threshold
-  wearing a different hat.
+- **Which case type is in play is NOT decided here — and since #169 it IS decided**, by
+  `case_type_picker.for_config`: the configuration's own `MeshConfig.case_type_file` beats
+  `HYBMESH_CASE_TYPE`, which is the DEFAULT when it names none. Neither channel invents one, so
+  **there is no default case type**, which would be a universal threshold wearing a different
+  hat. The rules are `.claude/rules/gui-dispositions.md`.
 - **ONE SEAM, FIVE FILES** (two at #160, four at #161, five since #162), every cut the
   ~500-line standard and none of them by subject: the thresholds and their advice are declared
   in `case_type.py` and nowhere else, the set of OWNABLE fields in `case_type_fields.py` and
@@ -386,9 +386,9 @@ rule: a threshold is a demonstration, and a misjudged verdict is corrected by ad
 - **Nothing re-measures a mesh.** `measure_reference` goes through
   `mesh_shape_stats.read_shape_summary`, the same single owner the verdict consumes, so a
   threshold cannot be derived from one reading of a mesh and judged against another.
-- **`tools/PreProcessor/save_case_type.py` is a HEADLESS host and that is deliberate**, like
-  `HYBMESH_CASE_TYPE` beside it: #162 owns the picker and the apply flow, and a dialog authored
-  here would be chrome for that ticket to unpick.
+- **`tools/PreProcessor/save_case_type.py` is a HEADLESS host and that is deliberate**: AUTHORING
+  a case type is a maintainer action (#158's own Out of Scope), and #169's picker SELECTS one
+  rather than writing one.
 Gated by `tests/test_case_type_author.py` (ten checks and nine automated injections, each
 asserting the mutation is well-formed, that the named checks redden and that no other does; the
 counts are that file's own docstring's and are not restated here).
@@ -465,7 +465,7 @@ moves away from them.
   #162 is; the artefact has been WIDENED twice rather than replaced. A case type owning nothing
   writes NO `fields` section, so a round trip returns the document it was given.
 - **`show_case_type.py` is a HEADLESS host**, like `save_case_type.py` beside it and for the
-  same reason: the GUI has Trial and Generate (#166) but no picker and no author. It answers the three
+  same reason: #169 gave the GUI a PICKER, not an author or an inspector. It answers the three
   questions an operator may ask of borrowed expertise — which fields does it own, what differs
   between two case types, and how far has my case moved.
 Gated by `tests/test_case_type_fields.py` (eleven checks and ten automated injections, each
@@ -555,7 +555,7 @@ type's lengths belong to the SIZE of the body and which to the FLOW over it.
   learns a new name, and the dependency still runs one way — scale -> fields -> figures,
   document -> scale, verdict -> scale.
 - **`apply_case_type.py` is a HEADLESS host**, like the two beside it and for the same reason:
-  the GUI has Trial and Generate (#166) but no picker and no role panel. Without `--confirm` it exits 1, names
+  #169's picker chooses what JUDGES, and no window applies one. Without `--confirm` it exits 1, names
   the unconfirmed parameter and writes nothing; `--confirm NAME` accepts the offered value and
   `--confirm NAME=VALUE` supplies the operator's own. **There is deliberately no flag that
   confirms everything**, because a case type's whole risk is that somebody else's Reynolds

@@ -89,7 +89,7 @@ MESH_EXTS = (".vtk", ".vrt", ".cel", ".bnd")
 #: fallback mesh carries no verdict and embeds no case type (#167), and `commit`
 #: reconciles all four every time so a Generate can never leave one set standing
 #: as the record of a mesh the other set describes.
-SIDECAR_EXTS = {"case_type": ".casetype.json",
+SIDECAR_EXTS = {"case_type": case_type.FILE_SUFFIX,
                 "verdict": ".verdict.json",
                 "fallback": ".fallback.json",
                 "pipeline": ".pipeline.json"}

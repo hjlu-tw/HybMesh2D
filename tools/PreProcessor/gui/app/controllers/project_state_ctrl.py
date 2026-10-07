@@ -120,6 +120,33 @@ class ProjectStateControllerMixin:
                 return True
         return bool(self.project_is_dirty())
 
+    def _say_committed_case_type(self):
+        """Tell the operator which case type judged the case they just reopened.
+
+        #169, #158's user story 7, and the rule is that it CHANGES NOTHING: the
+        `<stem>.casetype.json` beside a committed mesh is a FROZEN copy whose
+        whole purpose is not to be rewritten by later corrections (#166), so
+        adopting it as the current choice would judge the next Trial against a
+        historical document, and the operator would never have been asked. The
+        sentence is `case_type_picker.committed_note`'s — a controller spells no
+        sentence about a case type (`.claude/rules/gui-seams.md`) — and is empty
+        for a case that carries no embedded copy, which is every case committed
+        before #166 and every one committed with no case type in play.
+
+        TWO callers, both the moment a case is REOPENED: this module's workspace
+        restore and `pipeline_io_ctrl`'s script loader, which is the file a
+        Generate actually leaves beside the mesh. It lives HERE because the
+        workspace route is the one that already holds the restored mesh config; a
+        GENERATION says nothing of the kind, having its own verdict to report.
+        `_get_expected_vtk_path` is `mesh_gen_ctrl`'s and is reached across the
+        composed `AppController`, like every other cross-mixin call here.
+        """
+        from app.services import case_type_picker
+        note = case_type_picker.committed_note(
+            self._get_expected_vtk_path(self.global_mesh_config))
+        if note:
+            self.log("[Mesh] " + note)
+
     def _apply_project_state(self, project: dict):
         """Restore the Mesh / Solver / IB configuration written by
         :meth:`_collect_project_state`, and push it to the panels.
@@ -136,6 +163,7 @@ class ProjectStateControllerMixin:
         if isinstance(mconf, dict):
             self.global_mesh_config.load_from_dict(mconf)
             self.push_panel_config(mw.mesh_config_panel, self.global_mesh_config)
+            self._say_committed_case_type()
 
         sconf = project.get("solver_config")
         if isinstance(sconf, dict):

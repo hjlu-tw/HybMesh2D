@@ -8,6 +8,7 @@ from app.utils import (
 )
 
 from app.views.panels.mesh_bl_mixin import MeshConfigBLMixin
+from app.views.panels.mesh_case_type_mixin import MeshConfigCaseTypeMixin
 from app.views.panels.mesh_sizing_mixin import MeshConfigSizingMixin
 from app.views.panels.mesh_config_config_mixin import MeshConfigConfigMixin
 from app.views.panels.mesh_domain_mixin import MeshConfigDomainMixin
@@ -22,7 +23,7 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
                       MeshConfigConfigMixin, MeshConfigDomainMixin,
                       MeshConfigOutputMixin, MeshConfigBuildMixin,
                       MeshConfigRepairMixin, MeshConfigDetachMixin,
-                      MeshConfigUnitsMixin):
+                      MeshConfigUnitsMixin, MeshConfigCaseTypeMixin):
     """Scrollable panel containing editor widgets for all Background_para.dat options."""
     geom_files_changed = pyqtSignal(list)
     mesh_config_changed = pyqtSignal(object)
@@ -142,8 +143,16 @@ class MeshConfigPanel(QScrollArea, MeshConfigBLMixin, MeshConfigSizingMixin,
         self.add_all_sessions_btn = make_button("Add All", "#1a2a3a")
         self.add_all_sessions_btn.setToolTip("Add all exported PreProcessor sessions to this mesh configuration")
 
-        # ── 0. Model unit ─────────────────────────────────────────────────
-        # First, and not collapsible: it is what every number below means.
+        # ── 0. Which case type JUDGES this run ────────────────────────────
+        # ABOVE the unit row and not collapsible, for the unit row's own reason
+        # one line further: both are interpretive keys rather than values, and
+        # this one says WHO is going to read the numbers the unit row labels.
+        # Until #169 nothing in the window mentioned a case type at all.
+        self._build_case_type_section()
+
+        # ── 0a. Model unit ────────────────────────────────────────────────
+        # First of the value rows, and not collapsible: it is what every number
+        # below means.
         self._build_units_section()
 
         # ── 0b. Mesh mode ─────────────────────────────────────────────────

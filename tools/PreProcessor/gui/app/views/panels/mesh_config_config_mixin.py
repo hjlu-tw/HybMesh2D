@@ -205,6 +205,14 @@ class MeshConfigConfigMixin:
         # With `cfg`, so the O-grid's derivation resolves against THIS case's
         # geometries rather than against nothing on the way in (#137).
         self._refresh_topology_counts(cfg)
+        # And the case-type read-out, from the same one place and with the same
+        # argument, for the same reason (#169): a `get_config()` from inside a
+        # population would describe half-written widgets, so the configuration
+        # being written is handed in. It REBUILDS the list as well as the text:
+        # `write_specs` above has already selected the picker's row, adding a
+        # plain one for a file the catalogue does not hold, and a row for a case
+        # type that will not load has to carry its reason and be unselectable.
+        self._refresh_case_type_section(cfg)
 
         # Domain source: a geometry acting as the outer domain → Custom; an
         # external-flow config with geometries but no domain outline → Rectangle

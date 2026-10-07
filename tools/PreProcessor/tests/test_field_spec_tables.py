@@ -158,6 +158,12 @@ ESCAPE_HATCHES = {
         "ascii_combo": "a THREE-item combo (Auto-detect / ASCII / Binary) behind a "
                        "bool: Auto-detect and ASCII both mean True, so the mapping is "
                        "not one-to-one and no choice list can express it",
+        "case_type_file": "a combo whose rows are the TREE at run time "
+                          "(examples/case_types/*.casetype.json plus whatever Browse "
+                          "adds), so the generic `choice` path — which matches a value "
+                          "against opts['choices'] — would be matching against a "
+                          "snapshot of the directory taken at import time and wrong "
+                          "from the first Browse onward",
     },
     "panel_choices": {
         "bl_concave_method": "the panel's hidden backing combo offers method 5 alone "
@@ -489,6 +495,15 @@ def probe_value(spec, current):
     o = spec.opts
     if spec.kind == "choice":
         vals = [v for v, _l in o["choices"]]
+        if not vals:
+            # A combo whose rows come from the TREE at run time rather than from
+            # the table — the case-type picker (#169), whose empty `choices` is
+            # the declaration that says so. The probe supplies a value of its
+            # own, which makes this the stronger round trip rather than a
+            # weaker one: it is a value the list did not already hold, i.e.
+            # exactly the case the row exists for (a case type browsed to from
+            # outside the shipped directory).
+            return "probe/value.casetype.json"
         return next((v for v in vals if v != current), vals[0])
     if spec.kind in ("bool", "toggle"):
         return not bool(current)

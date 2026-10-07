@@ -6,16 +6,17 @@ paths:
   - tools/PreProcessor/gui/app/controllers/mesh_gen_ctrl*
   - tools/PreProcessor/gui/app/controllers/mesh_gen_diag_ctrl*
   - tools/PreProcessor/gui/app/controllers/pipeline_io_ctrl*
+  - tools/PreProcessor/gui/app/services/case_type_picker*
 ---
 
 # Trial and Generate: one generation, two dispositions — and the hybrid fallback
 
-Loaded on demand when the commit service, the FALLBACK service, the disposition controller, the
-mesh-generation controller, the mesh stage's diagnostics controller or the pipeline-script
-reader/writer is read. Rules only — the rationale (the
+Loaded on demand when the commit service, the FALLBACK service, the PICKER service, the
+disposition controller, the mesh-generation controller, the mesh stage's diagnostics controller or
+the pipeline-script reader/writer is read. Rules only — the rationale (the
 measurements, the injections and the named blind spots) is `docs/design_notes/gui.md`, sections
-"TRIAL AND GENERATE: ONE GENERATION, TWO DISPOSITIONS" and, for the second block below, "A SHAPE
-NO FAMILY COVERS IS A DOWNGRADE, NOT A DEAD END".
+"TRIAL AND GENERATE: ONE GENERATION, TWO DISPOSITIONS", "A SHAPE NO FAMILY COVERS IS A DOWNGRADE,
+NOT A DEAD END" and "A CASE TYPE THE OPERATOR CAN PICK, AND A VERDICT THEY CAN SEE".
 Read the matching section before overruling a rule here; when a rule changes, update BOTH.
 
 **THE FOURTEENTH RULE FILE, AND THE FIFTH TAKEN BECAUSE ONE WAS FULL.** These rules belong beside
@@ -42,8 +43,11 @@ runs are here.
 `views/main_window_toolbar_build_mixin.py` and `views/main_window_toolbar_mixin.py` (the two
 buttons and their row), `views/main_window_menu_mixin.py` (the two menu entries),
 `views/panels/mesh_config_panel.py` (the panel's pair, whose own rules are
-`gui-panels-config.md`'s) and `controllers/signal_wiring_ctrl.py` (the wiring). The tripwire table
-in `CLAUDE.md` is what makes each of those reachable.
+`gui-panels-config.md`'s), `controllers/signal_wiring_ctrl.py` (the wiring) and — since #169 —
+`views/panels/mesh_case_type_mixin.py` (the picker's own section, left outside the globs so the
+mesh panel's mixins stay `gui-panels-config.md`'s one area), `services/mesh_field_specs.py` (the
+row), `models/mesh_config.py` (the field) and `controllers/project_state_ctrl.py` (what a reopened
+case says). The tripwire table in `CLAUDE.md` is what makes each of those reachable.
 
 **TRIAL AND GENERATE ARE ONE GENERATION AND TWO DISPOSITIONS** (#166, parent #158;
 `services/mesh_commit.py` = the commit, Qt-free; `controllers/mesh_dispose_ctrl.py` = the two
@@ -86,7 +90,10 @@ actions; `controllers/mesh_gen_ctrl.py` = the one generation).
   is scoped to a class of problem and a FOLD is not, and ADR-0002 states that refusal with no case
   type in the sentence. Shipped reading "no verdict" as "nobody to refuse", so a folded mesh
   committed whenever `HYBMESH_CASE_TYPE` was unset — the ordinary state. A run with no case type
-  still gets no verdict FILE, and the host says so rather than leaving its absence to be noticed.
+  still gets no verdict FILE, and the host says so rather than leaving its absence to be noticed —
+  **naming the consequence and not the cause** since #169, because a chosen case type whose file has
+  GONE also produces no verdict and "no case type is in play" was false of it. The cause is said at
+  trial time by the layer that is allowed to spell one.
 - **TWO ENTRY POINTS, ONE PASS THROUGH THE THRESHOLDS.** `case_type_verdict.run_verdict` judges and
   renders; `run_report` is that function with the judgement dropped. The headless host calls the
   second, the GUI's disposition the first — through `mesh_commit.judge_run`, which carries the
@@ -201,6 +208,96 @@ Gated by `tests/test_mesh_fallback.py`; the check and injection counts are that 
 docstring's and are not restated here.
   Why: `docs/design_notes/gui.md`, "A SHAPE NO FAMILY COVERS IS A DOWNGRADE, NOT A DEAD END".
 
+**A CASE TYPE THE OPERATOR CAN PICK, AND A VERDICT THEY CAN SEE** (#169, parent #158;
+`services/case_type_picker.py` = which case type is in play, every sentence and the summary,
+Qt-free; `views/panels/mesh_case_type_mixin.py` = the section at the top of the Mesh panel)
+
+- **THE CHOICE IS A `MeshConfig` FIELD, AND THAT IS WHAT MAKES EVERY OTHER PROPERTY FALL OUT.**
+  `case_type_file` is a path with NO `.dat` key, so the mesher never sees it — a THRESHOLD is
+  scoped to a class of problem and the mesher refuses to grade (ADR-0002) — and
+  `tests/test_gui_cpp_config_parity.py` is STRUCTURALLY blind to it, because that gate reads
+  `mesh_config_keys._KEY_MAP`, which is built from spec rows carrying `key=`. No allowance list
+  grew an entry. `topology`, `group_bc`, `bc_configured` and `geom_roles` are the precedent. Being
+  a model field is also the whole of how the choice reaches the panel→model sync, the undo
+  snapshot, the `.hws` workspace and a pipeline script's `mesh` section: all four are
+  `MeshConfig.to_dict()`, which hand-lists its key-less fields, so this one costs TWO lines there
+  and one in `load_from_dict` and nothing in `pipeline_config`. `ProjectModel` would have been the
+  wrong granularity (per CAD session: three geometries, three case types).
+- **IT SELECTS WHAT JUDGES, NEVER WHAT RUNS.** Nothing here writes a case type's overlay into the
+  configuration, scales its geometry-driven sizes or binds its family to the operator's curves;
+  that is `apply_case_type.py`, every part of it needs ROLES, and roles are #170. A half-apply
+  would create a third state — a case type that owns some fields and not others — which is exactly
+  the question the deviation marking exists to answer, so it would blur its own denominator. #158's
+  user story 1 is therefore NOT met by this block; what is delivered is the operator's first sight
+  of stories 11-16, 20 and 24.
+- **PRECEDENCE: THE DOCUMENT IN HAND BEATS THE ENVIRONMENT, AND `for_config` IS THE ONE PLACE IT IS
+  SPELLED.** The configuration's own `case_type_file` wins and `HYBMESH_CASE_TYPE` is the DEFAULT
+  when it names none — #166 writes a pipeline script into a committed case so the mesh can be
+  regenerated without remembering what was done, and a script that does not carry its case type
+  delivers half of that, while one environment variable across a batch queue of many scripts stays
+  a legitimate use. `case_type.active_case_type()` is now reached from here and nowhere else, which
+  is what keeps the GUI picker, a committed script and the variable three uses of ONE rule.
+- **STORED REPO-RELATIVE INSIDE THE REPO, CANONICAL ABSOLUTE OUTSIDE**, and RESOLVED against the
+  repo root rather than the process cwd — `services/topology_detach.py`'s `_stored` rule, applied
+  to the other path a mesh config carries, and the reason is the same: a repo-relative spelling is
+  what keeps an exported case package portable and a committed script runnable from another
+  checkout, while the GUI's launch directory, `run_pipeline.sh` at the root and a batch queue
+  started anywhere must not disagree about which file a case names. `case_workspace`'s rebasing
+  REACHES the field (`_walk` visits every string in a workspace) and never has anything to swap in
+  it: a case type is not one of the files the export ships, so the repo-relative spelling is what
+  carries the choice to another checkout — measured, not assumed.
+- **NOTHING IS SILENT ANY MORE, AND THE SENTENCE IS THE VERDICT LAYER'S.**
+  `case_type_verdict.NO_CASE_TYPE` replaces the `""` `run_verdict` used to return, so a Trial with
+  no case type in play says what is NOT happening instead of printing nothing — which is what
+  silence had been reading as approval. Spelled there and not here for the reason every verdict
+  state is: no host spells one, and "there is no verdict" is an answer about the thresholds like
+  any other.
+- **A FILE THAT WILL NOT LOAD IS LISTED, DISABLED, WITH THE LOADER'S OWN REASON ON IT** — never
+  omitted. `case_type.load` raises on anything invalid, and the rule it exists for is that "a case
+  type the operator named and the tool quietly ignored is how a verdict goes missing"; dropping the
+  row from the list is that silence wearing a tidier coat. The same holds for a CHOSEN case type
+  whose file has GONE: it keeps its row and its value, shown as missing, because a picker that fell
+  back to `(none)` would turn "your case type has moved" into "you never chose one". The Trial then
+  names it in a WARNING and runs anyway.
+- **THE SENTINEL NEVER REACHES THE MODEL.** `Browse…` is a row the operator selects in order to
+  leave it, so `read_choice` answers with the last real selection whatever the combo shows — a
+  defence of the VALUE and not of the handler getting there first, because the panel→model sync is
+  wired to the same `currentIndexChanged`. Cancelling restores the previous choice; choosing a file
+  is what ADDS it to the list. The picker emits nothing of its own: `undo_ctrl._wire_widget_edits`
+  already connects every `QComboBox.currentIndexChanged` on this panel to `on_panel_edited`, and
+  `mesh_config_changed` would reload every geometry preview for a pick that cannot have changed a
+  geometry file.
+- **THE SECTION IS SHOWN IN EVERY MESH MODE.** A case type's thresholds are scoped by METRIC, not
+  by mode: `judge` already refuses a mesh measured with a different quantity and answers `not
+  determinable`. Restricting the UI to `MESH_MODE 1` would express that rule a second time in a
+  weaker place and would pre-exclude a hybrid-path case type, which is legal and simply has not
+  been written yet.
+- **THE SUMMARY IS A COMPARISON AND NOT A PROMISE, AND IT IS THE VERDICT'S OWN.** It names the
+  fields the case type has an opinion about and MARKS the ones this run has moved, against the
+  FITTED overlay through `case_type_scale.fit` — the same call `run_verdict` makes, so the panel
+  and the judgement cannot disagree about what moved, and a ruler that cannot be read off this
+  drawing is SAID here as it is said there. The deviation list had been computed on the GUI path,
+  carried on every `Verdict` and written into the commit sidecar since #162, and shown to nobody.
+- **A REOPENED CASE STATES ITS HISTORY AND DOES NOT CHANGE THE CHOICE.** `<stem>.casetype.json` is
+  a FROZEN copy whose whole purpose is not to be rewritten by later corrections, so selecting it
+  automatically would judge the operator's next Trial against a historical document — and they
+  would never have been asked. One line, through the user-log service, from
+  `project_state_ctrl._say_committed_case_type`; silent for a case carrying no embedded copy, which
+  is every case committed before #166.
+- **A FALLBACK RUN NAMES NO CASE TYPE, AND `mesh_fallback.as_hybrid` IS WHERE THAT IS DONE.** The
+  block above forbids a fallback mesh being judged; #169 opens a new route to the same defect,
+  because the committed script is built from that same copy and would have anyone who re-ran it
+  headlessly judge an unstructured mesh against bounds measured on structured quads. Cleared in the
+  ONE transformation that says "this run is a downgrade"; a second clear at the script builder
+  would be that rule written twice.
+- **IT IS IN `case_type_fields.EXCLUDED` WITH A REASON.** A new `MeshConfig` scalar automatically
+  becomes a field a case type MAY own. Two reasons and the second is the harder one: it is a path
+  into the maintainer's own tree, which is `mesh_topology_file`'s; and a case type that could set
+  it would be able to replace the thing that judged its own result.
+Gated by `tests/test_case_type_picker.py`; the check and injection counts are that file's own
+docstring's and are not restated here.
+  Why: `docs/design_notes/gui.md`, "A CASE TYPE THE OPERATOR CAN PICK, AND A VERDICT THEY CAN SEE".
+
 ## Named blind spots
 
 One list per rule file (`docs/agents/rule-file-style.md` rule 5). These are this file's coverage
@@ -247,6 +344,19 @@ which are capability refusals.
   worst coordinate deviation 0.000e+00, one of the 21 a NO-MESH outcome). `test_mesh_fallback.py`
   check 10 is what a gate can hold: a hybrid-mode configuration reaches no offer, `mesher_config`
   leaves it alone, and an unjudged commit still writes no sidecar.
+- **THE CATALOGUE IS ONE DIRECTORY, SCANNED WHEN THE SECTION IS BUILT AND ON EVERY `set_config`.**
+  There is no configurable search path, no recent-files list and no refresh button: a file dropped
+  into `examples/case_types/` while the window is open appears only at the next `set_config`, and
+  one removed stays listed until then. #169 is deliberately small, both of the first two are a
+  persistence surface, and `Browse…` already covers a file that lives somewhere else.
+- **THE PICKER OFFERS NO WAY BACK TO A BROKEN CASE TYPE.** A row that will not load is DISABLED, so
+  an operator who moves off it cannot select it again from the list; they can still reach the file
+  through `Browse…`, and the summary and the Trial both name what is wrong with it. That is the
+  safe direction and it is not a free one.
+- **THE SUMMARY DOES NOT SHOW THRESHOLDS OR REFERENCE-MESH PROVENANCE.** #169's own Out of Scope:
+  that is what a maintainer reads when tracing where a number came from, `show_case_type.py`
+  answers it, and an operator does not need it mid-Trial. The consequence is that the window can
+  say a mesh is `unusable` and never say which mesh the bound was measured from.
 - **NOTHING CHECKS THAT A COMMITTED CASE IS STILL CONSISTENT LATER.** Whether the mesh beside a
   frozen verdict is still the mesh that verdict judged is nobody's question once Generate returns:
   a later Export, a hand-edit or a headless `run_pipeline.sh` over the same output path can replace

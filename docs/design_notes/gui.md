@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 305, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 308, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -5048,6 +5048,145 @@ floating-point edge — two meshes so close that the midpoint does not round str
 — is REFUSED rather than handled, and nothing in the gate constructs it. And no GUI action
 authors or corrects a case type: `add_reference_mesh.py` is headless like the two hosts beside
 it, the window has Trial and Generate and no author and no picker, and no open ticket owns one.
+
+**A CASE TYPE THE OPERATOR CAN PICK, AND A VERDICT THEY CAN SEE** (#169, parent #158;
+`services/case_type_picker.py`, `views/panels/mesh_case_type_mixin.py`,
+`tests/test_case_type_picker.py`)
+
+**THE WHOLE WORKFLOW WAS HEADLESS, AND THAT IS A MEASUREMENT RATHER THAN AN IMPRESSION.**
+Before this ticket `case_type.active_case_type()` had **exactly one call site in the repo** —
+`case_type_verdict.run_verdict` — and **no controller, view or worker read `HYBMESH_CASE_TYPE`**.
+There was no picker, no combo box, no menu item and no status indicator. With no case type set the
+GUI was **entirely silent**: `run_verdict` returned `(None, "", "INFO")` and `mesh_gen_ctrl` logs
+only when the report is non-empty, so a Trial printed nothing at all. Everything behind that
+silence was already built and gated — #160's four-state verdict with its advice, #162's config
+overlay and deviation marking, #166's Trial and Generate, #168's reference meshes — and the
+DEVIATION LIST in particular was computed on the GUI path (`case_type_verdict.py`), carried on
+every `Verdict`, written into the commit sidecar, and shown to nobody.
+
+**THE PICKER HAD BEEN FORECAST TWICE AND MISSED TWICE**, which `case_type.py`'s own docstring
+recorded in as many words: "the forecast named #162 and then #166 and both shipped without a
+picker". Each time it was attached to a larger ticket whose subject was something else. This one
+is deliberately small so that cannot happen a third time, and the whole of it is a model field, a
+field-spec row, a panel section and one resolution function.
+
+**THE CHOICE IS A `MeshConfig` FIELD, AND EVERY OTHER PROPERTY FALLS OUT OF THAT.** `case_type_file`
+is a path with no `.dat` key. Four consequences, none of which needed code of its own: the
+panel→model sync, the undo snapshot, the `.hws` workspace and the pipeline script's `mesh` section
+are all `MeshConfig.to_dict()`, so the choice reaches all four from the two hand-listed lines that
+serialisation already keeps for its key-less fields (`topology`, `group_bc`, `bc_configured`,
+`geom_roles`). And `tests/test_gui_cpp_config_parity.py` is **structurally blind** to it, because
+that gate reads `mesh_config_keys._KEY_MAP`, which is built from spec rows carrying `key=` — so a
+key-less field cannot appear on either side of the comparison and **no allowance list grew an
+entry**. `ProjectModel` would have been the wrong granularity (one per CAD session: three
+geometries would carry three case types), and a `pipeline_config` top-level key would have cost a
+`_migrate` version bump to move one value up a level.
+
+**WHAT THE PICKER DOES NOT DO, AND WHY THE TICKET SAYS SO.** `apply_case_type.py` APPLIES a case
+type: it writes the sparse overlay, scales geometry-driven sizes by the characteristic length,
+refuses unconfirmed physical parameters and binds the family to the operator's curves by ROLE.
+Every one of those needs roles, and roles are #170. A half-apply would create a third state — a
+case type that owns some fields and not others — which is exactly the question the deviation
+marking exists to answer, so it would blur its own denominator. **#158's user story 1 is therefore
+NOT met by this ticket**; what is delivered is the operator's first sight of stories 11-16 (a
+verdict in words, which measurement failed and by how much, what to try) plus 20 and 24 (which
+fields the case type owns, which of them I have moved).
+
+**THE REBASE CLAIM WAS CHECKED RATHER THAN REPEATED.** The ticket says
+`case_workspace`'s rebasing "walks every string in the workspace, so an exported case package
+re-points it for free". The first half is true and was measured — `_walk` visits every string in a
+workspace dict bar the bulk point arrays — and the second half is a stronger claim than the
+mechanism supports: the rebase only swaps paths sitting UNDER the exported package root, and a case
+type is not one of the files `case_export` ships, so there is never anything in this field for it to
+swap. What actually carries the choice to another checkout is the repo-relative spelling. Recorded
+because an inherited sentence that nothing re-derives is the staleness class this repo keeps a gate
+for.
+
+**PRECEDENCE WAS THE ONE GENUINELY NEW RULE.** In the window the operator's choice is the only
+channel. For the headless hosts the SCRIPT wins and `HYBMESH_CASE_TYPE` becomes the default when
+the script names none. The reason is #166's: a pipeline script is written into a committed case so
+the mesh can be regenerated without remembering what was done, and a script that does not carry
+its case type delivers half of that — while one environment variable across a batch queue of many
+scripts stays a legitimate use, so the variable is a FALLBACK rather than something the script has
+to override. `case_type_picker.for_config` is the one place that is spelled, and
+`case_type.active_case_type()` is now reached from there and nowhere else — which is what makes
+the GUI picker, a committed script and the variable three uses of ONE rule instead of three rules.
+Injection C restores the pre-#169 behaviour exactly (ignore the config, read only the environment)
+and reddens check 8.
+
+**NOTHING IS SILENT ANY MORE.** `run_verdict` returned `""` for "no case type in play"; it returns
+`case_type_verdict.NO_CASE_TYPE` now, so a Trial says what is NOT happening. The sentence lives in
+the verdict layer and not in a host, for the reason every verdict state does: no host spells one,
+and "there is no verdict" is an answer about the thresholds like any other. Both hosts get it, the
+headless one included, which is the same "one rendering, two hosts" property #160 bought.
+
+**A FILE THAT WILL NOT LOAD IS LISTED, DISABLED, WITH THE LOADER'S OWN REASON.** `case_type.load`
+raises on anything invalid, and the rule it exists for is that "a case type the operator named and
+the tool quietly ignored is how a verdict goes missing" — so dropping the row from the list is
+that silence wearing a tidier coat. Measured rather than described: check 4 drops a real broken
+document into `examples/case_types/` and removes it again, and injection A makes `catalogue`
+filter unloadable entries out and watches that check go red. The same holds the other way for a
+CHOSEN case type whose file has GONE — it keeps its row and its value, shown as missing, because a
+picker that fell back to `(none)` would turn "your case type has moved" into "you never chose
+one"; injection B makes `write_choice` a no-op for a value the list does not hold and reddens
+check 9's "keeps its value" half while the WARNING half stays green, which is why the two are
+separate checks.
+
+**THE SENTINEL IS DEFENDED AT THE VALUE, NOT AT THE HANDLER.** `Browse…` is a combo row the
+operator selects in order to leave it, and the panel→model sync is wired to the same
+`currentIndexChanged` — so `read_choice` answers with the last real selection whatever the combo
+shows. Getting there first would have worked too (Qt calls slots in connection order and the
+section's own handler is wired during construction, before `undo_ctrl._wire_widget_edits` runs),
+but a defence that depends on connection order is a defence nobody can read off the code. The
+picker emits nothing of its own for the same reason the topology rows do not emit
+`mesh_config_changed`: that signal's listener reloads every geometry preview and re-reads every
+`.meta`, and picking a case type cannot have changed a geometry file.
+
+**A `choice` ROW WHOSE VALUES COME FROM THE TREE NEEDED THE `read`/`write` ESCAPE HATCH**, which is
+the third field in the repo to use it. `field_widgets`'s generic `choice` path matches a value
+against `opts["choices"]`, which for this row would be a snapshot of `examples/case_types/` taken
+at IMPORT time and wrong from the first Browse onward. The spec therefore declares an EMPTY
+`choices` list — the declaration that says "the rows are not in the table" — and
+`tests/test_field_spec_tables.py`'s round-trip probe was widened to supply a value of its own for
+such a row. That made check 7 STRONGER rather than weaker: the probe now writes a value the list
+does not hold, which is exactly the case the row exists for.
+
+**A FALLBACK RUN NAMES NO CASE TYPE, AND #169 IS WHY THAT LINE EXISTS.** #167's rule is that a
+fallback mesh is never judged and the thresholds are never read; `judge_run` already
+short-circuits. The new route is the COMMITTED SCRIPT, which is built from `as_hybrid`'s copy —
+so a script naming a case type would have anyone who re-ran it headlessly judge an unstructured
+mesh against bounds measured on structured quads. Cleared in `as_hybrid`, the one transformation
+that says "this run is a downgrade"; a second clear at the script builder would be the same rule
+written twice, and `.claude/rules/gui-dispositions.md` already forbids a second script builder.
+
+**A REOPENED CASE STATES ITS HISTORY AND CHANGES NOTHING.** `<stem>.casetype.json` is a FROZEN copy
+whose whole purpose is not to be rewritten by later corrections (#166), so selecting it
+automatically would judge the operator's next Trial against a historical document — and they would
+never have been asked. One line through the user-log service from
+`project_state_ctrl._say_committed_case_type`, silent for a case carrying no embedded copy, which
+is every case committed before #166 and every one committed with no case type in play.
+
+**TWO FILES WENT OVER THE ~500-LINE STANDARD AND ONE WAS SPLIT.** `case_type_verdict.py` was at
+482 and `case_type_fields.py` at **499** — one line of slack — so the EXCLUDED entry this ticket's
+acceptance requires could not be added to it at all. `read_config` left for
+`services/case_type_config.py` and is re-exported, which is the seam's own stated rule ("every cut
+is the ~500-line standard rather than a second home for the knowledge") and the shape
+`case_type.py` already uses for `FIGURE_KEYS` and `apply`: no caller learned a new name. It is a
+real cut rather than a convenient one — everything left in `case_type_fields` is about what a case
+type may have an OPINION about, and `read_config` answers a question about FILE KINDS.
+
+**Named blind spots.** The CATALOGUE is one directory, scanned when the section is built and on
+every `set_config`: a file dropped into `examples/case_types/` while the window is open appears
+only at the next `set_config`, and one removed stays listed until then — there is no configurable
+search path, no recent-files list and no refresh button, all three being a persistence surface a
+deliberately small ticket should not grow. A row that will not load is DISABLED, so an operator
+who moves off it cannot select it again from the list; `Browse…` still reaches the file, and both
+the summary and the Trial name what is wrong with it. The summary shows no THRESHOLDS and no
+reference-mesh provenance (#169's own Out of Scope: that is what a maintainer reads when tracing
+where a number came from, and `show_case_type.py` answers it), so the window can call a mesh
+`unusable` and never say which mesh the bound was measured from. And nothing here AUTHORS a case
+type: `save_case_type.py` and `add_reference_mesh.py` are still headless, which is #158's own Out
+of Scope.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

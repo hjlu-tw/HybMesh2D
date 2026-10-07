@@ -233,7 +233,13 @@ class MeshDispositionMixin:
             # SAID, not left to be noticed. A case with no verdict file was
             # judged by nobody, and the operator should learn that here rather
             # than from an absent file six months later.
-            self.log("[Mesh] [WARNING] no case type is in play, so this case "
+            #
+            # IT DOES NOT SAY WHY, and that is #169's correction: a chosen case
+            # type whose file has GONE also produces no verdict, and "no case
+            # type is in play" would be false of it. The reason was already said
+            # at trial time by the verdict layer, which is the only thing allowed
+            # to spell one; what is left for a host is the consequence.
+            self.log("[Mesh] [WARNING] this mesh was not judged, so the case "
                      "carries no verdict and no embedded case type.")
 
     def _commit_pipeline(self, trial):

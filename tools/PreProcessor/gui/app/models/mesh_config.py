@@ -94,6 +94,23 @@ class MeshConfig(ConfigValidationMixin, GeomListMixin):
     # best one measured.
     mb_smooth_iters: int = 20
 
+    # WHICH CASE TYPE JUDGES A RUN OF THIS CONFIGURATION (#169). A path, stored
+    # repo-relative inside the repo and canonical-absolute outside, exactly as
+    # `mesh_topology_file` above is — the rule is `services/case_type_picker.py`'s
+    # and `services/topology_detach.py`'s, one line in both.
+    #
+    # NO `.dat` KEY, and that is the design rather than an omission: the mesher
+    # never sees this parameter and must not, since a THRESHOLD is scoped to a
+    # class of problem and the mesher refuses to grade (ADR-0002). Being key-less
+    # is also what keeps it structurally invisible to
+    # `tests/test_gui_cpp_config_parity.py`, which reads the `.dat` KEY map — so
+    # no allowance list grew an entry for it. `topology`, `group_bc`,
+    # `bc_configured` and `geom_roles` are the existing precedent.
+    #
+    # It SELECTS WHAT JUDGES, never what runs: applying a case type's settings is
+    # a different action, needs roles, and is not this field.
+    case_type_file: str = ""
+
     # Section 0b: Units
     # The unit EVERY length in this config is expressed in — domain bounds, mesh
     # sizes, BL thickness, seed radii. The mesher never converts them (it only
@@ -245,6 +262,14 @@ class MeshConfig(ConfigValidationMixin, GeomListMixin):
         d["geom_roles"] = self.geom_roles
         d["group_bc"] = self.group_bc
         d["bc_configured"] = self.bc_configured
+        # The case type that judges this configuration (#169), named here for the
+        # four above's reason: it has no `.dat` KEY for `_key_map()` to find it by.
+        # These two lines are the whole of what carries the choice into the `.hws`
+        # workspace, into the project-undo snapshot and into a pipeline script's
+        # `mesh` section — which is what makes "the script a Generate leaves
+        # reproduces the VERDICT and not just the geometry" true with no edit in
+        # `pipeline_config`.
+        d["case_type_file"] = self.case_type_file
         # The topology template, named here like the four above because it has no
         # `.dat` KEY for `_key_map()` to find it by — the mesher never sees a
         # parameter, it sees the document one produced (#134). Without this line the
@@ -297,6 +322,10 @@ class MeshConfig(ConfigValidationMixin, GeomListMixin):
         # #3: a session predating this key already carries real BCs, so default
         # True (show their colours); a new session that saved it uses the value.
         self.bc_configured = bool(d.get("bc_configured", True))
+        # `or ""` rather than the .get default, so an explicit JSON null lands as
+        # "no case type chosen" instead of None, which `case_type_picker.chosen`
+        # would then have to defend against on every read.
+        self.case_type_file = str(d.get("case_type_file", "") or "")
         # ABSENT MEANS THE DEFAULT MODEL, in both directions (#135). A project
         # file written before templates existed has no section and must load
         # exactly as it did, which a fresh default satisfies; and because

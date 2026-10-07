@@ -260,6 +260,11 @@ class PipelineIoControllerMixin:
                     # down repo-relative, as the config writer emits it.
                     self.global_mesh_config.add_geom_file(stored_geom_path(out))
             self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
+            # ...and, if this script is the one a Generate left beside a committed
+            # mesh, say which case type judged that case (#169). The same call the
+            # workspace route makes, for the same reason and with the same rule:
+            # it STATES the history and never becomes the current choice.
+            self._say_committed_case_type()
             self.sync_mesh_layers_panel()
 
         # Solver: apply preset first, then the explicit fields.
