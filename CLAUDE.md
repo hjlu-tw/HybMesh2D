@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **48,070
-characters (48,338 bytes, 2026-10-07) ≈ 12k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **48,352
+characters (48,620 bytes, 2026-10-12) ≈ 12k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**49,000**, leaving 930 characters of slack — derived by a rule the gate states at that
+**49,000**, leaving 648 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -426,7 +426,10 @@ and its rationale with it. Nothing is ruled on here. The rationale for the GUI a
 
 ### Visualization (`tools/scripts/`)
 - **`visualize_dat.py`**: Matplotlib visualization for `.dat` files; `--quality` flag adds expansion-ratio heatmap. Handed a MESH it names the file and points at `view_mesh_vtk.py`, rather than failing inside `np.loadtxt` (#58)
-- **`view_mesh_vtk.py`**: `<mesh.vtk> <out.png> [xmin xmax ymin ymax]` — draws a legacy-VTK mesh
+- **`view_mesh_vtk.py`**: `<mesh.vtk> <out.png> [xmin xmax ymin ymax] [--no-blocks]` — draws a
+  legacy-VTK mesh. A `MESH_MODE 1` file carries a per-cell `block` field (#106), so each cell is
+  filled by its block and the edges BETWEEN blocks are drawn heavy; a hybrid file has no such
+  field and renders as before. The value is the DECLARATION INDEX, not the block's id string
 - **`generate_letters.py`**: Generates letter-shaped geometry files
 - **`case_sources_index.py`**: which solver cases were built from which geometry (reads every `results/solver/*/grid/cad/SOURCES.txt`). No argument lists every case; an argument (path or partial name) answers "if I change this CAD, which cases go stale?" and exits 1 when nothing matches.
 - **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 21 mesher cases (~8 s), for proving
