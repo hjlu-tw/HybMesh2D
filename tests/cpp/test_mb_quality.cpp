@@ -55,7 +55,8 @@
 //     wall-spacing target is later work; see MbWallHeight's declaration.
 //
 // INJECTIONS: run BY HAND at review time — 2026-08-27 for A-F, 2026-09-17 for
-// G, H, I, J and K, which are #129's — and recorded here rather
+// G, H, I, J and K, which are #129's, 2026-10-12 for X, Y and Z, which are
+// #174's — and recorded here rather
 // than written as in-test injections — a C++ test cannot mutate the
 // implementation it linked against, so unlike the Python gates next door these
 // cannot re-run themselves. Each names the checks it broke, so a later reader can
@@ -144,6 +145,20 @@
 //      tests/cpp/test_cell_shape.cpp check 8, and this file inherits it rather
 //      than holding it.
 //
+//
+// AND #174's THREE, EACH BITING A DIFFERENT HALF of the size-jump figure:
+//
+//   X. the empty set reported as a perfect 1.0 rather than left negative ->
+//      1 failure, check 11d. The one rule of this report, reaching the one figure
+//      that arrived after it was written down.
+//   Y. the ratio taken the wrong way up (`lo / hi`) -> 3 failures, checks 11b
+//      (x2) and 11c. Note what it does NOT redden: 11a, whose uniform block reads
+//      1.0 either way, which is why a uniform fixture alone could not gate this.
+//   Z. the edge keyed per BLOCK rather than by node identity -> 2 failures, both
+//      in check 11c. Checks 11a and 11b stay green, because inside one block the
+//      two lookups agree exactly — CHECK 11c AND ITS TWO-BLOCK FIXTURE EXIST
+//      BECAUSE OF THIS INJECTION, and no single-block document can replace them.
+//
 // What survives that limitation is the two NEGATIVE CONTROLS below, which are
 // permanent because they measure the injections' own premises inside the test:
 // check 6 computes its bow-tie's shoelace area (an area test really would pass
@@ -193,6 +208,34 @@ std::string blockDoc(double ax, double ay, double bx, double by,
 std::string unitSquare(int ni, int nj, const std::string& iExtra = "",
                        const std::string& jExtra = "") {
     return blockDoc(0, 0, 1, 0, 1, 1, 0, 1, ni, nj, iExtra, jExtra);
+}
+
+// TWO blocks sharing one `interface` edge, the right one `widen` times as wide in
+// x as the left and both uniform. Every quad inside a block is the same size as
+// its neighbours, so the ONLY size step in the whole mesh is the one straddling
+// the shared edge -- which makes `adjacent_area_ratio_max` on this document read
+// exactly `widen` if the figure looks across a block boundary, and exactly 1.0 if
+// it walks each block's own (i,j) and stops there.
+std::string twoBlocks(int n, double widen) {
+    char b[64]; std::snprintf(b, sizeof b, "%.17g", 1.0 + widen);
+    return std::string("{\n  \"format_version\": 1,\n  \"corners\": [\n")
+        + "    {\"id\": \"a\", \"kind\": \"free\", \"xy\": [0, 0]},\n"
+        + "    {\"id\": \"b\", \"kind\": \"free\", \"xy\": [1, 0]},\n"
+        + "    {\"id\": \"c\", \"kind\": \"free\", \"xy\": [" + b + ", 0]},\n"
+        + "    {\"id\": \"d\", \"kind\": \"free\", \"xy\": [0, 1]},\n"
+        + "    {\"id\": \"e\", \"kind\": \"free\", \"xy\": [1, 1]},\n"
+        + "    {\"id\": \"f\", \"kind\": \"free\", \"xy\": [" + b + ", 1]}\n"
+        + "  ],\n  \"edges\": [\n"
+        + "    {\"id\": \"s0\", \"corners\": [\"a\", \"b\"], \"kind\": \"wall\", \"count\": " + std::to_string(n) + "},\n"
+        + "    {\"id\": \"s1\", \"corners\": [\"b\", \"c\"], \"kind\": \"wall\", \"count\": " + std::to_string(n) + "},\n"
+        + "    {\"id\": \"n0\", \"corners\": [\"d\", \"e\"], \"kind\": \"wall\"},\n"
+        + "    {\"id\": \"n1\", \"corners\": [\"e\", \"f\"], \"kind\": \"wall\"},\n"
+        + "    {\"id\": \"w\", \"corners\": [\"a\", \"d\"], \"kind\": \"wall\", \"count\": " + std::to_string(n) + "},\n"
+        + "    {\"id\": \"m\", \"corners\": [\"b\", \"e\"], \"kind\": \"interface\"},\n"
+        + "    {\"id\": \"e2\", \"corners\": [\"c\", \"f\"], \"kind\": \"wall\"}\n"
+        + "  ],\n  \"blocks\": [\n"
+        + "    {\"id\": \"left\", \"edges\": [\"s0\", \"m\", \"n0\", \"w\"]},\n"
+        + "    {\"id\": \"right\", \"edges\": [\"s1\", \"e2\", \"n1\", \"m\"]}\n  ]\n}";
 }
 
 MbResult build(const std::string& doc, bool split = true) {
@@ -870,6 +913,90 @@ int main() {
               && tri.structuredLayerShape.p95 == quad.structuredLayerShape.p95
               && tri.structuredLayerShape.max == quad.structuredLayerShape.max,
               "10f. ...reporting BITWISE the same two sets either way");
+    }
+
+    // ── 11. THE SIZE JUMP: a figure the other three cannot see (issue #174) ──
+    // Every value below is a CLOSED FORM of the document, not a number read off a
+    // run and written down: a uniform block has no step at all, a geometric
+    // grading steps by exactly its growth rate, and two blocks whose widths differ
+    // by a factor step by exactly that factor. So each check fails on an
+    // implementation that measures the right kind of thing in the wrong place.
+    {
+        const MbQualityReport q = hybmesh::measureMbQuality(build(unitSquare(5, 5)));
+        // 4x4 quads: 3*4 steps along i and 4*3 along j, each counted once from the
+        // edge the two share.
+        CHECK(q.adjacentAreaRatio.pairs == 24,
+              "11a. every pair of structured quads that share an edge is measured "
+              "ONCE, from that edge");
+        CHECK_NEAR(q.adjacentAreaRatio.median, 1.0, 1e-12,
+                   "11a. a uniform block steps by nothing anywhere");
+        CHECK_NEAR(q.adjacentAreaRatio.max, 1.0, 1e-12, "11a. ...including its worst pair");
+    }
+    {
+        // Graded in i at 1.5 per interval, uniform in j. Adjacent quads along i
+        // therefore differ in area by EXACTLY 1.5 (their j extent is shared) and
+        // along j by exactly 1. 8x8 quads: 56 pairs at 1.5 and 56 at 1.0, so the
+        // median is the mean of the two middle values of an even count.
+        const MbQualityReport q = hybmesh::measureMbQuality(
+            build(unitSquare(9, 9, ", \"spacing\": {\"law\": \"geometric\", \"growth\": 1.5}")));
+        CHECK(q.adjacentAreaRatio.pairs == 112,
+              "11b. a 8x8 block of quads forms 112 adjacent pairs");
+        CHECK_NEAR(q.adjacentAreaRatio.max, 1.5, 1e-9,
+                   "11b. the worst step on a geometrically graded block is the GROWTH "
+                   "RATE itself, which is the arithmetic this figure claims to report");
+        CHECK_NEAR(q.adjacentAreaRatio.median, 1.25, 1e-9,
+                   "11b. ...and the median is the mean of the two middle values, 1.0 "
+                   "and 1.5 — the reduction's own stated rule, not a second one");
+        // THE OTHER THREE FIGURES ARE BLIND TO IT, measured rather than asserted in
+        // prose: this block is axis-aligned, so its angles are exactly 90 degrees
+        // however hard it is graded.
+        CHECK_NEAR(q.maxNonOrthoDeg, 0.0, 1e-9,
+                   "11b. ...on a block whose non-orthogonality is EXACTLY zero, which "
+                   "is why this figure is not already implied by that one");
+    }
+    {
+        // THE CHECK THAT EARNS THE NODE-ID LOOKUP. A per-block (i,j) walk reports
+        // 1.0 here, because inside each block nothing steps at all.
+        const MbResult m = build(twoBlocks(5, 2.0));
+        CHECK(m.ok, "11c. two blocks sharing one interface fill");
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+        CHECK_NEAR(q.adjacentAreaRatio.max, 2.0, 1e-9,
+                   "11c. the step ACROSS a block boundary is measured, and it is the "
+                   "ratio of the two blocks' widths exactly");
+        CHECK(q.adjacentAreaRatio.pairs == 52,
+              "11c. ...and the four pairs straddling the shared edge are counted once "
+              "each, beside the 24 inside each block");
+        CHECK_NEAR(q.adjacentAreaRatio.median, 1.0, 1e-12,
+                   "11c. ...while the median still describes the 48 pairs that step by "
+                   "nothing, so one bad seam does not read as a bad mesh");
+    }
+    {
+        // THE NEGATIVE RULE, at this figure's own level. One quad has no pair, and
+        // "we did not measure" must not arrive as the perfect 1.0.
+        const MbQualityReport q = hybmesh::measureMbQuality(build(unitSquare(2, 2)));
+        CHECK(q.adjacentAreaRatio.pairs == 0,
+              "11d. a single-quad block forms no pair at all");
+        CHECK(q.adjacentAreaRatio.median < 0.0 && q.adjacentAreaRatio.p95 < 0.0
+              && q.adjacentAreaRatio.max < 0.0,
+              "11d. ...so all three statistics are NEGATIVE, never the 1.0 that would "
+              "read as a mesh with no size step in it");
+    }
+    {
+        // INDEPENDENT OF `MB_SPLIT_QUADS`, for the reason the shape figures are and
+        // one more: the two triangles of one quad do not have equal areas unless it
+        // is a parallelogram, so a figure measured on the EXPORTED cells would
+        // report the split's own artefact as a size jump.
+        const std::string doc = twoBlocks(5, 2.0);
+        const MbQualityReport tri = hybmesh::measureMbQuality(build(doc, true));
+        const MbQualityReport quad = hybmesh::measureMbQuality(build(doc, false));
+        CHECK(tri.cells == 2 * quad.cells && quad.cells == 32,
+              "11e. the split really did change what was exported, so an unchanged "
+              "figure below is a measurement and not two runs of the same thing");
+        CHECK(tri.adjacentAreaRatio.pairs == quad.adjacentAreaRatio.pairs
+              && tri.adjacentAreaRatio.median == quad.adjacentAreaRatio.median
+              && tri.adjacentAreaRatio.p95 == quad.adjacentAreaRatio.p95
+              && tri.adjacentAreaRatio.max == quad.adjacentAreaRatio.max,
+              "11e. ...and the size jump is BITWISE the same either way");
     }
 
     return hybmesh::test::report("test_mb_quality");

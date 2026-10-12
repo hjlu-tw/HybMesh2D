@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
+#include <utility>
 
 namespace {
 
@@ -77,6 +79,28 @@ bool quadCorners(const hybmesh::MbResult& mesh, const hybmesh::MbBlock& b, int i
         out[k] = mesh.nodes[static_cast<size_t>(ids[k])];
     }
     return true;
+}
+
+// The AREA of one structured quad, by the shoelace rule over the ring order
+// `quadCorners` hands back. ABSOLUTE: a folded quad still has a size, and whether
+// it folded is counted by `invertedCells` rather than hidden inside this one.
+//
+// Its only reader is the size-jump figure, which is a RATIO of two of these, so
+// the only property it needs is that both sides are measured the same way.
+double quadArea(const Point2D c[4]) {
+    double a = 0.0;
+    for (int k = 0; k < 4; ++k)
+        a += c[k].x * c[(k + 1) % 4].y - c[(k + 1) % 4].x * c[k].y;
+    return std::fabs(a) * 0.5;
+}
+
+// One key for the undirected edge between two node ids, so two quads in DIFFERENT
+// blocks that share an edge land in the same slot. Welding is by node identity, so
+// this needs no tolerance for the same reason the welding does not.
+unsigned long long edgeKey(int u, int v) {
+    const unsigned long long lo = static_cast<unsigned long long>(std::min(u, v));
+    const unsigned long long hi = static_cast<unsigned long long>(std::max(u, v));
+    return (lo << 32) | hi;
 }
 
 // See the comparison inside `wallBandMask` below for what this is and what it is
@@ -317,6 +341,54 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
         }
         q.walls.push_back(w);
     }
+
+    // ── Size jump: the area ratio between quads that SHARE AN EDGE ──────────
+    // One pass over the same structured quads the two figures above walk, keyed
+    // by node ids rather than by (i,j) so that a pair STRADDLING a block boundary
+    // is measured like any other — which is the half of the mesh a logical walk
+    // per block would have been blind to, and the half where a jump is most
+    // likely. See MbAdjacentAreaRatio for why this figure is not already implied
+    // by the three above it.
+    //
+    // THE THIRD OWNER OF AN EDGE IS DROPPED, NOT AVERAGED. A well-formed mesh has
+    // at most two quads on any edge; counting a third would invent a pair that
+    // does not exist, so the ratio is taken once, when the SECOND owner arrives,
+    // and later owners only advance the count.
+    std::vector<double> jumps;
+    std::unordered_map<unsigned long long, std::pair<double, int>> byEdge;
+    for (const MbBlock& b : mesh.blocks) {
+        if (!blockIsWalkable(b)) continue;
+        for (int j = 0; j + 1 < b.nj; ++j) {
+            for (int i = 0; i + 1 < b.ni; ++i) {
+                Point2D c[4];
+                if (!quadCorners(mesh, b, i, j, c)) continue;
+                const double a = quadArea(c);
+                const int ids[4] = {b.nodeAt(i, j), b.nodeAt(i + 1, j),
+                                    b.nodeAt(i + 1, j + 1), b.nodeAt(i, j + 1)};
+                for (int k = 0; k < 4; ++k) {
+                    const unsigned long long key = edgeKey(ids[k], ids[(k + 1) % 4]);
+                    auto it = byEdge.find(key);
+                    if (it == byEdge.end()) {
+                        byEdge.emplace(key, std::make_pair(a, 1));
+                        continue;
+                    }
+                    if (++it->second.second != 2) continue;
+                    const double lo = std::min(it->second.first, a);
+                    const double hi = std::max(it->second.first, a);
+                    // A degenerate quad makes the ratio UNMEASURABLE, which is a
+                    // negative entry here — `reduceCellShapes` drops those, so a
+                    // pair nobody could measure never becomes a 1.0 that reads as
+                    // a perfectly smooth one.
+                    jumps.push_back(lo > 0.0 ? hi / lo : -1.0);
+                }
+            }
+        }
+    }
+    const ShapeStats sj = reduceCellShapes(std::move(jumps));
+    q.adjacentAreaRatio.pairs = sj.cells;
+    q.adjacentAreaRatio.median = sj.median;
+    q.adjacentAreaRatio.p95 = sj.p95;
+    q.adjacentAreaRatio.max = sj.max;
 
     return q;
 }

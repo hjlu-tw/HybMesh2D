@@ -752,6 +752,94 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
   against per-block cell counts, which no machine-readable line carries — a row
   reporting the WRONG block's figures would pass the surface gate.
 
+**THE SIZE JUMP: the figure three agreeing numbers could not see** (`MbAdjacentAreaRatio`
+and the size-jump pass in `src/MbQuality.cpp`, the `Size jump` row and the four
+`adjacent_area_ratio_*` tokens in `src/cli.cpp`; issue #174).
+
+WHERE IT CAME FROM, and it was not a gap somebody noticed in the report. A user
+looked at a twelve-block cylinder-in-channel mesh built this week and said the cells
+changed size abruptly at the four corners of the O-ring's square. Chasing that found
+TWO causes, and the second is why this figure exists.
+
+The first was in the DOCUMENT: the square's four sides carry the cylinder's 41 arc
+points over a length of 0.2, so the cell there is 0.005 wide, while the blocks
+outside it were declared to cluster TOWARDS the square, down to 0.0011. A 4.5x step
+in the tangential direction at each corner, measured as a 7.53x area jump across the
+block boundary. That one is an authoring defect and the fix was in the topology.
+
+The second was the SMOOTHER, and nothing in the report could see it. With the
+declaration fixed, 20 Winslow sweeps still left a worst neighbour-area ratio of
+**10.66** where the unsmoothed fill had **1.68**, and **400 faces over 2x** where
+there had been none. Against that, the three figures already in the report said:
+
+| sweeps | nonortho max | nonortho mean | quad_midline_ratio_p95 | area ratio |
+|-------:|-------------:|--------------:|-----------------------:|-----------:|
+|      0 |        45.00 |          4.88 |                 21.166 |       1.68 |
+|      3 |        47.49 |          4.56 |                 21.166 |       8.71 |
+|      6 |        49.34 |          4.42 |                 21.166 |       9.03 |
+|     10 |        50.87 |          4.29 |                 21.166 |       9.46 |
+|     20 |        53.40 |          4.05 |                 21.166 |      10.66 |
+|     40 |        52.01 |          4.19 |                 21.166 |       9.92 |
+
+The mean improved by 17%, the shape figure is BIT-IDENTICAL at every sweep count,
+and only the max non-orthogonality moved the other way — by 8 degrees, which on a
+mesh whose structural floor is the 45-degree diagonal at the ring corners is easy to
+read as noise. A reader with the old banner in front of them would have concluded
+the smoother helped. **Three sweeps already does most of the damage** (8.71), so the
+cap is not a dial that trades this off gradually.
+
+AND IT IS NOT ONE CASE. The same ruler over the shipped set: `mb_hgrid` 1.50 ->
+1.50, `mb_ogrid` 1.19 -> 1.40, `mb_cgrid` 1.40 -> 1.90, `mb_tworing_offset` 1.24 ->
+2.84; and the square-cylinder case built the same week, 1.10 -> 18.34. The smoother
+costs this figure on every case measured, mildly where the topology is simple.
+**Nothing was changed about `MB_SMOOTH_ITERS 20` on the strength of it** — that
+default belongs to #80's arc and to `.claude/rules/mesher-smoothing.md`, which
+measured it against figures this one is independent of. What this work adds is the
+instrument a re-examination would need, which is the same order #51 put the ruler in
+before the thing it measures.
+
+WHY IT IS NOT IMPLIED BY WHAT WAS THERE. Non-orthogonality is an ANGLE and this is a
+SIZE; they are independent, and the table above is the proof rather than the claim.
+The midline ratio is computed INSIDE one cell and never looks at its neighbour, so a
+mesh of uniformly 5:1 cells and a mesh whose cells alternate 1:1 and 10:10 report
+the same shape figures and very different jumps. The wall band splits the shape
+figures by WHERE the clustering squeezed cells, which is a different question again.
+
+THREE DECISIONS, each with its own injection.
+
+* MEASURED ON THE STRUCTURED QUADS, not the exported cells. The split halves every
+  quad, and the two triangles of one quad have equal areas only when it is a
+  parallelogram — so an exported-cell version would report the SPLIT's artefact as a
+  size jump. Verified the way #129 verified the shape figure: on the shipped C-grid
+  `cells=` goes 11520 -> 5760 at `MB_SPLIT_QUADS 0` while all four
+  `adjacent_area_ratio_*` are identical to every digit the line prints.
+
+* ADJACENCY BY SHARED NODE IDS, NEVER BY LOGICAL (i,j). This is the whole reason the
+  figure found the user's corner at all: a per-block walk reports 1.0 on a mesh whose
+  only step is at a block boundary. Injection Z keys the lookup per block and reddens
+  check 11c and nothing else, which is also why that check has a two-block fixture
+  that no single-block document can replace.
+
+* A PAIR NOBODY COULD MEASURE IS NEGATIVE. `reduceCellShapes` drops it, so the
+  report's one rule reaches this figure too — injection X reports the empty set as a
+  perfect 1.0 and reddens check 11d.
+
+The gate's expected values are CLOSED FORMS of the document rather than numbers read
+off a run: a uniform block steps by nothing, a block graded at 1.5 has a worst step
+of exactly 1.5 and a median of exactly 1.25 (56 pairs at 1.5 and 56 at 1.0, the
+reduction's own even-count rule), and two blocks whose widths differ by 2 step by
+exactly 2 across their shared interface. Injection Y takes the ratio the wrong way up
+and reddens 11b and 11c but NOT 11a — a uniform block reads 1.0 either way, which is
+why a uniform fixture alone could not have gated this.
+
+WHAT IS NOT DONE. The figure is not in the `.provenance.json` sidecar, so the case
+types one layer up cannot judge against it yet; that is a deliberate boundary and not
+an oversight — the sidecar's `mesh.quality` is the cell-shape contract #131 and #132
+read, and widening it reaches the GUI parity gate and the verdict layer. And no
+threshold, colour or grade attaches to it anywhere, for the reason every figure
+beside it carries: what ratio is too big depends on the solver's reconstruction and
+on where in the mesh it sits.
+
 **THE WALL BAND: what the O-grid's p95 was describing** (`wallBandMask` in
 `src/MbQuality.cpp`; issue #144, parent #128, and the multi-block twin of #143).
 

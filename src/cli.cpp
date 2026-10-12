@@ -511,6 +511,29 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     for (const hybmesh::MbBlockShape& bs : q.blockShapes)
         std::cout << bannerSub("block '" + bs.blockId + "'") << shapePhrase(bs.shape) << "\n";
 
+    // ── THE SIZE JUMP (issue #174), a row of its own and not a sub-row of the
+    // shape headline: that figure is computed INSIDE one cell and this one is
+    // computed BETWEEN two, so it decomposes nothing above it.
+    //
+    // `shapePhrase` formats the three numbers, so `not measured` keeps the one
+    // spelling it has had since #129 — the ShapeStats is built here rather than
+    // stored in the report because the report's own field counts PAIRS and says
+    // so, and borrowing a struct whose count is named `cells` to carry that
+    // number is exactly the drift the name exists to prevent.
+    const hybmesh::ShapeStats sj{q.adjacentAreaRatio.pairs, q.adjacentAreaRatio.median,
+                                 q.adjacentAreaRatio.p95, q.adjacentAreaRatio.max};
+    std::cout << bannerSub("Size jump") << shapePhrase(sj);
+    if (sj.cells == 0)
+        // NAMES NO CAUSE, the rule every empty row on this banner follows: `pairs
+        // 0` has two ways in — no two structured quads shared an edge, or none of
+        // the pairs could be measured — and picking one would be a false claim
+        // about the mesh in the other case.
+        std::cout << " (none of the adjacent structured-quad pairs could be measured)\n";
+    else
+        std::cout << " (area ratio between quads that share an edge, over " << sj.cells
+                  << " pairs; 1.0 is no change, and it is a SIZE where the"
+                     " non-orthogonality above is an angle)\n";
+
     // One machine-readable line, in the shape of the HYBMESH_ERROR convention, so
     // the acceptance gate this instrument exists for is a grep rather than a prose
     // parse. Each of the three measured figures is NEGATIVE when it could not be
@@ -560,6 +583,18 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // is the half of the shape that is deliberately NOT shared.
     tokens("layer_", q.structuredLayerShape);
     tokens("bulk_", q.structuredBulkShape);
+    // THE SIZE JUMP'S FOUR TOKENS (issue #174), appended rather than interleaved,
+    // so every token that existed before this ticket keeps its spelling AND its
+    // position for the greps that already read this line. Its own key carries the
+    // metric's name for the reason the shape figures' do — every token here is
+    // `key=<float>` and ONE parser floats all of them, so a
+    // `jump_metric=adjacent_area_ratio` token would break all of its readers at
+    // once. `_pairs` and not `_cells`, because that is what it counts; the two
+    // would otherwise look like the same quantity under two prefixes.
+    mr << " adjacent_area_ratio_pairs=" << q.adjacentAreaRatio.pairs
+       << " adjacent_area_ratio_median=" << q.adjacentAreaRatio.median
+       << " adjacent_area_ratio_p95=" << q.adjacentAreaRatio.p95
+       << " adjacent_area_ratio_max=" << q.adjacentAreaRatio.max;
     std::cout << mr.str() << std::endl;
 }
 

@@ -43,7 +43,9 @@ changes update BOTH.
 wall first-cell height accuracy, CELL SHAPE and cell count, plus one machine-readable
 `HYBMESH_MB_QUALITY cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=…
 wall_first_cell_worst_rel=… quad_midline_ratio_cells=… quad_midline_ratio_median=…
-quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance gate is a grep.
+quad_midline_ratio_p95=… quad_midline_ratio_max=… adjacent_area_ratio_pairs=…
+adjacent_area_ratio_median=… adjacent_area_ratio_p95=… adjacent_area_ratio_max=…` line,
+so the acceptance gate is a grep.
 - **Printed on every run, including a good one** — three of the four numbers are the baseline
   elliptic smoothing is judged against.
 - **Its own module rather than more of `MultiBlock.cpp`**: a different question ("is this mesh
@@ -139,6 +141,53 @@ quad_midline_ratio_p95=… quad_midline_ratio_max=…` line, so the acceptance g
     `max` — fed by the SAME report object the banner and the machine line read, so the three
     cannot disagree. It is the contract #131 and #132 read instead of recomputing.
   Why: `docs/design_notes/mesher.md`, "CELL SHAPE: three numbers, one definition".
+
+**THE SIZE JUMP BETWEEN TWO CELLS THAT TOUCH, which none of the three figures above can see**
+(`MbAdjacentAreaRatio` + the size-jump pass in `src/MbQuality.cpp`, the `Size jump` row and the
+four `adjacent_area_ratio_*` tokens in `src/cli.cpp`; #174). The ratio of the larger structured
+quad's area to the smaller's, over every pair of structured quads that SHARE AN EDGE; 1.0 is no
+change.
+- **IT WAS ADDED BECAUSE THREE FIGURES AGREED ON A MESH THAT HAD GOT MATERIALLY WORSE.** On a
+  twelve-block cylinder-in-channel the elliptic smoother took this ratio from **1.68 to 10.66** and
+  put **400 faces over 2x where there had been none**, while `maxNonOrthoDeg` went 45.0 -> 53.4,
+  `meanNonOrthoDeg` 4.88 -> 4.05, and every `structuredShape` figure came back **BIT-IDENTICAL at
+  every sweep count** (p95 21.166 at 0, 3, 6, 10, 20 and 40). Non-orthogonality is an ANGLE and
+  this is a SIZE; the midline ratio is computed INSIDE one cell and never looks at its neighbour.
+  **Three sweeps already does most of the damage** (8.71), so this is not a figure that degrades
+  gracefully with the cap.
+- **AND THE SMOOTHER COSTS IT ON EVERY SHIPPED CASE MEASURED**, mildly where the topology is
+  simple: `mb_hgrid` 1.50 -> 1.50, `mb_ogrid` 1.19 -> 1.40, `mb_cgrid` 1.40 -> 1.90,
+  `mb_tworing_offset` 1.24 -> 2.84. **`MB_SMOOTH_ITERS 20` was chosen before this ruler existed**
+  (`.claude/rules/mesher-smoothing.md` owns that default); nothing here changes it, and this rule
+  is the measurement a re-examination would start from.
+- **MEASURED ON THE STRUCTURED QUADS**, for non-orthogonality's three reasons and one that is this
+  figure's own: the split halves every quad and the two triangles of one quad do NOT have equal
+  areas unless it is a parallelogram, so measuring the EXPORTED cells would report the split's own
+  artefact as a size jump. Independent of `MB_SPLIT_QUADS` — measured on the shipped C-grid,
+  `cells=` 11520 -> 5760 while all four `adjacent_area_ratio_*` are identical to every digit the
+  line prints.
+- **ADJACENCY IS BY SHARED NODE IDS, NEVER BY LOGICAL (i,j)**, which is what makes it see ACROSS a
+  block boundary — the place a jump is most likely and least visible. Welding is allocation rather
+  than comparison, so two quads in different blocks that touch really do name the same two ids and
+  this lookup needs **no tolerance**, for the welding's own reason.
+- **THE THIRD OWNER OF AN EDGE IS DROPPED, NOT AVERAGED**: the ratio is taken once, when the
+  SECOND owner arrives. **A degenerate quad makes its pair NEGATIVE**, which `reduceCellShapes`
+  drops — the report's one rule reaching this figure, so a pair nobody could measure never becomes
+  the 1.0 that reads as perfectly smooth.
+- **`pairs`, never `cells`.** It counts PAIRS, so it is neither the quad count nor a fixed multiple
+  of it; spelling it `cells` would make two different quantities look like one under two prefixes.
+  The three statistics come from `reduceCellShapes`, so there is still exactly ONE definition of
+  median and p95 in this report.
+- **NO THRESHOLD AND NO COLOUR**, like every figure beside it: what ratio is too big depends on the
+  solver's reconstruction and on where in the mesh it sits, and the case types one layer up are
+  where a bar on it may live.
+- **It is a ROW OF ITS OWN on the banner, not a sub-row of the shape headline** — that figure is
+  computed inside one cell and this one between two, so it decomposes nothing above it.
+- Gated by `tests/cpp/test_mb_quality.cpp` checks 11a-11e, whose every expected value is a CLOSED
+  FORM of the document rather than a number read off a run: a uniform block steps by nothing, a
+  block graded at 1.5 has a worst step of exactly 1.5 and a median of exactly 1.25, and two blocks
+  whose widths differ by 2 step by exactly 2 across their shared interface. **Its injections are
+  HAND runs, dated 2026-10-12 in that file's docstring.**
 
 **THE REPORT SEPARATES THE WALL-CLUSTERED QUADS FROM THE REST, BESIDE THE WHOLE-MESH FIGURES AND
 NEVER INSTEAD OF THEM** (`wallBandMask` in `src/MbQuality.cpp`, `printMbQuality` in `src/cli.cpp`;

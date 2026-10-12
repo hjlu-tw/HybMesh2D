@@ -129,6 +129,52 @@ struct MbBlockShape {
     ShapeStats shape;   // negative throughout when this block had nothing measurable
 };
 
+// HOW BIG A STEP THERE IS BETWEEN TWO CELLS THAT TOUCH (issue #174).
+//
+// The ratio of the larger structured quad's area to the smaller's, over every
+// pair of structured quads that SHARE AN EDGE. 1.0 is no change at all; a pair at
+// 10 means a solver crossing that face sees its control volume change tenfold in
+// one step, which is where a gradient reconstruction loses its order.
+//
+// WHY A FIGURE OF ITS OWN, and this is the measurement that asked for it: on a
+// twelve-block cylinder-in-channel the elliptic smoother took this ratio from
+// 1.68 to 10.66 and put 400 faces over 2x where there had been none — while
+// `maxNonOrthoDeg` moved 45.0 -> 53.4, `meanNonOrthoDeg` moved 4.88 -> 4.05, and
+// every `structuredShape` figure came back BIT-IDENTICAL at every sweep count.
+// Three figures that all looked the same or better on a mesh that had got
+// materially worse. None of them can see this: non-orthogonality is an ANGLE and
+// this is a SIZE, and the midline ratio is computed inside ONE cell and never
+// looks at its neighbour.
+//
+// MEASURED ON THE STRUCTURED QUADS, for non-orthogonality's three reasons and one
+// more that is specific here: the split halves every quad, and the two triangles
+// of one quad do NOT have equal areas unless it is a parallelogram, so measuring
+// the exported cells would report the SPLIT's own artefact as a size jump. It is
+// therefore independent of `MB_SPLIT_QUADS`, like the other two.
+//
+// ADJACENCY IS BY SHARED NODE IDS, not by logical (i,j), which is what makes the
+// figure see ACROSS a block boundary — the place a size jump is most likely and
+// least visible. Welding is allocation rather than comparison (one node per
+// declared corner, an edge's interior nodes once per declared edge), so two quads
+// in different blocks that touch really do name the same two node ids, and there
+// is no tolerance anywhere in this lookup for the same reason there is none in the
+// welding.
+//
+// NO THRESHOLD AND NO COLOUR, like every figure beside it. What ratio is too big
+// depends on the solver's reconstruction and on where in the mesh it sits; the
+// case types one layer up are where a bar on it may live.
+//
+// `pairs` is NOT `cells` under another name and is deliberately not spelled that
+// way: it counts PAIRS of quads, so on a mesh of N structured quads it is neither
+// N nor a fixed multiple of it — an interior quad contributes four pairs and a
+// corner quad two, each counted once from the edge they share.
+struct MbAdjacentAreaRatio {
+    size_t pairs = 0;     // adjacent structured-quad pairs actually measured
+    double median = -1.0;
+    double p95 = -1.0;
+    double max = -1.0;
+};
+
 // EVERY MEASURED QUANTITY HERE IS NEGATIVE WHEN IT WAS NOT MEASURED, never 0.
 //
 // This is the one rule of the report and it is not a formality: 0.000 deg of
@@ -215,6 +261,14 @@ struct MbQualityReport {
     // bulk half is the whole mesh.
     ShapeStats structuredLayerShape;       // the wall-clustered band
     ShapeStats structuredBulkShape;        // every other structured quad
+
+    // ── THE SIZE JUMP (issue #174) ──────────────────────────────────────────
+    // See MbAdjacentAreaRatio above for what it is, what it sees that the three
+    // figures above cannot, and why it is measured where it is. Its three
+    // statistics come from `reduceCellShapes`, the same reduction with the same
+    // two percentile rules the shape figures use, so there is still exactly one
+    // definition of "median" and "p95" in this report.
+    MbAdjacentAreaRatio adjacentAreaRatio;
 };
 
 // Measure a finished multi-block mesh. Pure, total, and never throws: an empty or
