@@ -142,6 +142,17 @@ decided a result, and #158 excludes drawing-order conventions by name.
   `QLineEdit.setText` resets the caret and the spec is normalised on the way through
   (`17,18` -> `17, 18`) — so without this the caret jumps on every character typed. Comparison
   is by VALUE (`_same_spec`), not by string.
+- **THE TABLE REFRESHES ON THE GEOMETRY LIST TOO, and on the LIST'S MODEL rather than on a
+  signal.** `#158`'s story 5 is that picking a case type before drawing and drawing before
+  picking must come to the same place, and they did not: the role combos were built against an
+  empty drawing and nothing rebuilt them when the curves arrived, so pick-then-draw left every
+  row on `(not assigned)` with no candidate and no pre-selection while draw-then-pick worked.
+  The geometry list is not a field-spec row, so neither table reaches it. `rowsInserted` /
+  `rowsRemoved` on `geom_list_widget.model()` is the hook because `geom_files_changed` is
+  emitted by the panel's OWN Browse and Remove handlers only — a geometry added by a controller
+  would not reach it. Gated as an EQUALITY between the two orders (check 15), the defect being
+  an asymmetry rather than a property of one of them, with a DISCONNECT injection because the
+  subject is a wire.
 - **`panel_edited` IS THE PROTOCOL**, not a traversal of children, and check 12 of the gate
   drives it through a live window rather than through `panel.get_config()`.
   `undo_ctrl._wire_widget_edits` connects that signal for a composite control that rebuilds its

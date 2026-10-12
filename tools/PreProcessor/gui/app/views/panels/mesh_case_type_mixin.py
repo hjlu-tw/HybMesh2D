@@ -233,6 +233,27 @@ class MeshConfigCaseTypeMixin:
         for table in (MESH_SPECS, PANEL_BL_SPECS, TOPOLOGY_SPECS):
             wire_specs(self, [sp for sp in table if sp.attr not in mine],
                        self._on_field_edited)
+        # AND ON THE GEOMETRY LIST, which is not a field-spec row and so is
+        # reached by neither table (#170 review). Without this the operator who
+        # picks a case type BEFORE drawing is stuck: the role combos are built
+        # against an empty drawing and nothing rebuilds them when the curves
+        # arrive, so every row stays on `(not assigned)` with no candidate and
+        # no pre-selection — while drawing FIRST and picking second works. #158's
+        # story 5 is that the two orders must be the same, and they were not.
+        #
+        # ON THE LIST'S MODEL, not on a signal some caller has to remember to
+        # emit: `geom_files_changed` is emitted by the panel's own Browse and
+        # Remove handlers only, so a geometry added by a controller (Add All, a
+        # reopened session) would still not reach here. `rowsInserted` /
+        # `rowsRemoved` fire for every route into the widget.
+        #
+        # SAFE DURING POPULATION because `_on_field_edited` passes no
+        # configuration and `_refresh_case_type_summary` returns early while
+        # `_loading` is set — `_set_config_body` does the refresh itself, with
+        # the configuration it is writing.
+        model = self.geom_list_widget.model()
+        model.rowsInserted.connect(self._on_field_edited)
+        model.rowsRemoved.connect(self._on_field_edited)
 
     def _on_field_edited(self, *_args):
         """A field changed: re-render the read-out. A NAMED slot, not a lambda.

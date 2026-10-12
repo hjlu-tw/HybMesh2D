@@ -20,7 +20,7 @@ WHAT IT IS FOR. Three failures are worth more than the feature:
   * three refusals reached one at a time, which is three runs to clear what is
     one screen of edits.
 
-The fourteen checks, in the order the operator meets them:
+The fifteen checks, in the order the operator meets them:
 
   1.  The assignment is a `MeshConfig` field: it round-trips through
       `to_dict`/`load_from_dict`, survives a real `.hws` through two live
@@ -63,6 +63,10 @@ The fourteen checks, in the order the operator meets them:
       length cannot be measured on this drawing is an error, never a silent
       fall back to the authored numbers — which would put a 1 m body's surface
       size on a 10 mm one.
+  15. THE TWO ORDERS ARE THE SAME. Picking the case type before drawing and
+      drawing before picking produce the identical roles table — #158's story 5,
+      and an asymmetry #170 shipped until review: the role combos were built
+      against an empty drawing and nothing rebuilt them when the curves arrived.
   12. THE WHOLE ACT THROUGH THE LIVE WINDOW: picker -> table -> the button's
       signal -> the controller -> the panel holds the fitted configuration. Its
       first half is the one property no in-process check above can see — a table
@@ -70,7 +74,7 @@ The fourteen checks, in the order the operator meets them:
       `panel_edited`, which is what `undo_ctrl._wire_widget_edits` connects
       because its traversal of children runs once and cannot reach a later one.
 
-SEVEN INJECTIONS, run in-process at the end of this file so they run on every CI
+EIGHT INJECTIONS, run in-process at the end of this file so they run on every CI
 run rather than by hand. Each builds a MUTATED copy of the service (and, for the
 widget's own, of the table), asserts the mutation is well-formed and really
 differs, then requires the named check to go red and every other in-process check
@@ -90,6 +94,10 @@ to stay green:
   F. `ApplyPlan.changes` ignores the confirmations -> check 9 fails: the dialog
      describes the offered value and applies the corrected one.
   G. negative control: the unmutated world passes every check.
+  H. a DISCONNECT rather than a source mutation, because the subject is a WIRE
+     with no module attribute to swap: the geometry list's `rowsInserted` /
+     `rowsRemoved` are unhooked and pick-then-draw goes back to offering
+     nothing, so check 15 is measuring that wire and not something else.
 
 Checks 1 (the `.hws` half), 10 and 12 drive live `AppController`s, which hold
 their own already-imported modules and no in-memory mutant reaches — so they are
@@ -249,11 +257,20 @@ def case_type_file(name="demo", characteristic=None, **extra):
 _CT = case_type_file()
 
 
-def drawing(roles=None, ct=None, geoms=None):
-    """The operator's own configuration: their curves, their ids, their choice."""
+def drawing(roles=None, ct=None, geoms=None, geom_roles=None):
+    """The operator's own configuration: their curves, their ids, their choice.
+
+    `geom_roles` defaults to the drawing already calling FAR the far field,
+    which is the EVIDENCE branch of `guess_roles`. Check 15 passes `{}` instead,
+    deliberately: with an empty geometry list that entry is pruned, so the two
+    orders it compares would otherwise start from different drawings and differ
+    in their guess REASON — a difference in input, not the asymmetry it is
+    looking for.
+    """
     cfg = MeshConfig()
     cfg.set_geom_files(list(geoms if geoms is not None else [BODY, FAR]))
-    cfg.geom_roles = {FAR: {"role": "farfield"}}
+    cfg.geom_roles = ({FAR: {"role": "farfield"}} if geom_roles is None
+                      else dict(geom_roles))
     cfg.case_type_file = ct or _CT
     cfg.case_type_roles = dict(roles or {})
     return cfg
@@ -726,6 +743,98 @@ with tempfile.TemporaryDirectory() as _tmp:
           "12. a successful apply CLEARS a previous attempt's pre-flight "
           "overlay, so the canvas stops pointing at a curve that is now fine "
           "(flag=%r)" % getattr(_ctl, "_preflight_highlight", None))
+
+    # ══ 15. the two orders are the same (story 5) ═════════════════════════
+    # "Pick the case type before I draw, or draw before I pick, so that I am not
+    # forced into an order that does not match how I think." Measured as an
+    # EQUALITY between the two orders rather than as a property of one, because
+    # the defect was precisely an asymmetry: drawing first worked, picking first
+    # left every row on `(not assigned)` with no candidate and no pre-selection,
+    # the role combos having been built against an empty drawing with nothing to
+    # rebuild them when the curves arrived.
+    def _role_rows(tbl):
+        return {r: [c.itemText(i) for i in range(c.count())]
+                for r, (c, _s) in tbl._rows.items()}
+
+    from PyQt6.QtWidgets import QFileDialog
+
+    # ORDER A: pick FIRST, then draw through the REAL Browse handler — the
+    # action a user performs, and the one that actually inserts list rows.
+    # Emitting `geom_files_changed` is NOT this test: that signal is the panel
+    # telling the controller, and a probe that emitted it would pass with the
+    # wire removed.
+    _a = AppController()
+    _a.global_mesh_config.load_from_dict(
+        drawing(roles={}, geoms=[], geom_roles={}).to_dict())
+    _a.push_panel_config(_a.main_window.mesh_config_panel, _a.global_mesh_config)
+    _ap = _a.main_window.mesh_config_panel
+    _empty = _role_rows(_ap.case_type_roles_table)
+    _real_browse = QFileDialog.getOpenFileNames
+    QFileDialog.getOpenFileNames = staticmethod(lambda *a, **k: ([BODY, FAR], ""))
+    try:
+        _ap._on_browse_geom()
+    finally:
+        QFileDialog.getOpenFileNames = _real_browse
+    _first_pick = _role_rows(_ap.case_type_roles_table)
+
+    # ORDER B: draw first, then pick.
+    _b = AppController()
+    _b.global_mesh_config.load_from_dict(
+        drawing(roles={}, geom_roles={}).to_dict())
+    _b.push_panel_config(_b.main_window.mesh_config_panel, _b.global_mesh_config)
+    _bp = _b.main_window.mesh_config_panel
+    _first_draw = _role_rows(_bp.case_type_roles_table)
+
+    check(_empty and all(len(v) == 1 for v in _empty.values()),
+          "15. with a case type picked and nothing drawn, the roles are SHOWN "
+          "with nothing to offer — the question is asked before the answer "
+          "exists (%r)" % ({k: len(v) for k, v in _empty.items()},))
+    check(_first_pick == _first_draw and _first_pick != _empty,
+          "15. ...and PICK-THEN-DRAW ends up identical to DRAW-THEN-PICK, "
+          "pre-selections and candidates alike, so neither order is the "
+          "privileged one (#158 story 5) (pick-first=%r, draw-first=%r)"
+          % ({k: len(v) for k, v in _first_pick.items()},
+             {k: len(v) for k, v in _first_draw.items()}))
+    check(any("pre-selected" in t for v in _first_pick.values() for t in v),
+          "15. ...and the pre-selection really is offered on the pick-first "
+          "route, which is the half that was missing: the combos were built "
+          "against an empty drawing and nothing rebuilt them")
+
+    # INJECTION H: a DISCONNECT, not a source mutation. The subject is a WIRE —
+    # there is no module attribute to swap for one — which is the shape
+    # `test_case_type_picker.py`'s injection D already has. The panel is live and
+    # already imported, so `world()` cannot reach it either way.
+    _m = _ap.geom_list_widget.model()
+    _m.rowsInserted.disconnect(_ap._on_field_edited)
+    _m.rowsRemoved.disconnect(_ap._on_field_edited)
+    try:
+        _c = AppController()
+        _c.global_mesh_config.load_from_dict(
+            drawing(roles={}, geoms=[], geom_roles={}).to_dict())
+        _c.push_panel_config(_c.main_window.mesh_config_panel,
+                             _c.global_mesh_config)
+        _cp = _c.main_window.mesh_config_panel
+        # The NEW panel's own wire has to go too: the disconnect above is on
+        # `_ap`, and every AppController builds its own.
+        _cm = _cp.geom_list_widget.model()
+        _cm.rowsInserted.disconnect(_cp._on_field_edited)
+        _cm.rowsRemoved.disconnect(_cp._on_field_edited)
+        QFileDialog.getOpenFileNames = staticmethod(
+            lambda *a, **k: ([BODY, FAR], ""))
+        try:
+            _cp._on_browse_geom()
+        finally:
+            QFileDialog.getOpenFileNames = _real_browse
+        _broken = _role_rows(_cp.case_type_roles_table)
+        check(_broken != _first_pick
+              and all(len(v) == 1 for v in _broken.values()),
+              "injection H. with the geometry-list wire disconnected, "
+              "pick-then-draw goes back to offering NOTHING — so check 15 is "
+              "measuring that wire and not something else (%r)"
+              % ({k: len(v) for k, v in _broken.items()},))
+    finally:
+        _m.rowsInserted.connect(_ap._on_field_edited)
+        _m.rowsRemoved.connect(_ap._on_field_edited)
 
     # ══ 10. one undo step ═════════════════════════════════════════════════
     _ctl.flush_project_snapshot()

@@ -5330,6 +5330,22 @@ axis caught both; neither had a check, and both now do (13 and 14).
   cost, `fit` having re-run `plan` internally. Check 14 pins the refusal AND the absence of the
   fallback.
 
+**AND ONE MORE, FOUND BY ASKING WHAT WAS NEXT RATHER THAN BY A GATE.** #158's story 5 — "pick
+the case type before I draw, or draw before I pick, so that I am not forced into an order that
+does not match how I think" — was broken by #170's own surface, and nothing in the 14 checks
+looked at it. Measured on two live `AppController`s driving the REAL Browse handler:
+draw-then-pick offered both pre-selections and both candidates; pick-then-draw offered
+`(not assigned)` and nothing else. The roles table refreshes on `set_config` and on every
+field-spec edit, and the geometry list is neither — so the combos were built against an empty
+drawing and nothing rebuilt them when the curves arrived. The hook is `rowsInserted` /
+`rowsRemoved` on the LIST'S MODEL and not `geom_files_changed`, which the panel emits from its
+own Browse and Remove handlers only, so a geometry added by a controller would still have
+missed. Check 15 asserts the two orders are EQUAL rather than asserting a property of one,
+because the defect was an asymmetry; injection H is a DISCONNECT, the subject being a wire with
+no module attribute to swap. **Note what the first probe got wrong**: it emitted
+`geom_files_changed` directly, which inserts no rows, so it reported the bug still present after
+the fix — the signal is the panel telling the controller, not the thing that happens.
+
 Two smaller corrections came with them. The Apply button was disabled whenever a plan could not be
 built, which greys it out for every reason the operator could act on and states none — it is now
 live whenever a case type is chosen, and pressing it produces the refusal that names which. And
