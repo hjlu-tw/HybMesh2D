@@ -45,10 +45,19 @@ rests on and times what, and `exceeds` — the one comparison both that module a
 """
 from __future__ import annotations
 
-#: The three figures the mesher publishes, over the whole mesh and over each half
-#: of the split. Built by product rather than written out nine times, so a fourth
-#: figure or a third half cannot reach one list and miss another.
-_SETS = ("", "layer", "bulk")
+#: The three figures the mesher publishes, over the whole mesh, over each half of
+#: the split, and — since #175 — over the SIZE JUMP, which is a second quantity
+#: and not a fourth set of the shape metric: the area ratio between structured
+#: quads that share an edge, published as its own `mesh.size_jump` object beside
+#: `mesh.quality`. Built by product rather than written out twelve times, so a
+#: further figure or set cannot reach one list and miss another.
+#:
+#: THE SIZE JUMP IS NOT GATED BY A CASE TYPE'S `metric`, and that is deliberate.
+#: `metric` names which CELL SHAPE was measured, and a mesh measured with the
+#: other path's is `not determinable` because the two are not comparable (#130).
+#: The size jump is neither path's cell shape; it is absent on the hybrid path and
+#: present on this one, which `figures_for` answers by its presence alone.
+_SETS = ("", "layer", "bulk", "size_jump")
 _FIELDS = ("median", "p95", "max")
 FIGURE_KEYS = tuple(f"{s}.{f}" if s else f for s in _SETS for f in _FIELDS)
 
@@ -136,16 +145,36 @@ def split_key(key: str) -> tuple:
 
 
 def figures_for(summary, set_name: str):
-    """The `ShapeFigures` a key's set names, or ``None`` when it is absent.
+    """The figures a key's set names, or ``None`` when that set is absent.
 
-    Only a HALF is ever absent, and only on a sidecar from a path that did not
-    split — the whole-mesh set IS the summary. Duck-typed on purpose: this module
-    knows the shape of `mesh_shape_stats.ShapeSummary` and imports nothing from
-    it, so the figure vocabulary stays free of the sidecar reader.
+    TWO SETS CAN BE ABSENT AND THEY MEAN DIFFERENT THINGS (#175 widened this from
+    one). A HALF is absent on a sidecar from a path that did not SPLIT; the SIZE
+    JUMP is absent on a path that does not MEASURE it, having no structured quad
+    to measure — the hybrid path. The whole-mesh set IS the summary and is never
+    absent. `absence_detail` below is what keeps a caller from reporting one of
+    those as the other.
+
+    Duck-typed on purpose: this module knows the shape of
+    `mesh_shape_stats.ShapeSummary` and imports nothing from it, so the figure
+    vocabulary stays free of the sidecar reader — which is also why a
+    `JumpFigures`, whose count is named `pairs` rather than `cells`, needs no
+    change here at all.
     """
     if not set_name:
         return summary
     return getattr(summary, set_name, None)
+
+
+def absence_detail(set_name: str) -> str:
+    """WHY a set is absent, in the words a verdict shows the operator (#175).
+
+    One owner because there are now two reasons and a caller that picked the
+    wrong one would tell the operator their mesh did not split when what really
+    happened is that their generation path does not measure this at all.
+    """
+    if set_name == "size_jump":
+        return "this generation path does not measure the size jump"
+    return "this run published no layer/bulk split"
 
 
 class Origin:

@@ -78,6 +78,7 @@ from app.services.case_type_reference import BOUNDS
 from app.services.case_type_reference import COUNTER  # noqa: F401
 from app.services.case_type_reference import EXEMPLAR  # noqa: F401
 from app.services.case_type_reference import KINDS  # noqa: F401
+from app.services.case_type_reference import absence_detail  # noqa: F401
 from app.services.case_type_reference import exceeds  # noqa: F401
 from app.services.case_type_reference import FIGURE_KEYS
 from app.services.case_type_reference import figures_for  # noqa: F401

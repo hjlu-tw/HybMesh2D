@@ -312,11 +312,13 @@ class of problem and authored by someone who knows that class. Read
   beside two good ones is NOT the milder answer.
 - **A case type NAMES its metric** and a mesh measured with the other path's metric is `not
   determinable` — `quad_midline_ratio` against `tri_edge_ratio` is comparing nothing (#130).
-- **ONLY the CELL SHAPE figures can carry a threshold.** Inverted counts, non-orthogonality and
+- **CELL SHAPE AND THE SIZE JUMP CARRY THRESHOLDS (#175).** Inverted counts, non-orthogonality and
   the wall first-cell error are on the `HYBMESH_MB_QUALITY` stdout line and not in the sidecar, so
   the only route to `unusable` from a fold is the exit code. A capability refusal, not a coverage
   limit: reading them would mean parsing the mesher's stdout, a second contract beside the one
-  #131 made the single owner.
+  #131 made the single owner — the limit is WHERE a number is, not which deserve one; #175 lifted
+  it by PUBLISHING one (`mesh.size_jump`, as a `JumpFigures` counting `pairs`; absent = not
+  measured there).
 - **A threshold is an UPPER bound with two levels** (`attention`, `unusable`; either may be
   omitted), because every published figure is a ratio whose floor is 1.0. **Advice is REQUIRED**
   — "needs attention" with nothing to try is a dead end — and **an unknown key is REFUSED at both

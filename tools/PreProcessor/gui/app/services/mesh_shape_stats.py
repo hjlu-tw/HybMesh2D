@@ -125,6 +125,36 @@ class ShapeFigures:
                 % (self.cells, self.median, self.p95, self.max))
 
 
+class JumpFigures:
+    """The SIZE JUMP's published set: a pair count and the same three numbers.
+
+    A SIBLING of `ShapeFigures`, not a fourth instance of it, and the difference
+    is the count's NAME (#175, the sidecar half of #174). This set describes the
+    area ratio between two structured quads that share an edge, so what it counts
+    is PAIRS — on a mesh of N structured quads neither N nor a fixed multiple of
+    it — and calling that `cells` would make two different quantities look like
+    one under two spellings. The mesher's own struct refuses the same rename.
+
+    `measured` follows `ShapeFigures`' rule exactly, for its reason: this metric's
+    floor is also 1.0, so a 0.0 could only ever be an absent measurement wearing a
+    number, and the writer emits `pairs: 0` with NEGATIVE figures instead.
+    """
+
+    __slots__ = ("metric", "pairs", "median", "p95", "max")
+
+    def __init__(self, metric: str, pairs: int, median: float, p95: float,
+                 maximum: float):
+        self.metric = metric
+        self.pairs = pairs
+        self.median = median
+        self.p95 = p95
+        self.max = maximum
+
+    @property
+    def measured(self) -> bool:
+        return self.pairs > 0 and min(self.median, self.p95, self.max) >= 0.0
+
+
 class ShapeSummary(ShapeFigures):
     """The `mesh.quality` object of one sidecar, as the mesher wrote it.
 
@@ -139,17 +169,25 @@ class ShapeSummary(ShapeFigures):
     is an ordinary measured state and must read as `not measured`, not as absent.
     """
 
-    __slots__ = ("metric", "source", "layer", "bulk")
+    __slots__ = ("metric", "source", "layer", "bulk", "size_jump")
 
     def __init__(self, metric: str, cells: int, median: float, p95: float,
                  maximum: float, source: str = "",
                  layer: "ShapeFigures | None" = None,
-                 bulk: "ShapeFigures | None" = None):
+                 bulk: "ShapeFigures | None" = None,
+                 size_jump: "JumpFigures | None" = None):
         super().__init__(cells, median, p95, maximum)
         self.metric = metric
         self.source = source
         self.layer = layer
         self.bulk = bulk
+        # A SECOND QUANTITY, ``None`` when the producing path does not measure it
+        # — the hybrid path has no structured quads, so its sidecar carries no
+        # `size_jump` key at all. That absence is NOT the split's absence wearing
+        # another name: a half is absent because a path did not SPLIT, this is
+        # absent because a path did not MEASURE, and `pairs: 0` with negative
+        # figures is a third state again (it measured and found no pair).
+        self.size_jump = size_jump
 
     @property
     def split(self) -> bool:
@@ -201,6 +239,22 @@ def _half_from_json(raw) -> ShapeFigures | None:
                         p95=float(raw["p95"]), maximum=float(raw["max"]))
 
 
+def _jump_from_json(raw) -> "JumpFigures | None":
+    """The `mesh.size_jump` object, or ``None`` when the sidecar carries none.
+
+    Read off `mesh`, not off `quality`: it is a SIBLING key there because it is a
+    different quantity, and nesting it would put a second metric name inside an
+    object whose own `metric` means the other one. Every field by subscript —
+    unlike the split's two halves, this object is all-or-nothing, so one missing
+    field is a malformed sidecar rather than an older one.
+    """
+    if not isinstance(raw, dict):
+        return None
+    return JumpFigures(metric=str(raw["metric"]), pairs=int(raw["pairs"]),
+                       median=float(raw["median"]), p95=float(raw["p95"]),
+                       maximum=float(raw["max"]))
+
+
 def read_shape_summary(mesh_path: str) -> ShapeSummary | None:
     """The mesh's shape summary, or ``None`` when there is none to read.
 
@@ -246,6 +300,7 @@ def read_shape_summary(mesh_path: str) -> ShapeSummary | None:
             source=path,
             layer=layer,
             bulk=bulk,
+            size_jump=_jump_from_json(doc["mesh"].get("size_jump")),
         )
     except (KeyError, TypeError, ValueError, OSError) as exc:
         # A sidecar written before the mesher measured shape has no `quality`

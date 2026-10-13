@@ -33,6 +33,37 @@ first draft of this file claimed the host for itself and said so in the same bre
 in any rule file reaches", which was true of the globs and false of the governance; a reader
 following only one of the two would have believed they had the whole rule.
 
+**THE FIGURE VOCABULARY IS A PRODUCT, AND A NEW SET JOINS EVERY CONSUMER AT ONCE**
+(`FIGURE_KEYS` in `services/case_type_reference.py`; #160, widened by #175).
+- **`("", "layer", "bulk", "size_jump") x ("median", "p95", "max")`, built by PRODUCT rather than
+  written out twelve times.** #175 added the fourth SET by adding one string, and
+  `size_jump.median|p95|max` reached the authoring step, the evidence derivation, the verdict and
+  the document validator with no edit in any of them — the property the product exists for, and
+  the reason a figure cannot arrive in one list and be missing from another.
+- **`figures_for` is a `getattr` and is DUCK-TYPED, which is what makes a differently-shaped set
+  free.** The size jump's own class counts **`pairs`**, not `cells` — it counts PAIRS of structured
+  quads, and on a mesh of N quads that is neither N nor a fixed multiple of it, so the mesher's
+  struct, the sidecar key and this class all refuse the rename together. Both consumers
+  (`case_type_author.measured_figures`, `case_type_verdict.judge_threshold`) read only `.measured`
+  and the three fields, so neither noticed.
+- **THE SIZE JUMP IS NOT GATED BY THE CASE TYPE'S `metric`.** That field names which CELL SHAPE was
+  measured, and `quad_midline_ratio` against `tri_edge_ratio` is `not determinable` because those
+  two are incomparable (#130). The size jump is NEITHER path's cell shape; its PRESENCE alone
+  answers whether it can be judged, and it is absent exactly where it is not measured.
+- **TWO SETS CAN BE ABSENT AND THEY MUST NOT SHARE A SENTENCE** (`absence_detail`, one owner). A
+  HALF is absent on a sidecar from a path that did not SPLIT — the operator can ask for it. The
+  SIZE JUMP is absent on a path that does not MEASURE it, having no structured quad, which is the
+  hybrid path — asking again will not help. The hardcoded sentence it replaced ("this run published
+  no layer/bulk split") would have been said to a hybrid-path operator, where it is false AND
+  unactionable. Gated by `tests/test_case_type_verdict.py` check 15, which asserts the two strings
+  DIFFER rather than only that each contains its own words — a single sentence containing both
+  would pass the weaker form. Reverting `absence_detail` to one string reddens that check alone.
+- **A FULLY MEASURED REFERENCE BOUNDS ALL TWELVE**, which is what `tests/test_case_type_author.py`
+  checks 2, 3 and 6 ask. Its `split_summary` fixture therefore carries the size jump BY DEFAULT;
+  the verdict gate's same-named fixture makes it OPT-IN instead, because that file's checks are
+  about what a verdict says when a figure is ABSENT. Two fixtures, two defaults, each matching the
+  question its file asks.
+
 **A MISJUDGED THRESHOLD IS CORRECTED WITH EVIDENCE, NEVER BY EDITING THE NUMBER**
 (`services/case_type_evidence.py` = the derivation over a SET of reference meshes and the
 invariants a document must obey, `services/case_type_author.py::add_reference` = the step,

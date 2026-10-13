@@ -183,11 +183,27 @@ change.
   where a bar on it may live.
 - **It is a ROW OF ITS OWN on the banner, not a sub-row of the shape headline** — that figure is
   computed inside one cell and this one between two, so it decomposes nothing above it.
+- **IT IS IN THE SIDECAR TOO, AS `mesh.size_jump` BESIDE `mesh.quality` — never inside it**
+  (`MeshSizeJump` in `include/Provenance.hpp`; #175). `quality.metric` names which CELL SHAPE was
+  measured and its three sets are that one metric sliced three ways; this is a different quantity
+  with its own `metric` name, so nesting it would put two metric names in one object whose
+  `metric` key means the other one. **`pairs` there as well, for the field's own reason.**
+  - **THREE STATES, AND THE FLAG IS WHAT KEEPS TWO OF THEM APART.** `MeshSizeJump::present` is
+    false on the HYBRID path, which has no structured quad, so that sidecar carries NO `size_jump`
+    key: absent means "this path does not measure it". A multi-block run ALWAYS writes the object,
+    so `pairs: 0` with negative figures means "it measured and found no pair". Collapsing the two
+    tells an operator their run found nothing when nothing was looked for.
+  - **IT IS WHAT LETS A CASE TYPE BOUND IT**, which is the whole point of putting it there:
+    `gui-handoff.md`'s "ONLY the CELL SHAPE figures can carry a threshold" was a CAPABILITY refusal
+    about where the numbers were, so one in the sidecar lifts it for this figure without touching
+    #131's single-owner rule. The figure KEYS and the absence sentence are `.claude/rules/gui-evidence.md`'s, which owns
+    the vocabulary a threshold is expressed in; the verdict is `gui-handoff.md`'s.
 - Gated by `tests/cpp/test_mb_quality.cpp` checks 11a-11e, whose every expected value is a CLOSED
   FORM of the document rather than a number read off a run: a uniform block steps by nothing, a
   block graded at 1.5 has a worst step of exactly 1.5 and a median of exactly 1.25, and two blocks
   whose widths differ by 2 step by exactly 2 across their shared interface. **Its injections are
-  HAND runs, dated 2026-10-12 in that file's docstring.**
+  HAND runs, dated 2026-10-12 in that file's docstring.** The SIDECAR half is gated from the GUI
+  side — `tests/test_case_type_author.py` and `tests/test_case_type_verdict.py` check 15.
 
 **THE REPORT SEPARATES THE WALL-CLUSTERED QUADS FROM THE REST, BESIDE THE WHOLE-MESH FIGURES AND
 NEVER INSTEAD OF THEM** (`wallBandMask` in `src/MbQuality.cpp`, `printMbQuality` in `src/cli.cpp`;

@@ -136,12 +136,40 @@ inline std::string gmshVersionFallback() {
 // THE WHOLE-MESH KEYS DO NOT MOVE. `cells`, `median`, `p95` and `max` stay where
 // #129 put them, directly on `quality`, so a reader that knows only those keys
 // still reads the figures it always read out of a sidecar written after this work.
+// THE SIZE JUMP, as its own object and NEVER folded into the shape figures
+// (issue #175, the sidecar half of #174). It is a SECOND QUANTITY measured on the
+// same mesh — the area ratio between structured quads that share an edge — not a
+// third set of the shape metric, so it carries its own `metric` name and its own
+// count, and the writer puts it BESIDE `quality` rather than inside it.
+//
+// `pairs`, not `cells`: what it counts is pairs of quads, and on a mesh of N
+// structured quads that is neither N nor a fixed multiple of it.
+//
+// `present` is the ABSENT state and it is a real one: the hybrid path has no
+// structured quads and measures nothing here, so its sidecar carries no
+// `size_jump` key at all. That is distinct from `pairs: 0` with negative figures,
+// which is "this path measured and found no pair" — the same three-state
+// discipline `MeshQuality::split` and `ShapeStats` already keep, and the reason
+// neither absence may be spelled as a zero.
+struct MeshSizeJump {
+    bool present = false;               // false -> no size_jump object is written
+    std::string metric;                 // the quantity's own name
+    size_t pairs = 0;
+    double median = -1.0;
+    double p95 = -1.0;
+    double max = -1.0;
+};
+
 struct MeshQuality {
     std::string metric;                 // empty -> no quality object is written
     hybmesh::ShapeStats shape;
     bool split = false;                 // false -> no layer/bulk keys are written
     hybmesh::ShapeStats layer;          // the near-surface cells
     hybmesh::ShapeStats bulk;           // the rest
+    // Carried HERE rather than as a second parameter of `writeProvenance`, so the
+    // three call sites keep handing one object to one writer; it is a sibling KEY
+    // in the file, which is what keeps the two quantities apart for a reader.
+    MeshSizeJump sizeJump;
 };
 
 // Write "<basename>.provenance.json" next to the export. `basename` is the output
@@ -200,6 +228,27 @@ inline bool writeProvenance(const std::string& basename,
         }
         qs << " }";
         ofs << qs.str();
+    }
+    if (quality.sizeJump.present) {
+        // A SIBLING OF `quality`, not a member of it. The two describe the same
+        // mesh and measure different things: `quality.metric` names what one cell
+        // looks like, this names how far two neighbours are apart in size. Nesting
+        // it would put two metric names inside one object whose `metric` key means
+        // the other one — the shape a reader cannot disambiguate.
+        //
+        // Same fixed precision as the block above, so a reader comparing this
+        // against the `adjacent_area_ratio_*` tokens on stdout compares the same
+        // digits.
+        std::ostringstream js;
+        js << std::fixed;
+        js.precision(6);
+        js << ", \"size_jump\": { \"metric\": \""
+           << jsonEscape(quality.sizeJump.metric) << "\", \"pairs\": "
+           << quality.sizeJump.pairs
+           << ", \"median\": " << quality.sizeJump.median
+           << ", \"p95\": " << quality.sizeJump.p95
+           << ", \"max\": " << quality.sizeJump.max << " }";
+        ofs << js.str();
     }
     ofs << " },\n";
     ofs << "  \"inputs\": [\n";

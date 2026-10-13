@@ -867,6 +867,18 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     quality.split = true;
     quality.layer = q.structuredLayerShape;
     quality.bulk = q.structuredBulkShape;
+    // THE SIZE JUMP INTO THE SIDECAR (issue #175, the half #174 left out). Set
+    // UNCONDITIONALLY on this path, including when nothing was measurable: a
+    // `pairs: 0` with negative figures says "this run looked and found no pair",
+    // which is a different fact from the key being absent — and absent is what the
+    // HYBRID path leaves, having no structured quad to measure. The flag is what
+    // keeps those two apart; see MeshSizeJump.
+    quality.sizeJump.present = true;
+    quality.sizeJump.metric = "adjacent_area_ratio";
+    quality.sizeJump.pairs = q.adjacentAreaRatio.pairs;
+    quality.sizeJump.median = q.adjacentAreaRatio.median;
+    quality.sizeJump.p95 = q.adjacentAreaRatio.p95;
+    quality.sizeJump.max = q.adjacentAreaRatio.max;
     // WHETHER THE SOLVE FINISHED, beside what it produced.
     //
     // The three endings are decided ONCE, in the seam, and are read here as flags —

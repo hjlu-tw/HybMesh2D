@@ -832,13 +832,81 @@ exactly 2 across their shared interface. Injection Y takes the ratio the wrong w
 and reddens 11b and 11c but NOT 11a — a uniform block reads 1.0 either way, which is
 why a uniform fixture alone could not have gated this.
 
-WHAT IS NOT DONE. The figure is not in the `.provenance.json` sidecar, so the case
-types one layer up cannot judge against it yet; that is a deliberate boundary and not
-an oversight — the sidecar's `mesh.quality` is the cell-shape contract #131 and #132
-read, and widening it reaches the GUI parity gate and the verdict layer. And no
-threshold, colour or grade attaches to it anywhere, for the reason every figure
-beside it carries: what ratio is too big depends on the solver's reconstruction and
-on where in the mesh it sits.
+NO THRESHOLD, COLOUR OR GRADE attaches to it ANYWHERE IN THE MESHER, for the reason
+every figure beside it carries: what ratio is too big depends on the solver's
+reconstruction and on where in the mesh it sits.
+
+~~WHAT IS NOT DONE. The figure is not in the `.provenance.json` sidecar, so the case
+types one layer up cannot judge against it yet.~~ **CLOSED by #175, the ticket after
+it**, and the sentence is kept as a specimen because its stated reason was half
+wrong. The deliberate boundary was real — `mesh.quality` is the cell-shape contract
+#131 and #132 read — but "widening it reaches the GUI parity gate" was NOT: that gate
+(`tests/test_gui_cpp_config_parity.py`) compares `.dat` CONFIG keys between
+`models/mesh_config_io.py` and `include/Config.hpp`, and the provenance sidecar is not
+in its subject at all. The cost was named from the wrong file. What #175 actually
+touched is below.
+
+**THE SIZE JUMP IN THE SIDECAR, AND WHAT IT UNLOCKED** (`MeshSizeJump` in
+`include/Provenance.hpp`, filled in `src/cli.cpp`; issue #175).
+
+#174 put the figure on the banner and on the machine-readable line. Neither is a
+contract the GUI reads: #131 made `mesh.quality` in the `.provenance.json` sidecar
+the SINGLE OWNER of what a mesh published, precisely so no host would parse the
+mesher's stdout. So the figure existed and the layer that judges meshes could not
+see it.
+
+`.claude/rules/gui-handoff.md` had already written that limit down, and its wording
+is what made this ticket obvious: *"ONLY the CELL SHAPE figures can carry a
+threshold. Inverted counts, non-orthogonality and the wall first-cell error are on
+the `HYBMESH_MB_QUALITY` stdout line and not in the sidecar, so the only route to
+`unusable` from a fold is the exit code. A capability refusal, not a coverage
+limit."* The refusal was about WHERE the numbers were, not about which numbers
+deserve a bound — so putting one in the sidecar lifts it for that one figure without
+touching the single-owner rule at all.
+
+A SIBLING KEY, NOT A FOURTH SET. `mesh.size_jump` sits beside `mesh.quality` rather
+than inside it. `quality.metric` names which CELL SHAPE was measured, and the three
+sets under it (whole, layer, bulk) are that one metric sliced three ways. The size
+jump is a different quantity with its own metric name, so nesting it would put two
+metric names in one object whose `metric` key means the other one — a file a reader
+cannot disambiguate, and the shape #142's refusal is about one level up.
+
+THREE STATES, NOT TWO, and the third is the one that needed the flag. The hybrid path
+has no structured quads, so its sidecar carries NO `size_jump` key: absent means
+"this path does not measure it". A multi-block run always writes the object, and
+`pairs: 0` with negative figures means "it measured and found no pair". Collapsing
+those two would tell an operator on the hybrid path that their run found nothing,
+when the truth is that nothing was looked for.
+
+AND THAT DISTINCTION REACHED THE OPERATOR'S SCREEN, which is the part a gate had to
+hold. `case_type_verdict.judge_threshold` explained every absent set with one
+hardcoded sentence — "this run published no layer/bulk split" — correct while only a
+HALF could be absent. A size-jump threshold on a hybrid mesh would have said it too:
+false, and unactionable. `absence_detail` is now one owner for both sentences, and
+`test_case_type_verdict.py` check 15 asserts they are not the same string. Reverting
+it to the single sentence reddens that check and nothing else.
+
+THE FIGURE VOCABULARY GREW BY PRODUCT, NOT BY HAND. `FIGURE_KEYS` was
+`("", "layer", "bulk") x ("median", "p95", "max")`; it is now a four-set product, so
+`size_jump.median|p95|max` arrived in the authoring step, the evidence derivation,
+the verdict and the document validator at once, with no edit in any of them.
+`figures_for` needed no change either, being a `getattr` — which is also why a
+`JumpFigures` whose count is named `pairs` rather than `cells` costs nothing: the two
+consumers read only `.measured` and the three fields.
+
+MEASURED END TO END on the twelve-block cylinder-in-channel #174 came from. A case
+type authored from the shipped O-grid bounds `size_jump.max` at 2.337 (attention) and
+4.674 (unusable), both its exemplar's own 1.558 times the standing factors. The same
+mesh at 0 sweeps reads `needs attention` on cell shape alone; at 20 sweeps its size
+jump is 10.184 and the verdict is **unusable**, naming the figure, the bound, the gap
+and the maintainer's advice. That is the sentence the whole chain exists to produce,
+and before this ticket no case type could reach it.
+
+WHAT IS NOT DONE. The panel and the headless report line still show the cell-shape
+summary only, so an operator meets this figure through a VERDICT or not at all; the
+sidecar carries it either way, which is what the judging layer needed. And the hybrid
+path still publishes no smoothness figure of any kind — it has no structured quad, so
+this is a different measurement rather than a port of this one.
 
 **THE WALL BAND: what the O-grid's p95 was describing** (`wallBandMask` in
 `src/MbQuality.cpp`; issue #144, parent #128, and the multi-block twin of #143).

@@ -246,7 +246,7 @@ def judge_threshold(threshold: case_type_mod.Threshold, summary) -> Reason:
     figures = case_type_mod.figures_for(summary, set_name)
     if figures is None:
         return Reason(threshold.key, NOT_DETERMINABLE, advice=threshold.advice,
-                      detail="this run published no layer/bulk split")
+                      detail=case_type_mod.absence_detail(set_name))
     if not figures.measured:
         return Reason(threshold.key, NOT_DETERMINABLE, advice=threshold.advice,
                       detail="the mesher looked and could not measure it")

@@ -224,6 +224,10 @@ from app.services import mesh_shape_stats  # noqa: E402
 OGRID = dict(cells=4608, median=1.845977, p95=23.662285, maximum=32.767868)
 OGRID_LAYER = dict(cells=2304, median=5.184358, p95=28.507718, maximum=32.767868)
 OGRID_BULK = dict(cells=2304, median=1.692763, p95=1.877756, maximum=1.881891)
+#: The SIZE JUMP the same run publishes (#175), beside `quality` rather than in
+#: it. Its count is `pairs`, and the figures are the shipped O-grid's own at the
+#: default cap — read off the run, like the three sets above.
+OGRID_JUMP = dict(pairs=9120, median=1.001487, p95=1.297427, maximum=1.557973)
 #: What the mesher writes for a set it looked at and could not measure: the
 #: count 0 and the three figures NEGATIVE together (include/CellShape.hpp).
 UNMEASURED = dict(cells=0, median=-1.0, p95=-1.0, maximum=-1.0)
@@ -234,19 +238,29 @@ ADVICE = {"median": "Put more points round the body.",
 
 
 def summary(metric="quad_midline_ratio", whole=None, layer=None, bulk=None,
-            source="<constructed>"):
+            size_jump=None, source="<constructed>"):
     """A `ShapeSummary` as the sidecar reader would have produced one."""
     whole = dict(OGRID if whole is None else whole)
     return mesh_shape_stats.ShapeSummary(
         metric=metric, source=source,
         layer=None if layer is None else mesh_shape_stats.ShapeFigures(**layer),
         bulk=None if bulk is None else mesh_shape_stats.ShapeFigures(**bulk),
+        size_jump=None if size_jump is None
+        else mesh_shape_stats.JumpFigures(metric="adjacent_area_ratio", **size_jump),
         **whole)
 
 
 def split_summary(**kw):
+    """A FULLY MEASURED multi-block summary: both halves AND the size jump.
+
+    The size jump joined this fixture with #175 and the default is deliberate:
+    checks 2, 3 and 6 all ask what a reference that measured EVERYTHING records,
+    and a default that stopped at the shape metric would have left the new figure
+    outside every one of them while they still read as full coverage.
+    """
     kw.setdefault("layer", OGRID_LAYER)
     kw.setdefault("bulk", OGRID_BULK)
+    kw.setdefault("size_jump", OGRID_JUMP)
     return summary(**kw)
 
 
@@ -712,7 +726,13 @@ def _write_sidecar(mesh_path, metric="quad_midline_ratio"):
         "layer": {"cells": OGRID_LAYER["cells"], "median": OGRID_LAYER["median"],
                   "p95": OGRID_LAYER["p95"], "max": OGRID_LAYER["maximum"]},
         "bulk": {"cells": OGRID_BULK["cells"], "median": OGRID_BULK["median"],
-                 "p95": OGRID_BULK["p95"], "max": OGRID_BULK["maximum"]}}}}
+                 "p95": OGRID_BULK["p95"], "max": OGRID_BULK["maximum"]}},
+        # A SIBLING OF `quality`, which is where the writer puts it: it is a
+        # second quantity and not a fourth set of the shape metric, so a fixture
+        # that nested it would be testing a file the mesher does not produce.
+        "size_jump": {"metric": "adjacent_area_ratio", "pairs": OGRID_JUMP["pairs"],
+                      "median": OGRID_JUMP["median"], "p95": OGRID_JUMP["p95"],
+                      "max": OGRID_JUMP["maximum"]}}}
     with open(base + ".provenance.json", "w", encoding="utf-8") as fh:
         json.dump(doc, fh)
 

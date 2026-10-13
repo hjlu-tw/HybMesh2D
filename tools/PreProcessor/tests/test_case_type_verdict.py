@@ -234,26 +234,37 @@ from app.services import mesh_shape_stats  # noqa: E402
 OGRID = dict(cells=4608, median=1.845977, p95=23.662285, maximum=32.767868)
 OGRID_LAYER = dict(cells=2304, median=5.184358, p95=28.507718, maximum=32.767868)
 OGRID_BULK = dict(cells=2304, median=1.692763, p95=1.877756, maximum=1.881891)
+#: The SIZE JUMP the same run publishes (#175). Its count is `pairs`, and the
+#: figures are the shipped O-grid's own at the default cap.
+OGRID_JUMP = dict(pairs=9120, median=1.001487, p95=1.297427, maximum=1.557973)
 #: What the mesher writes for a set it looked at and could not measure: the
 #: count 0 and the three figures NEGATIVE together (include/CellShape.hpp).
 UNMEASURED = dict(cells=0, median=-1.0, p95=-1.0, maximum=-1.0)
 
 
-def summary(metric="quad_midline_ratio", whole=None, layer=None, bulk=None):
+def summary(metric="quad_midline_ratio", whole=None, layer=None, bulk=None,
+            size_jump=None):
     """A `ShapeSummary` as the sidecar reader would have produced one."""
     whole = dict(OGRID if whole is None else whole)
     return mesh_shape_stats.ShapeSummary(
         metric=metric, source="<constructed>",
         layer=None if layer is None else mesh_shape_stats.ShapeFigures(**layer),
         bulk=None if bulk is None else mesh_shape_stats.ShapeFigures(**bulk),
+        size_jump=None if size_jump is None
+        else mesh_shape_stats.JumpFigures(metric="adjacent_area_ratio", **size_jump),
         **whole)
 
 
-def split_summary(metric="quad_midline_ratio", whole=None, layer=None, bulk=None):
+def split_summary(metric="quad_midline_ratio", whole=None, layer=None, bulk=None,
+                  size_jump=None):
+    """A summary that SPLIT. The size jump is OPT-IN here, unlike the authoring
+    gate's fixture, because this file's checks are about what a verdict says when
+    a figure is absent — so the default must be the absence."""
     return summary(metric,
                    OGRID if whole is None else whole,
                    OGRID_LAYER if layer is None else layer,
-                   OGRID_BULK if bulk is None else bulk)
+                   OGRID_BULK if bulk is None else bulk,
+                   size_jump)
 
 
 def case_type_with(ct, *thresholds, name="Test type", metric="quad_midline_ratio"):
@@ -710,6 +721,53 @@ def _write_case_type(path, attention, unusable):
 
 
 # --- run ----------------------------------------------------------------------
+def check_two_absences_read_apart(w):
+    """An ABSENT SIZE JUMP and an ABSENT SPLIT are not the same sentence (#175).
+
+    Both come back `not determinable` and both are correct; what must differ is
+    WHY, because the two send the operator to different places. A sidecar with no
+    `layer`/`bulk` says this run did not split — the operator can ask for the
+    figure. A sidecar with no `size_jump` says this generation path does not
+    measure it at all — the hybrid path has no structured quad to measure, and
+    asking again will not help.
+
+    Before this check the detail was one hardcoded string, so a size-jump
+    threshold on a hybrid mesh told the operator their run published no
+    layer/bulk split, which is both false and unactionable.
+    """
+    ct, vd = w
+    out = []
+    jumpy = ct.Threshold("size_jump.max", attention=2.0, unusable=4.0,
+                         advice="lower the cap")
+    halfy = ct.Threshold("bulk.p95", attention=2.0, unusable=4.0,
+                         advice="coarsen the far field")
+    # A multi-block summary that split but measured no size jump is NOT a state
+    # the mesher produces; it is the hybrid shape, constructed here because the
+    # point is the SENTENCE and not which path wrote it.
+    no_jump = split_summary()
+    r_jump = vd.judge_threshold(jumpy, no_jump)
+    no_split = summary(size_jump=OGRID_JUMP)
+    r_half = vd.judge_threshold(halfy, no_split)
+    for r, want, name in ((r_jump, "does not measure the size jump", "size jump"),
+                          (r_half, "no layer/bulk split", "split")):
+        if r.state != vd.NOT_DETERMINABLE:
+            out.append("an absent %s read as %s, not `not determinable`"
+                       % (name, r.state))
+        if want not in (r.detail or ""):
+            out.append("an absent %s is explained as %r, which does not say %r"
+                       % (name, r.detail, want))
+    # AND THE TWO MUST NOT BE THE SAME STRING, which is the whole check: a single
+    # hardcoded detail passes both `in` tests above only if it contains both.
+    if r_jump.detail == r_half.detail:
+        out.append("both absences are explained by one sentence: %r" % r_jump.detail)
+    # A size jump that IS present and measured is judged like any other figure,
+    # so the absence branch is not simply swallowing the key.
+    good = split_summary(size_jump=OGRID_JUMP)
+    if vd.judge_threshold(jumpy, good).state != vd.USABLE:
+        out.append("a measured size jump inside its bound did not read as usable")
+    return out
+
+
 _ALL = {
     1: check_exit_code_parity, 2: check_file_round_trip, 3: check_four_states,
     4: check_negative_is_not_determinable, 5: check_inverted_is_unusable,
@@ -718,6 +776,7 @@ _ALL = {
     10: check_qt_free, 11: check_gui_emits_verdict,
     12: check_headless_emits_verdict, 13: check_shipped_case_type,
     14: check_verdict_names_its_file,
+    15: check_two_absences_read_apart,
 }
 
 _LABELS = {
@@ -736,6 +795,7 @@ _LABELS = {
     12: "check 12. the headless host really emits it, before the guard that raises",
     13: "check 13. the shipped case type reads the shipped O-grid as usable",
     14: "check 14. a verdict names the case type FILE that issued it, when there is one",
+    15: "check 15. an absent SIZE JUMP and an absent SPLIT are told apart, in words",
 }
 
 _REAL = world()
