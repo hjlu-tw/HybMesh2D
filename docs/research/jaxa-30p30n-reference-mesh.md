@@ -138,3 +138,51 @@ region, which a front-marching layer cannot do. **What this repo would need is a
 stops at a medial axis and matches its neighbour, rather than one that retreats and fails** —
 and that is a feature, not a parameter. Until then this geometry carries a structured ribbon
 a quarter as deep as the reference's, with everything else at or beyond the same standard.
+
+## The PARTITIONING, which is the part worth copying
+
+Cell counts were the wrong thing to match. What the reference has that this repo's structured
+path did not is a **decomposition**, and it is readable off the 20 domains' own sides:
+
+- **P1 — one band per stretch of wall, cut end to end at the body's features.** The main's
+  upper surface is one band from x = 0.03 to 0.856; the lower is a separate band that stops
+  at the cove's mouth (x = 0.7364). Features end bands; they are never crossed.
+- **P2 — bands are STACKED in the normal direction.** Main upper: 391×95 inside, 391×61
+  outside, sharing a full-length interface. Flap: 181×89 inside, 181×155 outside. Main lower:
+  391×25 and 331×25. This repo already has the shape — `config/multiblock_tworing*.dat`.
+- **P3 — the outer boundary of the outermost band FOLLOWS THE BODY.** It is not a box, not a
+  circle. This is the whole difference.
+- **P4 — a sharp tip ends its bands and starts a WAKE band**: the flap's 31×81 and 31×251 run
+  downstream from its trailing edge rather than wrapping round it.
+- **P5 — a concave pocket gets its own patch**: the main's cove is 16×71 on the blunt face,
+  79×16 and 79×40 in the cavity, plus 83×95 and 161×25 around the tail. The ribbon does not
+  continue through a cove.
+- **P6 — every band carries its own normal count** (the reference runs 16, 25, 40, 61, 71,
+  81, 89, 95, 155, 251), so a thin stretch of wall and a thick one never have to agree.
+
+### Reproduced, and what it is worth
+
+`ribbon.py` in the scratchpad builds P1–P3 and P6 in `MESH_MODE 1`: the body, then its offset
+by d1, then that curve's offset by d2, all cut at the SAME indices, filled by two stacked
+rings. The offsets come from `app/services/geometry_offset.offset_points`, which returns one
+point per source point in the same order — so **the correspondence is the identity**. There is
+no angle to cross, no star centre to find, no box node to aim at. Measured on the three
+elements, against the box-anchored O-ring the same scratchpad built for the slat:
+
+| element | wrapped to a circle/box | wrapped to its own offset |
+|---|---|---|
+| slat (the hook) | 2,165 inverted, mean 45.95°, jump 1,527× | **36 inverted, mean 9.38°, jump 67×** |
+| flap | — | 73 inverted, mean 3.82°, jump 57× |
+| main | — | 56 inverted, mean 10.49°, jump 10.4× |
+
+Two further things it measured, both of which are P4 and P5 arriving from the other direction:
+
+- **The remaining folds are all at sharp tips**, in the two blocks either side of them — and
+  that is not a tuning miss. Offsetting a cusp puts its vertex at `d / cos(half the turn)`, a
+  spike; clamping that displacement to 1.6 d was tried and made it WORSE (36 → 73 folds, jump
+  67× → 6,397×), because pulling the outer edge back pinches the band where it is thinnest.
+  **A band must not close around a cusp** — which is why the reference ends it there (P4).
+- **The main's second band caps itself at 2e−5.** `geometry_offset.largest_offset` refuses
+  anything more, because the cove's concave corner makes an outward offset self-intersect
+  almost immediately. The ribbon cannot pass through a cove — which is P5, derived here
+  rather than copied.
