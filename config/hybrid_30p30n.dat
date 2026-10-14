@@ -1,0 +1,62 @@
+# The JAXA 30P30N three-element section, meshed the way its own reference mesh is:
+# a structured near-wall ribbon on every surface, unstructured triangles outside.
+#
+# WHAT THIS IS MATCHED AGAINST, and the numbers it is held to, are in
+# docs/research/jaxa-30p30n-reference-mesh.md -- which measured the reference
+# project file itself (20 structured ribbons of ~1.5% chord, 206,370 quads;
+# 1,011,462 triangles outside them; 1.22 M cells over x in [-5,4], y in [-5,3]).
+#
+# THE ONE TARGET THIS DOES NOT REACH is the ribbon DEPTH. The boundary layer is
+# capped at 0.0038 chord here, a quarter of the reference's 0.015, and the cap
+# is not a choice: the main element's aft tongue is about 0.003 thick, so two
+# fronts growing from its two sides meet. Measured, it builds at 0.0038 and
+# fails at 0.0042 with "Critical proximity detected after retreat". The
+# reference does not grow two fronts into each other there; it lays blocks that
+# SHARE that region. Closing this gap needs a front that stops at a medial
+# axis, not a bigger number in this file.
+LENGTH_UNIT custom
+LENGTH_UNIT_METRES 0.4572          # the stowed chord, so lengths here are chords
+MESH_MODE 0
+
+DOMAIN_X_MIN -5.0
+DOMAIN_X_MAX  4.0
+DOMAIN_Y_MIN -5.0
+DOMAIN_Y_MAX  3.0
+
+SURFACE_MESH_SIZE 0.004
+AUTO_SURFACE_SIZE 1
+FARFIELD_MESH_SIZE 1.0
+# 0.014 is derived, not tuned by eye: the size field is LINEAR in the distance
+# from the boundary-layer front, so this rate is what puts ~0.0034 chord at the
+# distance where the reference's near field reads ~0.0039.
+FARFIELD_GROWTH_RATE 0.014
+
+# 60 layers, first cell 5.4e-5 chord, growth 1.005 -> 0.0038 total. The near
+# uniform normal spacing is the reference's own: its ribbons run 0.2 to 2.2 in
+# last-over-first interval, not the 50-100x of a stretched layer.
+BL_INITIAL_THICKNESS 0.00005446
+BL_GROWTH_RATE 1.005
+BL_LAYERS 60
+
+BL_CONVEX_METHOD 0
+BL_FAN_NODES 5
+BL_AUTO_FAN_NODES 1
+BL_FAN_ANGLE_THRESHOLD 60.0
+BL_CONCAVE_METHOD 5
+BL_CONCAVE_ANGLE_THRESHOLD 120.0
+BL_TRANSITION_LAYERS 3
+BL_TRANSITION_GROWTH_RATE 1.15
+BL_TRANSITION_BUFFER 2.0
+GMSH_ALGORITHM 6
+GMSH_OPTIMIZE 1
+ENABLE_COLLISION_DETECTION 1
+
+EXPORT_VTK 1
+EXPORT_STARCD 1
+BC_GEOM wall
+BC_XMIN inlet
+BC_XMAX outlet
+GEOM_FILE examples/geometries/30p30n_jaxa_slat.dat
+GEOM_FILE examples/geometries/30p30n_jaxa_main.dat
+GEOM_FILE examples/geometries/30p30n_jaxa_flap.dat
+OUTPUT_FILENAME results/meshes/hybrid_30p30n/mesh_hybrid_30p30n.vtk
