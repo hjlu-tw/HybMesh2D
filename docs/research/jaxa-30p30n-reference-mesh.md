@@ -269,3 +269,41 @@ seed. Mapping O1–O5 onto it:
   `(0.0152 − 0.0022) / 0.02 = 0.65`.
 - **O3 has no counterpart and needs none here**: tiling is how Pointwise keeps each domain
   simply connected, not a property of the mesh.
+
+### P4 implemented: the wedge replaced by a wake band
+
+Drawing the partition had made the wedge's size plain — each trailing edge threw one, the
+main's reaching x = 1.1 and the flap's x = 1.4, longer than the flap — so the band stops
+wrapping the tip. The body's loop is CUT at the tip and offset as an OPEN curve, which never
+wraps the cusp and has no miter there at all; the two ends are snapped onto the wake normal;
+the wake cut is ONE edge named by the block above it and the block below it, exactly as
+`config/multiblock_cgrid.dat` already does; and the tip is ONE corner where both ends of the
+wall band and the start of the cut meet.
+
+| | wedge (closed ring) | wake band |
+|---|---|---|
+| flap alone | 73 inverted, mean 3.82°, jump 57× | **0 inverted, mean 1.29°, jump 3.33×** |
+| two elements at 2.4 % gap | — | 0 inverted, **max 27.9°**, mean 1.37°, jump 2.48× |
+| two elements, floor | 0.7 % (and the bands crossed at 1.3 %) | **0.4 %, still 0 inverted** |
+
+The maximum non-orthogonality is the figure that moved most: about 82° with the wedge, 27.5°
+without it, because the wedge WAS the worst cell.
+
+**Five things it took to get there, all of them the mechanism telling me something true:**
+
+1. **The tip must be ONE corner.** Welding is by declaration, so the band's start corner and
+   its end corner — both at the tip — stayed two nodes and the wake cut could be a side of
+   only one of them. Refused by name.
+2. **A feature cut must keep away from the ends**, which are already cuts. The tip is the
+   sharpest point on the wall, so the points beside it rank next: the first block came out
+   5e−5 wide against a 0.004 band, four corners in a line, signed area −2e−6.
+3. **Which side the band starts on is read off the WALL, not off the offset.** At a sharp tail
+   the outward normal points nearly along the wake, so its component on the wake normal is
+   small and its SIGN is noise.
+4. **The snap must be blended.** Moving only the end point leaves a kink one point wide; the
+   cell there folds. Rotating the offset direction from the wake normal to the wall's own over
+   the first len/8 points removes it — measured: len/40 left 17 folds, len/20 and len/12 left
+   0 at jump 6.9×, len/8 gives 0 at **3.33×**.
+5. **One side of the wake runs the other way round.** Going out from the cut and then
+   downstream turns clockwise on whichever side lies clockwise of the wake; the ring itself is
+   not negotiable, so the fix is the one the refusal names second — swap south and north.
