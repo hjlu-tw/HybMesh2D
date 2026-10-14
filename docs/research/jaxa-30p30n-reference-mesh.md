@@ -307,3 +307,34 @@ without it, because the wedge WAS the worst cell.
 5. **One side of the wake runs the other way round.** Going out from the cut and then
    downstream turns clockwise on whichever side lies clockwise of the wake; the ring itself is
    not negotiable, so the fix is the one the refusal names second — swap south and north.
+
+### The two-element case with the OUTER partitioning as well
+
+O1–O5 applied to our own pair, every length scaled by the main chord (0.85 against the
+reference's stowed 1.0): domain x ∈ [−4.25, 3.4], y ∈ [−4.25, 2.55]; cap 0.0152 × 0.85 =
+0.0129; finest level 0.0022 × 0.85 = 0.0019 on a seed that runs along the slot and BOTH wakes,
+at radius (0.0129 − 0.0019)/0.02 = 0.55. Measured on the result, against the levels asked for:
+
+| level | asked | measured |
+|---|---|---|
+| slot and wakes | 0.00187 | **0.0018** |
+| around the elements | 0.0035 | 0.0039 |
+| far field (the cap) | 0.01292 | **0.0129** |
+
+1,150,486 cells (122,335 in the layer, 1,028,151 outside), bulk triangle edge ratio median
+1.000, p95 1.236, at a 1.3 % chord gap. Contouring the cell size at those three values draws
+the same picture the reference draws with domain boundaries: a fine region hugging both
+elements and running DOWNSTREAM along both wakes, an intermediate region enclosing the pair,
+and a uniform far field. **Ours is a field where the reference's is a partition**, which is the
+only structural difference — and it is why O3 has no counterpart here.
+
+> **A FALSE REFUSAL FOUND ON THE WAY, worth its own note.** With each element's outline written
+> CLOSED — the first point repeated as the last — the mesher's pairwise check reported
+> `Geometry 'two_main.dat' and geometry 'two_flap.dat' intersect` **however far apart the two
+> were moved**: 2 units of separation still refused. The two curves cross nowhere and neither
+> contains the other's first point, both verified. Removing the repeated point builds. The
+> suspect is `checkGeometriesIntersection`'s `isPointOnSegment`, whose collinearity test reads
+> `cross = 0` for a ZERO-LENGTH segment and whose bounds then read `dot(0) > squaredLength(0)`
+> as false, so every point lies "on" the degenerate closing segment. Not conclusive, because
+> the 30P30N geometries carry the same repeat and do NOT trigger it, and that contradiction is
+> left standing rather than explained away.
