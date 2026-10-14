@@ -219,3 +219,49 @@ same shape, and what lies outside it is the unstructured field's job.
 > and a quality banner with nothing to say about it. The depth is now bisected against that
 > check, and the table above is measured with it on. **A per-block quality report cannot see a
 > between-body overlap; nothing in the topology schema can either.**
+
+## The partitioning OUTSIDE the bands
+
+The bands are half of it. Outside them the reference stops following the body and follows the
+FLOW, and that half is just as explicit — eight unstructured domains, measured:
+
+| covers | triangles | median edge |
+|---|---|---|
+| x 0.856…1.213, y −0.234…0.157 — the slot and the flap's wake | 46,078 | **0.00223** |
+| x −0.4…1.4, y −0.45…−0.014 — under the elements | 100,554 | 0.00390 |
+| x −0.4…1.4, y 0.005…0.40 — over them | 68,698 | 0.00423 |
+| x −0.4…0.011, y −0.45…0.40 — ahead of them | 27,072 | 0.00430 |
+| x 1.213…1.4, y −0.45…0.40 — behind them | 14,040 | 0.00442 |
+| x −5…4, y −5…3 and two strips — the far field | 754,820 | **0.01520** |
+
+- **O1 — axis-aligned NESTED BOXES, not body-following shapes.** The box is the right tool
+  here, and only here; it was wrong when wrapped to a body, which is the whole of the earlier
+  argument in one sentence.
+- **O2 — three levels, each about 2–4× the previous**: 0.0022 → 0.0041 → 0.0152. The jump
+  across a box boundary is a real 2–4× in edge, 4–16× in area; the reference accepts it there.
+- **O3 — each level is TILED into simply-connected pieces** (the inner box into under / over /
+  ahead / behind), rather than being one domain with holes in it.
+- **O4 — the far field is CAPPED, not grown without limit.** It holds 0.0152 all the way to
+  5 chords, which is where 469,626 of the mesh's 1.01 M triangles are. A mesh is not "coarse
+  far away"; it is coarse up to a ceiling and then constant.
+- **O5 — the finest box is DOWNSTREAM**, over the slot and the wake, which no law in distance
+  from the wall can produce: at the trailing edge that distance starts growing immediately.
+
+### What this repo can express, and the thing I had misread
+
+The hybrid path's size field is `s = min(hBase + max(0, d − dBuffer) · rate, farFieldSize)`
+with `d` the distance from the boundary-layer front, plus one Threshold field per refinement
+seed. Mapping O1–O5 onto it:
+
+- **O4 is `FARFIELD_MESH_SIZE`** — exactly a cap, and the reference's own 0.0152 is what to
+  put there;
+- **the ramp between levels is `FARFIELD_GROWTH_RATE`**, linear in distance;
+- **O5 is a seed, and the seed's `radius` is an inverse GRADIENT, not a box size.** The
+  Threshold runs `size` at the seed to `farFieldSize` at `radius`, so the gradient is
+  `(farFieldSize − size) / radius`. An earlier attempt here put a seed along the chord with
+  size 0.004 and radius 0.45 **while `FARFIELD_MESH_SIZE` was 1.0** — a gradient of 2.2 per
+  unit length — and concluded "the seed did nothing", which was true and the wrong lesson. With
+  the cap at the reference's 0.0152, the radius for a 0.02-per-unit wake region is
+  `(0.0152 − 0.0022) / 0.02 = 0.65`.
+- **O3 has no counterpart and needs none here**: tiling is how Pointwise keeps each domain
+  simply connected, not a property of the mesh.
