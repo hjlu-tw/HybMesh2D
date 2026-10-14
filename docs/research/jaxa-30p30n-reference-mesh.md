@@ -239,8 +239,12 @@ FLOW, and that half is just as explicit — eight unstructured domains, measured
   argument in one sentence.
 - **O2 — three levels, each about 2–4× the previous**: 0.0022 → 0.0041 → 0.0152. The jump
   across a box boundary is a real 2–4× in edge, 4–16× in area; the reference accepts it there.
-- **O3 — each level is TILED into simply-connected pieces** (the inner box into under / over /
-  ahead / behind), rather than being one domain with holes in it.
+- **O3 — each level is TILED into simply-connected pieces, and the cuts run from the
+  rectangle's own CORNERS.** Drawing every domain's boundary rather than reading its extent
+  shows the rule: the far field is cut by DIAGONALS from the inner box's four corners to the
+  outer box's four corners, and the inner box by cuts from its four corners to the bands'
+  extremities (the slat's nose, the flap's tail). Every piece then has four-ish sides and no
+  hole. The extents in the table above are bounding boxes of those pieces, not the pieces.
 - **O4 — the far field is CAPPED, not grown without limit.** It holds 0.0152 all the way to
   5 chords, which is where 469,626 of the mesh's 1.01 M triangles are. A mesh is not "coarse
   far away"; it is coarse up to a ceiling and then constant.
