@@ -186,3 +186,36 @@ Two further things it measured, both of which are P4 and P5 arriving from the ot
   anything more, because the cove's concave corner makes an outward offset self-intersect
   almost immediately. The ribbon cannot pass through a cove — which is P5, derived here
   rather than copied.
+
+### The two-element case, rebuilt under these rules
+
+The main + flap pair this repo's structured path had fought over — NACA 4412 chord 0.85 and a
+0.32 flap deflected 30° — was rebuilt with P1–P3 and P6 and nothing else. Each element carries
+two stacked bands on its own offsets; the two elements **share nothing at all**: no box, no
+grid line, no count, no corner. The flap's position is solved for so that the surface gap is an
+input, and the band depth is then bisected down until the two outermost band edges do not meet:
+
+| surface gap | band depth | inverted | non-orthogonality (mean) | neighbour area ratio |
+|---|---|---|---|---|
+| 11.8 % chord | 0.0369 | 0 | 5.98° | 10.08× |
+| 4.7 % | 0.0139 | 0 | 6.31° | 4.55× |
+| 2.9 % | 0.0082 | 0 | 6.48° | 3.12× |
+| 1.8 % | 0.0044 | 0 | 6.61° | 2.16× |
+| **1.3 % (the real 30P30N flap gap)** | 0.0028 | **0** | **6.65°** | **1.75×** |
+| 0.7 % | 0.0012 | 0 | 6.68° | 1.35× |
+
+Against the box-anchored family on the same two sections: its floor was **3.7 % chord** (43
+cells folded there, 0 at 4.0 %), its best mean non-orthogonality 10.12° and its best neighbour
+area ratio 6.28×. The bands reach **0.7 %** with 0 inverted at 6.68° and 1.35×, and the figures
+get BETTER as the elements close rather than worse, because a thinner band is a more uniform
+one. What the mesh covers is different and the comparison must say so: the box family meshed
+the whole domain, these bands mesh only themselves — the reference's structured region is the
+same shape, and what lies outside it is the unstructured field's job.
+
+> **A DEFECT THIS FOUND IN ITSELF.** Two bodies' band stacks share nothing, which is what frees
+> them — and it is also why **a band of one can run straight THROUGH a band of the other and
+> still be reported as 0 inverted cells**, since every block is sound in itself. The first run
+> at the 1.3 % gap did exactly that: three proper crossings between the two outermost edges,
+> and a quality banner with nothing to say about it. The depth is now bisected against that
+> check, and the table above is measured with it on. **A per-block quality report cannot see a
+> between-body overlap; nothing in the topology schema can either.**
