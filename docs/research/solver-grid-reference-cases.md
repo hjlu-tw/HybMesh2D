@@ -237,25 +237,75 @@ round is about, in the same picture. Coincident points are now dropped. The rema
 edge fan still has ~0.036 % of its edges above a 4× area ratio, which is what the innermost ring
 of a fan at a cusp is, and nothing was done about it.
 
+### A corner is a step, not a cliff
+
+The outlines were drawn with a FLAT POINT COUNT PER SEGMENT — 40 a side, whatever the side
+measured — so every corner was a step-length cliff: 2.07× across the wedge ramp's x = 1.0,
+and 20×, 19×, 10× and 60× on bfs, Turek's channel, the diffuser and the two aerofoils. Each
+segment now takes a share of the points proportional to its own arc length. Two further rules
+were needed before that was actually continuous, and both were found by measuring the result:
+
+- **A segment runs to the NEXT segment's first point.** These outlines leave the corner itself
+  to the segment that starts there — the wedge's floor stops at x = 0.975 and the ramp begins at
+  x = 1.000 — so resampling a run between its own two ends leaves that last 0.025 as a short step
+  at every corner. The span now ends on the next corner and the points go at
+  `linspace(0, L, n+1)[:-1]`.
+- **The point budget is shared over the WHOLE outline, in the curvature pass too.** Normalising
+  two neighbouring segments separately put the cliff straight back: the wedge's floor came out at
+  0.0276 against the ramp's 0.0417, a 1.5× jump where there is no feature.
+
+The curvature density is also **scaled and clamped against the outline's own uniform step**. The
+sagitta rule gives a shape, not a size, and letting it spend the full 10× spread put a 0.143 face
+next to a 0.0145 one on a wedge whose uniform step is 0.042. The coarse end is now capped at 1.5×
+uniform and the profile is rescaled until it spends exactly the point budget — clamping changes
+the spend, so the two converge together. **All eighteen outlines now have a worst adjacent step
+ratio of 1.20×.** The per-segment blend-back-to-uniform that the first version used is gone: it
+could not have fixed this, because a segment given too few points has too few however they are
+placed.
+
+### A boundary that is not a wall does not grow a layer
+
+The wedge ramp's side and upper boundaries are drawn as `wall` because the outline is one closed
+loop, but the case is a ramp in a free stream and only the floor is viscous. The sidecar is
+written at **version 3** for this: version 2 has no `grow_bl` column and the mesher reads a
+missing one as 1.
+
+**Doing the same for every inlet and outlet was tried and REVERSED.** Marking them from the BC
+breaks bump, nozzle, diffuser and Turek: Gmsh returns an empty far field ("the domain loop likely
+failed to close", `HYBMESH_ERROR 6`) while the boundary layer itself is drawn correctly. Measured
+on the nozzle one end at a time — the two ends of a symmetric duct, both straight, both vertical:
+
+| nozzle | result |
+|---|---|
+| outlet no-BL, inlet grows | 24,863 cells |
+| inlet no-BL, outlet grows | **empty far field** |
+| both no-BL | **empty far field** |
+
+It is not the closing duplicate point and not where the run sits in the point list: dropping the
+duplicate and rotating the outline by half its length both reproduce it, and the junction scheme
+reports `2 handled` with no warning either way. So the no-BL table carries only what was measured
+to work — the wedge, and bfs's two outlets and inlet — and **the asymmetry is a mesher defect
+still to chase**.
+
 ### The fifteen, rebuilt again
 
 | case | layer | base + trans | cells | bulk med | bulk p95 | last layer ÷ face |
 |---|---|---|---|---|---|---|
-| bump | shallow | 2 + 5 | 14,124 | 1.067 | 1.572 | 0.95 |
-| nozzle | shallow | 2 + 5 | 25,624 | 1.062 | 1.395 | 0.95 |
-| wedge | shallow | 2 + 5 | 12,638 | 1.066 | 1.417 | 0.95 |
+| bump | shallow | 2 + 5 | 13,002 | 1.079 | 1.608 | 0.95 |
+| nozzle | shallow | 2 + 5 | 25,049 | 1.069 | 1.382 | 0.95 |
+| wedge | shallow | 2 + 5 | 12,407 | 1.065 | 1.379 | 0.95 |
 | diamond | shallow | 2 + 5 | 168,504 | 1.000 | 1.218 | 0.95 |
-| bfs | deep | 44 + 15 | 140,192 | 1.000 | 1.603 | 1.09 |
-| cavity | deep | 44 + 15 | 34,928 | 1.060 | 1.380 | 1.09 |
-| diffuser | deep | 44 + 15 | 187,308 | 1.064 | 1.411 | 1.09 |
-| turek | deep | 44 + 15 | 85,112 | 1.078 | 1.732 | 1.09 |
-| sqcyl | deep | 44 + 15 | 386,496 | 1.000 | 1.100 | 1.09 |
-| dcyl | deep | 44 + 15 | 441,792 | 1.000 | 1.177 | 1.09 |
-| tricyl | deep | 44 + 15 | 402,670 | 1.000 | 1.147 | 1.09 |
-| naca0015 | deep | 44 + 15 | 194,690 | 1.000 | 1.249 | 1.09 |
-| naca4412 | deep | 44 + 15 | 194,958 | 1.000 | 1.244 | 1.09 |
-| tandem | deep | 44 + 15 | 460,414 | 1.000 | 1.176 | 1.09 |
-| twoelem | deep | 44 + 15 | 351,462 | 1.044 | 1.323 | 1.09 |
+| bfs | deep | 44 + 15 | 289,804 | 1.056 | 1.325 | 1.09 |
+| cavity | deep | 44 + 15 | 34,950 | 1.062 | 1.376 | 1.09 |
+| diffuser | deep | 44 + 15 | 192,980 | 1.061 | 1.335 | 1.09 |
+| turek | deep | 44 + 15 | 189,682 | 1.062 | 1.407 | 1.09 |
+| sqcyl | deep | 44 + 15 | 386,494 | 1.000 | 1.100 | 1.09 |
+| dcyl | deep | 44 + 15 | 442,614 | 1.000 | 1.188 | 1.09 |
+| tricyl | deep | 44 + 15 | 401,944 | 1.000 | 1.122 | 1.09 |
+| naca0015 | deep | 44 + 15 | 194,732 | 1.000 | 1.223 | 1.09 |
+| naca4412 | deep | 44 + 15 | 195,530 | 1.000 | 1.235 | 1.09 |
+| tandem | deep | 44 + 15 | 460,222 | 1.000 | 1.169 | 1.09 |
+| twoelem | deep | 44 + 15 | 352,280 | 1.044 | 1.322 | 1.09 |
 
 The bulk stays isotropic (1.00–1.08 median, 1.10–1.73 p95), so the extra layers bought the seam
 without costing cell shape. `bfs` and `diffuser` grew most — 72k to 140k and 35k to 187k — and
@@ -263,8 +313,8 @@ that is the wall refinement, not the transition: the layers themselves REPLACE t
 field would otherwise have put there, which is why `naca0015` moved only 189,862 → 194,690.
 
 **Measured on the meshes, not on the recipe.** Adjacent-cell area ratios over every internal
-edge, before and after: `cavity` 240 edges above 4× → **0**, max 11.8 → 3.0; `naca0015` 228 → 106
-(the survivors are the trailing-edge fan). `wedge` went the other way, 1 → 25 above 4×, max 4.5
-→ 6.9 on the top wall — it is a shallow case whose five transition layers are set by a ratio of
-only 1.55 to begin with, so there was little seam to fix and the redistributed surface moved the
-far-field sizing instead.
+edge, against the first rebuild: `cavity` 240 edges above 4× → **0**, max 11.8 → 3.0; `naca0015`
+228 → 95 (the survivors are the trailing-edge fan); `wedge` 1 → 25 → **3**, the 25 being the
+intermediate state before the corners were made continuous, and the 3 that remain sitting on the
+outlet where the layer meets a boundary that does not grow one. `bump` is the worst of the
+fifteen at 111 edges (0.575 %) above 4× with a p99 of 2.95, and nothing has been done about it.
