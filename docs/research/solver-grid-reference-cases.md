@@ -488,3 +488,50 @@ against a sloped roof costs.
 `diamond2.py` wrote its twelve-segment far field over `diamond_far.dat` and the
 six-block case next door stopped loading ("edge e_out_lo binds to segment 7").
 It writes `diamond2_far.dat` now. The body is identical and is still shared.
+
+## The redistribution was eating the drawings' own grading
+
+USER-REPORTED: the two NACA sections needed more points at the trailing edge.
+They already had them. The sections are drawn COSINE-SPACED and their last faces
+run 0.0024 down to 0.0003; after the pipeline they were a flat **0.0159**.
+
+The curvature pass was not the culprit. `rebalance` — the step that fixes the
+flat-point-count-per-segment artefact — re-laid every span's points at **equal
+arc length**, which is a redistribution of its own and threw the cosine away
+before the curvature rule ever saw it. Two changes:
+
+- **`rebalance` walks the INPUT INDEX, not arc length.** It still changes how
+  many points each segment gets; it no longer changes how they are graded.
+- **The curvature pass takes the FINER of two densities** — its own, and the
+  input's — each normalised by its own 95th percentile so they are comparable.
+  A drawing with grading keeps it; a drawing without gets curvature refinement;
+  a uniformly drawn body is untouched, because there the two are the same
+  constant.
+
+With `n_surface` raised from 97 to 145 the trailing-edge face is now **0.0018**
+against a 0.0079 median.
+
+### The spread of the surface IS the spread of the layer's aspect ratio
+
+The two-element sections carry a cusp at each trailing edge and came out at a
+6x spacing spread. The ruler is the 5th-percentile face, so it sat six times
+below their median and the layer band was **0.35 % of chord** (USER-REPORTED:
+too thin). Capping those two geometries' spread at 3x lifts the ruler and the
+band goes 0.0022 -> **0.0063**. That is the trade in one line: a thicker band
+wants a more even surface, because the layer ends at ONE thickness while the
+faces under it vary.
+
+### Three more bodies take the parallelogram
+
+`sqcyl`, `dcyl` and `tricyl` join the no-fan list. Their corners are 90 and 60
+degrees, so the default `BL_PARA_FALLBACK_ANGLE` of 300 puts them through the
+SINGLE parallelogram and the corner is a clean miter.
+
+### Every case has two close-ups, framed to one rule
+
+The first is a corner or tip, the second the place where the spacing changes
+most, and **both frame the whole layer band plus a few rows of triangles** so
+the last structured cell and the first triangle can be compared by eye. The
+second windows: the bump's crest, the step's reattachment, the cavity floor, the
+diffuser's second corner, the gap between Turek's cylinder and its wall, the gap
+between the tandem cylinders, and the two-element slot exit.
