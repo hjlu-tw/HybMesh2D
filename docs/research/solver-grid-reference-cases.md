@@ -101,3 +101,60 @@ and the method reports "no layers"; over ONE unit it reports 44 at growth 1.020.
 3. **All three are triangles in the end.** Whatever the construction, the solver is fed an
    unstructured triangular grid with an explicit boundary-face list naming the owner cell —
    which is the shape this repo's STAR-CD export already has, under other names.
+
+## Every case rebuilt to this standard
+
+`redraw.py` in the scratchpad rebuilds all fifteen benchmark geometries the same way, with
+ONE choice per case — how deep the wall layer is — and everything else derived:
+
+| | shallow (the wedge's) | deep (the cone's) |
+|---|---|---|
+| layers | 2 | 44 |
+| growth | 1.010 | 1.020 |
+| first cell | face spacing / 2.4 | face spacing / 40 |
+
+plus, for every case, a surface size of 0.002 L, a far-field **cap** at 0.05 L and a linear
+growth of 0.02 from the layer front — the three things all three references do.
+
+**The first cell is set against the FACE SPACING, not against L, and the first version of the
+driver got that wrong.** Taking the cone's first cell as a fraction of its LENGTH (2.7 × 10⁻⁵ L)
+and applying it to a body whose own points are 1.7 % of L apart gives a wall cell of aspect
+ratio 600 against the reference's 38, and the overall median edge ratio came out at 105 to
+1,085 against the cone's 3.38. What the two references hold constant is the ratio of the face
+to the first cell: 38 viscous, 2.4 inviscid.
+
+| case | layer | cells | all med | bulk med | bulk p95 |
+|---|---|---|---|---|---|
+| bump | shallow | 13,198 | 1.165 | 1.064 | 1.560 |
+| nozzle | shallow | 23,894 | 1.120 | 1.064 | 1.397 |
+| wedge | shallow | 11,722 | 1.138 | 1.072 | 1.386 |
+| diamond | shallow | 167,888 | 1.000 | 1.000 | 1.230 |
+| bfs | deep | 71,988 | 4.214 | 1.000 | 1.648 |
+| cavity | deep | 29,144 | 21.249 | 1.059 | 1.332 |
+| diffuser | deep | 34,930 | 17.620 | 1.079 | 1.649 |
+| turek | deep | 72,262 | 13.893 | 1.076 | 1.709 |
+| sqcyl | deep | 380,240 | 1.000 | 1.000 | 1.111 |
+| dcyl | deep | 433,616 | 1.000 | 1.000 | 1.151 |
+| tricyl | deep | 393,728 | 1.000 | 1.000 | 1.131 |
+| naca0015 | deep | 189,862 | 1.000 | 1.000 | 1.243 |
+| naca4412 | deep | 189,696 | 1.000 | 1.000 | 1.233 |
+| tandem | deep | 456,278 | 1.000 | 1.000 | 1.175 |
+| twoelem | deep | 326,742 | 1.096 | 1.044 | 1.320 |
+| **schardin (ref)** | 2 | 461,858 | **1.170** | — | 1.454 |
+| **vki-cone (ref)** | 44 | 528,000 | **3.376** | — | 34.2 |
+
+**The bulk is isotropic in all fifteen** — median 1.00–1.08, p95 1.11–1.71 against the
+reference wedge's 1.454. The whole-mesh median is the figure that moves, and it moves with the
+layer's SHARE of the mesh rather than with its quality: on the external cases the far field is
+large so the layer is a few per cent and the median is 1.00, while on the small internal
+domains (cavity, diffuser, turek) the layer is most of the mesh and the median is 14–21. The
+cone sits between at 3.38 because its layer is 18 % of its cells. A whole-mesh median is
+therefore not a quality figure at all; it is a mixture ratio, and the **bulk** split is the one
+to read — which is the same lesson, from the other side, as the layer this note first said
+`schardin` did not have.
+
+Verified on two of them by clustering node distances: `rd_wedge` reports first 0.020833 at
+growth 1.010, `rd_cavity` first 0.000417 at growth 1.020 — the two recipes exactly. The shell
+counts come out 5 and 47 rather than 2 and 44 because `BL_TRANSITION_LAYERS 3` adds three more
+above the stack, which is the mesher's own doing and is worth knowing when a layer count is
+being compared with a reference's.
