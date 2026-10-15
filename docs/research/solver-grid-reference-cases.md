@@ -413,3 +413,78 @@ Two things it took measuring to get right:
 - **This topology must NOT be smoothed.** At `MB_SMOOTH_ITERS 20` the Winslow
   pass folds **256 cells**; at 0 there are none. It buys 1.5° of mean
   non-orthogonality and costs 24° of max.
+
+## The outermost layer, measured against the face under it
+
+USER-REPORTED on the channel bump ("over the bump it becomes a very long
+rectangle, away from it an acceptable square") and on Schäfer–Turek ("the size
+change where the layer meets the triangles is too big"). They are the same
+defect, and it was in four more cases nobody had pointed at yet.
+
+The transition grows until the layer's thickness reaches **the surface step**,
+and that step was the MEDIAN over the whole case. Wherever the wall is finer
+than the median, the outermost cell is taller than the face it stands on — the
+one shape a boundary-layer cell should never have. Measured as thickness ÷
+local face:
+
+| | before | after |
+|---|---|---|
+| bump, over the crest | 4.30 | 1.05 |
+| NACA 0015, leading edge | 2.94 | 0.91 |
+| Turek, the cylinder | **10.85** | 0.91 |
+| diamond | 1.05 | 1.05 |
+
+Turek is the extreme because its ruler was the median over the CHANNEL and the
+cylinder together: a layer growing on 0.00031 faces was sized for 0.00363 ones,
+and the channel does not even grow a layer any more.
+
+Two changes, both in `spacing()`:
+
+- **Per geometry, and only the ones that grow.** A geometry whose sidecar marks
+  every segment `grow_bl = 0` is not a ruler. Where a case has more than one
+  wall, each gets its own `BL_INITIAL_THICKNESS` and `BL_TRANSITION_LAYERS` as
+  `KEY=VALUE` tokens on its own `GEOM_FILE` / `DOMAIN_FILE` line.
+- **The finest face, not the median** — the 5th percentile, so one short face
+  cannot set it. Against the finest face the last cell is square there and FLAT
+  everywhere else, which is the right way round.
+
+### BL_PARA_FALLBACK_ANGLE is not a fallback to a fan
+
+The previous round raised it to 359 to "keep the parallelogram" on the sharp
+tips. Above that threshold the code takes the **split** parallelogram, which
+bisects the corner and is exactly what a very sharp tip wants; raising it forced
+the diamond's 11-degree tip through the SINGLE one, whose centre ray is scaled
+by `1/(1+cos)` and so shot a spike **0.105 ahead of a body 1.0 long**, with
+slivers converging on it. The default 300 is right and is left alone.
+
+### A wake that leaves along the trailing edge
+
+USER-REQUESTED on NACA 4412's structured topology. The direction is the bisector
+of the two surface tangents at the trailing edge — 0 on a symmetric section, so
+**naca0015 is bit-identical** — and on 4412 it is **-0.1333**, its camber slope
+there. Finding it needs the first neighbour that is a DIFFERENT point: the
+generator closes the loop on repeated copies of the trailing edge, so a plain
+difference gives the zero vector, which read as a 9.8-degree wake on a symmetric
+section and inverted 353 cells.
+
+**Tilting the wake alone is not enough.** With the far field's top and bottom
+left horizontal, the wake block's first cell — a few thousandths tall, because
+the radial is wall-clustered — had to cross a line falling 0.13 per unit x, and
+**315 cells folded** between x = 11 and 19. Shearing every far-field point
+downstream of the trailing edge by the same slope keeps the block's two long
+sides parallel; the nose arc is upstream and untouched, so the halves still meet.
+0 inverted, max non-orthogonality 42.55° unchanged, mean 4.85° -> 7.17°.
+
+### Both duct walls, not just the floor
+
+`nozzle` and `diffuser` wrote `ds_start` on their cross edges, which is the first
+cell at the edge's START end — the floor on every one of them — so the roof was
+left at whatever the law gave it. Both ends now. Non-orthogonality mean 1.08° ->
+2.01° on the diffuser and 5.98° -> 6.57° on the nozzle, which is what clustering
+against a sloped roof costs.
+
+### One file, two topologies
+
+`diamond2.py` wrote its twelve-segment far field over `diamond_far.dat` and the
+six-block case next door stopped loading ("edge e_out_lo binds to segment 7").
+It writes `diamond2_far.dat` now. The body is identical and is still shared.
