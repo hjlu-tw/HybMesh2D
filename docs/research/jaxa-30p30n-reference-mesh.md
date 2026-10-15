@@ -358,9 +358,15 @@ its right edge (x 1.25…2.80, y −0.60…0.20) embedded:
   its endpoints anyway.
 - **And it is priced per SPAN.** With only the two boxes (4 segments each) the build finishes
   in about the same time as without them. Adding the reference's four CORNER DIAGONALS, each
-  crossing the whole domain, puts it back into the territory where it does not finish at a
-  useful size. The boxes are O1 and O2; the diagonals are O3, which this note already said has
-  no counterpart here — now with a second reason.
+  crossing the whole domain, puts it back into the territory where it does not finish: not at
+  800 k cells, not at 150 k, and not at 30 k — three tries, stopped at 11.5, 1.6 and 0.8
+  minutes of CPU against a few seconds without them. **The obvious explanation is not the
+  right one**: I expected the endpoints to be the trouble, since each diagonal starts on a
+  corner of an already-embedded box and ends on a corner of the domain, so I trimmed them to
+  touch neither — and it made no difference. What is left is the span itself: a line six units
+  long in a field whose local size is 0.013 crosses some 460 cells, and every one of those
+  crossings is a constraint. The boxes are O1 and O2; the diagonals are O3, which this note
+  already said has no counterpart here — now with a second reason and no workaround found.
 - **An embedded boundary partitions but does not SIZE.** Our seeds are curves and points, so a
   zone's interior still takes its size from the ramp: inside the wake box the measured edge is
   0.0071 against the 0.0035 its boundary asks for, because the ramp from that boundary reaches
