@@ -318,3 +318,98 @@ edge, against the first rebuild: `cavity` 240 edges above 4× → **0**, max 11.
 intermediate state before the corners were made continuous, and the 3 that remain sitting on the
 outlet where the layer meets a boundary that does not grow one. `bump` is the worst of the
 fifteen at 111 edges (0.575 %) above 4× with a p99 of 2.95, and nothing has been done about it.
+
+
+## Reviewed case by case, and the mesher bug that review found
+
+The fifteen were read one at a time, and most of what came back was about the
+LOOK of the layer rather than its quality figures. Three recipe changes and one
+real defect.
+
+### The deep recipe departs from its reference ON PURPOSE
+
+44 layers at 1.020 off ds/40 give a wall cell 40 times longer than it is tall,
+and a band that reads as one black mass at any zoom that also shows the body:
+on naca0015 the layer's own triangle edge ratio had a **median of 16.1**. The
+deep class is now **25 layers, growth 1.08, first cell = ds/12**, where that
+median is **3.55** and the cells are individually legible. The last base layer
+then sits close enough to the face that the bridge needs **3** transition layers
+rather than 15. The viscous argument for ds/40 is untouched; these are
+demonstration meshes and the look won.
+
+### A boundary that is not a wall does not grow a layer
+
+`wedge` and `bump` grow one on the floor only, `nozzle` not on its inlet or
+outlet, `turek` only on the cylinder. **Previously every one of those grew a
+layer into the flow it was meant to admit**, because sidecar version 2 has no
+`grow_bl` column and the mesher reads a missing one as 1.
+
+### A sharp tip takes a parallelogram, not a fan
+
+`BL_CONVEX_METHOD 2` on the diamond's two tips and both aerofoils' leading and
+trailing edges, with `BL_PARA_FALLBACK_ANGLE` raised to 359 — at the default 300
+the parallelogram falls back to a fan on exactly the cusps it is wanted for. The
+cost is visible and is geometric, not a bug: a miter at a 6-degree tip leaves a
+thin wedge pointing upstream.
+
+### D_total was wrong by r/g, and that is what broke the no-BL cases
+
+The previous section of this note recorded four cases dying with an empty far
+field when their inlets stopped growing a layer, and called the inlet/outlet
+asymmetry a mesher defect to chase. It was not an asymmetry.
+
+The growth loop multiplies by `BL_GROWTH_RATE` after every base layer EXCEPT the
+last, which it multiplies by `BL_TRANSITION_GROWTH_RATE` instead. The closed form
+beside it used `h0*g^L` as the first transition thickness where the loop uses
+`h0*g^(L-1)*r`, so **`D_total` came out r/g too small** — 1.19x at the shallow
+recipe's g = 1.01 against r = 1.2. `D_total` is what a case-1 slide absorbs along
+the no-BL wall, so the lateral column reached 0.2094 while absorption stopped at
+0.1823, and **a wall node landing between the two survived**. The far-field ring
+then ran up to the column top, back down to that node, and up again: two
+collinear edges in opposite directions, which Gmsh answers with "2 intersections
+in the 1D mesh" and an empty far field. Whether a node falls inside that window
+is an accident of the wall's point spacing, which is the entire reason it looked
+like one end of a duct behaving differently from the other.
+
+Both sums now replay the growth loop's rule instead of predicting it (`#ed3e460`).
+**154/154 tests pass and 20 of the golden comparator's 21 cases are
+bit-identical**; `multi_30p30n` moves because its fan arcs are now measured over
+the height the layers really reach (56,341 -> 56,473 cells, edge-ratio median
+1.2099 -> 1.2081, max unchanged).
+
+**Three diagnostics went in with it, because every one was missing while this was
+being chased**: a stalled domain-loop walk now names the node it stopped at
+instead of dropping its edges silently; an empty far field reports the curve
+loops it handed Gmsh with their areas, which separates "nothing closed" from
+"closed, nested wrong"; and `HYBMESH_GMSH_VERBOSE` restores Gmsh's own terminal
+output and dumps the segments it was handed to `farfield_edges.txt`, because
+Gmsh names a self-intersection by curve tag and that says nothing about where.
+
+### The diamond's topology, redrawn (USER-REQUESTED)
+
+The six-block C-grid ran its radials from the body's corners straight to the far
+field, so the two leaving the maximum-thickness kink were slanted the whole way
+out. The replacement, `diamond2.py`, keeps the body's radials **normal to the
+chord** by ending them all on an inner BOX — eight blocks of H-grid over the body
+and its wake — and moves the slant outside into a **twelve-block ring** where the
+radial at each box corner is a diagonal to the matching far-field corner.
+
+| | six-block | twenty-block |
+|---|---|---|
+| cells | 21,504 | 41,600 |
+| inverted | 0 | 0 |
+| non-orthogonality max | 84.29° | **64.36°** |
+| non-orthogonality mean | 17.14° | 20.20° |
+| adjacent area ratio | **1.65×** | 3.63× |
+
+Two things it took measuring to get right:
+
+- **The far field must be the inner box BLOWN UP, not a rectangle of its own.**
+  Dividing it at the same x as the box put a 19-long far piece beside a 0.5-long
+  one carrying counts 41 and 25, and the cells either side of that one radial
+  differed by **21x** — out at y = 9.3, where nothing is happening. Scaling every
+  box corner by S about the body makes far piece k exactly S times box piece k,
+  and the figure falls to 3.63.
+- **This topology must NOT be smoothed.** At `MB_SMOOTH_ITERS 20` the Winslow
+  pass folds **256 cells**; at 0 there are none. It buys 1.5° of mean
+  non-orthogonality and costs 24° of max.
