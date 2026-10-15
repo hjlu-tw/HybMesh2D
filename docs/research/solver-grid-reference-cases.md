@@ -39,12 +39,23 @@ carry a parameter (`4    3  4.622` in the cone's).
 | cell edge | median 0.0167, p95 0.0330, max 0.0481 |
 | near the wedge | 66,895 cells at a mean edge of 0.0073 |
 | downstream (x > 5) | 86,469 cells at 0.0238 |
-| wedge surface | face length 0.0036, first cell 0.0015 — a ratio of 2.4, not 40 |
+| wedge surface | face length 0.0036, first cell 0.0015 |
+| **wall layers** | **2, first height 0.00150, growth 1.010, stack 0.00302** |
 
-**The indicator: near-equilateral everywhere, and a size that varies by about 3× over the whole
-domain.** There is no boundary layer and no anisotropy — this is an inviscid shock-diffraction
-problem, where what the scheme needs is isotropy at the shock, not resolution at the wall.
-A mesher that always grows a boundary layer would be wrong here by construction.
+**The indicator: a THIN boundary layer — two cells — under an otherwise near-equilateral mesh
+whose size varies by about 3× over the whole domain.** The layer's own aspect ratio is about
+2.4, not the 40 of a viscous mesh, and it is about 0.2 % of the wedge's length: enough to put
+a cell face on the wall and no more.
+
+> **A WRONG CLAIM, CORRECTED, AND THE REASON IT GOT PAST ME.** The first version of this note
+> said "there is no boundary layer and no anisotropy", and a reader who knows the case said
+> flatly that it has one. It does. **Aggregate statistics over a whole mesh cannot see a layer
+> that is 1–2 % of its cells**: 810 wall faces × 2 layers is 1,620 of 461,858, so the p95 edge
+> ratio of 1.454 is untouched by it. Binned against distance from the wedge the layer is
+> obvious — aspect 2.17 in the first 0.005, 1.79, 1.60, 1.22, then the 1.18 background — and
+> the node distances fall in three sharp shells at 0, 0.00150, 0.00302. I had even measured
+> the first cell at 0.0015 against a 0.0036 face and written "a ratio of 2.4, not 40", reading
+> a thin layer's own aspect ratio as evidence that there was no layer.
 
 ## Case 2 — `vki-cone`: wall-resolved, strongly graded
 
@@ -60,6 +71,7 @@ y ∈ [0, 50].
 | wall first cell | 0.0020 at the nose, 0.0031–0.0042 along the cone |
 | wall surface spacing | 0.0040 at the nose, 0.074–0.195 along the cone |
 | wall cell aspect | 2 at the nose, 18–80 along the cone |
+| **wall layers** | **44 at x ≈ 40, first height 0.00432, growth 1.020, stack 0.2998** |
 
 **The indicator: a first cell of 2–4 × 10⁻³ against a body 159 long — about 2 × 10⁻⁵ of the
 body — carried by triangles whose aspect ratio reaches 80.** The nose is the exception and it
@@ -76,8 +88,16 @@ chord deep inside 1.01 M unstructured triangles, the far field capped and nested
 1. **The quality target is a property of the PHYSICS, not of the mesher.** Edge ratio median
    1.17 is right for `schardin` and would be unreachable (and pointless) for `vki-cone`, whose
    median is 3.38 and whose p95 is 34.
-2. **Two of the three have no structured region at all.** The one that does is the one with a
-   boundary layer AND a geometry whose features (coves, slots) need blocks.
+2. **All three carry a wall layer, and what differs is its DEPTH**: 2 cells on the inviscid
+   wedge, 44 on the viscous cone, about 95 in the 30P30N's ribbons. "Does it have a boundary
+   layer" is the wrong question; "how many cells deep, at what growth" is the right one.
+
+**How a layer is measured, since getting this wrong is what the correction above was about.**
+A layer's nodes sit at ONE distance from the wall, so clustering node distances finds the
+shells — but that distance varies along a curved or graded wall, so the stretch of wall has to
+be short enough that the layer is flat. Over ten units of the cone the clusters smear into one
+and the method reports "no layers"; over ONE unit it reports 44 at growth 1.020.
+`wallstack.py` in the scratchpad does it.
 3. **All three are triangles in the end.** Whatever the construction, the solver is fed an
    unstructured triangular grid with an explicit boundary-face list naming the owner cell —
    which is the shape this repo's STAR-CD export already has, under other names.
