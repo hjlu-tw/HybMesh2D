@@ -762,7 +762,13 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
     } gmshGuard;
 
     try {
-    gmsh::option::setNumber("General.Terminal", 0); // 關閉 Gmsh 終端輸出
+    // Gmsh's own terminal output is off, because on a healthy run it is pages of
+    // noise. HYBMESH_GMSH_VERBOSE turns it back on: when the far field comes back
+    // empty, Gmsh's own complaint about the loop it was handed is the only thing
+    // that says WHY, and without this switch the silence was total.
+    const bool gmshVerbose = (std::getenv("HYBMESH_GMSH_VERBOSE") != nullptr);
+    gmsh::option::setNumber("General.Terminal", gmshVerbose ? 1 : 0);
+    if (gmshVerbose) gmsh::option::setNumber("General.Verbosity", 99);
 
     // Fix: deterministic triangulation. A fixed random seed makes repeated runs
     // on identical input produce byte-identical meshes.
@@ -882,6 +888,23 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         }
     }
 
+    // Under HYBMESH_GMSH_VERBOSE, write the segments Gmsh is about to be handed.
+    // Gmsh names a self-intersection by its own curve tags, which say nothing
+    // about where the outline crosses itself; these are the same segments in
+    // model coordinates, in the order the lines were created, so tag N is line N
+    // of this file and the crossing can be plotted.
+    if (gmshVerbose) {
+        std::ofstream dbg("farfield_edges.txt");
+        for (size_t i = 0; i < filteredEdges.size(); ++i) {
+            const Node& a = nodes[filteredEdges[i].v1];
+            const Node& b = nodes[filteredEdges[i].v2];
+            dbg << allLines[i] << " " << a.pos.x << " " << a.pos.y << " "
+                << b.pos.x << " " << b.pos.y << "\n";
+        }
+        std::cout << "Step: wrote farfield_edges.txt (" << filteredEdges.size()
+                  << " segments, HYBMESH_GMSH_VERBOSE)" << std::endl;
+    }
+
     // 2. 拓撲分析 (使用過濾後的邊)。同時記錄每個 loop 的節點序列以計算面積。
     struct LoopInfo { int tag; double absArea; };
     std::vector<LoopInfo> loopInfos;
@@ -924,6 +947,24 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
                 }
             }
             if (!found) break;
+        }
+        // A WALK THAT STALLS IS THE ONLY WAY THIS FUNCTION LOSES A LOOP, and it
+        // used to do it in silence: the lines stay marked `used`, so they can
+        // never form a loop again, and the whole far field comes back empty with
+        // nothing but "0 triangles" to go on. Name the node it stopped at --
+        // every stall is either a boundary edge with no continuation or a node
+        // where three edges meet and the walk took the wrong one, and both are
+        // identifiable from that one position.
+        if (currGmshNode != startGmshNode) {
+            int stall = loopNodeSeq.back();
+            int from = loopNodeSeq.front();
+            LOG_WARN("Domain loop walk stalled at (" << nodes[stall].pos.x << ", "
+                     << nodes[stall].pos.y << ") after " << currentLoopLines.size()
+                     << " edge(s) from (" << nodes[from].pos.x << ", "
+                     << nodes[from].pos.y << "): no unused edge continues from "
+                     "there, so these edges are dropped from the far-field "
+                     "boundary. If the run ends with an empty far-field mesh, "
+                     "this position is where the outline failed to close.");
         }
         if (currentLoopLines.size() >= 3 && currGmshNode == startGmshNode) {
             int loopTag = gmsh::model::geo::addCurveLoop(currentLoopLines);
@@ -1296,8 +1337,21 @@ bool Mesh::generateFarFieldGmsh(const Config& config, double finalBLThickness,
         if (elementTypes[i] == 2)
             triCount += nodeTagsByElement[i].size() / 3;
     if (triCount == 0) {
+        // Say WHAT WAS HANDED OVER, not just that nothing came back. The loops
+        // are built a few hundred lines up by walking the edge list, and the two
+        // ways this ends empty look identical from here: no loop closed at all,
+        // or several closed and the outer/hole ordering came out wrong. The
+        // inventory separates them, and a stalled walk has already named its
+        // node by now.
+        std::ostringstream inv;
+        inv << loopInfos.size() << " curve loop(s)";
+        for (size_t i = 0; i < loopInfos.size() && i < 8; ++i)
+            inv << (i ? ", " : ": ") << "area " << loopInfos[i].absArea;
+        if (loopInfos.size() > 8) inv << ", ...";
         LOG_ERROR("Gmsh produced an empty far-field mesh (0 triangles): the domain "
-                  "loop likely failed to close. Not exporting an empty mesh.");
+                  "loop likely failed to close. Handed Gmsh " << inv.str()
+                  << " (largest first; the largest is the outer boundary and the "
+                  "rest are holes). Not exporting an empty mesh.");
         return false; // gmshGuard finalizes on scope exit
     }
 

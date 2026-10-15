@@ -281,9 +281,29 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         }
 
         // 計算過渡層數
-        double h_tmp = fs.bl.blInitialThickness;
-        for (int l = 0; l < fs.bl.blLayers; ++l) h_tmp *= fs.bl.blGrowthRate;
-        double hFirst = h_tmp, rTrans = fs.bl.blTransitionGrowthRate;
+        //
+        // `hFirst` IS THE THICKNESS THE GROWTH LOOP WILL ACTUALLY GIVE THE FIRST
+        // TRANSITION LAYER, and it is derived by running that loop's own rule
+        // rather than by a closed form beside it. The loop (see "advance this
+        // front's own thickness", below) multiplies by blGrowthRate after every
+        // base layer EXCEPT the last, which it multiplies by the TRANSITION rate
+        // instead -- so the first transition layer is h0*g^(L-1)*r, while
+        // `h0*g^L` understates it by r/g. That is 1.19x at the shallow recipe's
+        // g = 1.01 against r = 1.2, and it is not cosmetic: D_total below is what
+        // a case-1 slide absorbs along the no-BL wall, so the column reached
+        // 0.2094 while the absorption stopped at 0.1823 and any wall node landing
+        // between the two SURVIVED. The far-field ring then ran up to the column
+        // top, back down to that node and up again -- two collinear edges in
+        // opposite directions, which Gmsh reports as "2 intersections in the 1D
+        // mesh" and answers with an empty far field. It looked like an asymmetry
+        // between inlets and outlets (bump, nozzle, diffuser, Turek all died one
+        // end at a time) because whether a node falls in that window is an
+        // accident of the wall's spacing.
+        double hFirst = fs.bl.blInitialThickness;
+        for (int l = 0; l < fs.bl.blLayers; ++l)
+            hFirst *= (l < fs.bl.blLayers - 1) ? fs.bl.blGrowthRate
+                                               : fs.bl.blTransitionGrowthRate;
+        double rTrans = fs.bl.blTransitionGrowthRate;
         fs.nTrans = fs.bl.blTransitionLayers;
         // Auto transition-layer count solves for how many geometrically-growing
         // layers reach the target size, so it needs rTrans > 1 and hFirst > 0.
@@ -309,17 +329,19 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         maxNTrans = std::max(maxNTrans, fs.nTrans);
 
         // Adaptive Fan Nodes
-        double R_BL = 0.0, h_tmp2 = fs.bl.blInitialThickness;
-        for (int l = 0; l < fs.bl.blLayers; ++l) { R_BL += h_tmp2; h_tmp2 *= fs.bl.blGrowthRate; }
-        // Geometric-series sum of the transition layer thicknesses. When rTrans
-        // == 1 the closed form divides by zero, so use the degenerate (uniform)
-        // sum hFirst * nTrans instead.
-        double R_trans = 0.0;
-        if (fs.nTrans > 0) {
-            R_trans = (std::abs(rTrans - 1.0) < 1e-9)
-                ? hFirst * fs.nTrans
-                : hFirst * (std::pow(rTrans, fs.nTrans) - 1.0) / (rTrans - 1.0);
+        //
+        // R_BL and R_trans are summed by REPLAYING the growth loop's rule, not by
+        // a closed form: the two forms disagreed at exactly the base/transition
+        // seam (see hFirst above), and a closed form sitting next to the loop it
+        // is meant to predict is how that survived. D_total is the perpendicular
+        // height every junction, fan and concave-influence calculation below is
+        // measured in, so it has to be the height the layers will really reach.
+        double R_BL = 0.0, R_trans = 0.0, h_run = fs.bl.blInitialThickness;
+        for (int l = 0; l < fs.bl.blLayers; ++l) {
+            R_BL += h_run;
+            h_run *= (l < fs.bl.blLayers - 1) ? fs.bl.blGrowthRate : rTrans;
         }
+        for (int l = 0; l < fs.nTrans; ++l) { R_trans += h_run; h_run *= rTrans; }
         double D_total = R_BL + R_trans;
 
         if (fs.bl.blAutoFanNodes > 0) {
@@ -698,6 +720,12 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         run.push_back(nid);
                         int step = nextSkip ? 1 : -1;       // walk into the no-BL run
                         double acc = 0.0; int cur = i;
+                        if (juncDebug)
+                            std::cerr << "[SLIDE] root(" << fs.pos_init[i].x << ","
+                                      << fs.pos_init[i].y << ") step=" << step
+                                      << " D_total=" << D_total << " mult="
+                                      << junctionMult[i] << " reach="
+                                      << D_total * junctionMult[i] << std::endl;
                         while (true) {
                             int nxt = (cur + step + n_init) % n_init;
                             // The first node the slide does NOT absorb terminates the run:
@@ -707,6 +735,10 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                             }
                             double L = (fs.pos_init[nxt] - fs.pos_init[cur]).length();
                             if (acc + L >= D_total * junctionMult[i]) {   // nxt is at/beyond the slide end
+                                if (juncDebug)
+                                    std::cerr << "[SLIDE]   survivor(" << fs.pos_init[nxt].x
+                                              << "," << fs.pos_init[nxt].y << ") acc+L="
+                                              << acc + L << std::endl;
                                 run.push_back(boundaryNodeIds[nxt]); break;
                             }
                             acc += L;
