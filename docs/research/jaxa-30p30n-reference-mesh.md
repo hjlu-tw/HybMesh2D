@@ -338,3 +338,32 @@ only structural difference — and it is why O3 has no counterpart here.
 > as false, so every point lies "on" the degenerate closing segment. Not conclusive, because
 > the 30P30N geometries carry the same repeat and do NOT trigger it, and that contradiction is
 > left standing rather than explained away.
+
+### The far-field partition as REAL EDGES, and what that costs
+
+Expressing O1–O5 as a size field reproduces the reference's cell sizes but leaves nothing to
+draw outside the bands. The partition itself can be made real: `SEED_FILE <path> ... embed`
+hands the curve to `gmsh::model::mesh::embed`, which forces mesh nodes onto it. Measured on
+the two-element pair with the inner box (x −0.35…1.25, y −0.42…0.35) and a wake box abutting
+its right edge (x 1.25…2.80, y −0.60…0.20) embedded:
+
+- **It works.** 1,267,584 cells, `Refinement seeds: 3 of 3 loaded`, no `could not embed`
+  warning, and at x = 1.25 the triangulation runs straight along the line with nodes exactly
+  on it, conforming from both sides. That is the reference's domain boundary, reproduced.
+- **Embedding is priced per SEGMENT.** The first version wrote these curves at a 0.01 point
+  spacing — about a thousand points over six curves — and the mesher ran **sixteen hours of
+  CPU** without finishing. Gmsh constrains each embedded segment against the surface, so a
+  straight box edge written as 430 little segments is 430 constraints instead of one. A zone
+  curve needs its VERTICES and nothing else; the mesh follows a straight embedded line between
+  its endpoints anyway.
+- **And it is priced per SPAN.** With only the two boxes (4 segments each) the build finishes
+  in about the same time as without them. Adding the reference's four CORNER DIAGONALS, each
+  crossing the whole domain, puts it back into the territory where it does not finish at a
+  useful size. The boxes are O1 and O2; the diagonals are O3, which this note already said has
+  no counterpart here — now with a second reason.
+- **An embedded boundary partitions but does not SIZE.** Our seeds are curves and points, so a
+  zone's interior still takes its size from the ramp: inside the wake box the measured edge is
+  0.0071 against the 0.0035 its boundary asks for, because the ramp from that boundary reaches
+  0.0095 at the box's middle. A region seed — "this size everywhere inside this polygon" — is
+  the missing primitive, and it is what the reference gets for free by making each zone its own
+  domain.
