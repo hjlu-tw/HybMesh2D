@@ -123,6 +123,10 @@ ratio 600 against the reference's 38, and the overall median edge ratio came out
 1,085 against the cone's 3.38. What the two references hold constant is the ratio of the face
 to the first cell: 38 viscous, 2.4 inviscid.
 
+**The table below is the FIRST rebuild and is kept as it was measured.** What replaced it, and
+why, is "The seam, and the surface" at the end of this note; the numbers there are the current
+ones.
+
 | case | layer | cells | all med | bulk med | bulk p95 |
 |---|---|---|---|---|---|
 | bump | shallow | 13,198 | 1.165 | 1.064 | 1.560 |
@@ -158,3 +162,109 @@ growth 1.010, `rd_cavity` first 0.000417 at growth 1.020 — the two recipes exa
 counts come out 5 and 47 rather than 2 and 44 because `BL_TRANSITION_LAYERS 3` adds three more
 above the stack, which is the mesher's own doing and is worth knowing when a layer count is
 being compared with a reference's.
+
+
+## The seam, and the surface
+
+The gallery of the fifteen showed one thing the quality figures above do not: a hard line where
+the layer ends and the triangles begin. **The bulk figure cannot see it** — it is a ratio within
+each cell, and a cell can be perfectly equilateral while its neighbour across the seam is ten
+times its size. The two changes below are a reply to that, and both land in `redraw.py` and the
+new `curvsample.py` in the scratchpad rather than in the mesher.
+
+### The transition count is SOLVED FOR, not declared
+
+`BL_TRANSITION_LAYERS 3` at growth 1.15 multiplies the last base layer by 1.52. On `naca0015`
+that leaves the outermost layer 1.04 × 10⁻³ thick against a surface step of 1.15 × 10⁻², so the
+first triangle is **11.3 times** the last structured cell — and because both ends of that ratio
+are fixed fractions of the surface step, **every deep case had the same 11.3 and every shallow
+case the same 1.55**, whatever its geometry. The count is now
+
+    nTrans = log(surface step / last base layer) / log(rate),   rate = 1.20
+
+which is the arithmetic of the mesher's own `BL_AUTO_TRANSITION_LAYERS 2`, done in the driver so
+that the number lands in the `.dat` and the case states it. All fifteen now end the layer
+within **0.95–1.09×** of their own surface step.
+
+**It must be clamped, and finding the right clamp took two wrong ones.** Left to the mesher,
+`bfs` and `diffuser` asked for total layer heights of 0.50 and 0.91 inside ducts 1.00 across and
+both died on a self-intersecting front (`HYBMESH_ERROR 5`). The height is therefore bounded by
+the room the geometry has: the nearest approach of two walls, counted inward for an `int` case
+and only between separate bodies for an `ext` one — measuring an external body's self-clearance
+would have strangled every aerofoil on its own thickness (naca0015: 0.033). Two readings of
+"nearest approach" were wrong before that:
+
+- **An arc-length window.** Skipping same-body pairs within 8 % of the perimeter called two
+  points 0.026 apart on Turek's 0.1 cylinder a gap, and that one pair clamped the whole case
+  from 15 transition layers to 5. The test that works is the **chord against the walk**: a real
+  gap is one you cross in much less than it takes to walk round, so a pair whose straight-line
+  distance exceeds 0.6 of its arc distance is two points on one stretch of wall.
+- **Accepting the clamp.** `bfs` and `diffuser` cannot bridge at any count because their walls
+  are coarse against their own ducts — the surface step is a twelfth and a seventh of the duct
+  width. Refining the wall lowers the target and the first cell together, so the room the layer
+  needs falls faster than the gap it must cross: at 2× and 4× both bridge. `curvsample.densify`
+  does it, rebuilding the `.meta` segment ids and corner flags at the new count.
+
+### The surface points are distributed by CURVATURE
+
+Most of these bodies were drawn at uniform arc length, which spends the same resolution on a
+NACA leading edge as on its flat middle. `curvsample.py` redistributes each segment, keeping its
+point count and both endpoints so the `.meta` survives, under the sagitta rule
+
+    ds ∝ 1 / sqrt(k)
+
+which is a property of the curve and converges in one pass. **This is deliberately NOT the
+repo's own `Spacing::generateCurvature`**, which weights a node by its TURNING ANGLE — that is
+curvature times the spacing the node already has, so the answer depends on the input
+distribution and a second pass moves the points again.
+
+Two rules the first version lacked, both found by running it:
+
+- **A polygon is left alone.** Its curvature is all on isolated corner nodes, which are already
+  segment boundaries; what the straight sides report is floating-point noise, 4 × 10⁻⁶ against a
+  corner's 120 on `tricyl` and 9 × 10⁻¹⁴ against 158 on `diamond`. Testing `p95 > 0` called both
+  of those curved and clustered their flat sides around nothing. The test is the RATIO to the
+  corner.
+- **The coarsening is capped against the INPUT, not against uniform.** Uniform is the wrong
+  reference for a segment that was graded on purpose: against it the three curved ducts still
+  reached 16–23× step ratios, because a long wall carrying few points is coarse to begin with.
+  A step may not exceed 1.3× the segment's own coarsest step, and the blend to the full rule is
+  solved by bisection per segment.
+
+`naca0015` and `naca4412` each closed on **three copies of (1, 0)**, which left a sliver pair at
+the trailing edge whose neighbours differ in area by **393×** — a bigger jump than the seam this
+round is about, in the same picture. Coincident points are now dropped. The remaining trailing
+edge fan still has ~0.036 % of its edges above a 4× area ratio, which is what the innermost ring
+of a fan at a cusp is, and nothing was done about it.
+
+### The fifteen, rebuilt again
+
+| case | layer | base + trans | cells | bulk med | bulk p95 | last layer ÷ face |
+|---|---|---|---|---|---|---|
+| bump | shallow | 2 + 5 | 14,124 | 1.067 | 1.572 | 0.95 |
+| nozzle | shallow | 2 + 5 | 25,624 | 1.062 | 1.395 | 0.95 |
+| wedge | shallow | 2 + 5 | 12,638 | 1.066 | 1.417 | 0.95 |
+| diamond | shallow | 2 + 5 | 168,504 | 1.000 | 1.218 | 0.95 |
+| bfs | deep | 44 + 15 | 140,192 | 1.000 | 1.603 | 1.09 |
+| cavity | deep | 44 + 15 | 34,928 | 1.060 | 1.380 | 1.09 |
+| diffuser | deep | 44 + 15 | 187,308 | 1.064 | 1.411 | 1.09 |
+| turek | deep | 44 + 15 | 85,112 | 1.078 | 1.732 | 1.09 |
+| sqcyl | deep | 44 + 15 | 386,496 | 1.000 | 1.100 | 1.09 |
+| dcyl | deep | 44 + 15 | 441,792 | 1.000 | 1.177 | 1.09 |
+| tricyl | deep | 44 + 15 | 402,670 | 1.000 | 1.147 | 1.09 |
+| naca0015 | deep | 44 + 15 | 194,690 | 1.000 | 1.249 | 1.09 |
+| naca4412 | deep | 44 + 15 | 194,958 | 1.000 | 1.244 | 1.09 |
+| tandem | deep | 44 + 15 | 460,414 | 1.000 | 1.176 | 1.09 |
+| twoelem | deep | 44 + 15 | 351,462 | 1.044 | 1.323 | 1.09 |
+
+The bulk stays isotropic (1.00–1.08 median, 1.10–1.73 p95), so the extra layers bought the seam
+without costing cell shape. `bfs` and `diffuser` grew most — 72k to 140k and 35k to 187k — and
+that is the wall refinement, not the transition: the layers themselves REPLACE triangles the far
+field would otherwise have put there, which is why `naca0015` moved only 189,862 → 194,690.
+
+**Measured on the meshes, not on the recipe.** Adjacent-cell area ratios over every internal
+edge, before and after: `cavity` 240 edges above 4× → **0**, max 11.8 → 3.0; `naca0015` 228 → 106
+(the survivors are the trailing-edge fan). `wedge` went the other way, 1 → 25 above 4×, max 4.5
+→ 6.9 on the top wall — it is a shallow case whose five transition layers are set by a ratio of
+only 1.55 to begin with, so there was little seam to fix and the redistributed surface moved the
+far-field sizing instead.
