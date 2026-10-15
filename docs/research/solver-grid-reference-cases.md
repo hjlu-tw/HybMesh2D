@@ -535,3 +535,42 @@ the last structured cell and the first triangle can be compared by eye. The
 second windows: the bump's crest, the step's reattachment, the cavity floor, the
 diffuser's second corner, the gap between Turek's cylinder and its wall, the gap
 between the tandem cylinders, and the two-element slot exit.
+
+## A polygon's corners, and the floor that was eating them
+
+USER-REQUESTED: the square, D-shape and triangular cylinders want their surface
+points denser near the corners. The rule in place said the opposite — a polygon
+carries all its curvature on isolated corner nodes, which are already segment
+boundaries, so leave it alone. That is right about the curvature rule and wrong
+about the mesh: the corner is where the flow turns, and an evenly cut side puts
+the same face there as in the middle.
+
+A polygon is now graded toward its corners, `CORNER_RATIO` at a corner falling
+to 1 at mid-side, measured in **each span's own half-length** so a short side is
+graded as hard as a long one. Measured: **2.6x** finer at a corner.
+
+**It did nothing at first, and the reason is the floor added last round.** "Never
+coarsen below what the drawing had" normalised each density by its own **95th**
+percentile — its FINE end. A uniformly drawn body's input density is then the
+constant 1, which is also the ceiling, so the corner profile could not lift
+anything above it and all three polygons came back unchanged. Normalising by the
+**5th** percentile instead — the coarse end — starts both shapes at 1 and lets
+them rise, and the finer wins pointwise. The floor is then only a floor.
+
+### The spread cap came down from 10 to 3
+
+With the normalisation fixed, `ratio` binds on everything for the first time.
+The band is sized by the FINEST face, so **the spread of the surface is also how
+much thinner the band is than an even surface would give**, and 10 thinned every
+one of them. The two aerofoils are the exception, at 6: what was asked for there
+is a finer TRAILING EDGE, and 3 caps it at 1.8x against the leading edge it
+shares a budget with.
+
+**What that exception costs, measured against each wall's very finest face**:
+13 of 15 walls have an outermost layer at 1.39 or below; the two aerofoils are
+**3.89** and **3.45**, at the trailing-edge cusp. That is "finer trailing edge"
+and "outermost cell not standing up" competing inside one point budget, and the
+user's side was taken. A layer is converging at a cusp anyway, which is not true
+of a whole bump.
+
+`twoelem` joins the no-fan list, so seven cases now take the parallelogram.
