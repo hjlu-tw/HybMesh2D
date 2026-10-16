@@ -683,6 +683,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // default, and at 0 the seam returns what it returned before the smoother
     // existed.
     params.smoothIters = config.mbSmoothIters;
+    params.smoothSlide = config.mbSmoothSlide;
 
     const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
     // Warnings are DATA on the way out of the seam; saying them is this layer's job.
@@ -945,11 +946,21 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
         // edges are reported. Before #84 the second figure was 0 by construction.
         std::cout << bannerRow("Movable nodes") << res.smoothMoved << " of "
                   << res.nodes.size() << ", of which " << res.smoothMovedShared
-                  << " on a shared edge (walls, declared corners and any interior "
-                     "line WITH A DECLARED SHAPE — one that FOLLOWS a curve or IS "
-                     "one — are frozen)\n";
+                  << " on a shared edge"
+                  << (config.mbSmoothSlide
+                          ? std::string(", of which ")
+                                + std::to_string(res.smoothMovedOnShape)
+                                + " SLIDE along the shape their line declares "
+                                  "(walls and declared corners are frozen; "
+                                  "MB_SMOOTH_SLIDE 1)"
+                          : std::string(" (walls, declared corners and any interior "
+                                        "line WITH A DECLARED SHAPE — one that "
+                                        "FOLLOWS a curve or IS one — are frozen)"))
+                  << "\n";
         std::cout << "HYBMESH_MB_SMOOTH sweeps=" << res.smoothSweeps
                   << " cap=" << config.mbSmoothIters
+                  << " slide=" << (config.mbSmoothSlide ? 1 : 0)
+                  << " moved_on_shape=" << res.smoothMovedOnShape
                   << " converged=" << (res.smoothConverged ? 1 : 0)
                   << " diverged=" << (res.smoothDiverged ? 1 : 0)
                   << " residual=" << resid.str()

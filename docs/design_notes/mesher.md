@@ -4724,6 +4724,110 @@ Blind spots, named:
     case was ALSO the one injection in this batch that came back INERT first time: the
     original fixture was off the major axis, where Newton finds the right root anyway.
 
+**A SEAM THAT SLIDES ALONG ITS CURVE** (#176, parent #174, measured 2026-10-16).
+`MB_SMOOTH_SLIDE`, default 0. **It ships OFF on a measurement that does not favour it,
+and that is the outcome the ticket pre-committed to.**
+
+**WHAT THE IDEA WAS.** #151 froze a following seam because its nodes are a declared
+POSITION, and got the property it wanted: the seam keeps its shape. But "stay on the
+curve" and "stay at the arc length you were given" are two requirements and only the
+first is the user's. GridPro enforces only the first — the interior block boundaries
+float under the elliptic solve and every node is projected back onto its surface — so
+the seam keeps its SHAPE and finds its own DISTRIBUTION.
+
+**IT WORKS, EXACTLY AS SPECIFIED.** On `multiblock_tworing_curve` at the shipped cap,
+all 96 seam nodes are still on the declared ellipse at **1.570e-16** after 20 sweeps of
+sliding, and the worst of them has moved **1.189e-02 along the curve** — the shape kept,
+the distribution lost. On #151's polyline fixture the 41 seam nodes are on the polyline
+to 1e-7 and up to **2.870e-04** off the circle those facets discretise, which is one
+sagitta and is what projecting onto a polyline costs.
+
+**AND IT DOES NOT IMPROVE ANY CASE THIS REPO SHIPS.** At the default cap of 20:
+
+| case | worst non-orthogonality | mean |
+|---|---|---|
+| `tworing_curve` frozen / sliding | 29.1695 / 29.1658 | 9.5050 / **9.5160** |
+| `tworing_offset` frozen / sliding | 28.7957 / 28.7882 | 9.4818 / **9.4945** |
+| `tworing` (circle) frozen / sliding | 2.0250 / **6.6801** | 1.8750 / 1.8986 |
+| `curved_seam_blocks` frozen / sliding | 52.978 / **53.044** | 13.590 / **13.735** |
+
+The max improves by 0.004 deg on the two ellipses and the MEAN gets worse on all four.
+On the CIRCLE the max is **3.3x worse**, and the reason is structural rather than a
+tuning failure: that case's arc-length distribution is already the symmetric one, so
+every slide is a departure from the optimum. The wall first-cell figure is 0.000000
+frozen and 0.000003 sliding, so nothing reached a wall.
+
+**THE READING THAT LOOKED LIKE A STABILITY WIN, AND WAS NOT.** Probing the cap on the
+two-ring circle, the FROZEN solve folds — 192 inverted cells at 150 sweeps, 384 at 200,
+1152 at 800 — while the sliding one reports 0 inverted at every one of them. That is the
+rollback, not a converged mesh: the sliding solve DIVERGES by the residual test between
+sweep 20 and 60 and returns its best iterate, from **sweep 2**. `sweeps=2 diverged=1` on
+the machine line is what says so, and reading the inverted-cell count without it is how
+this was nearly written up as "sliding makes the solve stable".
+
+**WHY IT IS STILL SHIPPED.** The capability is the user's request, it is correct, it is
+measured, and the measurement is about THIS REPO's four curved cases — a drawing whose
+seam spacing the fill cannot get right is exactly what it is for, and none of these four
+is that drawing. Default 0 follows #81-#84: through four changes of kernel the smoothing
+default stayed 0 and every pre-existing golden case was unchanged at each step, which is
+the property that made each change attributable. **22/22 golden cases SAME at
+0.000e+00.**
+
+**WHAT A LATER TICKET WOULD TRY.** The nearest-point projection of a 2-D Winslow step
+leaves the TANGENTIAL component unconstrained, so the seam random-walks along its curve
+with no restoring force — which is consistent with the residual never settling. The
+usual next move is to relax the arc-length distribution along the seam as a 1-D problem
+instead of taking whatever the 2-D step's tangential residue gives. That is a different
+algorithm, not a tuning of this one, and nothing here has measured it.
+
+**SIX INJECTIONS, 2026-10-16, with the exit code read on all three gates
+(`test_multiblock.cpp` 58b, and the two surface gates) and THREE OF THEM INERT.**
+
+| | `cpp 58b` | curve gate | follows gate |
+|---|---|---|---|
+| J1 the shape FREEZE removed | 3 FAIL | 2 FAIL | 4 FAIL |
+| J2 the projection skipped | — | 2 FAIL | 3 FAIL |
+| J3 the POLYLINE projection returns the line's first point | — | — | 3 FAIL |
+| J4 the CURVE projection not clamped to its span | — | — | — |
+| J5 `shapeEdge` set even when NOT sliding | — | — | — |
+| J6 the residual measured BEFORE the projection | — | — | — |
+
+J2 and J3 together are what say the two projections are separate objects: breaking
+the polyline one reddens only the fixture that has a polyline.
+
+**J5 WAS INERT BECAUSE THE GUARD WAS DEAD, AND THE GUARD WAS DELETED.** With the
+freeze in force a node on a shaped side never reaches the assignment, and a node on
+an unshaped one has `shapeAt == -1`, so `&& slide` could not change an outcome. Two
+sufficient conditions for one rule mask each other — the finding `MbShared`'s corner
+rule already records — so the dead one went and the live one is named in its place.
+
+**J4 IS INERT END TO END AND GATED AT THE UNIT LEVEL**, which is the right split
+rather than a hole: `tests/cpp/test_mb_curve.cpp` 7d/7e pin the clamp directly, and
+no mesh this repo ships moves a seam node far enough for the unclamped nearest point
+to differ. The clamp is a correctness guard for a tighter mesh, not for these.
+
+Blind spots, named:
+
+  * **J6 IS A REAL HOLE AND NOT A CONTROL.** Measuring the residual before the
+    projection changes a number the run PRINTS and no gate reads it. The claim "the
+    residual is measured on the position that was kept" is therefore stated here and
+    in the code and enforced nowhere.
+  * **No case in this repo is the case this feature is for.** All four curved cases have
+    a seam whose arc-length distribution is already consistent with the wall's. The claim
+    "it helps when the fill's spacing is wrong" is UNTESTED — there is no fixture for it,
+    and the honest summary is that sliding has been measured only where it cannot help.
+  * **The divergence is reported, not understood.** It is known that the solve diverges
+    between sweep 20 and 60 with sliding on and does not without it, and that the
+    tangential direction is unconstrained. Nothing has measured WHICH nodes drive the
+    residual, so "the seam random-walks" is a reading of the mechanism and not a
+    measurement of it.
+  * **The polyline projection can cross a facet.** A node is projected to the nearest
+    point over the whole polyline, so a strongly curved stretch could in principle fold
+    the seam's own ordering. Nothing checks the ordering, and nothing shipped reaches it
+    — the measured slide is 1.8e-02 against facets of ~5.8e-02 on the fixture.
+  * **The two gates measure one cap.** Group 8 in both files runs at the shipped default
+    of 20. The cap sweep above was run by hand and is a dated quotation, like #85's.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

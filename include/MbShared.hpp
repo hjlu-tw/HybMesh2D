@@ -97,6 +97,21 @@ struct MbNodeMove {
     // Does this node lie on a side two blocks share? Carried so a run can report
     // the freeze rule it is running under rather than have a reader infer it.
     bool shared = false;
+    // THE SHARED EDGE WHOSE DECLARED SHAPE THIS NODE MUST STAY ON, as an index
+    // into `MbResult::sharedEdges`; -1 for a node with no shape to honour (#176).
+    //
+    // AN INDEX AND NOT A POSITION, which is what keeps this module's own rule
+    // intact: nothing here compares a coordinate, and the shape itself is read by
+    // the SWEEP, which already does geometry. The plan answers "who moves, in
+    // whose frame, and on what"; where the projection lands is not its question.
+    //
+    // Only ever set under `slide`, and that is a consequence of the FREEZE rather
+    // than of a guard beside the assignment: with the freeze in force a node on a
+    // shaped side never reaches the move list at all, and a node on an unshaped
+    // one has no shape to be given. So this field is -1 on every move of a default
+    // run, and `tests/cpp/test_multiblock.cpp` 58b asserts that on the plan rather
+    // than trusting the derivation.
+    int shapeEdge = -1;
 };
 
 // WHO MOVES, DERIVED ONCE FROM THE DECLARATION.
@@ -170,6 +185,11 @@ struct MbSmoothPlan {
     // are free" is otherwise a claim about a loop nobody can see.
     int movedNodes = 0;
     int movedShared = 0;
+    // ...and how many of THOSE are held to a declared shape (#176). A third count
+    // rather than a flag, for the reason the other two are counts: "the seams
+    // slide" is otherwise a claim about a loop nobody can see, and 0 here with a
+    // non-zero `movedShared` is the ordinary default rather than a failure.
+    int movedOnShape = 0;
     // How many shared edges got a ghost layer on both sides. Equal to
     // `MbResult::sharedEdges.size()` on a well-formed fill; less means an edge
     // whose two sides could not be matched station for station, which this module
@@ -179,7 +199,20 @@ struct MbSmoothPlan {
 
 // The plan for a finished fill. Pure, total, never throws: a half-built result
 // yields the frames and moves it can and freezes the rest.
-MbSmoothPlan mbSmoothPlan(const MbResult& mesh);
+//
+// `slide` is `MB_SMOOTH_SLIDE` (#176) and DEFAULTS TO FALSE, which is the shipped
+// behaviour: a shared edge with a declared shape is frozen. At true such a node
+// MOVES like any other shared node — one node, one frame, one stencil, through
+// the same `MbGhostFrame` — and carries `shapeEdge`, which is the sweep's
+// instruction to put it back on that shape afterwards. WALLS AND DECLARED CORNERS
+// ARE UNAFFECTED at either setting: #83 decided wall nodes do not slide because
+// the wall's first cell height is solved for by arc length and sliding would
+// spend it silently, and a declared corner has no frame to move in.
+//
+// The default argument is deliberate rather than convenient: every existing
+// caller asks the question this module has always answered, and spelling `false`
+// at each of them would say that something changed for them when nothing did.
+MbSmoothPlan mbSmoothPlan(const MbResult& mesh, bool slide = false);
 
 }  // namespace hybmesh
 

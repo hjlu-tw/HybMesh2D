@@ -160,6 +160,29 @@ struct MbParams {
     // frozen), and a key that reads as its sibling would claim a kinship these two
     // do not have. SEED_* is the refinement-seed namespace.
     int smoothIters = 0;
+    // MAY A DECLARED INTERIOR CURVE SLIDE ALONG ITSELF while the smoother runs,
+    // instead of being frozen? `MB_SMOOTH_SLIDE`, and FALSE is the shipped
+    // behaviour (#176).
+    //
+    // #151 froze a following seam because its nodes are a declared POSITION, and
+    // got the property it wanted — the seam keeps its shape. But "stay on the
+    // curve" and "stay at the arc length you were given" are two requirements and
+    // only the first is the user's. At true a node on such a line moves in the
+    // Winslow sweep like any other shared node and is then PROJECTED back onto its
+    // own shape, so the seam keeps its shape and finds its own distribution: the
+    // mechanism GridPro's generator uses, where the interior block boundaries
+    // float and every node is pulled back to its surface.
+    //
+    // DEFAULT FALSE, following #81-#84: through four changes of kernel the default
+    // stayed 0 and all eighteen pre-existing golden cases were unchanged at every
+    // step, which is the property that made each change attributable. Flipping it
+    // is a separate decision with its own measured acceptance run.
+    //
+    // WALLS AND DECLARED CORNERS ARE NOT AFFECTED at either setting. #83 decided
+    // wall nodes do not slide, because the wall's first cell height is solved for
+    // by arc length and sliding would spend it with no symptom; a declared corner
+    // has no frame to move in. This key reaches interior lines only.
+    bool smoothSlide = false;
 };
 
 // WHEN A BOUND EDGE's SAMPLE RATE IS WORTH TELLING THE USER ABOUT: the corner
@@ -405,6 +428,17 @@ struct MbSharedEdge {
     // chord.
     bool hasCurve = false;
     MbCurve curve;
+    // The resolved POLYLINE a `follows` line lies on — the stretch of its source
+    // segment this edge covers, in the edge's own direction (#176). Empty for a
+    // chord and for a declared `curve`, which carries its shape analytically.
+    //
+    // PUBLISHED because the sliding smoother has to put a node BACK on this line
+    // after moving it, and the alternative is re-resolving the segment span
+    // outside the seam — a second resolution for the two to drift apart in, which
+    // is the argument `Attached` already makes about `binding` and `follows`
+    // sharing one map. Costs one vector per following edge and nothing at all for
+    // every other kind.
+    std::vector<Point2D> followsPath;
 
     // DOES THIS LINE HAVE A DECLARED SHAPE TO LOSE?
     //
@@ -633,6 +667,9 @@ struct MbResult {
     //                   for not having looked.
     //   smoothMoved     how many NODES the solve was free to move, and
     //   smoothMovedShared  how many of those lie on a side two blocks SHARE (#84).
+    //   smoothMovedOnShape how many of THOSE are held to a declared shape and are
+    //                      projected back onto it after every sweep (#176). 0 on a
+    //                      default run, where such a node is frozen instead.
     //                   Published because the freeze rule is otherwise a claim
     //                   about a loop nobody can see: before #84 the second figure
     //                   was zero by construction, and a run that cannot show which
@@ -645,6 +682,7 @@ struct MbResult {
     int smoothClipped = -1;
     int smoothMoved = -1;
     int smoothMovedShared = -1;
+    int smoothMovedOnShape = -1;
     bool smoothConverged = false;
     bool smoothDiverged = false;
     double smoothResidual = -1.0;

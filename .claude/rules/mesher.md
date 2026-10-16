@@ -28,7 +28,7 @@ Key-value text file, command-line args override file values. Parameters grouped 
 
 | Group | Key examples |
 |-------|-------------|
-| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE`, `MB_SPLIT_QUADS`, `MB_SPLIT_RULE`, `MB_SPLIT_SEED`, `MB_SMOOTH_ITERS` |
+| Mode | `MESH_MODE` (0=hybrid BL+Gmsh, default; 1=multi-block structured), `MESH_TOPOLOGY_FILE`, `MB_SPLIT_QUADS`, `MB_SPLIT_RULE`, `MB_SPLIT_SEED`, `MB_SMOOTH_ITERS`, `MB_SMOOTH_SLIDE` |
 | Domain | `DOMAIN_X_MIN/MAX`, `DOMAIN_Y_MIN/MAX` |
 | Surface | `SURFACE_MESH_SIZE`, `AUTO_SURFACE_SIZE` |
 | BL Core | `BL_INITIAL_THICKNESS`, `BL_GROWTH_RATE`, `BL_LAYERS` |

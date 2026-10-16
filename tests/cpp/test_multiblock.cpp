@@ -5124,6 +5124,63 @@ int main() {
               + std::to_string(pf.ghostEdges) + " ghost edges, "
               + std::to_string(pf.movedNodes) + " movable)");
 
+        // ── 58b. ...AND WHAT `MB_SMOOTH_SLIDE` CHANGES ABOUT THAT (#176) ────
+        //
+        // The same plan, same fill, one argument apart. The freeze above is the
+        // DEFAULT and stays; at `slide` the same nodes move and each carries the
+        // shared edge whose shape it must be put back on.
+        const hybmesh::MbSmoothPlan sf = hybmesh::mbSmoothPlan(f, true);
+        CHECK(sf.movedShared == 3 && sf.movedOnShape == 3,
+              "58b. under MB_SMOOTH_SLIDE the SAME three seam nodes move, and every "
+              "one of them is held to a shape ("
+              + std::to_string(sf.movedShared) + " shared, "
+              + std::to_string(sf.movedOnShape) + " on a shape)");
+        // EVERY `shapeEdge` RESOLVES AND POINTS AT A LINE THAT REALLY HAS A SHAPE.
+        // An index into a published list is only as good as what it indexes, and
+        // an off-by-one here would project a node onto its neighbour's curve —
+        // a wrong mesh with no error, which is this path's whole failure class.
+        size_t shaped = 0, badIdx = 0;
+        for (const auto& mvs : sf.moves)
+            for (const auto& mv : mvs) {
+                if (mv.shapeEdge < 0) continue;
+                ++shaped;
+                if (static_cast<size_t>(mv.shapeEdge) >= f.sharedEdges.size()
+                    || !f.sharedEdges[static_cast<size_t>(mv.shapeEdge)]
+                            .hasDeclaredShape())
+                    ++badIdx;
+            }
+        CHECK(shaped == 3 && badIdx == 0,
+              "58b. ...and every `shapeEdge` indexes a shared edge that really "
+              "declares a shape (" + std::to_string(shaped) + " shaped, "
+              + std::to_string(badIdx) + " bad)");
+        // THE DEFAULT PLAN CARRIES NONE OF IT, so the two modes cannot be read as
+        // one another by a caller that forgot to pass the flag.
+        size_t leaked = 0;
+        for (const auto& mvs : pf.moves)
+            for (const auto& mv : mvs) if (mv.shapeEdge >= 0) ++leaked;
+        CHECK(pf.movedOnShape == 0 && leaked == 0,
+              "58b. ...while the DEFAULT plan reports 0 on a shape and sets the "
+              "field on no move at all (" + std::to_string(pf.movedOnShape) + ", "
+              + std::to_string(leaked) + ")");
+        // A CHORD SEAM GAINS NOTHING FROM THE FLAG. It has no shape, so it moved
+        // already and it is not projected onto anything — which is what makes the
+        // check above a statement about SHAPES and not about `slide` freeing nodes
+        // in general.
+        const hybmesh::MbSmoothPlan sp = hybmesh::mbSmoothPlan(plain, true);
+        CHECK(sp.movedShared == 3 && sp.movedOnShape == 0,
+              "58b. ...and a CHORD seam moves the same 3 either way, with nothing to "
+              "be held to (" + std::to_string(sp.movedShared) + " shared, "
+              + std::to_string(sp.movedOnShape) + " on a shape)");
+        // WALLS AND DECLARED CORNERS ARE UNTOUCHED BY THE FLAG — #83's decision
+        // that wall nodes do not slide is not this ticket's to revisit. Measured
+        // as a total, because the fixture's walls and corners are exactly the
+        // nodes the two plans must agree about.
+        CHECK(sf.movedNodes == pf.movedNodes + 3,
+              "58b. ...and the flag frees EXACTLY the seam: every other node the "
+              "default plan froze is still frozen ("
+              + std::to_string(sf.movedNodes) + " vs "
+              + std::to_string(pf.movedNodes) + " + 3)");
+
         // ── a topology whose ONLY path is a 'follows' still says the BCs are
         //    all coming from the fallback, because none of them was declared ──
         size_t noBind = 0;

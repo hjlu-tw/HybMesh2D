@@ -157,6 +157,36 @@ struct Config {
     // what ran that day (#43's rule).
     int mbSmoothIters = 20;
 
+    // MAY A DECLARED INTERIOR CURVE SLIDE ALONG ITSELF while the smoother runs?
+    // `MB_SMOOTH_SLIDE`, 0 (the default, and the behaviour that has shipped since
+    // #151) or 1.
+    //
+    // At 0 a shared line with a declared shape — one that `follows` a geometry
+    // segment, or one that IS a declared `curve` — is FROZEN: its nodes stay at
+    // the arc lengths the fill gave them. At 1 they move in the Winslow sweep like
+    // any other shared node and are PROJECTED back onto that shape afterwards, so
+    // the seam keeps its SHAPE and finds its own DISTRIBUTION. That is GridPro's
+    // mechanism, where the interior block boundaries float and every node is
+    // pulled back to its surface.
+    //
+    // DEFAULT 0, following #81-#84: through four changes of kernel the smoothing
+    // default stayed 0 and every pre-existing golden case was unchanged at each
+    // step, which is what made each change attributable. Flipping it is a separate
+    // decision with its own measured acceptance run.
+    //
+    // IT REACHES NO WALL AND NO DECLARED CORNER at either setting. #83 decided
+    // wall nodes do not slide — the wall's first cell height is solved for by arc
+    // length and sliding would spend it with no symptom — and a declared corner
+    // has no frame to be moved in.
+    //
+    // A bool, like `MB_SPLIT_QUADS` above and for the same reason: the question
+    // has two answers and no third. It is read through a double like every other
+    // bool key here, which is the repo-wide behaviour recorded in
+    // `.claude/rules/mesher.md` — a per-row parse rule is what let the two parsers
+    // disagree last time — so `MB_SMOOTH_SLIDE 0.5` is true. The GUI mirrors it as
+    // a `bool` with the same default; the parity gate compares both.
+    bool mbSmoothSlide = false;
+
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;
 
@@ -394,6 +424,7 @@ struct Config {
             else if (key == "MB_SPLIT_RULE") { double v; ss >> v; mbSplitRule = static_cast<int>(v); }
             else if (key == "MB_SPLIT_SEED") { double v; ss >> v; mbSplitSeed = static_cast<int>(v); }
             else if (key == "MB_SMOOTH_ITERS") { double v; ss >> v; mbSmoothIters = static_cast<int>(v); }
+            else if (key == "MB_SMOOTH_SLIDE") { double v; ss >> v; mbSmoothSlide = (v != 0); }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
             else if (key == "DOMAIN_Y_MIN") ss >> yMin;
@@ -628,6 +659,14 @@ struct Config {
                << (mbSmoothIters > 0
                        ? "  (Winslow elliptic, block interiors only; a CAP)"
                        : "  (none)")
+               << "\n";
+            // Printed BESIDE the cap and unconditionally, for the reason the cap
+            // itself is: it decides which nodes the run was free to move, so a
+            // provenance record without it cannot tell two meshes of one document
+            // apart afterwards.
+            os << "  - Seam Sliding         : " << (mbSmoothSlide ? 1 : 0)
+               << (mbSmoothSlide ? "  (a declared interior curve SLIDES along itself)"
+                                 : "  (a declared interior curve is FROZEN)")
                << "\n";
         }
         os << "\n";

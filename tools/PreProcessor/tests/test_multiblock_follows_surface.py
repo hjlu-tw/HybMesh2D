@@ -53,6 +53,14 @@ What this pins down:
      once naming both, and a following edge whose corner is not on the segment.
      All exit 8 with the machine-readable line, and all export NOTHING.
 
+  8. AND THE POLYLINE HALF OF `MB_SMOOTH_SLIDE` (#176). At 1 the 39 interior seam
+     nodes slide: all 41 are still ON the polyline to 1e-7, and up to 2.870e-04 off
+     the CIRCLE those facets discretise. That second figure is why this group adds
+     `off_polyline` — one of this file's own blind spots said `off_arc` would be
+     the wrong ruler for a geometry whose facets are not on the circle, and a
+     projected node is exactly that case. The analytic half is next door in
+     `test_multiblock_curve_surface.py` group 8.
+
 EVERY NEW REFUSAL IS EXERCISED BY INJECTION, run 2026-09-29 against this gate and
 ``tests/cpp/test_multiblock.cpp`` 58 together, with BOTH EXIT CODES read and not
 only the FAIL-line counts -- a mutation that crashes a gate scores as silence
@@ -194,6 +202,39 @@ def bnd_faces(stem):
 def off_arc(p):
     """How far a point is from the circle the seam's polyline discretises."""
     return abs(math.hypot(p[0] - _CX, p[1] - _CY) - _R)
+
+
+def geom_points():
+    """The seam geometry's own polyline, read off disk."""
+    out = []
+    for line in open(_GEOM, encoding="utf-8"):
+        f = line.split()
+        if len(f) >= 2:
+            try:
+                out.append((float(f[0]), float(f[1])))
+            except ValueError:
+                pass
+    return out
+
+
+def off_polyline(p, path):
+    """Point-to-SEGMENT distance to the stored polyline, not to the circle.
+
+    The gate's own blind spot named this: a node PROJECTED onto the polyline sits
+    exactly on a facet and therefore up to one sagitta off the circle those facets
+    discretise — 3.3e-04 on this fixture — so `off_arc` is the wrong ruler for a
+    sliding seam and the right one for a seam placed by arc length.
+    """
+    best = float("inf")
+    for k in range(len(path) - 1):
+        a, b = path[k], path[k + 1]
+        vx, vy = b[0] - a[0], b[1] - a[1]
+        L2 = vx * vx + vy * vy
+        if L2 <= 0.0:
+            continue
+        t = max(0.0, min(1.0, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L2))
+        best = min(best, math.hypot(p[0] - a[0] - t * vx, p[1] - a[1] - t * vy))
+    return best
 
 
 def edge_use(cells):
@@ -375,6 +416,45 @@ def main() -> int:
                 c.update({"id": "se", "kind": "free", "xy": [2.0, 0.0]})
         refused(tmp, "corner_off_segment", off_doc,
                 ["'se'", "follows segment 0", "free coordinate"])
+
+        # -- 8. MB_SMOOTH_SLIDE on a seam that follows a POLYLINE (#176) ------
+        #
+        # The analytic half is gated next door in
+        # `test_multiblock_curve_surface.py` group 8; this is the other shape the
+        # same flag reaches, and it is a different object rather than the same one
+        # spelled differently — a stored polyline has facets, so the ruler is the
+        # point-to-SEGMENT distance and not the circle those facets discretise.
+        sl_stem = os.path.join(tmp, "slide")
+        rc_sl, out_sl = run(tmp, write_config(os.path.join(tmp, "slide.dat"), _TOPO,
+                                              sl_stem,
+                                              extra="MB_SMOOTH_SLIDE 1\n"))
+        path = geom_points()
+        sl_nodes = vrt_nodes(sl_stem)
+        sl_seam = [p for p in sl_nodes if off_polyline(p, path) < 1e-7]
+        check("8. the fixture meshes with MB_SMOOTH_SLIDE 1 (rc=%d) and says so, "
+              "naming the 39 interior seam nodes that slide" % rc_sl,
+              rc_sl == 0 and " slide=1 " in out_sl
+              and " moved_on_shape=39 " in out_sl
+              and "39 SLIDE along the shape their line declares" in out_sl)
+        check("8. THE SHAPE IS KEPT: all 41 seam nodes are still ON the polyline to "
+              "1e-7 after 20 sweeps of sliding (%d)" % len(sl_seam),
+              len(sl_seam) == 41)
+        # ...and OFF the circle by up to a facet sagitta, which is the measurement
+        # that proves the ruler above is the right one: a node projected onto a
+        # polyline lands on a facet, not on the curve the facets approximate.
+        sl_sag = max(off_arc(p) for p in sl_seam)
+        check("8. ...and up to %.3e off the CIRCLE those facets discretise — one "
+              "sagitta, which is what projecting onto a polyline costs and what "
+              "`off_arc` would have mis-read as the seam coming loose" % sl_sag,
+              1e-9 < sl_sag < 1e-3)
+        fr_seam = [p for p in vrt_nodes(stem) if off_arc(p) < 1e-7]
+        moved = 0.0
+        for a in sl_seam:
+            moved = max(moved, min(math.hypot(a[0] - b[0], a[1] - b[1])
+                                   for b in fr_seam))
+        check("8. THE DISTRIBUTION IS NOT: the worst seam node is %.3e from the "
+              "nearest FROZEN seam node, so the line slid rather than staying put"
+              % moved, moved > 1e-3)
 
     print("\nRESULT: " + ("ALL PASS" if not failures
                           else "%d FAILURE(S)" % len(failures)))

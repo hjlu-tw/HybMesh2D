@@ -50,6 +50,15 @@ What this pins down:
      export NOTHING — plus the LONG-WAY-ROUND warning and the wall-with-a-curve
      warning, which are warnings precisely because each is a mesh and not an error.
 
+  8. AND WHAT `MB_SMOOTH_SLIDE` CHANGES (#176). At 1 the seam's 92 interior nodes
+     move and are projected back: the SHAPE is kept (1.570e-16 off the ellipse
+     after 20 sweeps) and the DISTRIBUTION is not (the worst node slides 1.189e-02
+     along the curve). The wall first-cell height is held either way. And the
+     COMPARISON is asserted rather than left in a note: at the default cap the
+     worst non-orthogonality improves by 0.004 deg while the MEAN gets worse, so
+     sliding does not improve this case — the half a gate for one's own feature is
+     most likely to leave out.
+
 EIGHT INJECTIONS, run 2026-10-16 against this gate with the EXIT CODE read and not only
 the FAIL-line count, and each one's FIRST failing check recorded — eight injections
 reporting the same count are eight that may all be hitting one cascade:
@@ -550,6 +559,100 @@ def main():
               "would not have said on this mixed topology" % rc_w,
               rc_w == 0 and "carries no boundary condition of its own" in out_w
               and "\"binding\"" in out_w)
+
+        # -- 8. MB_SMOOTH_SLIDE: the seam slides along its own curve (#176) ----
+        #
+        # The SAME shipped case, one key apart. What is asserted here is the pair
+        # of properties the ticket is about — the seam keeps its SHAPE and loses
+        # its arc-length DISTRIBUTION — and then, in the same breath, the measured
+        # comparison, which does NOT favour sliding and is asserted anyway. A gate
+        # that only pinned the flattering half of its own feature is the shape this
+        # repo has a file of specimens about.
+        sl_stem = os.path.join(tmp, "slide")
+        rc_sl, out_sl = run(tmp, write_config(os.path.join(tmp, "slide.dat"), _TOPO,
+                                              sl_stem,
+                                              extra="MB_SMOOTH_SLIDE 1\n"))
+        check("8. the shipped case meshes with MB_SMOOTH_SLIDE 1 (rc=%d)" % rc_sl,
+              rc_sl == 0 and " inverted=0 " in out_sl)
+        check("8. ...and the run SAYS so, in the banner and in the machine line, "
+              "naming the 92 nodes that slide — the 96 on the ellipse minus its 4 "
+              "declared corners, which have no frame to move in",
+              "92 SLIDE along the shape their line declares" in out_sl
+              and " slide=1 " in out_sl and " moved_on_shape=92 " in out_sl
+              and "Seam Sliding         : 1" in out_sl)
+        sl_nodes = vtk_nodes(sl_stem)
+        sl_on = seam_nodes(sl_nodes, 1e-9)
+        sl_worst = max((off_ellipse(p) for p in sl_on), default=1.0)
+        check("8. THE SHAPE IS KEPT: all 96 are still on the declared ellipse to "
+              "1e-12 after 20 sweeps of sliding (%d, worst %.3e)"
+              % (len(sl_on), sl_worst), len(sl_on) == 96 and sl_worst < 1e-12)
+        # ...AND THE DISTRIBUTION IS NOT. Compared as PARAMETERS along the curve,
+        # which is the only comparison that means anything here: both sets lie on
+        # one curve, so a distance between the two meshes would be measuring the
+        # slide and the curve at once.
+        def params(nodes):
+            out = sorted(math.atan2(p[1] / _B, p[0] / _A)
+                         for p in seam_nodes(nodes, 1e-9))
+            return out
+
+        p_frozen, p_slid = params(nodes), params(sl_nodes)
+        moved = max(abs(a - b) for a, b in zip(p_frozen, p_slid))
+        check("8. THE DISTRIBUTION IS NOT: the worst seam node moved %.3e along the "
+              "curve, so this is a slide and not a frozen seam under a new name"
+              % moved, len(p_frozen) == len(p_slid) == 96 and moved > 1e-3)
+        # THE WALL IS NOT TOUCHED. #83 decided wall nodes do not slide; this flag
+        # reaches interior lines only, and the figure that would show otherwise is
+        # the wall first-cell height the declaration asks for.
+        def wall_rel(text):
+            # THE `HYBMESH_MB_QUALITY ` LINE AND NOT `..._BEFORE`, and the trailing
+            # space is what tells them apart. Read without it, the first draft of
+            # this check compared the two runs' PRE-smoothing figures, which are
+            # identical by construction — a check that passed on both arguments and
+            # could not have failed.
+            for line in text.splitlines():
+                if line.startswith("HYBMESH_MB_QUALITY "):
+                    for tok in line.split():
+                        if tok.startswith("wall_first_cell_worst_rel="):
+                            return float(tok.split("=", 1)[1])
+            return None
+
+        q_fr, q_sl = wall_rel(out), wall_rel(out_sl)
+        check("8. the WALL first-cell height is held either way (%s frozen, %s "
+              "sliding), so the flag reached no wall" % (q_fr, q_sl),
+              q_fr is not None and q_sl is not None and q_fr < 1e-4 and q_sl < 1e-4)
+
+        # -- 8b. AND THE COMPARISON, WHICHEVER WAY IT GOES --------------------
+        #
+        # Measured 2026-10-16 at the shipped cap of 20: the worst non-orthogonality
+        # improves by 0.004 deg and the MEAN gets worse by 0.011. On the shipped
+        # two-ring CIRCLE the max is 3.3x worse (2.025 -> 6.680), and past the
+        # default cap the sliding solve DIVERGES by the residual test and rolls
+        # back to sweep 2. So sliding does not improve any case this repo ships,
+        # which is why it is off by default — and this check is what stops that
+        # sentence going stale in the design note while the code moves.
+        def nonortho(text):
+            got = {}
+            for line in text.splitlines():
+                if line.startswith("HYBMESH_MB_QUALITY "):
+                    for tok in line.split():
+                        if tok.startswith("nonortho_"):
+                            k, v = tok.split("=", 1)
+                            got[k] = float(v)
+                    return got
+            return got
+
+        n_fr, n_sl = nonortho(out), nonortho(out_sl)
+        check("8b. the comparison at the default cap is a WASH and is asserted as "
+              "one: max %.4f -> %.4f, mean %.4f -> %.4f, both within 0.05 deg"
+              % (n_fr["nonortho_max_deg"], n_sl["nonortho_max_deg"],
+                 n_fr["nonortho_mean_deg"], n_sl["nonortho_mean_deg"]),
+              abs(n_fr["nonortho_max_deg"] - n_sl["nonortho_max_deg"]) < 0.05
+              and abs(n_fr["nonortho_mean_deg"] - n_sl["nonortho_mean_deg"]) < 0.05)
+        check("8b. ...and the MEAN is the half that gets WORSE, which is the "
+              "direction the design note records and the reason the default is off "
+              "(%.6f frozen vs %.6f sliding)"
+              % (n_fr["nonortho_mean_deg"], n_sl["nonortho_mean_deg"]),
+              n_sl["nonortho_mean_deg"] > n_fr["nonortho_mean_deg"])
 
     print()
     if failures:

@@ -97,7 +97,7 @@ int sidesAt(const MbBlock& b, int i, int j, MbSide& only) {
 
 }  // namespace
 
-hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
+hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh, bool slide) {
     MbSmoothPlan plan;
     const size_t nb = mesh.blocks.size();
     plan.frames.resize(nb);
@@ -162,8 +162,18 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
     // shipped two-block fixture the 20 default sweeps pulled all 39 interior seam
     // nodes off their arc, the worst by 4.961e-02 against a radius of 1.25 — a
     // declared curve silently replaced by one nobody wrote down.
-    std::vector<std::array<bool, 4>> isFollowing(nb, {false, false, false, false});
-    for (const MbSharedEdge& se : mesh.sharedEdges) {
+    //
+    // ONE LIST, TWO MEANINGS SINCE #176. `shapeAt` records WHICH shape holds each
+    // side, by INDEX into `MbResult::sharedEdges`, and -1 is "none". What the plan
+    // then DOES with it is the mode's decision: freeze the node (the default,
+    // above) or move it and hand the sweep the shape to put it back on. A second
+    // `isFollowing` bool array beside this one is what #176 wrote first and
+    // deleted — two sufficient conditions for one rule mask each other, and an
+    // injection disabling either came back inert while the other went on freezing
+    // the seam, which is the shape this module's corner rule already records.
+    std::vector<std::array<int, 4>> shapeAt(nb, {-1, -1, -1, -1});
+    for (size_t seIdx = 0; seIdx < mesh.sharedEdges.size(); ++seIdx) {
+        const MbSharedEdge& se = mesh.sharedEdges[seIdx];
         if (se.blockA >= 0 && static_cast<size_t>(se.blockA) < nb)
             isShared[static_cast<size_t>(se.blockA)][static_cast<size_t>(se.sideA)] = true;
         if (se.blockB >= 0 && static_cast<size_t>(se.blockB) < nb)
@@ -174,10 +184,11 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
         // second way and makes the same statement, so comparing either field here
         // would be this module re-deciding what a shape is.
         if (!se.hasDeclaredShape()) continue;
+        const int idx = static_cast<int>(seIdx);
         if (se.blockA >= 0 && static_cast<size_t>(se.blockA) < nb)
-            isFollowing[static_cast<size_t>(se.blockA)][static_cast<size_t>(se.sideA)] = true;
+            shapeAt[static_cast<size_t>(se.blockA)][static_cast<size_t>(se.sideA)] = idx;
         if (se.blockB >= 0 && static_cast<size_t>(se.blockB) < nb)
-            isFollowing[static_cast<size_t>(se.blockB)][static_cast<size_t>(se.sideB)] = true;
+            shapeAt[static_cast<size_t>(se.blockB)][static_cast<size_t>(se.sideB)] = idx;
     }
 
     // ── WHICH OF THE TWO BLOCKS MOVES A SHARED EDGE'S NODES ────────────────
@@ -246,8 +257,11 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
                 if (shared) {
                     // On a WALL side: the domain, not the discretisation.
                     if (isWall[bi][static_cast<size_t>(side)]) continue;
-                    // On a FOLLOWING side: a declared position, like a wall's.
-                    if (isFollowing[bi][static_cast<size_t>(side)]) continue;
+                    // On a side held to a DECLARED SHAPE: a declared position,
+                    // like a wall's — UNLESS the run asked for it to slide, in
+                    // which case the shape is a constraint rather than a freeze
+                    // and the node moves with its shape recorded (#176).
+                    if (!slide && shapeAt[bi][static_cast<size_t>(side)] >= 0) continue;
                     if (!isShared[bi][static_cast<size_t>(side)]) continue;
                     // The other block's to move.
                     if (!ownsSide[bi][static_cast<size_t>(side)]) continue;
@@ -268,9 +282,20 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
                 mv.i = i;
                 mv.j = j;
                 mv.shared = shared;
+                // NO `&& slide` HERE, AND THAT IS MEASURED RATHER THAN TIDY.
+                // The guard was written first and an injection removing it came
+                // back INERT: with the freeze in force a node on a shaped side
+                // never reaches this line at all, and a node on an unshaped one
+                // has `shapeAt == -1`. Two sufficient conditions for one rule mask
+                // each other — the same finding this module's corner rule records
+                // — so the dead one goes and the live one is named. What makes
+                // "`shapeEdge` is only ever set under `slide`" true is the freeze
+                // above, and `test_multiblock.cpp` 58b asserts it on the plan.
+                if (shared) mv.shapeEdge = shapeAt[bi][static_cast<size_t>(side)];
                 plan.moves[bi].push_back(mv);
                 ++plan.movedNodes;
                 if (shared) ++plan.movedShared;
+                if (mv.shapeEdge >= 0) ++plan.movedOnShape;
             }
         }
     }

@@ -156,6 +156,24 @@ MESH_SPECS: tuple[FieldSpec, ...] = (
               key="MB_SMOOTH_ITERS", group="mode",
               modes=(MESH_MODE_MULTIBLOCK,),
               opts=dict(lo=0, hi=100000)),
+    FieldSpec("mb_smooth_slide", "bool", "Seams Slide Along Their Curve",
+              "WHETHER an interior block boundary that has a DECLARED SHAPE — one "
+              "that follows a drawn geometry segment, or one declared in the "
+              "topology as an arc or an ellipse — may slide ALONG that shape while "
+              "the sweeps above run. Off, which is the default, it is frozen: its "
+              "nodes stay at the arc lengths the fill gave them. On, they move like "
+              "any other shared node and are projected back onto the curve "
+              "afterwards, so the seam keeps its shape and finds its own spacing — "
+              "the way GridPro's generator lets interior block boundaries float. It "
+              "reaches no WALL and no declared CORNER either way: a wall's first "
+              "cell height is solved for by arc length and sliding would spend it "
+              "silently. MEASURED ON EVERY SHIPPED CURVED CASE it is a wash or a "
+              "small loss at the default cap, and past that cap the solve diverges "
+              "and rolls back — which is why it is off. It is here for a drawing "
+              "whose seam spacing the fill cannot get right, not as an improvement "
+              "to the cases in this repo.",
+              key="MB_SMOOTH_SLIDE", group="mode",
+              modes=(MESH_MODE_MULTIBLOCK,)),
 
     # ── Domain & Geometry: the rectangular bounding box ──────────────────────
     # modes: the multi-block domain is bounded by the topology's own outer edges,

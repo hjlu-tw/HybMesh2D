@@ -94,6 +94,18 @@ class MeshConfig(ConfigValidationMixin, GeomListMixin):
     # best one measured.
     mb_smooth_iters: int = 20
 
+    # MAY A DECLARED INTERIOR CURVE SLIDE ALONG ITSELF while that smoother runs?
+    # `MB_SMOOTH_SLIDE`, and False is the shipped behaviour since #151: a shared
+    # line that follows a geometry segment, or that IS a declared curve, is frozen.
+    # True moves its nodes in the sweep and projects each back onto that shape, so
+    # the seam keeps its SHAPE and finds its own DISTRIBUTION.
+    #
+    # FALSE AND NOT TRUE, and it MUST equal `Config::mbSmoothSlide` — the parity
+    # gate compares key, type and default in both directions. The derivation is at
+    # that C++ declaration, with the measurement that chose it: on every shipped
+    # curved case sliding is a wash or a loss at the default cap.
+    mb_smooth_slide: bool = False
+
     # WHICH CASE TYPE JUDGES A RUN OF THIS CONFIGURATION (#169). A path, stored
     # repo-relative inside the repo and canonical-absolute outside, exactly as
     # `mesh_topology_file` above is — the rule is `services/case_type_picker.py`'s

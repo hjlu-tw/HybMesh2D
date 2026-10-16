@@ -70,6 +70,53 @@ attributable, and the one #85 deliberately spent.
   `tests/cpp/test_multiblock.cpp` 58 (frozen at 0 movable shared, the same seam as a CHORD still at
   3) and `tests/test_multiblock_follows_surface.py` group 3, which measures the exported nodes
   against the polyline AFTER the default sweeps.
+- **A DECLARED SHAPE CAN BE A CONSTRAINT INSTEAD OF A FREEZE, and it is OFF BY DEFAULT**
+  (`MB_SMOOTH_SLIDE`, `Config::mbSmoothSlide` — a **bool**, like `MB_SPLIT_QUADS` and read through
+  a double like every other bool key; `MbParams::smoothSlide`; #176). At 1 a node on a shared line
+  with a declared shape MOVES in the Winslow sweep like any other shared node — one node, one
+  frame, one stencil, through the same `MbGhostFrame` — and is then PROJECTED back onto that shape.
+  The seam keeps its SHAPE and finds its own DISTRIBUTION, which is GridPro's mechanism: the
+  interior block boundaries float and every node is pulled back to its surface.
+  - **DEFAULT 0, and the reason is #81-#84's**: through four changes of kernel the smoothing
+    default stayed 0 and every pre-existing golden case was unchanged at each step, which is what
+    made each change attributable. **22/22 golden cases SAME at 0.000e+00** across the commit that
+    added this.
+  - **IT SHIPPED ON A MEASUREMENT THAT DOES NOT FAVOUR IT, and that is the ticket's own stated
+    outcome rather than a disappointment.** At the shipped cap of 20 on
+    `multiblock_tworing_curve`: worst non-orthogonality 29.1695 -> 29.1658, MEAN 9.5050 -> 9.5160
+    (worse). On the shipped two-ring CIRCLE the max is **3.3x worse** (2.025 -> 6.680), because
+    that case's arc-length distribution is already the symmetric one and any slide breaks it. On
+    #151's `curved_seam_blocks` fixture: 52.978 -> 53.044 max, 13.590 -> 13.735 mean. **Past the
+    default cap the sliding solve DIVERGES by the residual test and rolls back to sweep 2** — so
+    there is no cap at which it wins either, and the "0 inverted at cap 800" that looks like a
+    stability win is the ROLLBACK, not a converged mesh. Recorded against that reading explicitly,
+    because it was the first one taken.
+  - **The PLAN says which shape; the SWEEP says where on it.** `MbNodeMove::shapeEdge` is an INDEX
+    into `MbResult::sharedEdges`, never a position — `src/MbShared.cpp`'s own rule is that nothing
+    in it compares a coordinate, and a projection is a comparison of positions by definition. The
+    geometry is `projectOnShape` in `src/MultiBlock.cpp`.
+  - **ONE ARRAY, NOT TWO.** `shapeAt` (which shape holds each side, by index) replaced #151's
+    `isFollowing` bool array rather than sitting beside it: two sufficient conditions for one rule
+    mask each other, which is the shape this file's four-way-corner rule already records.
+  - **TWO SHAPES, TWO PROJECTIONS, and they are different objects.** A declared `curve` is
+    analytic and its projection is a Newton solve **clamped to the edge's own span** — on a ring
+    the far side is a perfectly good "nearest point" and a torn mesh. A `follows` line is a stored
+    polyline and its projection is the nearest point over its facets, so a slid node lands ON a
+    facet and therefore up to one SAGITTA off the curve those facets discretise (2.870e-04
+    measured on the shipped fixture). A gate measuring it against the analytic circle would read
+    that as the seam coming loose.
+  - **THE RESIDUAL IS MEASURED ON THE POSITION THAT WAS KEPT**, after the projection: a node
+    pulled straight back to where it started did not move.
+  - **IT REACHES NO WALL AND NO DECLARED CORNER at either setting.** #83 decided wall nodes do not
+    slide, because the wall's first cell height is solved for by arc length and sliding would
+    spend it with no symptom; a declared corner has no frame to move in. Measured: the wall
+    first-cell worst relative figure is 0.000000 frozen and 0.000003 sliding.
+  - **The run SAYS which rule is in force** — `Seam Sliding` on the banner, `slide=` and
+    `moved_on_shape=` on `HYBMESH_MB_SMOOTH`, and the movable-nodes row names the sliding count.
+  - Gated by `tests/cpp/test_multiblock.cpp` 58b, `tests/test_multiblock_curve_surface.py` groups
+    8 and 8b (the analytic half, with the comparison asserted rather than left in a note) and
+    `tests/test_multiblock_follows_surface.py` group 8 (the polyline half).
+  Why: `docs/design_notes/mesher.md`, "A SEAM THAT SLIDES ALONG ITS CURVE".
   **The banner says so**: `walls, declared corners and any interior line WITH A DECLARED SHAPE —
   one that FOLLOWS a curve or IS one — are frozen`. **A DECLARED `curve` IS THE SECOND WAY IN AND
   THE ARGUMENT IS WORD FOR WORD #151's** (#175): its nodes are placed by arc length along a curve

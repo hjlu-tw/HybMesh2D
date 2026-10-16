@@ -1062,6 +1062,51 @@ std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& p
     return pts;
 }
 
+// PUT A NODE BACK ON THE SHAPE ITS LINE DECLARES (#176).
+//
+// THE GEOMETRY LIVES HERE AND NOT IN `MbShared`, deliberately: that module's own
+// rule is that nothing in it compares a position — every answer there comes from
+// node ids and the declaration's published lists — and a projection is a
+// comparison of positions by definition. So the PLAN says which shape a node is
+// held to, by index, and this says where on it the node lands.
+//
+// TWO SHAPES, ONE QUESTION, and they are genuinely different objects rather than
+// one with two spellings. A declared `curve` is analytic and its projection is a
+// Newton solve CLAMPED TO THE EDGE's OWN SPAN — leaving the span means leaving the
+// edge, and on a ring the far side of the curve is a perfectly good solution to
+// "nearest point" and a torn mesh. A `follows` line is a stored polyline and its
+// projection is the nearest point over its facets, clamped to its two ends for the
+// same reason.
+//
+// A NODE WITH NO SHAPE NEVER REACHES HERE: the plan leaves `shapeEdge` at -1 for
+// it, and the caller tests that. Written so that an unexpected one is returned
+// UNCHANGED rather than snapped to something, because a node moved by a function
+// that had nothing to move it onto is the wrong-mesh-with-no-symptom this path
+// refuses everywhere else.
+Point2D projectOnShape(const hybmesh::MbSharedEdge& se, const Point2D& p) {
+    if (se.hasCurve) return hybmesh::mbCurveProject(se.curve, p, /*clampToSpan*/ true);
+    const std::vector<Point2D>& path = se.followsPath;
+    if (path.size() < 2) return p;
+    Point2D best = path.front();
+    double bestD2 = (best - p).lengthSq();
+    for (size_t k = 0; k + 1 < path.size(); ++k) {
+        const Point2D a = path[k], b = path[k + 1];
+        const Point2D v = b - a;
+        const double L2 = v.lengthSq();
+        // A zero-length facet is not an error here — a resampled polyline may carry
+        // one — and its own endpoint is already in the running from the segment
+        // either side of it, so it is skipped rather than divided by.
+        if (!(L2 > 0.0)) continue;
+        double t = (p - a).dot(v) / L2;
+        if (t < 0.0) t = 0.0;
+        if (t > 1.0) t = 1.0;
+        const Point2D q = a + v * t;
+        const double d2 = (q - p).lengthSq();
+        if (d2 < bestD2) { bestD2 = d2; best = q; }
+    }
+    return best;
+}
+
 // THE SAME DISTRIBUTION, PLACED ON AN ANALYTIC CURVE INSTEAD OF A POLYLINE (#175).
 //
 // `spacingAlong` is shared verbatim, which is the point: the tanh law, the wall
@@ -1744,7 +1789,7 @@ std::string fmtSci(double v) {
     return os.str();
 }
 
-void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
+void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps, bool slide) {
     r.preSmoothNodes = r.nodes;
     // The length the residual is expressed in. Taken from the mesh the solve
     // STARTS from, once, so a converging solve is not chasing a moving ruler.
@@ -1784,9 +1829,10 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // TOPOLOGY, which no sweep changes. `include/MbShared.hpp` owns the freeze
     // rule, the ghost layer that continues a block's logical frame across a shared
     // edge, and the ownership rule that makes a shared node move exactly once.
-    const hybmesh::MbSmoothPlan plan = hybmesh::mbSmoothPlan(r);
+    const hybmesh::MbSmoothPlan plan = hybmesh::mbSmoothPlan(r, slide);
     r.smoothMoved = plan.movedNodes;
     r.smoothMovedShared = plan.movedShared;
+    r.smoothMovedOnShape = plan.movedOnShape;
 
     for (int sweep = 0; sweep < maxSweeps; ++sweep) {
         std::vector<Point2D> next = r.nodes;
@@ -1820,8 +1866,21 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
                 st.mp     = at(-1,  1);
                 st.pm     = at( 1, -1);
                 st.mm     = at(-1, -1);
-                const Point2D moved = hybmesh::mbWinslowUpdate(st, cf.at(i, j));
+                Point2D moved = hybmesh::mbWinslowUpdate(st, cf.at(i, j));
+                // ...AND BACK ONTO ITS OWN SHAPE, for a node whose line declares
+                // one (#176). The kernel has no notion of a constraint, so the
+                // node is moved freely and then pulled back — which is what makes
+                // this a SLIDE along the curve rather than a second kernel.
+                if (mv.shapeEdge >= 0
+                    && static_cast<size_t>(mv.shapeEdge) < r.sharedEdges.size())
+                    moved = projectOnShape(r.sharedEdges[
+                                               static_cast<size_t>(mv.shapeEdge)],
+                                           moved);
                 next[static_cast<size_t>(mv.node)] = moved;
+                // MEASURED ON THE POSITION THAT WAS KEPT, not on the kernel's
+                // answer before the projection: the residual is how far the mesh
+                // moved this sweep, and a node pulled straight back to where it
+                // started did not move.
                 const double d = (moved - st.c).length();
                 if (d > worst) worst = d;
             }
@@ -3037,6 +3096,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         se.followsGeom = edges[k].followGeom;
         se.hasCurve = edges[k].hasCurve;
         se.curve = edges[k].curve;
+        if (!se.followsGeom.empty()) se.followsPath = paths[k];
         se.followsSeg = edges[k].followSeg;
         r.sharedEdges.push_back(se);
     }
@@ -3057,7 +3117,8 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // The solve itself is `mbSmoothBlocks` above, where its own rationale is:
     // which nodes move, why Jacobi, and what the three endings of a bounded
     // elliptic solve are. Here is only WHERE it runs.
-    if (params.smoothIters > 0) mbSmoothBlocks(r, params.smoothIters);
+    if (params.smoothIters > 0)
+        mbSmoothBlocks(r, params.smoothIters, params.smoothSlide);
 
     // ── Split every block, and emit its boundary faces ────────────────────
     //

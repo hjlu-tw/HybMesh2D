@@ -274,6 +274,8 @@ def config_to_text(cfg, path: str = "", topology_path: str = "") -> str:
     lines.append(f"MB_SPLIT_RULE {int(getattr(cfg, 'mb_split_rule', 0))}")
     lines.append(f"MB_SPLIT_SEED {int(getattr(cfg, 'mb_split_seed', 0))}")
     lines.append(f"MB_SMOOTH_ITERS {int(getattr(cfg, 'mb_smooth_iters', 0))}")
+    lines.append(
+        f"MB_SMOOTH_SLIDE {1 if getattr(cfg, 'mb_smooth_slide', False) else 0}")
     lines += [
         "",
         "# ==============================================================================",
