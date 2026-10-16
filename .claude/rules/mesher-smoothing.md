@@ -48,12 +48,15 @@ attributable, and the one #85 deliberately spent.
   (`include/MbShared.hpp` + `src/MbShared.cpp` in `hybmesh_pure`; #84). FROZEN: a node on an edge
   whose declared KIND is `wall` (the outer boundary is the DOMAIN, not the discretisation, and a
   bound node would leave the geometry it was attached to by arc length), every DECLARED CORNER, and
-  — since #151 — every node of a shared edge that declares a `follows`.
-  MOVES: everything else — interior to a block, or interior to an `interface` or a `cut` that
-  follows nothing. The wall
-  gate is `MbResult::wallSpecs`, the list `measureMbQuality` and `mbWallTargets` walk; the
-  following gate is `MbSharedEdge::followsGeom`, the seam's own published answer to "which interior
-  lines are curves". No kind
+  — since #151 — every node of a shared edge WITH A DECLARED SHAPE.
+  MOVES: everything else — interior to a block, or interior to an `interface` or a `cut` with no
+  declared shape. The wall
+  gate is `MbResult::wallSpecs`, the list `measureMbQuality` and `mbWallTargets` walk; the shape
+  gate is **`MbSharedEdge::hasDeclaredShape()`**, the seam's own published answer to "which
+  interior lines are curves". **TWO WAYS TO HAVE A SHAPE AND ONE QUESTION** (#175): `followsGeom`
+  non-empty (the line lies on a stored polyline) or `hasCurve` (the line IS a declared arc or
+  ellipse). Comparing either field here would be this module re-deciding what a shape is, which is
+  why the predicate lives on the shared edge and not in the loop. No kind
   string is compared and NO POSITION is compared anywhere in that module.
 - **A FOLLOWING SEAM IS FROZEN, and that NARROWS #84 rather than withdrawing it** (#151). #84 freed
   the shared edges because an interior line had no declared shape to lose — the chord between two
@@ -67,8 +70,14 @@ attributable, and the one #85 deliberately spent.
   `tests/cpp/test_multiblock.cpp` 58 (frozen at 0 movable shared, the same seam as a CHORD still at
   3) and `tests/test_multiblock_follows_surface.py` group 3, which measures the exported nodes
   against the polyline AFTER the default sweeps.
-  **The banner says so**: `walls, declared corners and any interior line that FOLLOWS a curve are
-  frozen`.
+  **The banner says so**: `walls, declared corners and any interior line WITH A DECLARED SHAPE —
+  one that FOLLOWS a curve or IS one — are frozen`. **A DECLARED `curve` IS THE SECOND WAY IN AND
+  THE ARGUMENT IS WORD FOR WORD #151's** (#175): its nodes are placed by arc length along a curve
+  the document names, so they are a declared POSITION exactly as a following seam's are. Measured
+  on `config/multiblock_tworing_curve.dat`: the 96 seam nodes come back at 1.755e-16 off the
+  declared ellipse in the exported `.vtk` after the default 20 sweeps, and 184 shared nodes still
+  move — the eight radials' interiors, which have no shape to lose. Gated by
+  `tests/test_multiblock_curve_surface.py` check 4.
 - **REVERSES #81: a node interior to an interface or a cut MOVES, and the objection that froze it
   is ANSWERED rather than dropped — the node is moved ONCE, in ONE frame, from ONE stencil.**
   Why: `docs/design_notes/mesher.md`, "#81's OBJECTION WAS REAL AND IS ANSWERED". A node on a
@@ -216,11 +225,13 @@ attributable, and the one #85 deliberately spent.
   is deleted rather than kept beside the new one — the branches differ only in what they OBSERVE.
   Why: `docs/design_notes/mesher.md`, "THE CAP ADVICE CONCLUDED ABOUT THE MESH FROM THE ITERATION".
   The turned branch used to say "raising `MB_SMOOTH_ITERS` makes this mesh worse, not more
-  converged. Lower it to at most that sweep." **All four shipped CURVED cases take that branch at
+  converged. Lower it to at most that sweep." **All five shipped CURVED cases take that branch at
   the default cap of 20**, so the accurate `else` branch beside it was the one nobody ever saw
-  (residual / best / at sweep, measured 2026-09-30: `ogrid` 4.545e-04 / 4.282e-04 / 2; `cgrid`
+  (residual / best / at sweep, measured 2026-09-30 and #175's 2026-10-16: `ogrid` 4.545e-04 /
+  4.282e-04 / 2; `cgrid`
   9.030e-04 / 8.536e-04 / 1; `tworing` 4.489e-04 / 4.206e-04 / 2; `tworing_offset` 4.847e-04 /
-  4.765e-04 / 4 — `square` and `cavity` CONVERGE on sweep 1, `hgrid` is still descending at 20).
+  4.765e-04 / 4; `tworing_curve` 4.853e-04 / 4.776e-04 / 4 — `square` and `cavity` CONVERGE on
+  sweep 1, `hgrid` is still descending at 20).
   Both halves of that sentence fail where they can be checked: not more converged (true), not worse
   (FALSE). On `tworing_offset` non-orthogonality improves at every cap SAMPLED from 2 through 60
   while the residual rises the whole way, and 20 -> 4 costs 0.43 deg of max and 0.34 deg of mean;

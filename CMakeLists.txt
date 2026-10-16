@@ -188,6 +188,7 @@ add_library(hybmesh_pure STATIC
     src/JunctionScheme.cpp
     src/MeshMode.cpp
     src/MultiBlock.cpp
+    src/MbCurve.cpp
     src/MbQuality.cpp
     src/MbControl.cpp
     src/MbShared.cpp

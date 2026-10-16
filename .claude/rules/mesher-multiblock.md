@@ -185,6 +185,52 @@ wall that drift exported a band of wall at every junction.)
     rule reads (`.claude/rules/mesher-smoothing.md`). Gated by `test_multiblock.cpp` 58 and
     `tests/test_multiblock_follows_surface.py` (`examples/topology/curved_seam_blocks.json`).
   Why: `docs/design_notes/mesher.md`, "AN INTERIOR LINE THAT FOLLOWS A CURVE".
+- **`curve` MAKES THE EDGE THE CURVE — the THIRD answer to "where does this edge lie", and the
+  only one with no file in it** (#175; `include/MbCurve.hpp` + `src/MbCurve.cpp` in `hybmesh_pure`).
+  `{"kind": "arc", "centre": [x, y], "r": R}` or `{"kind": "ellipse", "centre": [x, y], "a": A,
+  "b": B, "rot_deg": D}`, plus `"sweep"` of `ccw` (the default) or `cw`. Accepted on EVERY kind.
+  - **ONE parametric form** — `P(t) = C + R(rot)·(a cos t, b sin t)` — and a circle is the `a == b`
+    case, NOT a branch beside it: the arc-length quadrature (8-point Gauss-Legendre on panels of
+    `pi/16`) integrates a constant exactly, so the general path reproduces the closed form. A
+    closed form written beside a loop is how `D_total` came to be wrong by `r/g`.
+  - **THE SPAN IS NEVER DECLARED. It is derived from the edge's OWN TWO CORNERS**, which are
+    inverse-mapped onto the curve and must LIE on it. A pair of angles beside corners written as
+    coordinates is two numberings of one thing with nothing checking they agree — the defect that
+    put all four of an O-grid's radials a quarter turn around the annulus. `sweep` is the one thing
+    the corners cannot say, because two points on a closed curve have two arcs between them.
+  - **NODES ARE PLACED ON THE CURVE AT EXACT ARC LENGTH, not on a rendering of it**
+    (`discretiseCurve`, sharing `spacingAlong` verbatim with the path branch, so `wall_ends` /
+    `ds_start` / `growth` mean the same thing). So there is NO faceting residue and **#94's
+    sample-rate advice is silent on a curve edge** — that message is about a stored polyline's
+    facets, and there is no polyline. Its single guard (`pd != onPath.end()`) is what keeps it
+    silent; a second condition on `hasCurve` would be two sufficient tests masking each other.
+  - **THE TWO ENDS ARE THE CORNERS' OWN POSITIONS**, not the curve's parameter at them: they agree
+    to the tolerance, and "agree to a tolerance" is not "are the same point" when the Coons fill
+    reads them.
+  - **The corner-on-curve tolerance IS a tolerance, and the reason this path may have one is
+    stated at `MB_CURVE_ON_TOL`**: it compares two lengths at the SAME scale (distance off, against
+    the larger semi-axis), unlike the 1e-7 wall / 1e-1 far-field pair that makes coordinate welding
+    impossible here. `1e-9` relative — above typing noise, below a facet sagitta.
+  - **Four refusals, each naming its own number**: a corner off the curve (with the distance, the
+    nearest point and the bar), a non-positive extent, two corners at one parameter (which is both
+    "no length" and "the whole closed curve"), and an unknown `kind` or `sweep`. Unknown keys are
+    refused PER KIND, so an `r` on an ellipse is caught.
+  - **Two WARNINGS, because each is a valid mesh nobody meant**: a sweep over half a turn names the
+    angle and the other `sweep` value; a `wall` declaring a `curve` says it carries the config
+    default BC and names `binding` — the existing `nBound == 0` warning fires only when NOTHING is
+    bound, so on a mixed topology it is the only thing that reaches the reader.
+  - **A declared curve is a DECLARED SHAPE and is FROZEN by the smoother**, through
+    `MbSharedEdge::hasDeclaredShape()` — ONE question asked in ONE place, so the two ways of
+    declaring a shape cannot be answered differently (`.claude/rules/mesher-smoothing.md`). The
+    shared-edge report says `a declared <kind>`.
+  - **What `curve` does NOT replace is the OFFSET.** A concentric ellipse through the same four
+    corners is not an ellipse's offset — measured at 0.241523 from the body at the nose against
+    0.250000 — so `config/multiblock_tworing_offset.dat` still ships, still wants its computed
+    geometry, and neither case supersedes the other.
+  - Gated by `tests/cpp/test_mb_curve.cpp` (8 groups, 7 hand injections dated in that file) and
+    `tests/test_multiblock_curve_surface.py` (`config/multiblock_tworing_curve.dat`,
+    `examples/topology/tworing_curve.json`).
+  Why: `docs/design_notes/mesher.md`, "AN EDGE THAT IS A CURVE".
 - **A geometry is named BY NAME** — exact declared path, then a *unique* basename — never by
   position in the loaded list. An ambiguous basename is refused, not resolved by order.
 - **A label stays a LABEL.** The seam emits the sidecar's grouping label and `Config::resolveGroupBc`
@@ -569,8 +615,8 @@ captured with it on.
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against
 one list. #68 moved the first; #69 moved the rest; #89 split the list with the rules.
 **One blind spot that also covers this path is in `.claude/rules/mesher.md`'s list instead** —
-`golden_mesh.py` does not compare the `.bnd` `segm_no` column, and twelve of that comparator's
-twenty-one cases are multi-block. It is not duplicated here, because a blind spot living in two
+`golden_mesh.py` does not compare the `.bnd` `segm_no` column, and thirteen of that comparator's
+twenty-two cases are multi-block. It is not duplicated here, because a blind spot living in two
 places is one that will only ever be updated in one; a reader of this file alone would not
 otherwise learn the hole exists.
 
@@ -585,7 +631,12 @@ otherwise learn the hole exists.
   rather than half-appear; that is the right FAILURE, but it is a silent one, caught by the
   warning at run time and by no gate. **PARTLY CLOSED by #113**, which gates the failure but not
   this precondition — the rule above names the gate.
-- **Nothing projects onto an ANALYTIC curve.** A bound edge follows the stored POLYLINE, so
+- **Nothing projects onto an ANALYTIC curve.** ~~A bound edge follows the stored POLYLINE~~
+  **NARROWED, NOT CLOSED, BY #175**: an edge that DECLARES a `curve` is placed on the curve itself,
+  so this blind spot no longer covers it — but `binding` and `follows` still resolve to a stored
+  polyline, every SHIPPED wall is one of those, and nothing projects an existing node onto anything
+  (the projection `MbCurve` carries has no production caller until #176). A bound edge follows the
+  stored POLYLINE, so
   "follows the circle" is measured against that polyline's vertices and the wall-height residue is
   its faceting. `BL_USE_ANALYTIC_GEOM` is a declared survivor nothing reads — and #83
   KEPT it that way on purpose rather than by omission, by deciding that wall nodes do not slide;

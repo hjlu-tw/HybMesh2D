@@ -4327,7 +4327,8 @@ NO C++ CHANGE, which is the strongest thing this case says about #151's design.
   Two stale figures in the blind-spot list were corrected in the same pass: the golden
   comparator's multi-block share, written as "six of nineteen" beside an "all ten
   multi-block cases" two bullets down, was eleven of twenty at that commit (#154 took it
-  to twelve of twenty-one, and the live figure is in the rule file, not here).
+  to twelve of twenty-one and #175 to thirteen of twenty-two, and the live figure is in the
+  rule file, not here).
 
 **AN OFFSET-DERIVED MIDDLE RING, AND WHAT ARC LENGTH COSTS** (#154, parent #150,
 measured 2026-09-30). #153's own blind-spot list said its comparison was ONE body at ONE
@@ -4450,7 +4451,8 @@ named the right instrument ("raise it only while the inverted-cell count stays 0
 `pastBest` branch said "raising `MB_SMOOTH_ITERS` makes this mesh worse, not more
 converged. Lower it to at most that sweep", and **it is the branch that ships**: all four
 shipped CURVED cases take it at the default cap of 20, so the accurate sentence was the one
-nobody ever saw.
+nobody ever saw. #175's declared-curve two-ring joined this table on 2026-10-16 and lands within
+6e-07 of the offset case it is one declaration away from.
 
 | shipped config | final residual | best | at sweep |
 |---|---|---|---|
@@ -4458,6 +4460,7 @@ nobody ever saw.
 | `multiblock_cgrid` | 9.030e-04 | 8.536e-04 | 1 |
 | `multiblock_tworing` | 4.489e-04 | 4.206e-04 | 2 |
 | `multiblock_tworing_offset` | 4.847e-04 | 4.765e-04 | 4 |
+| `multiblock_tworing_curve` | 4.853e-04 | 4.776e-04 | 4 |
 
 The three non-curved cases do not: `multiblock_square` and `multiblock_cavity` CONVERGE on
 sweep 1 (a rectangle is a fixed point of this solve), and `multiblock_hgrid` is still
@@ -4604,6 +4607,122 @@ Blind spots, named:
   * **The default of 20 is untouched and 60 is better on this one case.** Moving it needs
     its own evidence across every shipped case, and the fold at 80 here is closer than the
     C-grid's at 400 — the margin is not uniform.
+
+**AN EDGE THAT IS A CURVE** (#175, measured 2026-10-16). `binding` (#52) and `follows`
+(#151) both answer "where does this edge lie" with `{geom, seg}` — a drawn geometry, a
+`.meta` sidecar, a segment id and a stored polyline. `curve` is the third answer and the
+only one with no file in it.
+
+**WHAT THE QUESTION ACTUALLY WAS.** The request that opened this was "the blocks should
+not have to be rectangles — in GridPro's representation the block is made of curves". The
+first useful finding was that the capability already existed and was invisible: the fill
+is a Coons map over four polylines, `follows` has shipped since #151, and
+`examples/topology/tworing_offset.json` is eight curvilinear blocks around a 2:1 ellipse.
+What did NOT exist was a way to say so without authoring a geometry. That gap is real and
+had already been paid for three times — `services/topology_tworing.py` refuses to generate
+a seam and sends the user to `CAD ▸ Offset Geometry…`; #153's middle ring was faceted at
+120 per quarter to satisfy two of #94's divisibility rules at once; and
+`models/shape_spec.py` has no ellipse at all, the only route to one being a non-uniform
+scale of a circle, which drops it to a discrete polyline.
+
+**ONE PARAMETRIC FORM, AND THE CIRCLE IS NOT A BRANCH.** `P(t) = C + R(rot)·(a cos t,
+b sin t)`. Arc length is an 8-point Gauss-Legendre rule on panels of `pi/16`; an 8-point
+rule is exact to degree 15, so a circle's constant speed integrates exactly and the general
+path REPRODUCES the closed form. That is deliberate and it is this repo's own scar tissue:
+a closed form written beside a loop is how `D_total` came to be wrong by `r/g` at the
+base/transition seam, with a false left/right asymmetry as the only symptom.
+
+**MEASURED, against references that are not the module.** `tests/cpp/test_mb_curve.cpp`:
+the circle against its closed form (1e-14 on a quarter); the ellipse's perimeter against a
+4e6-panel MIDPOINT rule at 2:1, 4:1 and 10:1, to 1e-10 relative; the quarter computed whole
+against the sum of eight sub-spans, to 1e-14. **Ramanujan's series was tried first and the
+check went red on correct code**: its own error is 4.6e-10 at 2:1 but 2.5e-07 at 4:1 and
+1.2e-05 at 10:1, so asserting it across the range was asserting the approximation. It is
+kept at 2:1 only, with its measured errors written down beside it.
+
+**THE SPAN IS DERIVED FROM THE CORNERS, AND THAT IS THE WHOLE SAFETY ARGUMENT.** A `curve`
+that also declared `theta0`/`theta1` would be two numberings of one thing with nothing
+checking they agree — which is exactly the defect that cost this repo a day: building an
+O-grid around a square, the body's segment 0 started at 225° while the hand-written far
+field's arcs started at −45°, so all four radials ran a quarter turn around the annulus, a
+four-point sweep over far-field radius and wall spacing reported 656 to 5,060 inverted
+cells, and the conclusion published was "the fold is caused by the sharp corner". Here the
+corners ARE the span: they are inverse-mapped onto the curve and must lie on it. `sweep` is
+the one thing the corners cannot say, because two points on a closed curve have two arcs
+between them — and getting IT wrong is a valid mesh, so it is a WARNING naming the swept
+angle and the other value, not a refusal.
+
+**THE TOLERANCE, AND WHY THIS PATH MAY HAVE ONE.** `MB_CURVE_ON_TOL` is 1e-9 RELATIVE to
+the larger semi-axis. This path refuses coordinate welding because wall spacing near 1e-7
+and far-field spacing near 1e-1 leave no single tolerance between them; that argument does
+not reach here, where both quantities are lengths at the same scale and the question is
+only "did the author mean this corner to be on this curve". The bar has to clear typing
+noise (~1e-16 relative) without admitting a facet sagitta.
+
+**THE SHIPPED CASE, AND WHAT IT COSTS.** `config/multiblock_tworing_curve.dat` +
+`examples/topology/tworing_curve.json` are `multiblock_tworing_offset`'s eight blocks with
+the four `follows` seams replaced by four declared ellipses and the third geometry deleted.
+Measured after the default 20 sweeps, same budget (4704 / 9216 / 192), both at 0 inverted:
+
+| | offset (`follows`, a file) | curve (declared ellipse) |
+|---|---|---|
+| nonortho max / mean (deg) | 28.796 / 9.482 | 29.170 / 9.505 |
+| wall first cell worst rel | 0.000000 | 0.000000 |
+| quad midline p95 / max | 17.181 / 25.274 | 17.340 / 25.274 |
+| adjacent area max | 2.733 | 2.992 |
+
+**The declared curve is very slightly WORSE on every figure, and that is the honest
+result.** A concentric ellipse through the same four corners is not an ellipse's offset —
+#154 measured it at 0.241523 from the body at the nose against 0.250000 — so the ring is
+3.39% thin where the layer is thickest. What `curve` buys is that the ring needs no file,
+no segmentation and no divisibility bargain; what it does not buy is constant thickness.
+**Both cases ship and neither supersedes the other**, which is the same shape as #153's
+two-ring comparison going both ways.
+
+**THE SHARPEST MEASUREMENT IS THE CONTROL, NOT THE CASE.** With the four `curve` keys
+removed — the same topology, straight chords between the same corners — the fill exits 0
+with 0 inverted, a worst non-orthogonality of **59.558°** and a wall first cell **0.632** of
+the way off its target; after the default sweeps it exits **9 with 96 INVERTED cells**, a
+worst non-orthogonality of **77.658°** and a cell-shape max of 74532. Against the declared
+ellipse's 29.170° and 0.000000. So on this case a curved block boundary is not a refinement
+of a working mesh — it is what makes the mesh valid. That is asserted in
+`tests/test_multiblock_curve_surface.py` check 3 rather than left in this note.
+
+**A DECLARED CURVE IS FROZEN, through ONE predicate.** `MbSharedEdge::hasDeclaredShape()`
+replaces the `followsGeom.empty()` test #151 wrote, because there are now two ways to have
+a shape and a module comparing either field on its own would be re-deciding what a shape
+is. Measured: 96 seam nodes at **1.755e-16** off the declared ellipse in the exported `.vtk`
+after 20 sweeps, 184 shared nodes still moving (the eight radials' interiors, 8 × 23).
+
+**#94 IS SILENT ON A CURVE EDGE AND THAT IS CORRECT.** Its message is about a stored
+polyline's facets falling unequally on the nodes; a declared curve has no facets. The guard
+is the existing single `pd != onPath.end()`, not a second test on `hasCurve` — two
+sufficient conditions for one rule mask each other and each injection comes back inert,
+which is the lesson `hgrid()` already carries in `MbShared`.
+
+**THE GOLDEN SET: 21/21 SAME at 0.000e+00 across two BUILDS** (baseline from `b4528af` via
+`git archive`, `HYBMESH_GOLDEN_BIN`), so the third path branch is an addition and not a
+rewrite.
+
+Blind spots, named:
+
+  * **Nothing PROJECTS onto the curve yet.** `mbCurveProject` exists, is gated and has no
+    production caller: the freeze means a node is placed once and never moved back. #176 is
+    the ticket that gives it one.
+  * **Only `arc` and `ellipse`.** No spline, no Bézier, no offset. The offset is the one
+    that matters and it is NOT expressible as a conic at all, which is why
+    `multiblock_tworing_offset` still ships.
+  * **A `wall` declaring a `curve` cannot carry a boundary condition**, because a condition
+    comes from a source segment and there is none. It takes the config default and warns.
+    A per-edge `bc` key would close it and was deliberately not added: the BC rule on this
+    path is that a condition is READ OFF a declaration, and a second way to spell one is
+    how the two came to disagree on the hybrid path.
+  * **The axis ratios exercised through the binary are mild** (1.5:1 and the circles). The
+    projection's hard case — a point inside a slender ellipse's evolute, where Newton from
+    the inverse map stops on a critical point that is not the minimum — is reachable only in
+    the C++ gate, because by the time a span is resolved the corner is ON the curve. That
+    case was ALSO the one injection in this batch that came back INERT first time: the
+    original fixture was off the major axis, where Newton finds the right root anyway.
 
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.

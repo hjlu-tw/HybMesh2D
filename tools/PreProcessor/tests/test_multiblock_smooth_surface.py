@@ -24,7 +24,7 @@ own them rather than composed here — the same rule the golden comparator follo
 these files are documentation a user runs, and an edit to one has to be visible
 from a gate.
 
-SINCE #114 GROUP 13 ALSO DRIVES THE OTHER FIVE — every shipped multi-block config
+SINCE #114 GROUP 13 ALSO DRIVES THE OTHER SIX — every shipped multi-block config
 this file does not import a ``base_config`` for, so all of them are exercised for the
 wall warning's floor. That group ENUMERATES them from ``config/`` rather than from a
 list, which is what caught #153's two-ring O-grid arriving as a sixth. They enter
@@ -1292,7 +1292,8 @@ def main() -> int:
               "frozen and why",
               re.search(r"Movable nodes\s+: \d+ of \d+, of which \d+ on a shared "
                         r"edge \(walls, declared corners and any interior line "
-                        r"that FOLLOWS a curve are frozen\)",
+                        r"WITH A DECLARED SHAPE — one that FOLLOWS a curve or IS "
+                        r"one — are frozen\)",
                         out84) is not None)
         check("11. ...and a run that smoothed NOTHING reports neither figure, "
               "because 0 movable nodes is a real answer and must not stand in for "
@@ -1564,9 +1565,11 @@ def main() -> int:
         # then the five minus the two group 12 drives.
         shipped = sorted(os.path.basename(f)[:-4] for f in
                          glob.glob(os.path.join(_REPO, "config", "multiblock_*.dat")))
-        driven = ["multiblock_cavity", "multiblock_cgrid", "multiblock_hgrid",
+        driven = ["multiblock_cavity", "multiblock_cgrid", "multiblock_curve_placeholder",
+                  "multiblock_hgrid",
                   "multiblock_ogrid", "multiblock_square", "multiblock_tworing",
-                  "multiblock_tworing_offset"]
+                  "multiblock_tworing_curve", "multiblock_tworing_offset"]
+        driven.remove("multiblock_curve_placeholder")
         check(f"13. the shipped multi-block configs are exactly the ones this file "
               f"drives, read off `config/` rather than from a list here — so a NEW "
               f"one cannot ship without a gate. That is not a hypothetical: #153's "
@@ -1597,11 +1600,25 @@ def main() -> int:
         # mesh whose middle ring is COMPUTED, so a change to the offset law that
         # left the mesher untouched would still have to keep this run at exit 0.
         rc_to, to, _ = run(tmp, "to154", config=lambda: cfg_tworing_offset)
-        check(f"13. all five added configs EXIT 0 at the default cap, so the "
+        # #175's case is here for the same reason the two above it are, and it adds
+        # the one thing neither of them can: a curved interior line that is NOT a
+        # geometry file, so a change that reached the freeze rule through
+        # `followsGeom` alone would leave this case's seam loose and this run's
+        # movable-shared count would move.
+        cfg_tworing_curve = shipped_config("multiblock_tworing_curve")
+        rc_tc, tc, _ = run(tmp, "tc175", config=lambda: cfg_tworing_curve)
+        check(f"13. all six added configs EXIT 0 at the default cap, so the "
               f"banners the checks below parse describe a mesh that was actually "
               f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg}, tworing "
-              f"{rc_tr}, tworing_offset {rc_to})",
-              (rc_sq, rc_cv, rc_hg, rc_tr, rc_to) == (0, 0, 0, 0, 0))
+              f"{rc_tr}, tworing_offset {rc_to}, tworing_curve {rc_tc})",
+              (rc_sq, rc_cv, rc_hg, rc_tr, rc_to, rc_tc) == (0, 0, 0, 0, 0, 0))
+        tc_shared = [int(m) for m in re.findall(r"(\d+) shared nodes", tc)]
+        tc_sm = smooth_line(tc)
+        check(f"13. ...and the DECLARED-CURVE case freezes its four seams while "
+              f"leaving the eight radials free: 184 of its 12 shared edges' nodes "
+              f"move, which is 8 x 23 and not 12 x 23 "
+              f"({tc_sm.get('moved_shared')}, edges {tc_shared})",
+              len(tc_shared) == 12 and tc_sm.get("moved_shared") == 184)
         w_hg = wall_height_warns(hg)
         hg_before, hg_after = wall_banner(hg, before=True), wall_banner(hg)
         check(f"13. the shipped H-GRID's eight declared wall edges are all MEASURED "
@@ -1798,6 +1815,12 @@ def main() -> int:
             ("TWO-RING OFFSET", to,
              lambda k: run(tmp, "to156", "\nMB_SMOOTH_ITERS %d\n" % k,
                            config=lambda: cfg_tworing_offset)),
+            # #175. A curved case whose seam is DECLARED rather than drawn, so the
+            # list stays "every shipped case with a curved interior line" rather
+            # than becoming "every one whose curve came from a file".
+            ("TWO-RING CURVE", tc,
+             lambda k: run(tmp, "tc156", "\nMB_SMOOTH_ITERS %d\n" % k,
+                           config=lambda: cfg_tworing_curve)),
         ]
         # NAMED RATHER THAN POSITIONAL, because every assert below reads three or
         # four fields out of these and `v[0] > v[1] and 0 < v[2] < v[3]` is a
@@ -1819,10 +1842,10 @@ def main() -> int:
         # these figures — it rewrites what the instruction files state about
         # themselves and does not run the mesher — so the rule file's table is
         # dated, and THIS is what stops the property behind it going stale.
-        check(f"14. all four shipped CURVED cases reach the cap PAST their own best "
+        check(f"14. all five shipped CURVED cases reach the cap PAST their own best "
               f"residual, so the branch whose advice #156 corrected is the one every "
               f"one of them prints (residual, best, best sweep, sweeps: {table})",
-              len(table) == 4
+              len(table) == 5
               and all(v.residual is not None and v.best is not None
                       and v.residual > v.best and 0 < v.best_sweep < v.sweeps == 20
                       for v in table.values()))
@@ -2041,7 +2064,7 @@ def main() -> int:
                 if want not in flat:
                     missing[name] = want
             check(f"14. {path} states this run's OWN residual / best / at-sweep for "
-                  f"all four shipped curved cases, so the table a reader meets there "
+                  f"all five shipped curved cases, so the table a reader meets there "
                   f"is DERIVED by this gate rather than remembered — `--sync` cannot "
                   f"reach these, and three hand-copied homes is how a figure goes "
                   f"stale in two of them (missing: {missing or 'none'})",

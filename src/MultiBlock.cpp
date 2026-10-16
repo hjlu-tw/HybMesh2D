@@ -1,5 +1,6 @@
 #include "MultiBlock.hpp"
 #include "MbControl.hpp"
+#include "MbCurve.hpp"
 #include "MbShared.hpp"
 
 #include "Spacing.hpp"   // the existing spacing laws, shared rather than re-implemented
@@ -202,6 +203,19 @@ struct EdgeSpec {
     // of them.
     std::string followGeom;
     int followSeg = -1;
+    // The ANALYTIC curve this edge IS ("curve"), declared in the document rather
+    // than pointed at in a file (#175). The THIRD and last answer to "where does
+    // this edge lie", and mutually exclusive with the two above: a second answer
+    // to one question is the failure, and which of them the parser happens to read
+    // first is not a tie-break.
+    //
+    // It is not a path and it is not stored as one. A `binding` and a `follows`
+    // resolve to a stretch of a stored POLYLINE, whose faceting is the residue
+    // #93 and #94 measure; a curve resolves to nothing until its two corners are
+    // known, and then its nodes are placed on the curve ITSELF at exact arc
+    // length. That is why there is no fourth entry in `onPath` for it.
+    bool hasCurve = false;
+    hybmesh::MbCurve curve;
 };
 
 struct BlockSpec {
@@ -486,7 +500,7 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
         if (!e.is_object()) { err = where + ": must be an object."; return false; }
         if (!rejectUnknownKeys(e, where.c_str(),
                                {"id", "corners", "kind", "binding", "follows",
-                                "count", "spacing"}, err))
+                                "curve", "count", "spacing"}, err))
             return false;
 
         EdgeSpec spec;
@@ -558,15 +572,32 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
         // which of the two the parser happens to look at first is not an answer.
         auto bd = e.find("binding");
         auto fo = e.find("follows");
-        if (bd != e.end() && fo != e.end()) {
-            err = where + " ('" + spec.id + "'): it declares BOTH a 'binding' and a "
-                  "'follows', which are two answers to one question — where this edge "
-                  "lies. They differ only in the boundary-condition half: 'binding' "
-                  "carries the segment's condition and is for a 'wall'; 'follows' "
-                  "carries none and is for an interior line ('interface' or 'cut'). "
-                  "Keep the one this edge's kind ('"
-                + hybmesh::mbEdgeKindName(spec.kind) + "') accepts and drop the other.";
-            return false;
+        auto cv = e.find("curve");
+        // THREE KEYS, ONE QUESTION. #151 made this a pair; #175 makes it a triple
+        // and keeps the shape: every key the edge used is NAMED, and the check runs
+        // before any of them is tested against the kind, because "you gave two
+        // answers" is a better message than "the second one is not allowed here".
+        {
+            std::vector<const char*> given;
+            if (bd != e.end()) given.push_back("'binding'");
+            if (fo != e.end()) given.push_back("'follows'");
+            if (cv != e.end()) given.push_back("'curve'");
+            if (given.size() > 1) {
+                std::string list;
+                for (size_t g = 0; g < given.size(); ++g) {
+                    if (g) list += (g + 1 == given.size()) ? " and " : ", ";
+                    list += given[g];
+                }
+                err = where + " ('" + spec.id + "'): it declares " + list
+                    + ", which are several answers to ONE question — where this edge "
+                      "lies. 'binding' puts the edge on a source segment AND carries "
+                      "that segment's boundary condition, and is for a 'wall'; "
+                      "'follows' puts it on a source segment and carries no condition, "
+                      "and is for an interior line; 'curve' makes the edge an analytic "
+                      "arc or ellipse declared here, with no geometry file at all. Keep "
+                      "exactly one.";
+                return false;
+            }
         }
         if (bd != e.end()) {
             // A binding says "this edge LIES ON that source segment, and carries
@@ -630,6 +661,107 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
                 return false;
             }
             spec.followSeg = sg->get<int>();
+        }
+
+        if (cv != e.end()) {
+            // THE EDGE IS THE CURVE. No file, no segment id, no stored polyline —
+            // and therefore no faceting residue and nothing for #94's sample-rate
+            // advice to be about.
+            //
+            // THE SPAN IS NOT DECLARED HERE AND MUST NOT BE. It is derived from the
+            // edge's own two corners, once their positions are known. A pair of
+            // angles written beside corners written as coordinates is two
+            // numberings of one thing with nothing checking that they agree, which
+            // is how all four of an O-grid's "radial" edges came to run a quarter
+            // turn around the annulus: the body's segment 0 started at 225 deg and
+            // the hand-written far field's at -45, and four consistent folds looked
+            // like evidence about the geometry. `sweep` is the ONE thing the corners
+            // cannot say, because there are exactly two arcs between any two points.
+            const std::string cw = where + " ('" + spec.id + "') curve";
+            if (!cv->is_object()) {
+                err = cw + ": must be an object, \"curve\": {\"kind\": \"arc\", "
+                           "\"centre\": [x, y], \"r\": <radius>}.";
+                return false;
+            }
+            std::string curveKind;
+            if (!requireString(*cv, "kind", cw.c_str(), curveKind, err)) return false;
+            const bool isArc = (curveKind == "arc");
+            const bool isEllipse = (curveKind == "ellipse");
+            if (!isArc && !isEllipse) {
+                err = cw + ": unknown kind '" + curveKind
+                    + "'. Accepted: 'arc' (centre, r), 'ellipse' (centre, a, b, "
+                      "rot_deg).";
+                return false;
+            }
+            // PER KIND, so an 'r' written on an ellipse is caught rather than
+            // ignored — the same strictness the rest of this schema has, and the
+            // reason it has it: a radius silently dropped is a curve nobody declared.
+            const std::vector<std::string> known =
+                isArc ? std::vector<std::string>{"kind", "centre", "r", "sweep"}
+                      : std::vector<std::string>{"kind", "centre", "a", "b",
+                                                 "rot_deg", "sweep"};
+            if (!rejectUnknownKeys(*cv, cw.c_str(), known, err)) return false;
+
+            auto ce = cv->find("centre");
+            if (ce == cv->end() || !ce->is_array() || ce->size() != 2
+                || !(*ce)[0].is_number() || !(*ce)[1].is_number()) {
+                err = cw + ": needs \"centre\": [x, y].";
+                return false;
+            }
+            spec.curve.cx = (*ce)[0].get<double>();
+            spec.curve.cy = (*ce)[1].get<double>();
+            auto positive = [&](const char* key, double& out) -> bool {
+                auto it = cv->find(key);
+                if (it == cv->end() || !it->is_number()) {
+                    err = cw + ": needs \"" + key + "\": <length>.";
+                    return false;
+                }
+                out = it->get<double>();
+                if (!(out > 0.0)) {
+                    err = cw + ": '" + key + "' is " + std::to_string(out)
+                        + "; it must be greater than zero. A curve with a zero or "
+                          "negative extent is a point, and an edge on it has no length.";
+                    return false;
+                }
+                return true;
+            };
+            if (isArc) {
+                spec.curve.kind = hybmesh::MB_CURVE_ARC;
+                double rr = 0.0;
+                if (!positive("r", rr)) return false;
+                spec.curve.a = rr;
+                spec.curve.b = rr;
+            } else {
+                spec.curve.kind = hybmesh::MB_CURVE_ELLIPSE;
+                if (!positive("a", spec.curve.a)) return false;
+                if (!positive("b", spec.curve.b)) return false;
+                auto rd = cv->find("rot_deg");
+                if (rd != cv->end()) {
+                    if (!rd->is_number()) {
+                        err = cw + ": 'rot_deg' must be a number of degrees.";
+                        return false;
+                    }
+                    spec.curve.rot = rd->get<double>() * 3.14159265358979323846 / 180.0;
+                }
+            }
+            // DEFAULT 'ccw', and the value is REFUSED rather than defaulted when it
+            // is spelled wrong: a sweep silently flipped is the long way round the
+            // ring, which is a mesh and not an error.
+            spec.curve.ccw = true;
+            auto sw = cv->find("sweep");
+            if (sw != cv->end()) {
+                std::string sweepText;
+                if (!requireString(*cv, "sweep", cw.c_str(), sweepText, err)) return false;
+                if (sweepText == "ccw")      spec.curve.ccw = true;
+                else if (sweepText == "cw")  spec.curve.ccw = false;
+                else {
+                    err = cw + ": unknown sweep '" + sweepText
+                        + "'. Accepted: 'ccw' (the default) and 'cw' — which of the "
+                          "two arcs between this edge's corners it is.";
+                    return false;
+                }
+            }
+            spec.hasCurve = true;
         }
 
         // 'count' is a SEED, not a requirement: opposite sides of a block carry
@@ -926,6 +1058,45 @@ std::vector<Point2D> discretise(const EdgeSpec& e, const std::vector<Point2D>& p
         const double s = (L > 0.0) ? t[static_cast<size_t>(k)] : 0.0;
         pts.push_back(lerpAtArc(path, cum, s, m));
         if (arcOut) arcOut->push_back(s);
+    }
+    return pts;
+}
+
+// THE SAME DISTRIBUTION, PLACED ON AN ANALYTIC CURVE INSTEAD OF A POLYLINE (#175).
+//
+// `spacingAlong` is shared verbatim, which is the point: the tanh law, the wall
+// clustering solved for by bisection and the geometric ratio all take an arc
+// LENGTH and return arc-length stations, and they do not care what the arc belongs
+// to. So a curve edge clusters to `BL_INITIAL_THICKNESS` by exactly the arithmetic
+// a bound wall does, and the two cannot come apart.
+//
+// WHAT IS DIFFERENT IS THAT THERE IS NO RESIDUE. `lerpAtArc` walks a stored
+// polyline and lands a node BETWEEN two of its vertices, so a station is honoured
+// in the polyline's own measure and the curve it approximates is off by the
+// faceting — the sagitta #93 charges to non-orthogonality and #94 advises about.
+// `mbCurveAtArc` solves for the parameter at that arc length on the curve itself,
+// so the node is ON the curve and the station is exact.
+//
+// THE TWO ENDS ARE THE CORNERS' OWN POSITIONS, not the curve's parameter at them.
+// They agree to `MB_CURVE_ON_TOL` of the curve's size — that is checked before any
+// node exists — but "agree to a tolerance" is not "are the same point", and the
+// Coons fill reads these positions. The corner is the declaration; the curve is
+// where the edge goes between two of them.
+std::vector<Point2D> discretiseCurve(const EdgeSpec& e, const Point2D& pa,
+                                     const Point2D& pb, double achieved[2]) {
+    std::vector<Point2D> pts;
+    if (e.count < 2 || !e.curve.spanned) return pts;
+    const double L = hybmesh::mbCurveLength(e.curve);
+    const std::vector<double> t = spacingAlong(e, L);
+    if (achieved && t.size() >= 2) {
+        achieved[END_START] = t[1] - t[0];
+        achieved[END_FINISH] = t[t.size() - 1] - t[t.size() - 2];
+    }
+    pts.reserve(static_cast<size_t>(e.count));
+    for (int k = 0; k < e.count; ++k) {
+        if (k == 0)            { pts.push_back(pa); continue; }
+        if (k == e.count - 1)  { pts.push_back(pb); continue; }
+        pts.push_back(hybmesh::mbCurveAtArc(e.curve, t[static_cast<size_t>(k)]));
     }
     return pts;
 }
@@ -1717,10 +1888,12 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps) {
     // Both halves of that sentence fail where they can be checked: it is not more
     // converged (true) but it is not worse (false), and the sweep it named costs
     // 0.43 deg of worst non-orthogonality and 0.34 deg of mean against the shipped
-    // default, buying nothing. All four shipped CURVED cases take this branch at
-    // the default cap of 20 (residual / best / at sweep, 2026-09-30: ogrid
+    // default, buying nothing. All five shipped CURVED cases take this branch at
+    // the default cap of 20 (residual / best / at sweep, 2026-09-30 and #175's
+    // 2026-10-16: ogrid
     // 4.545e-04 / 4.282e-04 / 2; cgrid 9.030e-04 / 8.536e-04 / 1; tworing
-    // 4.489e-04 / 4.206e-04 / 2; tworing_offset 4.847e-04 / 4.765e-04 / 4), so the
+    // 4.489e-04 / 4.206e-04 / 2; tworing_offset 4.847e-04 / 4.765e-04 / 4;
+    // tworing_curve 4.853e-04 / 4.776e-04 / 4), so the
     // accurate sentence below it was the one NOBODY EVER SAW.
     //
     // IT IS #82's DEFECT WITH THE SIGN FLIPPED, and the pair is worth more than
@@ -2324,6 +2497,81 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         onPath[e.id] = at;
     }
 
+    // ── THE DECLARED CURVES, resolved against their own corners (#175) ───
+    //
+    // AFTER the corner positions and before any node exists, for the same reason
+    // the attachment above is where it is: a curve edge's shape is read out of the
+    // declaration here, and nothing downstream re-derives it from a coordinate.
+    //
+    // The span comes from the CORNERS. They are inverse-mapped onto the curve and
+    // must lie on it, so "this edge is that ellipse" is checked rather than
+    // believed — the same bar an edge that LIES ON a segment already clears, in the
+    // only measure an analytic curve has.
+    for (auto& e : edges) {
+        if (!e.hasCurve) continue;
+        const Corner* ca = cornerById(e.a);
+        const Corner* cb = cornerById(e.b);
+        if (!ca || !cb)
+            return fail("edge '" + e.id + "': a corner resolved during parsing and not "
+                        "during curve resolution; the topology was not read "
+                        "consistently and no mesh was made.");
+        const hybmesh::MbCurveSpanResult sr =
+            hybmesh::mbCurveResolveSpan(e.curve, ca->xy, cb->xy);
+        const std::string what =
+            std::string("the ") + hybmesh::mbCurveKindName(e.curve.kind)
+            + " it declares";
+        if (sr.status == hybmesh::MB_CURVE_SPAN_DEGENERATE)
+            return fail("edge '" + e.id + "': " + what + " has a non-positive extent, "
+                        "so there is no curve for the edge to be.");
+        if (sr.status == hybmesh::MB_CURVE_SPAN_OFF_CURVE) {
+            const Corner* off = (sr.corner == 0) ? ca : cb;
+            return fail("edge '" + e.id + "' declares " + what + ", so both of its "
+                        "corners must lie ON it — but corner '" + off->id + "' at ("
+                        + fmt3(off->xy.x) + ", " + fmt3(off->xy.y) + ") is "
+                        + fmtSci(sr.distance) + " away from it; the nearest point of "
+                          "the curve is (" + fmt3(sr.nearest.x) + ", "
+                        + fmt3(sr.nearest.y) + "). The bar is "
+                        + fmtSci(sr.tolerance) + ", which is "
+                        + fmtSci(hybmesh::MB_CURVE_ON_TOL) + " of the curve's own "
+                          "size. Move the corner onto the curve, or change the curve "
+                          "to the one the corners are actually on.");
+        }
+        if (sr.status == hybmesh::MB_CURVE_SPAN_SAME_POINT)
+            return fail("edge '" + e.id + "': both of its corners are at the same "
+                        "point of " + what + ", so the edge is either nothing or the "
+                        "whole closed curve. Neither is an edge; split the curve into "
+                        "at least two edges with distinct corners.");
+
+        // THE LONG WAY ROUND IS A MESH AND NOT AN ERROR, so it is WARNED about and
+        // not refused. Two points on a closed curve have two arcs between them and
+        // only `sweep` says which; getting it wrong gives a perfectly valid block
+        // whose side wraps three quarters of the way around the ring. Over half a
+        // turn is the signal, because every ring this path has shipped is split
+        // into quarters or halves.
+        const double sweptDeg = sr.sweptRad * 180.0 / 3.14159265358979323846;
+        if (sr.sweptRad > 3.14159265358979323846)
+            r.warnings.push_back(
+                "edge '" + e.id + "' sweeps " + fmt3(sweptDeg) + " deg of "
+                + what + " — more than half a turn, so it takes the LONG way round "
+                  "between its two corners. If that is not what you meant, set "
+                  "\"sweep\": \"" + (e.curve.ccw ? "cw" : "ccw")
+                + "\" on this edge, which is the other arc between the same two "
+                  "corners.");
+
+        // A WALL THAT IS A CURVE HAS NO SEGMENT TO TAKE A CONDITION FROM, and says
+        // so. The existing "no edge declares a binding" warning below only fires
+        // when NOTHING is bound, so on a mixed topology this is the only thing that
+        // reaches the reader — and silently exporting a far field as the config
+        // default is the failure class this path exists to refuse.
+        if (e.kind == hybmesh::MB_EDGE_WALL)
+            r.warnings.push_back(
+                "edge '" + e.id + "' is a 'wall' declared as " + what + ", which is a "
+                  "shape and not a source segment, so it carries no boundary condition "
+                  "of its own and exports as the config default '" + bc + "'. To have "
+                  "its condition come from the declaration, draw that curve as a "
+                  "geometry and use \"binding\" instead.");
+    }
+
     // COUNTED ON THE BINDINGS ALONE, not on the map: this warning is about where
     // the boundary conditions came from, and a topology whose every path comes
     // from a `follows` has exactly as many declared conditions as one with no
@@ -2399,7 +2647,19 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         // branch and no third branch, which is what makes a curved interface and a
         // bound wall the same resolution rather than two that agree today.
         const auto pd = onPath.find(e.id);
-        if (pd == onPath.end()) paths[k] = {ca->xy, cb->xy};
+        if (e.hasCurve) {
+            // A DECLARED CURVE IS NOT A PATH AND ITS NODES DO NOT COME FROM THIS.
+            // What is stored here is a fine RENDERING of the curve — one point per
+            // degree of sweep, so its own sagitta is below 4e-5 of the radius —
+            // kept because a reader of `paths` is asking "where does this edge lie"
+            // and the chord between two corners is a wrong answer to that. The node
+            // positions are solved for on the curve itself in `discretiseCurve`.
+            const double sweptDeg =
+                std::fabs(e.curve.t1 - e.curve.t0) * 180.0 / 3.14159265358979323846;
+            int n = static_cast<int>(std::ceil(sweptDeg)) + 1;
+            if (n < e.count) n = e.count;
+            paths[k] = hybmesh::mbCurveSample(e.curve, n);
+        } else if (pd == onPath.end()) paths[k] = {ca->xy, cb->xy};
         else {
             const SegSpan& sp = spans.at({pd->second.geomId, pd->second.segId});
             paths[k] = subPath(sp.pts, sp.cum, pd->second.ta, pd->second.tb);
@@ -2445,7 +2705,16 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         double achieved[2] = {0.0, 0.0};
         std::vector<double> nodeArc;
         const std::vector<double> pathArc = arcLengths(path);
-        eNodes[k].pts = discretise(e, path, pathArc, achieved, &nodeArc);
+        if (e.hasCurve) {
+            // The curve's own placement: the same law, solved on the curve rather
+            // than walked along a rendering of it. `nodeArc` stays empty, which is
+            // what the sample-rate block below reads — see its guard.
+            const Corner* qa = cornerById(e.a);
+            const Corner* qb = cornerById(e.b);
+            eNodes[k].pts = discretiseCurve(e, qa->xy, qb->xy, achieved);
+        } else {
+            eNodes[k].pts = discretise(e, path, pathArc, achieved, &nodeArc);
+        }
         // A CLUSTERING REQUEST THAT THE EDGE COULD NOT HONOUR IS SAID.
         //
         // The tanh solver returns "uniform" when the requested first cell is at or
@@ -2766,6 +3035,8 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         // document's own answer to "is this seam a curve or the chord between its
         // two corners" rather than something re-derived from the nodes.
         se.followsGeom = edges[k].followGeom;
+        se.hasCurve = edges[k].hasCurve;
+        se.curve = edges[k].curve;
         se.followsSeg = edges[k].followSeg;
         r.sharedEdges.push_back(se);
     }

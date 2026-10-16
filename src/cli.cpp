@@ -762,10 +762,13 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
                   << " of block '" << a << "' and the "
                   << hybmesh::mbSideAxis(se.sideB).name
                   << " of block '" << b << "', "
-                  << (se.followsGeom.empty()
-                          ? std::string("a straight chord")
-                          : "following segment " + std::to_string(se.followsSeg)
-                                + " of '" + se.followsGeom + "'")
+                  << (se.hasCurve
+                          ? std::string("a declared ")
+                                + hybmesh::mbCurveKindName(se.curve.kind)
+                          : se.followsGeom.empty()
+                                ? std::string("a straight chord")
+                                : "following segment " + std::to_string(se.followsSeg)
+                                      + " of '" + se.followsGeom + "'")
                   << "\n";
     }
     // The RULE is named, not assumed. It used to read "alternating diagonal by
@@ -943,7 +946,8 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
         std::cout << bannerRow("Movable nodes") << res.smoothMoved << " of "
                   << res.nodes.size() << ", of which " << res.smoothMovedShared
                   << " on a shared edge (walls, declared corners and any interior "
-                     "line that FOLLOWS a curve are frozen)\n";
+                     "line WITH A DECLARED SHAPE — one that FOLLOWS a curve or IS "
+                     "one — are frozen)\n";
         std::cout << "HYBMESH_MB_SMOOTH sweeps=" << res.smoothSweeps
                   << " cap=" << config.mbSmoothIters
                   << " converged=" << (res.smoothConverged ? 1 : 0)

@@ -55,6 +55,12 @@ set(HYBMESH_PURE_TESTS
     # behind one seam. This executable failing to link is the signal that the
     # path has reached for the mesh container or for gmsh.
     test_multiblock
+    # The analytic curve a topology edge can BE (#175). Arithmetic over
+    # coordinates and nothing else -- a quadrature, two Newton iterations and an
+    # inverse map -- so this executable failing to link is the signal that the
+    # curve has grown a dependency on a mesh or on the topology document it is
+    # declared in.
+    test_mb_curve
     # The quality instrument the v1 acceptance gate is measured with. Measuring a
     # mesh must not require the mesh container, so it belongs on this side of the
     # line: half its checks hand `measureMbQuality` a mesh nobody parsed.

@@ -1,0 +1,153 @@
+// AN EIGHT-BLOCK TWO-RING O-GRID WHOSE MIDDLE RING IS DECLARED, NOT DRAWN
+// (issue #175) — the same eight blocks as examples/topology/tworing_offset.json
+// beside it, with the one difference that is the whole point of that ticket.
+//
+//   ./run.sh -conf config/multiblock_tworing_curve.dat
+//
+// WHAT IS DIFFERENT, AND WHAT IS DELIBERATELY NOT.
+//
+// tworing_offset.json's seam edges declare `follows` on
+// examples/geometries/ellipse_offset.dat — a THIRD geometry file, written by the
+// GUI's offset service, staged into the case, carried through the project round
+// trip and re-derived by its own gate. Here the four seam edges declare the curve
+// they ARE:
+//
+//   "curve": {"kind": "ellipse", "centre": [0, 0], "a": 0.75, "b": 0.5}
+//
+// There is no third geometry, no sidecar, no segment id and no file to go stale.
+// Everything else — the body, the far field, the counts, the two radial
+// equivalence classes, the block winding — is that file's, unchanged, so the two
+// cases differ in ONE declaration and the comparison between them means something.
+//
+// AND THE COMPARISON GOES BOTH WAYS, WHICH IS WHY BOTH SHIP.
+//
+// This middle ring is a concentric ellipse through the same four corners. It is
+// NOT the body's offset: an ellipse's offset is a degree-8 curve, and #154
+// measured this very ellipse at 0.241523 from the body at the nose against the
+// 0.250000 a constant ring would have — 3.39% of the ring thickness missing in
+// the one place a boundary layer is thickest. So:
+//
+//   * what `curve` buys is that the ring needs no file, no segmentation and no
+//     divisibility bargain — #153's hand-drawn middle ring had to be faceted at
+//     120 per quarter to satisfy two of #94's rules at once, and this one has no
+//     facets at all, so #94 has nothing to advise about;
+//   * what it does NOT buy is the constant thickness, which is a property of the
+//     OFFSET and not of any curve in this tool's library. A case that needs the
+//     ring to mean the same thing all the way round still wants tworing_offset's
+//     computed geometry.
+//
+// Both numbers are in docs/design_notes/mesher.md. Neither case supersedes the
+// other and neither is the "fixed" version of the other.
+//
+// THE FOUR RADIALS ARE STILL STRAIGHT AND STILL 0.25 LONG. The seam's corners sit
+// on the four axes, where the concentric ellipse and the true offset agree
+// exactly, so the inner ring's span — and therefore the `ds_start` the outer ring
+// starts from — is the shipped case's number unchanged. That is not luck: the two
+// curves are tangent to each other at the axes, and the corners are the only
+// places the radials touch the seam.
+//
+// Each block's i runs OUTWARD (its south and north are the two radials) and its j
+// runs ANTICLOCKWISE (its west is the inner arc, its east the outer one).
+{
+  "format_version": 1,
+
+  // THREE rings of corners. The body's and the far field's are joints of their own
+  // geometries, as before; the SEAM's are free coordinates, because there is no
+  // geometry left for them to be joints of. They are exact: (0.75, 0) and
+  // (0, 0.5) lie on x^2/0.75^2 + y^2/0.5^2 = 1 to the last bit, which is what the
+  // corner-on-curve check measures before any node exists.
+  "corners": [
+    {"id": "b0", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 1, "t": 0.0},
+    {"id": "b1", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 2, "t": 0.0},
+    {"id": "b2", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 3, "t": 0.0},
+    {"id": "b3", "kind": "on_geometry", "geom": "ellipse_body.dat", "seg": 4, "t": 0.0},
+
+    {"id": "m0", "kind": "free", "xy": [0.75, 0.0]},
+    {"id": "m1", "kind": "free", "xy": [0.0, 0.5]},
+    {"id": "m2", "kind": "free", "xy": [-0.75, 0.0]},
+    {"id": "m3", "kind": "free", "xy": [0.0, -0.5]},
+
+    {"id": "f0", "kind": "on_geometry", "geom": "ellipse_farfield.dat", "seg": 1, "t": 0.0},
+    {"id": "f1", "kind": "on_geometry", "geom": "ellipse_farfield.dat", "seg": 2, "t": 0.0},
+    {"id": "f2", "kind": "on_geometry", "geom": "ellipse_farfield.dat", "seg": 3, "t": 0.0},
+    {"id": "f3", "kind": "on_geometry", "geom": "ellipse_farfield.dat", "seg": 4, "t": 0.0}
+  ],
+
+  "edges": [
+    // ── The INNER ring's radials, body -> seam ──────────────────────────────
+    // One equivalence class that wraps around and closes. Each declares its
+    // 'start' — the corner on the body — a wall end, so its first cell is the
+    // run's BL_INITIAL_THICKNESS.
+    {"id": "ri0", "corners": ["b0", "m0"], "kind": "interface", "count": 25,
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri1", "corners": ["b1", "m1"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri2", "corners": ["b2", "m2"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "ri3", "corners": ["b3", "m3"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+
+    // ── The OUTER ring's radials, seam -> far field ─────────────────────────
+    // A SECOND equivalence class, clustering at the corner on the SEAM to the
+    // height the inner ring finished at. The number is the inner ring's own
+    // arithmetic — span 0.25, 25 nodes, first cell 1e-3 — and it is the shipped
+    // tworing_offset case's unchanged, because that span is unchanged.
+    {"id": "ro0", "corners": ["m0", "f0"], "kind": "interface", "count": 25,
+     "spacing": {"ds_start": 0.02474095}},
+    {"id": "ro1", "corners": ["m1", "f1"], "kind": "interface",
+     "spacing": {"ds_start": 0.02474095}},
+    {"id": "ro2", "corners": ["m2", "f2"], "kind": "interface",
+     "spacing": {"ds_start": 0.02474095}},
+    {"id": "ro3", "corners": ["m3", "f3"], "kind": "interface",
+     "spacing": {"ds_start": 0.02474095}},
+
+    // ── The body. One block side per source segment; these carry the wall. ──
+    // BOUND, not declared: the body IS a drawing, it carries a boundary condition,
+    // and a `curve` has no segment to take one from. That is the line between the
+    // two keys and this file has one of each.
+    {"id": "w0", "corners": ["b0", "b1"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 1}},
+    {"id": "w1", "corners": ["b1", "b2"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 2}},
+    {"id": "w2", "corners": ["b2", "b3"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 3}},
+    {"id": "w3", "corners": ["b3", "b0"], "kind": "wall", "count": 25,
+     "binding": {"geom": "ellipse_body.dat", "seg": 4}},
+
+    // ── THE SEAM. Four interior lines that ARE an ellipse. ──────────────────
+    // No geom, no seg, no file. The span of each comes from its own two corners,
+    // which are checked against the curve before a node exists; `sweep` defaults
+    // to 'ccw', which is the direction m0 -> m1 -> m2 -> m3 runs.
+    {"id": "s0", "corners": ["m0", "m1"], "kind": "interface",
+     "curve": {"kind": "ellipse", "centre": [0.0, 0.0], "a": 0.75, "b": 0.5}},
+    {"id": "s1", "corners": ["m1", "m2"], "kind": "interface",
+     "curve": {"kind": "ellipse", "centre": [0.0, 0.0], "a": 0.75, "b": 0.5}},
+    {"id": "s2", "corners": ["m2", "m3"], "kind": "interface",
+     "curve": {"kind": "ellipse", "centre": [0.0, 0.0], "a": 0.75, "b": 0.5}},
+    {"id": "s3", "corners": ["m3", "m0"], "kind": "interface",
+     "curve": {"kind": "ellipse", "centre": [0.0, 0.0], "a": 0.75, "b": 0.5}},
+
+    // ── The far field. Bound, so its condition comes from its own sidecar. ──
+    {"id": "o0", "corners": ["f0", "f1"], "kind": "wall",
+     "binding": {"geom": "ellipse_farfield.dat", "seg": 1}},
+    {"id": "o1", "corners": ["f1", "f2"], "kind": "wall",
+     "binding": {"geom": "ellipse_farfield.dat", "seg": 2}},
+    {"id": "o2", "corners": ["f2", "f3"], "kind": "wall",
+     "binding": {"geom": "ellipse_farfield.dat", "seg": 3}},
+    {"id": "o3", "corners": ["f3", "f0"], "kind": "wall",
+     "binding": {"geom": "ellipse_farfield.dat", "seg": 4}}
+  ],
+
+  // [south, east, north, west] = [radial in, outer arc, radial out, inner arc].
+  "blocks": [
+    {"id": "q0", "edges": ["ri0", "s0", "ri1", "w0"]},
+    {"id": "q1", "edges": ["ri1", "s1", "ri2", "w1"]},
+    {"id": "q2", "edges": ["ri2", "s2", "ri3", "w2"]},
+    {"id": "q3", "edges": ["ri3", "s3", "ri0", "w3"]},
+
+    {"id": "p0", "edges": ["ro0", "o0", "ro1", "s0"]},
+    {"id": "p1", "edges": ["ro1", "o1", "ro2", "s1"]},
+    {"id": "p2", "edges": ["ro2", "o2", "ro3", "s2"]},
+    {"id": "p3", "edges": ["ro3", "o3", "ro0", "s3"]}
+  ]
+}

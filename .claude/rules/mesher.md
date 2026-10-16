@@ -208,6 +208,9 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   throws; see the rules below.
 - **`MbControl.cpp`**: the multi-block WALL CONTROL FUNCTIONS — the elliptic smoother's
   source terms. Pure, total, never throws; rules in `.claude/rules/mesher-multiblock.md`.
+- **`MbCurve.cpp`**: the ANALYTIC curve a topology edge can BE (#175) — one parametric form for
+  the arc and the ellipse, arc length by quadrature, placement by Newton, and the closest point.
+  Pure, total, never throws; rules there too.
 - **`MbShared.cpp`**: WHICH nodes the multi-block smoother may move, and in whose logical
   frame a node two blocks share is moved. Pure, total, never throws; rules there too.
 - **`Config.hpp`**: single-header; parses `.dat` files into ~50 typed parameters.

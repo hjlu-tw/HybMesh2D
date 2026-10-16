@@ -492,6 +492,8 @@ CASES = (
      ("q0", "q1", "q2", "q3", "p0", "p1", "p2", "p3")),
     ("tworing_offset", "multiblock_tworing_offset",
      ("q0", "q1", "q2", "q3", "p0", "p1", "p2", "p3")),
+    ("tworing_curve", "multiblock_tworing_curve",
+     ("q0", "q1", "q2", "q3", "p0", "p1", "p2", "p3")),
 )
 
 # WHAT EACH SHIPPED CASE MEASURES, measured 2026-09-17 at the shipped defaults and
@@ -521,6 +523,15 @@ PINS = {
     # which is what makes this row move if `services/geometry_offset.py` does.
     "tworing_offset": {"cells": 4608, "median": 2.226388, "p95": 17.181390,
                        "max": 25.274427},
+    # Measured 2026-10-16 (#175). The SAME eight blocks on the same ellipse as the
+    # row above, one declaration apart: its four seams declare the ellipse they
+    # ARE instead of following a computed offset geometry. Every figure is a
+    # little WORSE, and that is the honest result rather than a regression — a
+    # concentric ellipse is not an ellipse's offset, so the ring is 3.39% thin at
+    # the nose and the squeeze there is correspondingly tighter. The design note
+    # carries the comparison; this row is what makes it stop being an anecdote.
+    "tworing_curve": {"cells": 4608, "median": 2.246653, "p95": 17.340236,
+                      "max": 25.273509},
 }
 
 # HOW MANY QUADS EACH CASE'S WALL BAND HOLDS, measured 2026-09-18 and pinned
@@ -551,6 +562,13 @@ BAND_PINS = {
     # same distance at every station instead of stopping short where the ring is
     # relatively thicker. That evenness is the offset's doing, not the topology's.
     "tworing_offset": (2304, 2304),
+    # #175, and the MOST INFORMATIVE of these counts. The offset row above is an
+    # even 2304/2304 because a constant-thickness ring puts the band's walk at the
+    # same distance at every station; this case's ring is NOT constant, so the
+    # walk stops short where the ring is relatively thicker and the split is
+    # 2296/2312. Eight cells, and they are the whole difference between a drawn
+    # offset and the nearest conic through the same four corners.
+    "tworing_curve": (2296, 2312),
 }
 
 failures = []

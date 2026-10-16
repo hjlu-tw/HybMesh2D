@@ -2,6 +2,7 @@
 #define MULTIBLOCK_HPP
 
 #include "GeomUtils.hpp"
+#include "MbCurve.hpp"      // the analytic curve an edge can BE (#175)
 #include "MbSplitRule.hpp"   // the four diagonal rules, shared with Config.hpp
 
 #include <cstdint>
@@ -398,6 +399,21 @@ struct MbSharedEdge {
     // which is what every interior line was before #151.
     std::string followsGeom;
     int followsSeg = -1;
+    // The ANALYTIC curve this line IS, from its `curve` key (#175), with its span
+    // already resolved against the two corners. `hasCurve` false is "this line
+    // declares no curve of its own" — which, with `followsGeom` empty, is the
+    // chord.
+    bool hasCurve = false;
+    MbCurve curve;
+
+    // DOES THIS LINE HAVE A DECLARED SHAPE TO LOSE?
+    //
+    // The ONE question the smoother's freeze rule asks about an interior line, in
+    // ONE place, so the two ways of declaring a shape cannot be answered
+    // differently. #151 wrote that rule against `followsGeom` alone because it was
+    // then the only way; #175 adds a second and this is where the two meet. A
+    // caller comparing either field on its own is re-deciding what a shape is.
+    bool hasDeclaredShape() const { return !followsGeom.empty() || hasCurve; }
 };
 
 // One edge's resolved node count, and whether the document said so.

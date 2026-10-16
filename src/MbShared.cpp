@@ -168,7 +168,12 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh) {
             isShared[static_cast<size_t>(se.blockA)][static_cast<size_t>(se.sideA)] = true;
         if (se.blockB >= 0 && static_cast<size_t>(se.blockB) < nb)
             isShared[static_cast<size_t>(se.blockB)][static_cast<size_t>(se.sideB)] = true;
-        if (se.followsGeom.empty()) continue;
+        // THE GATE IS "DOES THIS LINE HAVE A DECLARED SHAPE", asked of the shared
+        // edge itself (#175). It was `followsGeom` alone while `follows` was the
+        // only way to give an interior line a shape; a declared `curve` is the
+        // second way and makes the same statement, so comparing either field here
+        // would be this module re-deciding what a shape is.
+        if (!se.hasDeclaredShape()) continue;
         if (se.blockA >= 0 && static_cast<size_t>(se.blockA) < nb)
             isFollowing[static_cast<size_t>(se.blockA)][static_cast<size_t>(se.sideA)] = true;
         if (se.blockB >= 0 && static_cast<size_t>(se.blockB) < nb)

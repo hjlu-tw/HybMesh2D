@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    16 rule files now — 59,738 / 59,576 / 56,405 / 54,994 / 51,665 / 41,250 / 35,517 / 33,344 / 25,539 / 24,522 / 23,361 / 18,773 / 15,762 / 15,090 / 14,867 / 8,969  characters (gui-handoff, gui-topology, pipeline-case, mesher-multiblock, mesher-smoothing, gui-panels-config, mesher, gui-dispositions, gui-seams, mesher-quality, gui-canvas-edit, gui-apply, gui-results, gui-preflight, gui-evidence, gui-lifecycle) — so "moving text into another rule file
+    16 rule files now — 59,738 / 59,576 / 59,479 / 56,405 / 52,668 / 41,250 / 35,756 / 33,344 / 25,539 / 24,522 / 23,361 / 18,773 / 15,762 / 15,090 / 14,867 / 8,969  characters (gui-handoff, gui-topology, mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, mesher, gui-dispositions, gui-seams, mesher-quality, gui-canvas-edit, gui-apply, gui-results, gui-preflight, gui-evidence, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 262 / 424 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    14, which have 3,595 / 5,006 / 8,335 / 18,750 / 24,483 / 26,656 / 34,461 / 35,478 / 36,639 / 41,227 / 44,238 / 44,910 / 45,133 / 51,031. #76 spent 3,446 of
+    14, which have 521 / 3,595 / 7,332 / 18,750 / 24,244 / 26,656 / 34,461 / 35,478 / 36,639 / 41,227 / 44,238 / 44,910 / 45,133 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -652,9 +652,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 48,352 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 48,388 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 48,352 taken down to the boundary above is 48,000, to
+# are its size and its slack -- and 48,388 taken down to the boundary above is 48,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -3593,10 +3593,10 @@ check(len(_hits) == 1 and "'12'" in _hits[0]
 # the code is what the figure is about. A gate that read the number out of the prose
 # beside it would pass here.
 inj = copy_world(world)
-_renamed = 'check(f"13. all five added configs EXIT 0'
+_renamed = 'check(f"13. all six added configs EXIT 0'
 assert inj["sources"][_SMOOTH].count(_renamed) == 1, "injection fixture: check moved"
 inj["sources"][_SMOOTH] = inj["sources"][_SMOOTH].replace(
-    _renamed, 'check(f"14. all five added configs EXIT 0')
+    _renamed, 'check(f"14. all six added configs EXIT 0')
 check(_smooth_other_three_group(inj) == (14,),
       "injection 13m2. injection is well-formed: the code now drives those configs from "
       "group 14, and the docstring still says what it said")
@@ -3766,7 +3766,7 @@ for _label, _target, _was, _now in (
         ("the block-field gate's injection count", "note:mesher.md",
          "injections into `src/Mesh.cpp`", "injections into the writer"),
         (_GROUP_LABEL, "src:" + _SMOOTH,
-         "ALSO DRIVES THE OTHER FIVE", "ALSO DRIVES THE REMAINING FIVE"),
+         "ALSO DRIVES THE OTHER SIX", "ALSO DRIVES THE REMAINING SIX"),
         # Built from `_ROOT_NAME` rather than written out: this target is THIS file, so a
         # literal here would be a second occurrence of the very phrase the fixture
         # requires to be unique, and the loop would abort on its own source text.

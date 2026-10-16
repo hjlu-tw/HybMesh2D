@@ -85,6 +85,7 @@ import test_multiblock_ogrid_surface as mbo          # noqa: E402
 import test_multiblock_cgrid_surface as mbc          # noqa: E402
 import test_multiblock_tworing_surface as mbt       # noqa: E402
 import test_multiblock_tworing_offset_surface as mbto  # noqa: E402
+import test_multiblock_curve_surface as mbcv       # noqa: E402
 from app.models.vtk_mesh import VTKMesh               # noqa: E402
 from app.services.logging_setup import get_logger     # noqa: E402
 
@@ -366,6 +367,16 @@ CASES = {
     #     exports no face on a body where the seam is not a circle either; and
     #     the `.cel` carries the weld along a curve that is not one.
     "mb_tworing_offset": _shipped_multiblock(mbto),
+    #   mb_tworing_curve (#175): the SAME eight blocks one declaration apart -- its
+    #     four seams declare the ellipse they ARE rather than following a geometry
+    #     file, so this is the only case here whose block boundary in the middle of
+    #     the fluid comes from no `.dat` at all. A regression in the analytic
+    #     placement moves 96 nodes off that ellipse and leaves every other case in
+    #     this list untouched, which is exactly what this comparator is for. It is
+    #     here for a second reason as well: every shipped `config/multiblock_*.dat`
+    #     is a case in this table, and nothing enforces that, so a new one left out
+    #     would make the property silently false.
+    "mb_tworing_curve": _shipped_multiblock(mbcv),
     #   mb_cgrid_smooth (#81): the same shipped C-grid with MB_SMOOTH_ITERS 1, the
     #     only case here whose node positions come from the SMOOTHER rather than
     #     from the fill. Every interior node moves on that one sweep, so a kernel

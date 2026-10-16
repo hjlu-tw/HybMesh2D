@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **48,352
-characters (48,620 bytes, 2026-10-12) ≈ 12k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **48,388
+characters (48,656 bytes, 2026-10-16) ≈ 12k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**49,000**, leaving 648 characters of slack — derived by a rule the gate states at that
+**49,000**, leaving 612 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -298,7 +298,8 @@ cannot express, and it is where #150's two halves meet. The same chain runs head
 The
 rules for all seven — "The multi-block path is ONE pure entry point", "Boundary conditions are
 DECLARED", "Blocks are welded TOPOLOGICALLY", "A circular O-GRID", "A four-block C-GRID",
-"A TWO-RING O-GRID", "A TWO-RING O-GRID WHOSE MIDDLE RING WAS COMPUTED" —
+"A TWO-RING O-GRID", "A TWO-RING O-GRID WHOSE MIDDLE RING WAS COMPUTED",
+"`curve` MAKES THE EDGE THE CURVE" —
 are in `.claude/rules/mesher-multiblock.md`; the smoother's are in
 `.claude/rules/mesher-smoothing.md`, and it is ON by default (`MB_SMOOTH_ITERS` 20).
 
@@ -432,7 +433,7 @@ and its rationale with it. Nothing is ruled on here. The rationale for the GUI a
   field and renders as before. The value is the DECLARATION INDEX, not the block's id string
 - **`generate_letters.py`**: Generates letter-shaped geometry files
 - **`case_sources_index.py`**: which solver cases were built from which geometry (reads every `results/solver/*/grid/cad/SOURCES.txt`). No argument lists every case; an argument (path or partial name) answers "if I change this CAD, which cases go stale?" and exits 1 when nothing matches.
-- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 21 mesher cases (~8 s), for proving
+- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 22 mesher cases (~8 s), for proving
   that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not
   byte-reproducible and node NUMBERING varies run to run — so it canonicalises by COORDINATE and
   reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits
