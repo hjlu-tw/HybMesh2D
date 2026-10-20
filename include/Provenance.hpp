@@ -137,7 +137,7 @@ inline std::string gmshVersionFallback() {
 // #129 put them, directly on `quality`, so a reader that knows only those keys
 // still reads the figures it always read out of a sidecar written after this work.
 // THE SIZE JUMP, as its own object and NEVER folded into the shape figures
-// (issue #175, the sidecar half of #174). It is a SECOND QUANTITY measured on the
+// (`3b71c21`, 2026-10-13, the sidecar half of `540c9df`). It is a SECOND QUANTITY measured on the
 // same mesh — the area ratio between structured quads that share an edge — not a
 // third set of the shape metric, so it carries its own `metric` name and its own
 // count, and the writer puts it BESIDE `quality` rather than inside it.

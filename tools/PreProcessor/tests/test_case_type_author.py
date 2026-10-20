@@ -224,7 +224,7 @@ from app.services import mesh_shape_stats  # noqa: E402
 OGRID = dict(cells=4608, median=1.845977, p95=23.662285, maximum=32.767868)
 OGRID_LAYER = dict(cells=2304, median=5.184358, p95=28.507718, maximum=32.767868)
 OGRID_BULK = dict(cells=2304, median=1.692763, p95=1.877756, maximum=1.881891)
-#: The SIZE JUMP the same run publishes (#175), beside `quality` rather than in
+#: The SIZE JUMP the same run publishes (`3b71c21`), beside `quality` rather than in
 #: it. Its count is `pairs`, and the figures are the shipped O-grid's own at the
 #: default cap — read off the run, like the three sets above.
 OGRID_JUMP = dict(pairs=9120, median=1.001487, p95=1.297427, maximum=1.557973)
@@ -253,7 +253,7 @@ def summary(metric="quad_midline_ratio", whole=None, layer=None, bulk=None,
 def split_summary(**kw):
     """A FULLY MEASURED multi-block summary: both halves AND the size jump.
 
-    The size jump joined this fixture with #175 and the default is deliberate:
+    The size jump joined this fixture with `3b71c21` and the default is deliberate:
     checks 2, 3 and 6 all ask what a reference that measured EVERYTHING records,
     and a default that stopped at the shape metric would have left the new figure
     outside every one of them while they still read as full coverage.

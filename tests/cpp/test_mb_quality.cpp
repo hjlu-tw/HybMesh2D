@@ -56,7 +56,7 @@
 //
 // INJECTIONS: run BY HAND at review time — 2026-08-27 for A-F, 2026-09-17 for
 // G, H, I, J and K, which are #129's, 2026-10-12 for X, Y and Z, which are
-// #174's — and recorded here rather
+// the size-jump round's — and recorded here rather
 // than written as in-test injections — a C++ test cannot mutate the
 // implementation it linked against, so unlike the Python gates next door these
 // cannot re-run themselves. Each names the checks it broke, so a later reader can
@@ -146,7 +146,7 @@
 //      than holding it.
 //
 //
-// AND #174's THREE, EACH BITING A DIFFERENT HALF of the size-jump figure:
+// AND THE SIZE-JUMP ROUND'S THREE, EACH BITING A DIFFERENT HALF of that figure:
 //
 //   X. the empty set reported as a perfect 1.0 rather than left negative ->
 //      1 failure, check 11d. The one rule of this report, reaching the one figure
@@ -915,7 +915,7 @@ int main() {
               "10f. ...reporting BITWISE the same two sets either way");
     }
 
-    // ── 11. THE SIZE JUMP: a figure the other three cannot see (issue #174) ──
+    // ── 11. THE SIZE JUMP: a figure the other three cannot see (2026-10-12) ──
     // Every value below is a CLOSED FORM of the document, not a number read off a
     // run and written down: a uniform block has no step at all, a geometric
     // grading steps by exactly its growth rate, and two blocks whose widths differ

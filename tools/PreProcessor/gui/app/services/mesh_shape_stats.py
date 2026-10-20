@@ -129,7 +129,7 @@ class JumpFigures:
     """The SIZE JUMP's published set: a pair count and the same three numbers.
 
     A SIBLING of `ShapeFigures`, not a fourth instance of it, and the difference
-    is the count's NAME (#175, the sidecar half of #174). This set describes the
+    is the count's NAME (`3b71c21`, the sidecar half of `540c9df`). This set describes the
     area ratio between two structured quads that share an edge, so what it counts
     is PAIRS — on a mesh of N structured quads neither N nor a fixed multiple of
     it — and calling that `cells` would make two different quantities look like

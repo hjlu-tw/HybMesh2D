@@ -234,7 +234,7 @@ from app.services import mesh_shape_stats  # noqa: E402
 OGRID = dict(cells=4608, median=1.845977, p95=23.662285, maximum=32.767868)
 OGRID_LAYER = dict(cells=2304, median=5.184358, p95=28.507718, maximum=32.767868)
 OGRID_BULK = dict(cells=2304, median=1.692763, p95=1.877756, maximum=1.881891)
-#: The SIZE JUMP the same run publishes (#175). Its count is `pairs`, and the
+#: The SIZE JUMP the same run publishes (`3b71c21`). Its count is `pairs`, and the
 #: figures are the shipped O-grid's own at the default cap.
 OGRID_JUMP = dict(pairs=9120, median=1.001487, p95=1.297427, maximum=1.557973)
 #: What the mesher writes for a set it looked at and could not measure: the
@@ -722,7 +722,7 @@ def _write_case_type(path, attention, unusable):
 
 # --- run ----------------------------------------------------------------------
 def check_two_absences_read_apart(w):
-    """An ABSENT SIZE JUMP and an ABSENT SPLIT are not the same sentence (#175).
+    """An ABSENT SIZE JUMP and an ABSENT SPLIT are not the same sentence (`3b71c21`).
 
     Both come back `not determinable` and both are correct; what must differ is
     WHY, because the two send the operator to different places. A sidecar with no

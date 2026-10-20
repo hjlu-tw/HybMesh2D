@@ -46,7 +46,7 @@ rests on and times what, and `exceeds` — the one comparison both that module a
 from __future__ import annotations
 
 #: The three figures the mesher publishes, over the whole mesh, over each half of
-#: the split, and — since #175 — over the SIZE JUMP, which is a second quantity
+#: the split, and — since `3b71c21` (2026-10-13) — over the SIZE JUMP, which is a second quantity
 #: and not a fourth set of the shape metric: the area ratio between structured
 #: quads that share an edge, published as its own `mesh.size_jump` object beside
 #: `mesh.quality`. Built by product rather than written out twelve times, so a
@@ -147,7 +147,7 @@ def split_key(key: str) -> tuple:
 def figures_for(summary, set_name: str):
     """The figures a key's set names, or ``None`` when that set is absent.
 
-    TWO SETS CAN BE ABSENT AND THEY MEAN DIFFERENT THINGS (#175 widened this from
+    TWO SETS CAN BE ABSENT AND THEY MEAN DIFFERENT THINGS (`3b71c21` widened this from
     one). A HALF is absent on a sidecar from a path that did not SPLIT; the SIZE
     JUMP is absent on a path that does not MEASURE it, having no structured quad
     to measure — the hybrid path. The whole-mesh set IS the summary and is never
@@ -166,7 +166,7 @@ def figures_for(summary, set_name: str):
 
 
 def absence_detail(set_name: str) -> str:
-    """WHY a set is absent, in the words a verdict shows the operator (#175).
+    """WHY a set is absent, in the words a verdict shows the operator (`3b71c21`).
 
     One owner because there are now two reasons and a caller that picked the
     wrong one would tell the operator their mesh did not split when what really

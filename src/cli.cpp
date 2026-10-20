@@ -511,7 +511,7 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     for (const hybmesh::MbBlockShape& bs : q.blockShapes)
         std::cout << bannerSub("block '" + bs.blockId + "'") << shapePhrase(bs.shape) << "\n";
 
-    // ── THE SIZE JUMP (issue #174), a row of its own and not a sub-row of the
+    // ── THE SIZE JUMP (`540c9df`, 2026-10-12), a row of its own and not a sub-row of the
     // shape headline: that figure is computed INSIDE one cell and this one is
     // computed BETWEEN two, so it decomposes nothing above it.
     //
@@ -583,7 +583,7 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
     // is the half of the shape that is deliberately NOT shared.
     tokens("layer_", q.structuredLayerShape);
     tokens("bulk_", q.structuredBulkShape);
-    // THE SIZE JUMP'S FOUR TOKENS (issue #174), appended rather than interleaved,
+    // THE SIZE JUMP'S FOUR TOKENS (`540c9df`), appended rather than interleaved,
     // so every token that existed before this ticket keeps its spelling AND its
     // position for the greps that already read this line. Its own key carries the
     // metric's name for the reason the shape figures' do — every token here is
@@ -871,7 +871,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     quality.split = true;
     quality.layer = q.structuredLayerShape;
     quality.bulk = q.structuredBulkShape;
-    // THE SIZE JUMP INTO THE SIDECAR (issue #175, the half #174 left out). Set
+    // THE SIZE JUMP INTO THE SIDECAR (`3b71c21`, the half `540c9df` left out). Set
     // UNCONDITIONALLY on this path, including when nothing was measurable: a
     // `pairs: 0` with negative figures says "this run looked and found no pair",
     // which is a different fact from the key being absent — and absent is what the

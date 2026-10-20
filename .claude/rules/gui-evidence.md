@@ -34,9 +34,10 @@ in any rule file reaches", which was true of the globs and false of the governan
 following only one of the two would have believed they had the whole rule.
 
 **THE FIGURE VOCABULARY IS A PRODUCT, AND A NEW SET JOINS EVERY CONSUMER AT ONCE**
-(`FIGURE_KEYS` in `services/case_type_reference.py`; #160, widened by #175).
+(`FIGURE_KEYS` in `services/case_type_reference.py`; #160, widened by the size-jump
+sidecar work, `3b71c21`, 2026-10-13).
 - **`("", "layer", "bulk", "size_jump") x ("median", "p95", "max")`, built by PRODUCT rather than
-  written out twelve times.** #175 added the fourth SET by adding one string, and
+  written out twelve times.** That work added the fourth SET by adding one string, and
   `size_jump.median|p95|max` reached the authoring step, the evidence derivation, the verdict and
   the document validator with no edit in any of them — the property the product exists for, and
   the reason a figure cannot arrive in one list and be missing from another.

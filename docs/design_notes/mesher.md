@@ -754,7 +754,16 @@ nowhere a user could reach. The instrument is the deliverable; the refusal of th
 
 **THE SIZE JUMP: the figure three agreeing numbers could not see** (`MbAdjacentAreaRatio`
 and the size-jump pass in `src/MbQuality.cpp`, the `Size jump` row and the four
-`adjacent_area_ratio_*` tokens in `src/cli.cpp`; issue #174).
+`adjacent_area_ratio_*` tokens in `src/cli.cpp`; `540c9df`, 2026-10-12).
+
+**THE NUMBERING, because it changed under this section and will mislead otherwise.**
+This work and the sidecar half after it were carried as "#174" and "#175" while they
+were being written; neither was ever filed, and on 2026-10-16 those two numbers were
+taken by real issues about something else (a topology edge that IS a curve, and the
+parent above it). Every reference to the size-jump work in the rule files, the
+headers, the tests and this note was therefore repointed at the COMMITS that carry
+it — `540c9df` for the figure, `3b71c21` for the sidecar — which git can check and a
+number cannot.
 
 WHERE IT CAME FROM, and it was not a gap somebody noticed in the report. A user
 looked at a twelve-block cylinder-in-channel mesh built this week and said the cells
@@ -837,19 +846,19 @@ every figure beside it carries: what ratio is too big depends on the solver's
 reconstruction and on where in the mesh it sits.
 
 ~~WHAT IS NOT DONE. The figure is not in the `.provenance.json` sidecar, so the case
-types one layer up cannot judge against it yet.~~ **CLOSED by #175, the ticket after
-it**, and the sentence is kept as a specimen because its stated reason was half
+types one layer up cannot judge against it yet.~~ **CLOSED by `3b71c21`, the commit
+after it**, and the sentence is kept as a specimen because its stated reason was half
 wrong. The deliberate boundary was real — `mesh.quality` is the cell-shape contract
 #131 and #132 read — but "widening it reaches the GUI parity gate" was NOT: that gate
 (`tests/test_gui_cpp_config_parity.py`) compares `.dat` CONFIG keys between
 `models/mesh_config_io.py` and `include/Config.hpp`, and the provenance sidecar is not
-in its subject at all. The cost was named from the wrong file. What #175 actually
-touched is below.
+in its subject at all. The cost was named from the wrong file. What that commit
+actually touched is below.
 
 **THE SIZE JUMP IN THE SIDECAR, AND WHAT IT UNLOCKED** (`MeshSizeJump` in
-`include/Provenance.hpp`, filled in `src/cli.cpp`; issue #175).
+`include/Provenance.hpp`, filled in `src/cli.cpp`; `3b71c21`, 2026-10-13).
 
-#174 put the figure on the banner and on the machine-readable line. Neither is a
+`540c9df` put the figure on the banner and on the machine-readable line. Neither is a
 contract the GUI reads: #131 made `mesh.quality` in the `.provenance.json` sidecar
 the SINGLE OWNER of what a mesh published, precisely so no host would parse the
 mesher's stdout. So the figure existed and the layer that judges meshes could not
@@ -894,7 +903,7 @@ the verdict and the document validator at once, with no edit in any of them.
 `JumpFigures` whose count is named `pairs` rather than `cells` costs nothing: the two
 consumers read only `.measured` and the three fields.
 
-MEASURED END TO END on the twelve-block cylinder-in-channel #174 came from. A case
+MEASURED END TO END on the twelve-block cylinder-in-channel that work came from. A case
 type authored from the shipped O-grid bounds `size_jump.max` at 2.337 (attention) and
 4.674 (unusable), both its exemplar's own 1.558 times the standing factors. The same
 mesh at 0 sweeps reads `needs attention` on cell shape alone; at 20 sweeps its size

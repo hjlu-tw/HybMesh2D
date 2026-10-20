@@ -144,7 +144,7 @@ so the acceptance gate is a grep.
 
 **THE SIZE JUMP BETWEEN TWO CELLS THAT TOUCH, which none of the three figures above can see**
 (`MbAdjacentAreaRatio` + the size-jump pass in `src/MbQuality.cpp`, the `Size jump` row and the
-four `adjacent_area_ratio_*` tokens in `src/cli.cpp`; #174). The ratio of the larger structured
+four `adjacent_area_ratio_*` tokens in `src/cli.cpp`; `540c9df`, 2026-10-12). The ratio of the larger structured
 quad's area to the smaller's, over every pair of structured quads that SHARE AN EDGE; 1.0 is no
 change.
 - **IT WAS ADDED BECAUSE THREE FIGURES AGREED ON A MESH THAT HAD GOT MATERIALLY WORSE.** On a
@@ -184,7 +184,7 @@ change.
 - **It is a ROW OF ITS OWN on the banner, not a sub-row of the shape headline** — that figure is
   computed inside one cell and this one between two, so it decomposes nothing above it.
 - **IT IS IN THE SIDECAR TOO, AS `mesh.size_jump` BESIDE `mesh.quality` — never inside it**
-  (`MeshSizeJump` in `include/Provenance.hpp`; #175). `quality.metric` names which CELL SHAPE was
+  (`MeshSizeJump` in `include/Provenance.hpp`; `3b71c21`, 2026-10-13). `quality.metric` names which CELL SHAPE was
   measured and its three sets are that one metric sliced three ways; this is a different quantity
   with its own `metric` name, so nesting it would put two metric names in one object whose
   `metric` key means the other one. **`pairs` there as well, for the field's own reason.**

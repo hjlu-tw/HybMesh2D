@@ -129,7 +129,7 @@ struct MbBlockShape {
     ShapeStats shape;   // negative throughout when this block had nothing measurable
 };
 
-// HOW BIG A STEP THERE IS BETWEEN TWO CELLS THAT TOUCH (issue #174).
+// HOW BIG A STEP THERE IS BETWEEN TWO CELLS THAT TOUCH (`540c9df`, 2026-10-12).
 //
 // The ratio of the larger structured quad's area to the smaller's, over every
 // pair of structured quads that SHARE AN EDGE. 1.0 is no change at all; a pair at
@@ -262,7 +262,7 @@ struct MbQualityReport {
     ShapeStats structuredLayerShape;       // the wall-clustered band
     ShapeStats structuredBulkShape;        // every other structured quad
 
-    // ── THE SIZE JUMP (issue #174) ──────────────────────────────────────────
+    // ── THE SIZE JUMP (`540c9df`, 2026-10-12) ───────────────────────────────
     // See MbAdjacentAreaRatio above for what it is, what it sees that the three
     // figures above cannot, and why it is measured where it is. Its three
     // statistics come from `reduceCellShapes`, the same reduction with the same
