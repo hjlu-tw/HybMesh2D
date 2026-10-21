@@ -123,26 +123,30 @@ actions; `controllers/mesh_gen_ctrl.py` = the one generation).
   `mesh_fallback.as_hybrid` for a downgrade (#167) and `mesh_commit.as_frozen` for a judged commit
   (#172) — and a commit that is NEITHER still hands it nothing, which is what keeps the parameter
   from becoming a second builder that always rewrites. Gate: `test_mesh_fallback.py` check 8.
-- **THE COMMITTED SCRIPT IS JUDGED BY THE COPY FROZEN BESIDE IT** (#172, `mesh_commit.as_frozen`).
-  The picked file goes on being maintained and `add_reference_mesh.py` makes correcting its bounds
-  a routine act (#168), so a script naming it reproduced the MESH exactly and then recomputed the
-  verdict against whatever that file said on the day — contradicting the frozen record lying next
-  to it with nothing saying so. Neither story was violated alone: 43's record really was untouched
-  and 45's "reproduce what they saw" held for the mesh; the gap was the seam between them, and no
-  gate covered it. The re-pointing REMOVES the disagreement rather than reporting it. **A COPY,
-  never a mutation** — the operator's own choice and the workspace they go on saving still name
-  what they picked; it is the SCRIPT that is historical. **NOTHING FROZEN, NOTHING RE-POINTED**:
-  a run with no verdict (none in play, or a chosen case type that would not load) embeds no copy,
-  so the script keeps the operator's spelling rather than naming a sidecar nobody wrote. **AND A
-  FALLBACK IS EXEMPT**, which is `as_hybrid`'s clear and not a second rule here: an unstructured
-  mesh is judged by nobody, so there is no frozen copy to point at. THE COST IS NAMED: the copy
+- **THE COMMITTED SCRIPT IS JUDGED BY WHAT THE COMMIT FROZE** (#172; `mesh_commit.script_config`
+  decides, `as_frozen` re-points). A script naming the file the operator PICKED reproduced the mesh
+  exactly and then recomputed the verdict against whatever that file said on the day it was re-run,
+  because the picked one goes on being maintained and #168 makes correcting its bounds a routine
+  act. **ONE PLACE DECIDES ALL THREE DISPOSITIONS**, beside the writer whose record the script has
+  to agree with: a FALLBACK names none (`as_hybrid`'s clear, #167 — an unstructured mesh is judged
+  by nobody, so nothing was frozen to point at); a JUDGED commit names the frozen copy; anything
+  else froze nothing, so the operator's own spelling stands and no override is handed over at all.
+  **A COPY, NEVER A MUTATION** — the operator's own choice and the workspace they go on saving
+  still name what they picked; it is the SCRIPT that is historical. THE COST IS NAMED: the copy
   lives beside the mesh, so a script carried off without its case directory names a file that is
-  not there — `case_type.load` refuses, the verdict layer says so and names it, and the mesh is
-  still regenerated. That beats judging one mesh by another document's numbers in silence.
-  Gate: `test_mesh_trial_commit.py` checks 15 and 16, the second re-running the committed script
-  through `run_pipeline.sh` after the source has been edited to a state that really does flip.
-  Why — including the two options NOT taken: `docs/design_notes/gui.md`, "A COMMITTED SCRIPT IS
-  JUDGED BY THE COPY FROZEN BESIDE IT"; this bullet's neighbours above point at #166's section.
+  not there, and the verdict layer says so rather than grading the mesh by another document's
+  current numbers. Gate: `test_mesh_trial_commit.py` checks 15 and 16, the second re-running the
+  committed script through `run_pipeline.sh` after the source has been edited to a state that
+  really does flip, and asserting the frozen copy is BYTE-IDENTICAL afterwards.
+  Why: `docs/design_notes/gui.md`, "A COMMITTED SCRIPT IS JUDGED BY THE COPY FROZEN BESIDE IT"
+- **AND LOADING ONE THEREFORE DOES CHANGE THE OPERATOR'S CHOICE** (#172). `Pipeline ▸ Load` applies
+  a script's whole `mesh` section, so a COMMITTED script installs the frozen copy as the current
+  pick — a route to the very thing the reopen rule below forbids, opened by this block rather than
+  by that one. It is ALLOWED, because a script is loaded by name and on purpose and already
+  replaces every other mesh field; what is forbidden is saying otherwise. `committed_note` MEASURES
+  which happened, through `adopted_embedded`, instead of a caller asserting a half that is true of
+  the workspace route and false of this one — it was printing "Your own choice is unchanged"
+  immediately after the choice had changed. Gate: `test_case_type_picker.py` check 13.
 - **`Preview` IS STILL `Preview`.** The existing canvas drawing of the far-field box and the
   boundaries — "BC Preview" in the menu — meshes nothing and is untouched; the new action is named
   **Trial** for exactly that reason. Both are distinct from **Run All**, which remains the whole
@@ -332,11 +336,9 @@ Qt-free; `views/panels/mesh_case_type_mixin.py` = the section at the top of the 
   automatically would judge the operator's next Trial against a historical document — and they
   would never have been asked. One line, through the user-log service, from
   `project_state_ctrl._say_committed_case_type`; silent for a case carrying no embedded copy, which
-  is every case committed before #166. THE ONE PLACE THE FROZEN COPY IS SELECTED IS THE COMMITTED
-  SCRIPT (#172), and loading one through the Pipeline menu therefore does put a historical document
-  in the picker — but that is the operator asking for that run back, by name, rather than a reopened
-  case changing their choice under them. The picker lists it by its own name and the summary says
-  what it owns, so the state is visible rather than inferred.
+  is every case committed before #166. **A REOPEN is the subject; LOADING A COMMITTED SCRIPT is
+  not**, and since #172 the two differ — see that block above, which is where the exception and
+  its sentence are ruled on.
 - **A FALLBACK RUN NAMES NO CASE TYPE, AND `mesh_fallback.as_hybrid` IS WHERE THAT IS DONE.** The
   block above forbids a fallback mesh being judged; #169 opens a new route to the same defect,
   because the committed script is built from that same copy and would have anyone who re-ran it
@@ -422,8 +424,9 @@ which are capability refusals.
   a later Export, a hand-edit or a headless `run_pipeline.sh` over the same output path can replace
   the mesh and leave the record standing. #172 makes that re-run PRINT the frozen verdict rather
   than a contradicting one, which is the half a script can answer; it re-freezes nothing, so the
-  record on disk still describes the first run. `test_mesh_trial_commit.py`'s blind-spot list says
-  so at the check that does the re-running.
+  record on disk still describes the first run — and that the copy is not REWRITTEN by the re-run
+  is now asserted rather than reasoned about (check 16's byte comparison), which is the half #172's
+  acceptance asks for by name.
 - **A COMMITTED SCRIPT CARRIED OFF ALONE GETS NO VERDICT.** It names the frozen copy by the
   ordinary stored spelling — repo-relative inside the repo — so a script copied to a checkout that
   does not hold its case directory names a case type that is not there. The mesh still regenerates

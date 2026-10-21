@@ -91,13 +91,19 @@ What this pins down:
      not LOAD keeps the operator's own spelling, because nothing was frozen and
      there is nothing to point at. The panel's own configuration is unchanged in
      all three — the re-pointing belongs to the script.
- 16. AND RE-RUNNING IT REPRODUCES THE FROZEN VERDICT AFTER THE SOURCE HAS MOVED.
-     The acceptance criterion end to end: commit, then rewrite the SOURCE case
-     type with bounds that really do flip this mesh to `unusable` — measured
-     here rather than assumed — then run `./run_pipeline.sh <script> --no-solver`
-     and read what it printed. The verdict is the frozen state, it names the
-     frozen copy as the file that issued it, and the flipped state appears
-     nowhere. Skipped without a build tree.
+ 16. AND RE-RUNNING IT REPRODUCES THE FROZEN VERDICT AFTER THE SOURCE HAS MOVED
+     — OR SAYS PLAINLY THAT IT CANNOT. #172's acceptance, both branches, end to
+     end. Commit; rewrite the SOURCE case type with bounds that really do flip
+     this mesh to `unusable` — MEASURED here rather than assumed, so a premise
+     that quietly stopped holding cannot leave the rest vacuous; run
+     `./run_pipeline.sh <script> --no-solver` and read what it printed. The
+     verdict is the frozen state, it names the frozen copy as the file that
+     issued it, and the flipped state appears nowhere. Then STORY 43's own
+     bullet, which was prose until now: the frozen copy is byte-identical after
+     the re-run. Then the OTHER branch — the frozen copy moved aside, which is a
+     script carried off without its case directory — where the mesh is still
+     regenerated, the run says `No verdict`, NAMES the file it could not read,
+     and issues none. Skipped without a build tree.
 
 Known blind spots, named rather than papered over:
   - Checks 3-9 drive the REAL controller methods against a recording stand-in
@@ -1099,6 +1105,9 @@ def check_rerun_reproduces_the_frozen_verdict(w):
                     % frozen_state]
 
         script = os.path.join(case, "mesh_probe.pipeline.json")
+        frozen_copy = os.path.join(case, "mesh_probe.casetype.json")
+        with open(frozen_copy, "rb") as fh:
+            copy_before = fh.read()
         os.remove(os.path.join(case, "mesh_probe.vtk"))
         proc = subprocess.run(["./run_pipeline.sh", script, "--no-solver"],
                               cwd=_REPO, capture_output=True, text=True,
@@ -1113,10 +1122,41 @@ def check_rerun_reproduces_the_frozen_verdict(w):
         if "Verdict: %s" % moved.state in said:
             out.append("the re-run was graded by the EDITED source: it says "
                        "%r, which the frozen record does not" % moved.state)
-        frozen_copy = os.path.join(case, "mesh_probe.casetype.json")
         if "from " + frozen_copy not in said:
             out.append("the re-run does not name the frozen copy as the file "
                        "that issued its verdict")
+        # STORY 43 IS THE THIRD ACCEPTANCE BULLET AND IS NOW ASSERTED, not
+        # reasoned about. #172 is the ticket that makes a script NAME this file,
+        # which is a new reason for something to touch it; "the frozen copy is
+        # still never rewritten" was covered by prose alone until here.
+        with open(frozen_copy, "rb") as fh:
+            if fh.read() != copy_before:
+                out.append("the re-run REWROTE the frozen copy; an old case's "
+                           "verdict must not change under a later run")
+
+        # AND THE OTHER BRANCH OF THE ACCEPTANCE: "or says plainly that it
+        # cannot". It is the one new failure mode this option buys — a script
+        # carried off without its case directory — and it was asserted in three
+        # documents and tested nowhere. Moved rather than deleted, so the
+        # teardown still has a file and the mesh is the only thing re-made.
+        os.rename(frozen_copy, frozen_copy + ".away")
+        os.remove(os.path.join(case, "mesh_probe.vtk"))
+        proc = subprocess.run(["./run_pipeline.sh", script, "--no-solver"],
+                              cwd=_REPO, capture_output=True, text=True,
+                              timeout=900)
+        said = proc.stdout
+        if not os.path.isfile(os.path.join(case, "mesh_probe.vtk")):
+            out.append("a script whose frozen case type is gone did not "
+                       "regenerate the mesh; losing the verdict must not cost "
+                       "the mesh (rc=%d)\n%s" % (proc.returncode, said[-2000:]))
+        if "No verdict" not in said:
+            out.append("the re-run neither judged nor said it could not:\n%s"
+                       % said[-2000:])
+        if os.path.basename(frozen_copy) not in said:
+            out.append("the re-run does not NAME the case type it could not "
+                       "read, so 'says plainly' is not met")
+        if "Verdict: " in said:
+            out.append("a verdict was issued with no case type to issue it")
     return out
 
 
@@ -1189,7 +1229,8 @@ _LABELS = {
         "mesh — and by none at all for a fallback, and by the operator's own "
         "spelling when nothing was frozen",
     16: "check 16. re-running that script after the SOURCE case type has been "
-        "edited reproduces the frozen verdict and names the frozen copy",
+        "edited reproduces the frozen verdict, leaves the frozen copy byte-"
+        "identical, and says plainly that it cannot judge when that copy is gone",
 }
 
 _REAL = world()

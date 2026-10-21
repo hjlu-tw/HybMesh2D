@@ -193,9 +193,14 @@ _NAME = "app.services.mesh_fallback"
 #: Every module that did `from app.services import mesh_fallback` and so holds
 #: the module OBJECT rather than a lookup. `sys.modules` alone does not reach
 #: them, which is the shadowing #160 measured.
+#: `mesh_dispose_ctrl` LEFT this list with #172: the committed script's mesh
+#: section is now chosen by `mesh_commit.script_config`, which is where the
+#: `as_hybrid` call moved, so the disposition binds nothing from this module any
+#: more. Injections A and B still reach check 8 through `mesh_commit`, which is
+#: on the list — a binder that stopped binding must come OFF, or the setup below
+#: raises on an attribute that is not there.
 _BINDERS = ("app.services.mesh_commit",
-            "app.controllers.mesh_gen_diag_ctrl",
-            "app.controllers.mesh_dispose_ctrl")
+            "app.controllers.mesh_gen_diag_ctrl")
 
 _MESHER = os.path.join(_REPO, "build", "HybMesh2D")
 _HAVE_BIN = os.path.isfile(_MESHER)

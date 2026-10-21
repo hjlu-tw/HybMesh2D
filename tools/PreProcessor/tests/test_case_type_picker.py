@@ -545,9 +545,11 @@ with tempfile.TemporaryDirectory() as _tmp:
     mesh_commit.commit(_trial, _dest)
 
     _note = case_type_picker.committed_note(_dest)
-    check("Judged this case" in _note and "unchanged" in _note,
-          "11. reopening a committed case STATES which case type judged it "
-          "(%r)" % (_note[:110],))
+    check("Judged this case" in _note
+          and "unchanged" not in _note and "now what" not in _note,
+          "11. reopening a committed case STATES which case type judged it — and "
+          "with no config to measure, claims NEITHER half about the standing "
+          "rather than guessing one (%r)" % (_note[:110],))
 
     # The REAL controller method over a recording host, so "a reopened case says
     # this" is measured through production code rather than a re-implementation.
@@ -639,6 +641,74 @@ check(_hybrid.case_type_file == "" and _cfg.case_type_file == _SHIPPED,
       "unstructured mesh against bounds measured on structured quads — and the "
       "operator's own configuration is untouched (fallback=%r, panel=%r)"
       % (_hybrid.case_type_file, _cfg.case_type_file))
+
+
+# ══ 14. LOADING a committed script DOES adopt the frozen copy, and says so ══
+# #172. The reopen rule above is about a WORKSPACE; `Pipeline ▸ Load` applies a
+# script's whole `mesh` section, and a committed script now names the frozen
+# copy — so on that path the choice really does change. The sentence said
+# "Your own choice is unchanged" immediately after it had changed.
+with tempfile.TemporaryDirectory() as _tmp:
+    _case = os.path.join(_tmp, "case")
+    os.makedirs(_case)
+    _src = os.path.join(_tmp, "global_mesh.vtk")
+    open(_src, "w").close()
+    write_sidecar(_src)
+    _ct = write_case_type(os.path.join(_tmp, "picked.casetype.json"),
+                          name="The picked one")
+    _dest = os.path.join(_case, "mesh_probe.vtk")
+    _cfg = MeshConfig()
+    _cfg.case_type_file = _ct
+    _trial = mesh_commit.judge_run(_src, 0, config=_cfg)
+    mesh_commit.commit(_trial, _dest)
+    _frozen = os.path.join(_case, "mesh_probe.casetype.json")
+
+    # 14a. the state `_apply_pipeline_config` leaves: the config names the frozen
+    #      copy. MEASURED off the config, not asserted by the caller.
+    _loaded = MeshConfig()
+    _loaded.case_type_file = mesh_commit.as_frozen(_cfg, _dest).case_type_file
+    check(case_type_picker.adopted_embedded(_dest, _loaded)
+          and not case_type_picker.adopted_embedded(_dest, _cfg),
+          "14. `adopted_embedded` tells the two reopening routes apart by "
+          "MEASURING the config: the script's choice IS the embedded copy, the "
+          "operator's own pick is not")
+
+    _note = case_type_picker.committed_note(_dest, config=_loaded)
+    check("unchanged" not in _note and "The picked one" in _note
+          and "now what this configuration will be judged by" in _note,
+          "14. ...so loading a committed script SAYS the frozen copy is now in "
+          "force, instead of claiming nothing changed right after it did (%r)"
+          % (_note[-150:],))
+
+    _note_ws = case_type_picker.committed_note(_dest, config=_cfg)
+    check("unchanged" in _note_ws,
+          "14. ...and the WORKSPACE route still says the choice is unchanged, "
+          "because on that route it is (%r)" % (_note_ws[-90:],))
+
+    # 14b. and the state really is reachable: the script loader writes the mesh
+    #      section into the live config BEFORE it says anything about history.
+    import ast as _ast                                             # noqa: E402
+    _io_src = open(os.path.join(_REPO, "tools", "PreProcessor", "gui", "app",
+                                "controllers", "pipeline_io_ctrl.py"),
+                   encoding="utf-8").read()
+    _fn = next((n for n in _ast.walk(_ast.parse(_io_src))
+                if isinstance(n, _ast.FunctionDef)
+                and n.name == "_apply_pipeline_config"), None)
+    if _fn is None:
+        check(False, "14. `_apply_pipeline_config` is gone; this check names a "
+                     "method that no longer exists")
+    else:
+        _calls = [(n.lineno, n.func.attr) for n in _ast.walk(_fn)
+                  if isinstance(n, _ast.Call)
+                  and isinstance(n.func, _ast.Attribute)
+                  and n.func.attr in ("load_from_dict", "_say_committed_case_type")]
+        _load = min([ln for ln, a in _calls if a == "load_from_dict"], default=-1)
+        _say = min([ln for ln, a in _calls if a == "_say_committed_case_type"],
+                   default=-1)
+        check(_load > 0 and _say > _load,
+              "14. ...and the loader really does install the script's mesh "
+              "section before it speaks, which is what makes the adopted state "
+              "reachable at all (load_from_dict@%d, say@%d)" % (_load, _say))
 
 
 # ══ injections ════════════════════════════════════════════════════════════

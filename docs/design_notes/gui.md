@@ -5652,13 +5652,47 @@ record says `usable`, which is #172 in one line of output. Check 16 cannot be sc
 — `run_pipeline.sh` is a child process loading the real module from disk — so it is in
 `_SKIP_UNDER_MUTATION` and check 15 is what the mutations answer to.
 
+**THE OTHER TWO ACCEPTANCE BULLETS WERE PROSE, AND THE SPEC REVIEW IS WHAT MEASURED THAT.** Both
+held and neither was asserted. "Story 43's guarantee is unchanged: the frozen copy is still never
+rewritten" is the bullet #172 itself puts most at risk, being the ticket that makes a script NAME
+that file — so check 16 now hashes it either side of the re-run. And "or says plainly that it
+cannot" is the branch this option BUYS, asserted in three documents and tested nowhere: the gate
+moves the frozen copy aside, which is a script carried off without its case directory, and
+measures all four halves of the answer — the mesh is still regenerated, the run says `No verdict`,
+it NAMES the file it could not read, and it issues none. A cost that is argued for in prose and
+never exercised is a cost nobody has checked is really paid the way the argument says.
+
+**AND IT OPENED A ROUTE TO THE HARM THE PICKER'S OWN RULE FORBIDS.** `Pipeline ▸ Load` applies a
+script's whole `mesh` section, so once a committed script names the frozen copy, loading one
+installs that copy as the operator's current pick — reaching by another route exactly what
+injection K exists to prevent, "judged by a historical document they were never asked about".
+Three claims went false the moment this landed and none of them was in the diff:
+`pipeline_io_ctrl`'s "it STATES the history and never becomes the current choice",
+`case_type_picker.committed_note`'s "the host changes nothing", and
+`project_state_ctrl._say_committed_case_type`'s version of the same. The window was printing
+"Your own choice is unchanged" immediately after changing it.
+
+**THE FIX IS TO MEASURE, NOT TO FORBID.** Loading a committed script by name is the operator
+asking for that run back, and it already replaces every other mesh field; what is wrong is only
+the sentence. So `adopted_embedded` compares the configuration's resolved choice with the sidecar
+beside the mesh and `committed_note` says whichever half is true — a flag passed down by the two
+callers would have been a second account of it, free to be wrong in the one case that matters, and
+this repo has a memory file about exactly that. With no `config` the function claims NEITHER half
+rather than guessing one. Gated by `test_case_type_picker.py` check 14, which measures both routes
+and then reads `_apply_pipeline_config`'s AST to confirm the adopted state is reachable at all —
+the loader really does install the mesh section before it speaks.
+
 **Named blind spots.** Nothing RE-FREEZES on a re-run: `run_pipeline.sh` overwrites the committed
 mesh and leaves the frozen copy and the verdict record describing the first run, which is #166's
-standing "nothing checks that a committed case is still consistent later" and is not widened here.
-A script carried off alone gets no verdict, as above. And loading a committed script through the
-Pipeline menu does put a historical document in the picker — the one place the frozen copy is ever
-selected — which is the operator asking for that run back by name rather than a reopened case
-changing their choice under them.
+standing "nothing checks that a committed case is still consistent later" and is not widened here
+— what IS now asserted is the narrower half, that the re-run does not rewrite the copy. A script
+carried off alone gets no verdict, as above, and that is the cost this option buys rather than an
+oversight. The adoption sentence is measured off the CONFIG, so a host that changed the choice by
+some third route and then called `committed_note` would be described correctly by accident rather
+than by design; there is no third route today. And nothing checks that the picker's own list
+RENDERS a frozen copy from outside `examples/case_types/` — `write_choice` adds a row for any
+value the list does not hold, which is `test_case_type_picker.py` check 5's subject on the Browse
+path, and #172 relies on that behaviour without re-measuring it here.
 
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)

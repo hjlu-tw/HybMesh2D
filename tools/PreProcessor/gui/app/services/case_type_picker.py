@@ -282,16 +282,47 @@ def summary(config) -> str:
 
 # ── what a reopened case says about itself ─────────────────────────────────
 
-def committed_note(mesh_path: str) -> str:
+def adopted_embedded(mesh_path: str, config) -> bool:
+    """True when `config` has the copy embedded beside `mesh_path` as its choice.
+
+    MEASURED, never asserted by the caller (#172). Which of the two reopening
+    routes has just adopted the frozen copy is a fact about the configuration in
+    hand — the workspace restores the operator's own pick, while a COMMITTED
+    PIPELINE SCRIPT names the frozen copy by design — and a flag passed down
+    would be a second account of it, free to be wrong in exactly the case that
+    matters. Compared as resolved paths, because the stored spellings legitimately
+    differ: the script carries what `stored_spelling` wrote and the operator may
+    hold an absolute one for the same file.
+    """
+    if not mesh_path or config is None:
+        return False
+    embedded = os.path.splitext(mesh_path)[0] + SUFFIX
+    picked = resolve(chosen(config))
+    if not picked:
+        return False
+    return os.path.normcase(os.path.abspath(picked)) == \
+        os.path.normcase(os.path.abspath(embedded))
+
+
+def committed_note(mesh_path: str, config=None) -> str:
     """One line naming the case type that judged a committed case, or ``""``.
 
-    #158's story 7 read exactly: being TOLD which case type judged this case,
-    without that silently becoming the current choice. `<stem>.casetype.json` is
-    a FROZEN copy whose whole purpose is not to be rewritten by later
-    corrections (#166), so selecting it automatically would judge the operator's
-    next Trial against a historical document — and the operator would never have
-    been asked. The sentence therefore states the history and the host changes
-    nothing.
+    #158's story 7 read exactly: being TOLD which case type judged this case.
+    `<stem>.casetype.json` is a FROZEN copy whose whole purpose is not to be
+    rewritten by later corrections (#166), so a REOPENED case adopting it as the
+    current choice would judge the operator's next Trial against a historical
+    document they were never asked about.
+
+    SO THE SENTENCE SAYS WHICH OF THE TWO HAPPENED, and it is not free to guess
+    (#172). The workspace route restores the operator's own pick and really does
+    change nothing. A COMMITTED PIPELINE SCRIPT names the frozen copy — that is
+    what makes re-running it reproduce the verdict rather than recompute one —
+    and loading such a script therefore DOES make that copy the current choice.
+    Claiming otherwise on that path was this sentence's own failure mode: it was
+    printed immediately after the choice had changed. `config` is the
+    configuration as it now stands, and `adopted_embedded` measures the answer
+    off it; with no `config` the caller is saying it has none, and the sentence
+    falls back to naming the history alone rather than asserting either half.
 
     ``""`` for a case that carries no embedded document, which is every case
     generated before #166 and every one committed with no case type in play.
@@ -305,17 +336,26 @@ def committed_note(mesh_path: str) -> str:
     if not os.path.isfile(path):
         return ""
     where = stored_spelling(os.path.abspath(path))
+    if config is None:
+        standing = ""
+    elif adopted_embedded(mesh_path, config):
+        standing = (" It is now what this configuration will be judged by, "
+                    "because the script you loaded names it — pick another "
+                    "above if you want this run graded by a maintained case "
+                    "type instead.")
+    else:
+        standing = " Your own choice is unchanged."
     try:
         ct = case_type_mod.load(path)
     except CaseTypeError as exc:
         logger.warning("the case type embedded in %s did not load: %s",
                        path, exc, exc_info=True)
         return ("This case was judged by a case type whose embedded copy (%s) "
-                "cannot be read: %s. Your own choice is unchanged." % (where, exc))
+                "cannot be read: %s.%s" % (where, exc, standing))
     return ("This case was judged by the case type %r, whose whole document is "
-            "embedded beside the mesh (%s). Your own choice is unchanged — "
-            "that copy is frozen so a later correction cannot rewrite a "
-            "finished case's judgement." % (ct.name, where))
+            "embedded beside the mesh (%s).%s That copy is frozen so a later "
+            "correction cannot rewrite a finished case's judgement."
+            % (ct.name, where, standing))
 
 
 # ── the picker widget's own read/write pair ────────────────────────────────

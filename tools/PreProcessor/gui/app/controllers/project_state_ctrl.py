@@ -123,27 +123,34 @@ class ProjectStateControllerMixin:
     def _say_committed_case_type(self):
         """Tell the operator which case type judged the case they just reopened.
 
-        #169, #158's user story 7, and the rule is that it CHANGES NOTHING: the
-        `<stem>.casetype.json` beside a committed mesh is a FROZEN copy whose
-        whole purpose is not to be rewritten by later corrections (#166), so
-        adopting it as the current choice would judge the next Trial against a
-        historical document, and the operator would never have been asked. The
-        sentence is `case_type_picker.committed_note`'s — a controller spells no
-        sentence about a case type (`.claude/rules/gui-seams.md`) — and is empty
-        for a case that carries no embedded copy, which is every case committed
-        before #166 and every one committed with no case type in play.
+        #169, #158's user story 7. The `<stem>.casetype.json` beside a committed
+        mesh is a FROZEN copy whose whole purpose is not to be rewritten by later
+        corrections (#166), so a reopen that adopted it as the current choice
+        would judge the next Trial against a historical document the operator was
+        never asked about. The sentence is `case_type_picker.committed_note`'s —
+        a controller spells no sentence about a case type
+        (`.claude/rules/gui-seams.md`) — and is empty for a case that carries no
+        embedded copy, which is every case committed before #166 and every one
+        committed with no case type in play.
 
-        TWO callers, both the moment a case is REOPENED: this module's workspace
-        restore and `pipeline_io_ctrl`'s script loader, which is the file a
-        Generate actually leaves beside the mesh. It lives HERE because the
-        workspace route is the one that already holds the restored mesh config; a
-        GENERATION says nothing of the kind, having its own verdict to report.
-        `_get_expected_vtk_path` is `mesh_gen_ctrl`'s and is reached across the
-        composed `AppController`, like every other cross-mixin call here.
+        WHETHER IT WAS ADOPTED IS NOT THIS METHOD'S CLAIM TO MAKE, and #172 is
+        why. Its two callers differ on exactly that: the workspace restores the
+        operator's own pick, while `pipeline_io_ctrl`'s script loader applies a
+        COMMITTED script whose case type now IS the frozen copy, so on that path
+        the choice really does change. The restored configuration is handed down
+        and `committed_note` measures the answer off it, rather than this method
+        asserting a half that was true of one caller and false of the other.
+
+        TWO callers, both the moment a case is REOPENED. It lives HERE because
+        the workspace route is the one that already holds the restored mesh
+        config; a GENERATION says nothing of the kind, having its own verdict to
+        report. `_get_expected_vtk_path` is `mesh_gen_ctrl`'s and is reached
+        across the composed `AppController`, like every other cross-mixin call.
         """
         from app.services import case_type_picker
         note = case_type_picker.committed_note(
-            self._get_expected_vtk_path(self.global_mesh_config))
+            self._get_expected_vtk_path(self.global_mesh_config),
+            config=self.global_mesh_config)
         if note:
             self.log("[Mesh] " + note)
 

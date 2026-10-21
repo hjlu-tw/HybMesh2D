@@ -53,12 +53,10 @@ WHAT A COMMITTED CASE CARRIES, and why each file is separate rather than one:
   (user story 44), written by the host's own `PipelineConfig`. Taken as an
   object with a `save_to_file` method rather than imported, so this module
   stays a stranger to the GUI's model layer and a test can hand it a stub.
-  **It names the FROZEN copy above as the case type that judges it**, never the
-  file the operator picked (#172): the picked one is maintained, and
-  `add_reference_mesh.py` makes correcting it a routine act, so a script that
-  named it would reproduce the mesh exactly and then grade it against bounds
-  that have moved — disagreeing with the frozen record beside it and saying
-  nothing. `as_frozen` is where that re-pointing is done.
+  **When this commit froze a case type, the script names THAT copy** and not
+  the file the operator picked (#172) — and when it froze none it names
+  whatever they picked, because there is nothing beside the mesh to point at.
+  `script_config` decides which, for all three dispositions at once.
 
 THE FINGERPRINT ANSWERS ONE QUESTION: is the mesh in hand still the mesh this
 configuration would produce? It is taken over the mesher's own config text —
@@ -222,38 +220,49 @@ def sidecar_paths(dest_mesh: str) -> dict:
     return {role: stem + ext for role, ext in SIDECAR_EXTS.items()}
 
 
+def script_config(cfg, trial: TrialMesh, dest_mesh: str):
+    """The mesh section the COMMITTED SCRIPT carries, or ``None`` for no override.
+
+    ONE PLACE DECIDES, for the same reason `commit` reconciles its record slots
+    in one place rather than writing them in three: "what did this commit
+    freeze?" is a single question, and the script has to agree with the record
+    beside it on the answer. Shipped as a branch in the disposition that mirrored
+    `commit`'s own, which is two expressions of one rule free to drift.
+
+    * a FALLBACK froze no case type, so the script names none (#167) — the
+      exemption is `mesh_fallback.as_hybrid`'s, said there and not restated here;
+    * a JUDGED commit froze a copy beside the mesh, so the script names THAT;
+    * anything else froze nothing — no case type in play, or one that would not
+      load — so there is nothing to point at and the operator's own spelling
+      stands. ``None`` rather than a copy, so `build_pipeline_config` is handed
+      an override only where there is really something to override.
+
+    Why: `docs/design_notes/gui.md`, "A COMMITTED SCRIPT IS JUDGED BY THE COPY
+    FROZEN BESIDE IT".
+    """
+    if trial.fallback is not None:
+        return mesh_fallback.as_hybrid(cfg)
+    if trial.verdict is not None:
+        return as_frozen(cfg, dest_mesh)
+    return None
+
+
 def as_frozen(cfg, dest_mesh: str):
     """``cfg`` as the COMMITTED SCRIPT carries it: judged by the FROZEN copy.
 
-    A copy, never a mutation — the operator's configuration still names the case
+    A COPY, NEVER A MUTATION — the operator's configuration still names the case
     type they picked, and so does the workspace they go on saving. What is
     re-pointed belongs to the SCRIPT, exactly as `mesh_fallback.as_hybrid`
-    re-points what belongs to a downgraded RUN.
+    re-points what belongs to a downgraded RUN. Duck-typed on the config, like
+    `as_hybrid`, so this module stays a stranger to the GUI's model layer.
 
-    WHY THE SCRIPT MUST NOT NAME THE PICKED FILE (#172). A commit freezes the
-    whole case-type document beside the mesh precisely because the picked one
-    goes on being maintained — `add_reference_mesh.py` makes correcting its
-    bounds a routine act (#168). A script naming the picked file therefore
-    reproduces the MESH exactly and then grades it against whatever that file
-    says on the day it is re-run, so the verdict it prints can contradict the
-    frozen record lying next to it with nothing saying which is which. Naming
-    the frozen copy removes the disagreement rather than reporting it: the
-    script reproduces both halves of what the operator saw.
+    THE PRECONDITION IS `script_config`'S: this re-points unconditionally, and
+    only a commit that really froze a copy may call it. Reaching it otherwise
+    would name a sidecar nobody wrote.
 
-    THE COST IS NAMED RATHER THAN HIDDEN. The copy lives beside the mesh, so a
-    script carried off ALONE — without the case directory it was committed into
-    — names a file that is not there. That is the honest failure: `case_type.load`
-    refuses, the verdict layer says "No verdict:" and names the missing file, and
-    the mesh is still regenerated. The alternative silently judges one mesh by
-    another case type's numbers.
-
-    A FALLBACK COMMIT NEVER REACHES HERE, and that exemption is deliberate
-    (#167): there is no frozen copy beside an unstructured mesh, because no case
-    type judged it. `mesh_fallback.as_hybrid` has already cleared the field, and
-    the caller picks one transformation or the other.
-
-    Duck-typed on the config, like `as_hybrid`, so this module stays a stranger
-    to the GUI's model layer.
+    Why — including the two options #172 did NOT take, and the cost this one
+    buys: `docs/design_notes/gui.md`, "A COMMITTED SCRIPT IS JUDGED BY THE COPY
+    FROZEN BESIDE IT".
     """
     out = copy.deepcopy(cfg)
     out.case_type_file = case_type_picker.stored_spelling(

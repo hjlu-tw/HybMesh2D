@@ -262,8 +262,12 @@ class PipelineIoControllerMixin:
             self.push_panel_config(self.main_window.mesh_config_panel, self.global_mesh_config)
             # ...and, if this script is the one a Generate left beside a committed
             # mesh, say which case type judged that case (#169). The same call the
-            # workspace route makes, for the same reason and with the same rule:
-            # it STATES the history and never becomes the current choice.
+            # workspace route makes — but NOT with the same outcome, and #172 is
+            # why: a committed script names the FROZEN copy, so the
+            # `load_from_dict` above has just made that copy the current choice.
+            # The sentence says so on this path and says the opposite on the
+            # workspace one; `committed_note` measures which off the config it is
+            # handed rather than being told.
             self._say_committed_case_type()
             self.sync_mesh_layers_panel()
 
