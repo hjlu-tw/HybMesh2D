@@ -2763,8 +2763,17 @@ int main() {
             CHECK(mentions(r.error, names),
                   what + ": the message must name '" + names + "' (got: " + r.error + ")");
         };
-        refusesWith(sq(R"({"ds_start": 1e-4, "ds_end": 5e-4})"), "'w'",
-                    "35. two DIFFERENT heights at the two ends");
+        // TWO DIFFERENT HEIGHTS WERE ON THIS LIST UNTIL #177 and are now the
+        // TWO-SIDED LAW. The row is inverted rather than deleted, the way check 9
+        // inverted #50's clockwise-ring refusal: what the release cannot do is a
+        // moving list, and a row that leaves it is worth as much as one that
+        // joins. Check 60 is where the law itself is measured.
+        {
+            MbResult two = hybmesh::buildMultiBlock(
+                sq(R"({"ds_start": 1e-4, "ds_end": 5e-4})"), {}, p);
+            CHECK(two.ok, "35. two DIFFERENT heights at the two ends are ACCEPTED "
+                          "since #177 (err: " + two.error + ")");
+        }
         refusesWith(sq(R"({"law": "geometric", "growth": 1.1, "ds_start": 1e-4})"),
                     "geometric",
                     "35. a wall spacing on a law that cannot solve for one");
@@ -5280,6 +5289,279 @@ int main() {
         CHECK(!r.cells.empty() && inverted == 0,
               "59. ...and not one of its " + std::to_string(r.cells.size())
               + " cells is inverted (" + std::to_string(inverted) + ")");
+    }
+
+    // ── 60. AN EDGE MAY CLUSTER TO A DIFFERENT HEIGHT AT EACH END (#177) ────
+    //
+    // Refused by name until #177, and the refusal was honest about the
+    // implementation rather than about the subject: `Spacing.hpp` had the
+    // SYMMETRIC tanh and the ONE-SIDED tanh and nothing between them. Two
+    // different end spacings on one edge is the industry default — ICEM's
+    // `Hyperbolic` takes Spacing1 AND Spacing2, Pointwise's `Tanh` is the
+    // two-sided function, HYPGEN takes DZ0 and DZ1 (docs/research/cell-size-
+    // range-within-a-block.md section L3, from the vendor documentation).
+    //
+    // Measured on the WEST edge of a unit square, which runs sw -> nw with `nj`
+    // nodes, so `nodeOf(r, b, 0, j)` walks it and consecutive distances are the
+    // intervals the law produced. Nothing here reads the law: every figure is a
+    // distance between two nodes of a finished fill, which is the same rule
+    // check 36 holds the one-parameter solvers to.
+    //
+    // ELEVEN HAND INJECTIONS, run 2026-10-20 against this group AND against
+    // tools/PreProcessor/tests/test_multiblock_two_sided_surface.py, each one
+    // built and its EXIT CODE read rather than its FAIL-line count, with a NAMED
+    // negative control (a comment line) that stayed green. Eight bite; the three
+    // that do not are named here rather than left as a count, because an inert
+    // injection is a statement about the code and not only about the gate:
+    //
+    //   I1  the Mobius map dropped (the two-sided law becomes the symmetric one)  both
+    //   I2  `tanhTwoSidedA` drops its `- 1.0`, so `A` targets the wrong cell      both
+    //   I3  the "neither end finer than uniform" early return deleted             C++
+    //   I4  the `A > 0` guard dropped                                            INERT
+    //   I5  the solve returns `hi` instead of `lo`                               INERT
+    //   I6  the FINER end no longer leads, so `ds_start` is always pinned         C++
+    //   I7  the pair bound squared from `count - 1` instead of `count - 2`     surface
+    //   I8  the `twoEnded` guard on the pair clause dropped                      INERT
+    //   I9  an unequal pair routed to the SYMMETRIC law on `ds_start` alone       both
+    //   I10 the bisection truncated from 200 sweeps to 8                          both
+    //   I11 `tanhTwoSidedTrail` reports the FIRST interval, not the last          both
+    //
+    // I4 is inert because `spacingAlong` hands the FINER height in first, which
+    // makes `ds_lead < uniform <= L` wherever the guard above it lets execution
+    // through; it guards the function against a caller that does NOT sort, and
+    // this repo has one caller that does. I5 is inert because after 200
+    // bisections `lo` and `hi` are adjacent doubles — the choice between them is
+    // about which side carries the `A > 0` invariant, not about accuracy, and no
+    // measurement can see one ulp of a clustering strength. I8 is inert because
+    // an unclustered end has `ds == 0`, so `L / ds` is infinite and the product
+    // clears any bound: the guard states the intent and the arithmetic already
+    // holds it. I6 needed a FIXTURE rather than a check — its first run was inert
+    // against (a) and (c), because the feasible case reaches the same
+    // distribution whichever end leads; the reversed impossible pair in (d) is
+    // what reaches it.
+    {
+        const auto west = [](int n, const std::string& sp) {
+            const std::string decl =
+                R"({"id": "w", "corners": ["sw", "nw"], "kind": "wall", "count": )"
+                + std::to_string(n);
+            return swap1(square(4, n), decl, decl + R"(, "spacing": )" + sp + "");
+        };
+        // Did the run say this? Local, because this file has no such helper and
+        // one more global predicate over `warnings` is not what check 60 is for.
+        const auto said = [](const MbResult& r, const std::string& needle) {
+            for (const std::string& w : r.warnings) if (mentions(w, needle)) return true;
+            return false;
+        };
+        // Every interval of the west edge, in order.
+        const auto intervals = [](const MbResult& r) {
+            std::vector<double> d;
+            if (!r.ok || r.blocks.empty()) return d;
+            const auto& b = r.blocks[0];
+            for (int j = 1; j < b.nj; ++j)
+                d.push_back((nodeOf(r, b, 0, j) - nodeOf(r, b, 0, j - 1)).length());
+            return d;
+        };
+
+        // (a) BOTH declared heights are the ones produced. 0.005 at the south end
+        //     and 0.200 at the north of a length-1 edge at 21 nodes — a request
+        //     neither older law can express, the uniform spacing between them
+        //     being 0.05, so one end is four times FINER than uniform and the
+        //     other four times COARSER.
+        //
+        //     THE BOUND IS DERIVED, as check 31's is and by the same mechanism:
+        //     the leading height is a closed form and lands exact, the trailing
+        //     one is a bisection whose relative error is eps of the EDGE length
+        //     over the cell's relative size. Measured 0.0 and 6.4e-15 here
+        //     against a 1e-16/0.005 = 4.4e-14 bound; 1e-9 is the bar, three
+        //     orders looser so a different libm cannot flake it and still the
+        //     same bar the one-parameter laws are held to next door.
+        {
+            MbParams p;
+            MbResult r = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 0.005, "ds_end": 0.2})"), {}, p);
+            CHECK(r.ok, "60. two DIFFERENT heights on one edge are accepted (err: "
+                        + r.error + ")");
+            const std::vector<double> d = intervals(r);
+            CHECK(d.size() == 20, "60. ...over 20 intervals ("
+                                  + std::to_string(d.size()) + ")");
+            if (d.size() == 20) {
+                CHECK(std::fabs(d.front() - 0.005) <= 1e-9 * 0.005,
+                      "60. the 'start' end IS the declared 0.005 (got "
+                      + std::to_string(d.front()) + ")");
+                CHECK(std::fabs(d.back() - 0.2) <= 1e-9 * 0.2,
+                      "60. ...and the 'end' end IS the declared 0.2 at the SAME time "
+                      "(got " + std::to_string(d.back()) + ")");
+                bool rising = true;
+                for (size_t k = 1; k < d.size(); ++k) if (!(d[k] > d[k - 1])) rising = false;
+                CHECK(rising, "60. ...and the spacing rises monotonically between them, "
+                              "so the map did not fold back on itself");
+            }
+            CHECK(!said(r, "first cell height of"),
+                  "60. ...and nothing accuses this edge of missing its request");
+        }
+
+        // (b) THE LAW IS CONTINUOUS ACROSS THE EQUAL-HEIGHTS DISPATCH. An equal
+        //     pair still goes to `solveTanhDelta` and a single clustered end
+        //     still goes to `solveTanhStartDelta`, bit for bit, which is what
+        //     keeps every shipped document's nodes where they were — so the
+        //     two-sided law is never exercised AT the symmetric point and a
+        //     reduction asserted there would be asserted of nothing. It is
+        //     asserted one ulp AWAY from it instead: 0.01 against
+        //     0.01 * (1 + 1e-12) routes through the NEW law, and its nodes must
+        //     agree with the symmetric law's to the same derived bound. This is
+        //     the whole of "a two-parameter solver asked for a symmetric pair
+        //     reproduces the one-parameter one", measured through the fill.
+        {
+            MbParams p;
+            MbResult sym = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 0.01, "ds_end": 0.01})"), {}, p);
+            MbResult two = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 0.01, "ds_end": 0.010000000001})"), {}, p);
+            CHECK(sym.ok && two.ok, "60. both the symmetric and the one-ulp-off "
+                                    "document are accepted");
+            const std::vector<double> a = intervals(sym), b = intervals(two);
+            CHECK(a.size() == b.size() && !a.empty(),
+                  "60. ...with the same interval count");
+            double worst = 0.0;
+            for (size_t k = 0; k < a.size() && k < b.size(); ++k)
+                worst = std::max(worst, std::fabs(a[k] - b[k]));
+            CHECK(!a.empty() && worst <= 1e-9,
+                  "60. the two-sided law at a near-symmetric pair reproduces the "
+                  "SYMMETRIC law it reduces to — worst interval gap "
+                  + std::to_string(worst) + " on a length-1 edge");
+        }
+
+        // (c) THE LAW COMMUTES WITH REVERSING THE DECLARATION. The solve PINS
+        //     its leading height, so which end survives a request the count
+        //     cannot carry would otherwise depend on which end the document
+        //     happened to name first. `spacingAlong` hands the FINER height in
+        //     first and mirrors the result, so the same two numbers the other way
+        //     round give the mirror image.
+        //
+        //     NOT asserted at 0, and the first draft of this check was and went
+        //     red: the reflection is `L - f`, one subtraction per node, so the
+        //     reversed run's arc positions are the originals' to within its
+        //     rounding and not bit for bit. The bound is therefore a few eps of
+        //     the EDGE length — measured 1.0e-16 on this length-1 edge, which is
+        //     half an ulp of its far end — and NOT a tolerance on the spacing,
+        //     which would scale with the cell and say nothing about the fine end.
+        {
+            MbParams p;
+            MbResult f = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 0.005, "ds_end": 0.2})"), {}, p);
+            MbResult g = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 0.2, "ds_end": 0.005})"), {}, p);
+            const std::vector<double> a = intervals(f), b = intervals(g);
+            CHECK(a.size() == b.size() && !a.empty(),
+                  "60. the reversed declaration fills too");
+            double worst = 0.0;
+            for (size_t k = 0; k < a.size() && k < b.size(); ++k)
+                worst = std::max(worst, std::fabs(a[k] - b[b.size() - 1 - k]));
+            printf("    [60c] worst mirror gap %.3e on a length-1 edge\n", worst);
+            CHECK(!a.empty() && a.size() == b.size() && worst <= 1e-15,
+                  "60. ...and its intervals are the reverse of the other's, so the "
+                  "law does not favour the end that was named first — worst gap "
+                  + std::to_string(worst));
+        }
+
+        // (d) A PAIR THE COUNT CANNOT CARRY IS SAID, AND THE FINER END SURVIVES.
+        //     0.04 and 0.09 on a length-1 edge at 21 nodes: each is within a
+        //     factor of two of the uniform 0.05, and TOGETHER they are
+        //     impossible — (1/0.04 - 1)(1/0.09 - 1) = 242.7 against the 361 the
+        //     count demands. The finer end is held exactly, the coarser one
+        //     comes out at 0.062, and the warning naming it is the one the
+        //     one-parameter laws already had: measured on the produced nodes,
+        //     never re-derived from the law.
+        {
+            MbParams p;
+            MbResult r = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 0.04, "ds_end": 0.09})"), {}, p);
+            CHECK(r.ok, "60. an impossible PAIR still fills — it is a warning, not a "
+                        "refusal (err: " + r.error + ")");
+            const std::vector<double> d = intervals(r);
+            if (d.size() == 20) {
+                CHECK(std::fabs(d.front() - 0.04) <= 1e-9 * 0.04,
+                      "60. ...with the FINER end held exactly (got "
+                      + std::to_string(d.front()) + ")");
+                CHECK(d.back() < 0.09 * 0.99,
+                      "60. ...and the coarser end short of its request (got "
+                      + std::to_string(d.back()) + ")");
+            }
+            CHECK(said(r, "'end' end asks for a first cell height"),
+                  "60. ...and the warning names the END that gave way, not the edge");
+            CHECK(!said(r, "'start' end asks for a first cell height"),
+                  "60. ...and does NOT accuse the end that was honoured");
+            CHECK(said(r, "it is the PAIR that did not fit"),
+                  "60. ...and says it was the PAIR, so a reader is not sent to "
+                  "refine an end that is already as fine as it asked to be");
+            // ...AND THE SAME PAIR THE OTHER WAY ROUND HOLDS THE OTHER END.
+            // Without this row the whole mirroring in `spacingAlong` is
+            // unfalsifiable: the FEASIBLE case reaches the same distribution
+            // whichever end leads, so an injection pinning `ds_start`
+            // unconditionally came back INERT against (a) and (c) alike. The
+            // rule only has consequences where the pair cannot be had, and this
+            // is the fixture that reaches it — a wall declared at an edge's
+            // SECOND corner, which is the ordinary case for half the radials of
+            // any ring.
+            MbResult rev = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 0.09, "ds_end": 0.04})"), {}, p);
+            const std::vector<double> dr = intervals(rev);
+            CHECK(rev.ok && dr.size() == 20,
+                  "60. the reversed impossible pair fills too (err: " + rev.error + ")");
+            if (dr.size() == 20) {
+                CHECK(std::fabs(dr.back() - 0.04) <= 1e-9 * 0.04,
+                      "60. ...with the FINER end held — which is now the 'end' end, "
+                      "so the law holds the finer height and not the one declared "
+                      "first (got " + std::to_string(dr.back()) + ")");
+                CHECK(dr.front() < 0.09 * 0.99,
+                      "60. ...and the coarser 'start' end short of its request (got "
+                      + std::to_string(dr.front()) + ")");
+            }
+            CHECK(said(rev, "'start' end asks for a first cell height"),
+                  "60. ...and the warning names the START this time");
+            CHECK(!said(rev, "'end' end asks for a first cell height"),
+                  "60. ...and not the end it honoured");
+        }
+
+        // (e) NEITHER END FINER THAN UNIFORM IS NOT A CLUSTERING REQUEST AT ALL,
+        //     and the answer is the one `solveClusterDelta` gives the
+        //     one-parameter laws: UNIFORM. Reached by the same test rather than
+        //     by a second rule, and asserted as BIT equality against a document
+        //     that declares `uniform` outright — the shape check 30 uses.
+        {
+            MbParams p;
+            MbResult r = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 0.06, "ds_end": 0.08})"), {}, p);
+            MbResult u = hybmesh::buildMultiBlock(
+                west(21, R"({"law": "uniform"})"), {}, p);
+            CHECK(r.ok && u.ok, "60. a pair with neither end finer than uniform fills");
+            const std::vector<double> a = intervals(r), b = intervals(u);
+            bool same = a.size() == b.size() && !a.empty();
+            for (size_t k = 0; same && k < a.size(); ++k) same = a[k] == b[k];
+            CHECK(same, "60. ...as the UNIFORM distribution, bit for bit — the same "
+                        "answer the one-parameter laws give a request at or coarser "
+                        "than the count's own spacing");
+            CHECK(said(r, "'start' end asks for a first cell height")
+                      && said(r, "'end' end asks for a first cell height"),
+                  "60. ...and BOTH ends are told they did not get what they asked for");
+            // ...INCLUDING THE DEGENERATE END OF THAT REGION, where a declared
+            // height is longer than the WHOLE EDGE. The map's weight `A` would be
+            // non-positive there and `tanhTwoSidedPos` divides by it, so the
+            // difference between this row and a NaN mesh is one guard. Asserted
+            // as "every node is finite AND the distribution is the uniform one",
+            // because a NaN coordinate is not a bad mesh, it is no mesh.
+            MbResult far = hybmesh::buildMultiBlock(
+                west(21, R"({"ds_start": 2.0, "ds_end": 3.0})"), {}, p);
+            const std::vector<double> dd = intervals(far);
+            bool finite = dd.size() == 20;
+            for (size_t k = 0; finite && k < dd.size(); ++k)
+                finite = std::isfinite(dd[k]) && dd[k] > 0.0;
+            CHECK(finite, "60. two heights each LONGER than the edge give 20 finite, "
+                          "positive intervals rather than a NaN mesh");
+            bool unif = dd.size() == b.size();
+            for (size_t k = 0; unif && k < dd.size(); ++k) unif = dd[k] == b[k];
+            CHECK(unif, "60. ...and they are the UNIFORM ones, bit for bit");
+        }
     }
 
     return hybmesh::test::report("test_multiblock");

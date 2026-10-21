@@ -955,17 +955,44 @@ std::vector<Point2D> subPath(const std::vector<Point2D>& path,
 // requested first interval rather than approximating it, so the height the
 // quality report measures is the height the document asked for.
 //
-// A two-sided request with DIFFERENT spacings at the two ends is refused earlier,
-// by name, rather than approximated here — see `buildMultiBlock`.
+// A two-sided request with DIFFERENT spacings at the two ends was refused in
+// `buildMultiBlock` until #177, because no such law existed; it is a FOURTH job
+// of the same key now, and the one that was the industry default all along.
 std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
     if (e.law == LAW_GEOMETRIC)
         return HybMesh::Spacing::generateGeometric(L, e.count, e.growth);
     if (e.law == LAW_UNIFORM)
         return HybMesh::Spacing::generateGeometric(L, e.count, 1.0);
     // tanh.
-    if (e.cluster[END_START] && e.cluster[END_FINISH])
-        return HybMesh::Spacing::generateTanh(
-            L, e.count, HybMesh::Spacing::solveTanhDelta(L, e.count, e.ds[END_START]));
+    if (e.cluster[END_START] && e.cluster[END_FINISH]) {
+        if (e.ds[END_START] == e.ds[END_FINISH])
+            return HybMesh::Spacing::generateTanh(
+                L, e.count, HybMesh::Spacing::solveTanhDelta(L, e.count, e.ds[END_START]));
+        // TWO DIFFERENT HEIGHTS: the two-sided law (#177). The ONE-PARAMETER
+        // solvers are not touched by this branch — an equal pair above and a
+        // single clustered end below still reach them, bit for bit, so no shipped
+        // document's nodes move.
+        //
+        // THE FINER END LEADS, and the result is MIRRORED when the document
+        // declared it trailing — the same reflection the one-sided branch below
+        // uses, written once there and once here rather than as a second formula.
+        // Two things come of it. The solve PINS its leading height when the pair
+        // is too coarse for the count, so what survives is the end a wall would be
+        // at rather than whichever end the document happened to name first; and
+        // the law COMMUTES with reversing the declaration, exactly, which a rule
+        // that always pinned `ds_start` would not.
+        const bool startFiner = e.ds[END_START] <= e.ds[END_FINISH];
+        const double dsLead = startFiner ? e.ds[END_START] : e.ds[END_FINISH];
+        const double dsTrail = startFiner ? e.ds[END_FINISH] : e.ds[END_START];
+        double dlt = 0.0, A = 1.0;
+        HybMesh::Spacing::solveTanhTwoSided(L, e.count, dsLead, dsTrail, dlt, A);
+        const std::vector<double> f =
+            HybMesh::Spacing::generateTanhTwoSided(L, e.count, dlt, A);
+        if (startFiner) return f;
+        std::vector<double> t(f.size());
+        for (size_t x = 0; x < f.size(); ++x) t[x] = L - f[f.size() - 1 - x];
+        return t;
+    }
     for (int k = END_START; k <= END_FINISH; ++k) {
         if (!e.cluster[k]) continue;
         const std::vector<double> f = HybMesh::Spacing::generateTanhStart(
@@ -2302,18 +2329,10 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                             + std::string(k == END_START ? "ds_start" : "ds_end") + "\".");
             e.ds[k] = params.wallSpacing;
         }
-        // Both ends clustered to DIFFERENT heights is a two-sided stretching
-        // function this release does not have. Refused by name rather than
-        // approximated with the symmetric law and one of the two numbers, which
-        // would honour half a declaration silently.
-        if (e.cluster[END_START] && e.cluster[END_FINISH]
-            && e.ds[END_START] != e.ds[END_FINISH])
-            return fail("edge '" + e.id + "': it asks for a different first cell height "
-                        "at each end (" + std::to_string(e.ds[END_START]) + " and "
-                        + std::to_string(e.ds[END_FINISH]) + "). The tanh law here is "
-                        "symmetric when both ends cluster, so it can honour one height "
-                        "at both ends or one end's height on its own — declare equal "
-                        "heights, or cluster a single end.");
+        // Both ends clustered to DIFFERENT heights was refused here until #177.
+        // It is the TWO-SIDED law now (`solveTanhTwoSided`, see `spacingAlong`),
+        // so nothing is checked at this point: the refusal was about the law this
+        // release happened to have and not about the declaration.
         if (e.law == LAW_GEOMETRIC && !(e.growth > 0.0)) {
             if (!(params.wallGrowth > 0.0))
                 return fail("edge '" + e.id + "': it declares the 'geometric' law with no "
@@ -2782,10 +2801,45 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         // spacing and got whatever the count implies. Measured against what the
         // edge actually PRODUCED rather than re-derived from the law, so a future
         // law that misses its target is caught by the same line.
+        //
+        // A TWO-ENDED REQUEST MISSES AS A PAIR, AND THE MESSAGE SAYS SO (#177).
+        // Each end alone may be perfectly reachable — the two-sided law exists so
+        // a fine wall and a coarse far field can share one edge — while the two
+        // TOGETHER are coarser than the count can carry. The bound is derived in
+        // `Spacing::solveTanhTwoSided` and is symmetric in the two heights, so the
+        // clause names it with the arithmetic done rather than naming an end as
+        // the culprit. Which end gives way is the LAW's rule, stated in
+        // `spacingAlong`: the finer one is held.
+        const bool twoEnded = e.cluster[END_START] && e.cluster[END_FINISH]
+                              && e.ds[END_START] != e.ds[END_FINISH];
+        const double edgeLen = e.hasCurve ? hybmesh::mbCurveLength(e.curve)
+                                          : (pathArc.empty() ? 0.0 : pathArc.back());
+        const bool pairFits = !twoEnded || !(edgeLen > 0.0) || e.count < 3
+                              || (edgeLen / e.ds[END_START] - 1.0)
+                                     * (edgeLen / e.ds[END_FINISH] - 1.0)
+                                 >= static_cast<double>(e.count - 2)
+                                        * static_cast<double>(e.count - 2);
         for (int side = END_START; side <= END_FINISH; ++side) {
             const double want = e.ds[side];
             if (!(want > 0.0)) continue;
             if (std::fabs(achieved[side] - want) <= 1e-9 * want) continue;
+            std::string pairClause;
+            if (twoEnded && !pairFits) {
+                const int other = (side == END_START) ? END_FINISH : END_START;
+                pairClause =
+                    " This edge declares a height at BOTH ends, so it is the PAIR that "
+                    "did not fit: a two-sided tanh can hold both only while "
+                    "(L/ds_start - 1) * (L/ds_end - 1) is at least (count - 2) squared, "
+                    "which is "
+                    + fmt3((edgeLen / e.ds[END_START] - 1.0)
+                           * (edgeLen / e.ds[END_FINISH] - 1.0))
+                    + " against "
+                    + fmt3(static_cast<double>(e.count - 2)
+                           * static_cast<double>(e.count - 2))
+                    + " on this edge's " + fmt3(edgeLen)
+                    + " of arc. The FINER of the two is the one held, so the other end's "
+                    + std::to_string(e.ds[other]) + " was honoured in full.";
+            }
             r.warnings.push_back(
                 "edge '" + e.id + "': its "
                 + (side == END_START ? std::string("'start'") : std::string("'end'"))
@@ -2793,7 +2847,8 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                 + " and the distribution produced " + std::to_string(achieved[side])
                 + ". A tanh law cannot cluster COARSER than the uniform spacing its "
                   "own node count gives, so either lower the count on this edge's "
-                  "equivalence class or ask for a finer height.");
+                  "equivalence class or ask for a finer height."
+                + pairClause);
         }
         // A SAMPLE RATE THE SOURCE POLYLINE CANNOT CARRY IS SAID (#94).
         //

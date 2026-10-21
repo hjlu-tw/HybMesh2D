@@ -4837,6 +4837,167 @@ Blind spots, named:
   * **The two gates measure one cap.** Group 8 in both files runs at the shipped default
     of 20. The cap sweep above was run by hand and is a dated quotation, like #85's.
 
+
+**A DIFFERENT HEIGHT AT EACH END** (#177, measured 2026-10-20). Until this ticket an edge
+could cluster at one end, or at both ends to the SAME height, and two DIFFERENT heights was
+refused by name:
+
+> edge 'X': it asks for a different first cell height at each end (A and B). The tanh law
+> here is symmetric when both ends cluster, so it can honour one height at both ends or one
+> end's height on its own — declare equal heights, or cluster a single end.
+
+**THE REFUSAL WAS HONEST ABOUT THE IMPLEMENTATION AND FALSE ABOUT THE SUBJECT, AND THAT IS
+THE WHOLE LESSON OF IT.** Every clause of it was true of `tools/PreProcessor/include/Spacing.hpp`,
+which had `solveTanhDelta` (both ends, equally) and `solveTanhStartDelta` (the start only) and
+nothing in between. None of it was true of two-sided stretching, which is the INDUSTRY DEFAULT:
+ICEM CFD's `Hyperbolic` takes `Spacing1` AND `Spacing2` and says "the growth ratios are
+determined internally"; Pointwise's `Tanh` IS the two-sided function and falls back to a
+*different*, one-sided function only "if the spacing is unconstrained at only one end"; HYPGEN
+takes `DZ0` and `DZ1`. Only Gmsh and this repo did not have it. Those readings are
+`docs/research/cell-size-range-within-a-block.md` section L3, which read the vendor
+documentation rather than a summary of it. **A missing primitive stated as a property of the
+subject blocked three separate pieces of work in one week**, each time as the reason a correct
+fix was abandoned — and `.claude/rules/mesher-multiblock.md` carried it under the heading
+"Refused BY NAME, never half-honoured", where a rule file states what the SUBJECT cannot be.
+
+**THE SHIPPED DOCUMENT HAD ALREADY WORKED AROUND IT, IN WRITING.**
+`examples/topology/tworing_ogrid.json` says its outer ring's radials "cluster at their
+'start', the corner on the SEAM, to the height the inner ring finished at", and then types
+`"ds_start": 0.05813418`. That number is not a quantity anybody chose. It is what the
+one-sided tanh leaves at the far end of the inner ring at 25 nodes, over that span, at that
+`BL_INITIAL_THICKNESS` — read off a run and typed back in, so the seam would not be a jump in
+cell size. The inner ring could not DECLARE where it finishes, because it already clustered at
+its wall end. The surface gate measures that the constant is still exactly what that law
+leaves (2.206e-09 of agreement on the exported mesh), which is both the evidence for this
+paragraph and what stops it going stale.
+
+**THE FAMILY IS THE SYMMETRIC LAW COMPOSED WITH ONE MOBIUS MAP**, the standard
+Vinokur/Thompson two-sided construction:
+
+    s(xi) = u(xi) / (A + (1 - A) u(xi)),    u = the symmetric tanh, parameter dlt
+
+`u` carries the overall fineness and `A` the asymmetry. **At `A == 1` it is `tanhBothPos` BIT
+FOR BIT** — `A + (1 - A) u` is exactly 1.0, and `L * (u / 1.0)` and `L * 0.5 * (...)` round
+identically because halving is exact — so the one-parameter law is a MEMBER of this one rather
+than a neighbour of it. That is what makes "the new law reduces to the old" a property of the
+expression instead of a claim about two solvers.
+
+**ONE BISECTION, NOT A TWO-DIMENSIONAL ROOT FIND, AND THAT IS WHY IT LOOKS LIKE THE REST OF
+THE FILE.** Matching two end intervals is two equations in (`dlt`, `A`), which invites Newton
+on a 2x2 system. It does not need one: with `dlt` fixed, pinning the LEADING interval is a
+single LINEAR equation in `A`,
+
+    ds_lead / L = u1 / (A + (1 - A) u1)   =>   A = u1 (L/ds_lead - 1) / (1 - u1)
+
+so `tanhTwoSidedA` inverts it exactly and what remains is one bisection over
+`tanhTwoSidedTrail`, which is monotonically decreasing in `dlt`. That monotonicity is the same
+property `solveClusterDelta` rests on and it was MEASURED before the code was written: 101
+samples from 0 to 64 on six configurations, zero reversals.
+
+**WHAT THE ACCURACY IS, AND WHY IT IS DERIVED.** The leading interval is the closed form's and
+lands exact — 0.0 relative, not "within a tolerance". The trailing one is the bisection's, and
+its error has the SAME form the one-parameter solvers' does and for the same mechanism: `u(xi_1)`
+is a difference of two nearly equal tanh values, so it carries about `eps * L / ds` of relative
+error and `A` inherits it. Measured on a 1e-3 first cell over a length-10 edge at 41 nodes:
+5.0e-14 at the trailing end against a 2.2e-12 bound. The 1e-9 bar the
+request-not-honoured warning uses is three orders above that.
+
+**THE FEASIBLE REGION IS A SYMMETRIC INEQUALITY, AND IT IS NOT BRANCHED ON.** The family's
+COARSEST trailing interval is at `dlt = 0`, where the map is the rational one; working out when
+that still reaches `ds_trail` gives
+
+    (L/ds_lead - 1) * (L/ds_trail - 1) >= (nT - 2)^2
+
+with `nT - 1` the interval count and the bound `(intervals - 1)^2`. Past it the bisection simply
+stops at `dlt = 0` with the leading height held — so an early return testing the inequality is a
+SECOND sufficient condition for what the loop already does, and it was written, injected, found
+INERT and deleted. What the bound is used for is the MESSAGE. **The exponent was
+`(count - 1)^2` in this ticket's own first derivation**, caught by running the formula against a
+case the mesher had already meshed: `N = count - 1` intervals and the bound is `(N - 1)^2`, not
+`N^2`. The gate reads the two printed figures back out of the warning and recomputes them, for
+exactly that reason — `"(count - 2) squared" in out` passes whichever base the code squares.
+
+**THE FINER END LEADS, AND THE REASON IS NOT SYMMETRY BUT WHAT A WALL IS.** The solve pins its
+leading height, so when the pair cannot be had, which end survives is a decision. Pinning
+`ds_start` unconditionally would mean that an edge whose WALL is at its second corner — half the
+radials of any ring, since a shared edge has one direction and two frames — loses its boundary
+layer silently, which is this path's whole failure class. So `spacingAlong` hands the FINER
+height in first and MIRRORS the result when the document declared it trailing, reusing the
+reflection the one-sided branch already had. A second property falls out: the law COMMUTES with
+reversing the declaration. **Not bit for bit — the first draft of that check asserted 0 and went
+red.** The reflection is `L - f`, one subtraction per node, so the reversed run agrees to one
+rounding of it: 1.023e-16 on a length-1 edge, half an ulp of its far end.
+
+**THE REDUCTION IS GATED ONE ULP AWAY FROM THE SYMMETRIC POINT, NOT AT IT.** The dispatch keeps
+sending an EQUAL pair to `solveTanhDelta` and a SINGLE clustered end to `solveTanhStartDelta`,
+bit for bit, which is what makes this inert on every shipped document — 22/22 golden cases SAME
+at 0.000e+00 across two builds, with no shipped document declaring unequal ends. But that is
+also why "a symmetric request reproduces the one-parameter solver" cannot be asserted AT the
+symmetric point: the two-sided law is never reached there, so the equality would be asserted of
+nothing. Check 60(b) declares `0.01` against `0.01 * (1 + 1e-12)`, which routes through the new
+law, and holds its nodes to the symmetric law's. **A single clustered end is not expressible in
+this family at all** — "unconstrained at one end" has no `A` — which is why that half stays a
+dispatch, and is the same thing Pointwise's documentation says when it falls back to a different
+function.
+
+**WHAT IT BUYS, MEASURED ON A SHIPPED DOCUMENT.** With both sides of the two-ring O-grid's seam
+declared, the seam height becomes a free parameter instead of a constant read off a run, and the
+figures the quality report already publishes move monotonically with it (unsmoothed, the
++x ray, 2026-10-20):
+
+| declared seam height | worst neighbour area ratio | bulk cell shape p95 | max non-orthogonality |
+|---|---|---|---|
+| 0.03 | 1.330580 | 2.025314 | 2.024972 |
+| 0.05813418 (the shipped constant) | 1.277826 | 1.754248 | 2.024972 |
+| 0.08 | 1.258925 | 1.654616 | 2.024972 |
+
+So the shipped constant is not at the best end of its own sweep — it is where the ONE-SIDED law
+happened to land, and what #177 changes is that it is now a choice. Non-orthogonality does not
+move at any of them, which matters: the improvement is not being bought there. **The shipped
+document was NOT changed**, deliberately — that would move the golden set, and acceptance item 5
+asks for this to be inert on every existing case.
+
+**AND A TRADE THAT GOES THE OTHER WAY, ON THE SAME DOCUMENT.** Declaring the outer ring's
+far-field end as well, at the azimuthal spacing `2 pi R / 96 = 0.654498` so the outermost cells
+are square, is honoured exactly and makes two of the field's own metrics WORSE: bulk cell-shape
+p95 1.754248 -> 1.814507 and worst neighbour area ratio 1.277826 -> 1.292784, because the middle
+of the ring has to stretch more to pay for the squared end. The layer half is identical, which
+is the control — the change really is confined to the outer ring. A capability is not an
+improvement, and this one is a knob that can be turned the wrong way.
+
+**WHAT IT DOES NOT FIX, AND THE ISSUE's OWN MOTIVATION 1 IS THE EXAMPLE.** #177 names a Turek
+channel band whose counts "had to be hand-chosen so the far end happened to land near the right
+value". Measured: those edges (`h0_*`) ask for 0.002 at their ring end over a span of 0.1 at 57
+nodes, where the UNIFORM spacing is already 0.0017857 — so the request is coarser than the count
+allows and the one-sided law correctly returns uniform. The two-sided law reaches 0.002 there
+only with the other end at 0.0016 or finer, which is not what a channel band wants; at 0.01 the
+pair scores 441 against a bound of 3025. **The existing warning's advice — lower the count on
+this edge's equivalence class — was right, and remains the fix.** One of the three pieces of work
+the refusal was blamed for was not the refusal's fault.
+
+**The injection ledger** is eleven mutations of the new code, dated 2026-10-20 beside check 60 in
+`tests/cpp/test_multiblock.cpp`, each built and its EXIT CODE read against both gates with a
+NAMED negative control. Eight bite. The three that do not are named there with their reasons, and
+two of them are statements about the CODE rather than about the gates: the `A > 0` guard is
+unreachable from the one caller this repo has, because `spacingAlong` sorts; and the `twoEnded`
+guard on the pair clause is already held by the arithmetic, an unclustered end having `ds == 0`
+so that `L / ds` is infinite. The fourth, I6, needed a FIXTURE and not a check — pinning
+`ds_start` unconditionally was INERT against both the "both ends honoured" row and the
+reversal row, because the FEASIBLE case reaches the same distribution whichever end leads. It
+only has consequences where the pair cannot be had, and the reversed impossible pair is what
+reaches it.
+
+**Blind spots**, beyond those `.claude/rules/mesher-spacing.md` carries:
+  * **Nothing shipped declares one.** The two gates and the surface gate's own variants of the
+    shipped two-ring document are the whole exercise of this law. The same was true of the
+    curved `cut` after #151 and is on that file's list for the same reason.
+  * **No solver run.** Every figure above is `MbQuality`'s, and that ruler is not a solve. The
+    two-ring family's gate 2 quotation is #85's, on a mesh this law does not change.
+  * **The resampler shares the header and is not gated from here.** `surface_resampler`
+    includes `Spacing.hpp` too; the two-sided law has no caller there today, so this is a hole
+    the next change to that file falls into rather than this one.
+
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

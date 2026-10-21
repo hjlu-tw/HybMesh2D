@@ -21,6 +21,14 @@ multi-block header, source, config or C++ test — and for `src/cli.cpp` and
 the SELECTOR with its exit codes, the single `.dat` key table, the BL parameters, the
 pure layer and the core C++ modules.
 
+**WHERE AN EDGE's NODES GO ALONG IT is a FIFTH file, `.claude/rules/mesher-spacing.md`**
+(#177), and it is the one of the five whose subject is NOT under `src/` or `include/`:
+the laws live in `tools/PreProcessor/include/Spacing.hpp`, which is on `hybmesh_pure`'s
+include path **PRIVATE** and on `surface_resampler`'s. It globs `src/MultiBlock.cpp`,
+`include/Config.hpp` and `tests/cpp/test_multiblock.cpp` from outside them, so a session
+under any of those loads it as well as this file. Nothing about the laws is ruled on
+here.
+
 ## Configuration
 
 ### .dat Config Format (`config/Background_para.dat`)

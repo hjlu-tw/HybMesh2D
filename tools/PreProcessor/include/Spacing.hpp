@@ -146,6 +146,150 @@ public:
             L, nT, ds_first);
     }
 
+    // ── Two-sided hyperbolic tangent (issue #177) ─────────────────────────
+    //
+    // An edge may ask for a DIFFERENT first cell height at each of its two ends.
+    // That was refused by name until #177 — honestly, because the two laws above
+    // are the whole of what existed: `generateTanh` clusters both ends EQUALLY and
+    // `generateTanhStart` clusters ONE. It is the industry default rather than an
+    // exotic request (ICEM's `Hyperbolic` takes Spacing1 AND Spacing2, Pointwise's
+    // `Tanh` is the two-sided function, HYPGEN takes DZ0 and DZ1), and it blocked
+    // three pieces of work in one week; `docs/research/cell-size-range-within-a-
+    // block.md` section L3 reads the vendor documentation rather than a summary.
+    //
+    // THE FAMILY IS THE SYMMETRIC LAW COMPOSED WITH ONE MOBIUS MAP, which is the
+    // standard Vinokur/Thompson two-sided construction and is NOT new mathematics:
+    //
+    //     s(xi) = u(xi) / (A + (1 - A) * u(xi)),   u = the symmetric tanh above
+    //
+    // `u` carries the overall fineness (one parameter, `dlt`) and `A` carries the
+    // ASYMMETRY between the two ends (the second). AT `A == 1` THE MAP IS THE
+    // IDENTITY AND THE FAMILY IS `tanhBothPos` BIT FOR BIT — `A + (1 - A) * u` is
+    // exactly 1.0, and `L * (u / 1.0)` and `L * 0.5 * (...)` round identically
+    // because halving is exact — so the one-parameter law is a MEMBER of this one
+    // rather than a neighbour of it. That reduction is gated, not claimed.
+    //
+    // WHY `A` IS CLOSED FORM AND ONLY `dlt` IS SOLVED FOR. Pinning the LEADING
+    // interval is one linear equation in `A` once `dlt` is fixed, so there is no
+    // two-dimensional root find here: `tanhTwoSidedA` inverts it exactly, and what
+    // is left is ONE bisection over ONE monotone function — the same shape
+    // `solveClusterDelta` above has, and for the same reason.
+    //
+    // ACCURACY, DERIVED RATHER THAN PICKED, as the one-parameter solvers' is. The
+    // leading interval is the closed form's and is exact to rounding. The trailing
+    // one is the bisection's, and its relative error is eps of the EDGE LENGTH
+    // divided by the cell's relative size — the same bound, by the same mechanism:
+    // `u(xi_1)` is a difference of two nearly equal tanh values, so it carries
+    // about `eps * L / ds` of relative error and `A` inherits it. Measured on a
+    // 1e-3 first cell over a length-10 edge at 41 nodes: 0.0 relative at the
+    // leading end and 5.0e-14 at the trailing one, against a 2.2e-12 bound.
+
+    // The symmetric law's position at node `i`, NORMALIZED to [0, 1]. One
+    // expression for both functions below, so the generator and the solver cannot
+    // target different curves — the reason `tanhBothPos` and `tanhStartPos` exist.
+    // `dlt == 0` is the uniform limit, handled here rather than by each caller,
+    // because `tanhBothPos` itself divides by `tanh(dlt)`.
+    static double tanhBothUnit(int nT, double dlt, int i) {
+        if (std::abs(dlt) < 1e-9) return (double)i / (nT - 1);
+        return tanhBothPos(1.0, nT, dlt, i);
+    }
+
+    // Where node `i` lands under the two-sided law.
+    //
+    // A > 0 is required and is the solver's invariant: the map's slope is
+    // A / (A + (1 - A) u)^2, so A <= 0 is a denominator that reaches zero inside
+    // the edge — a FOLD, not a coarse mesh. Nothing here clamps it; the solver
+    // never returns one.
+    static double tanhTwoSidedPos(double L, int nT, double dlt, double A, int i) {
+        const double u = tanhBothUnit(nT, dlt, i);
+        return L * (u / (A + (1.0 - A) * u));
+    }
+
+    static std::vector<double> generateTanhTwoSided(double L, int nT, double dlt, double A) {
+        std::vector<double> tS;
+        if (nT < 2) return tS;
+        for (int i = 0; i < nT; ++i) tS.push_back(tanhTwoSidedPos(L, nT, dlt, A, i));
+        return tS;
+    }
+
+    // The `A` that makes the LEADING interval exactly `ds_lead`, at this `dlt`.
+    //
+    //   ds_lead / L = u1 / (A + (1 - A) u1)  =>  A = u1 (L / ds_lead - 1) / (1 - u1)
+    //
+    // Returns 0 — which the caller reads as "no monotone map exists here" — when
+    // `u1` has saturated to 0 or 1 (tanh past about dlt = 18 on a long edge) or
+    // when the request is at or past the whole edge length.
+    static double tanhTwoSidedA(double L, int nT, double dlt, double ds_lead) {
+        if (nT < 3 || !(L > 0.0) || !(ds_lead > 0.0)) return 0.0;
+        const double u1 = tanhBothUnit(nT, dlt, 1);
+        if (!(u1 > 0.0) || !(u1 < 1.0)) return 0.0;
+        const double a = u1 * (L / ds_lead - 1.0) / (1.0 - u1);
+        return (a > 0.0) ? a : 0.0;
+    }
+
+    // The TRAILING interval at this `dlt`, with the leading one pinned, and the
+    // `A` that pinned it. Monotonically DECREASING in `dlt` — measured over 101
+    // samples from 0 to 64 on six configurations — which is what makes plain
+    // bisection safe, exactly as `solveClusterDelta`'s own monotonicity does.
+    // Returns 0 where no monotone map exists, which is that function's true limit
+    // rather than a clamp: at saturation the leading cell has taken the whole
+    // edge and nothing is left for the other end.
+    static double tanhTwoSidedTrail(double L, int nT, double dlt, double ds_lead, double& A) {
+        A = tanhTwoSidedA(L, nT, dlt, ds_lead);
+        if (!(A > 0.0)) return 0.0;
+        return tanhTwoSidedPos(L, nT, dlt, A, nT - 1)
+             - tanhTwoSidedPos(L, nT, dlt, A, nT - 2);
+    }
+
+    // The pair `(dlt, A)` whose leading interval is `ds_lead` and whose trailing
+    // one is `ds_trail`. `ds_lead` is the one PINNED when the pair cannot both be
+    // had, so the caller hands the FINER height first — see `spacingAlong` in
+    // src/MultiBlock.cpp, which mirrors the result when the document declared it
+    // at the other end.
+    //
+    // UNIFORM (dlt 0, A 1) when neither end asks for anything finer than the node
+    // count already gives: that is not a clustering request at all, and it is the
+    // same answer `solveClusterDelta` returns for the one-parameter laws, reached
+    // by the same test rather than by a second rule.
+    //
+    // THE PAIR IS FEASIBLE EXACTLY WHILE
+    //     (L / ds_lead - 1) * (L / ds_trail - 1) >= (nT - 2)^2,
+    // `nT - 1` being the INTERVAL count and the bound `(intervals - 1)^2`. It is
+    // symmetric in the two heights, it is what `src/MultiBlock.cpp` states in the
+    // warning when an end misses, and it is DERIVED FROM THE BISECTION RATHER
+    // THAN BRANCHED ON HERE: `dlt = 0` is this family's coarsest trailing
+    // interval, so past that bound the search simply stops at 0 with the leading
+    // height still held and the trailing one short. An early return testing it
+    // was written first and DELETED — it was a second sufficient condition for
+    // what the loop already does, and its injection came back inert.
+    //
+    // The one guard that is NOT redundant is `A > 0`: a leading height at or past
+    // the whole edge has no monotone map at any clustering strength, and
+    // `tanhTwoSidedPos` would divide by zero at the first node rather than
+    // produce a coarse mesh.
+    static void solveTanhTwoSided(double L, int nT, double ds_lead, double ds_trail,
+                                  double& dlt, double& A) {
+        dlt = 0.0;
+        A = 1.0;
+        if (nT < 3 || !(L > 0.0) || !(ds_lead > 0.0) || !(ds_trail > 0.0)) return;
+        const double uniform = L / (nT - 1);
+        if (ds_lead >= uniform && ds_trail >= uniform) return;
+        double a = 0.0;
+        if (!(tanhTwoSidedTrail(L, nT, 0.0, ds_lead, a) > 0.0)) return;
+        // `lo` always carries a positive `A`, because its trailing interval is
+        // above a positive request; the answer is taken from THAT side rather than
+        // from the midpoint so the map it describes is monotone by construction.
+        double lo = 0.0, hi = 1.0;
+        while (hi < 64.0 && tanhTwoSidedTrail(L, nT, hi, ds_lead, a) > ds_trail) hi *= 2.0;
+        for (int it = 0; it < 200; ++it) {
+            const double mid = 0.5 * (lo + hi);
+            if (tanhTwoSidedTrail(L, nT, mid, ds_lead, a) > ds_trail) lo = mid;
+            else hi = mid;
+        }
+        dlt = lo;
+        tanhTwoSidedTrail(L, nT, lo, ds_lead, A);
+    }
+
     // Task 1: Advanced Curvature-based spacing
     // L / min_ds / max_ds are part of the shared spacing-strategy signature
     // (all generateXxx take the same arguments) but are not needed by the

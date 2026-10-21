@@ -360,30 +360,22 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   than quoted), `ogrid_splits` admits 64, and #153 SHIPS eight. What is true is the ARITY rule one
   line up.
 
+**THE SPACING LAWS HAVE THEIR OWN RULE FILE: `.claude/rules/mesher-spacing.md`** (#177,
+the SEVENTEENTH). Where an edge's nodes go ALONG it — the tanh default, the wall height
+solved for by bisection, the two-sided law an edge with a different height at each end
+takes, the refusals and the request-not-honoured warning — lives there, because it is a
+different question: this file answers "what does this document declare and how is the
+block filled", that one "and where along each edge do its nodes go". The split was forced
+by the BUDGET and taken rather than compressed, which `docs/agents/rule-file-style.md`
+requires in as many words; what made it the right seam anyway is that the law itself is
+`tools/PreProcessor/include/Spacing.hpp`, which NO rule file's globs reached until that one
+— a blind spot this file's own list named and could not fix. A session editing
+`src/MultiBlock.cpp` or `tests/cpp/test_multiblock.cpp` loads BOTH, the intended overlap.
+
 **A circular O-GRID: curved arcs, a ring that CLOSES, and a wall spacing SOLVED for** (still the
 one pure entry point; the law is `tools/PreProcessor/include/Spacing.hpp`; #55). **Full rationale,
 the measurements that forced the blending change, the acceptance run and the blind spots:
 `docs/design_notes/mesher.md`.**
-- **`tanh` is the DEFAULT distribution law, and the reason is structural**: a count can be decided
-  FOR an edge by propagation, so the law must absorb one it did not choose. Tanh at delta 0 is the
-  SAME EXPRESSION as uniform, which is what let the default change at all — pinned as BIT equality
-  (`test_multiblock.cpp` 30), not as "roughly uniform".
-- **Wall spacing is a LENGTH, solved for by bisection, never approximated.** `wall_ends`
-  (`start`/`end`/`both`) takes the run's `BL_INITIAL_THICKNESS`; `ds_start`/`ds_end` give a number
-  and beat it; `geometric` with no `growth` takes `BL_GROWTH_RATE`. **The existing BL names, never
-  aliases** — the physical quantity is identical. `Spacing::generateTanhStart` /
-  `solveTanhStartDelta` are the ONE-SIDED law, new because the symmetric one spends the far-field
-  end's points at the wall spacing. Accuracy is 1e-12 relative on a 1e-4 first cell and the bound is
-  DERIVED (eps of the EDGE length ÷ the cell's relative size), not picked.
-- **Refused BY NAME, never half-honoured**: two DIFFERENT heights at the two ends (equal ones are
-  accepted, so the refusal is about the difference); a wall spacing on `uniform`/`geometric`; a raw
-  `delta` beside a spacing; a non-positive height; an unknown `wall_ends`; a `growth` on a
-  non-geometric edge; a wall end with no height anywhere, naming `BL_INITIAL_THICKNESS`. A request
-  the edge could not honour (coarser than its count allows) is a WARNING measured on the produced
-  nodes, not re-derived from the law — and **in ARC LENGTH, never the chord**: a bound edge follows
-  a polyline, so a first interval spanning several facets has a shorter chord, and comparing that
-  fired the warning on a law that had honoured the request exactly, blaming the node count for the
-  geometry's own faceting. Gated with a negative control by `test_multiblock.cpp` 36.
 - **`coons` blends by the boundary's own NORMALIZED ARC LENGTH, not by the logical index**, and this
   is load bearing rather than a refinement: the index blend put an O-grid's first interior ring
   **6927% above** the requested wall height (806% even at twelve sectors), the arc-length blend
@@ -656,8 +648,10 @@ otherwise learn the hole exists.
   Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL"
   and "A SAMPLE RATE THE POLYLINE CANNOT CARRY IS NOW SAID".
 - **A curved interface is DECLARABLE since #151** (`follows`) and a two-ring O-grid SHIPS since
-  #153; no two-sided stretching with DIFFERENT heights at each end exists, and nothing SHIPPED
-  declares a curved `cut` — only the C++ gate exercises one.
+  #153; **two-sided stretching with DIFFERENT heights at each end EXISTS since #177**
+  (`.claude/rules/mesher-spacing.md`) and NOTHING SHIPPED DECLARES ONE — the two gates and the
+  surface gate's own variants of the shipped two-ring document are its whole exercise — and
+  nothing SHIPPED declares a curved `cut` either, only the C++ gate exercises one.
 - **The arc-length blending's magnitude is measured OUT OF TREE**: no gate re-measures the 6927%
   the logical-index blend cost, only its consequence through `test_multiblock.cpp` 33/34 and the
   surface gate's quality line.
@@ -689,10 +683,14 @@ otherwise learn the hole exists.
   CHECKOUT does have one** (`solver/execute/unicones.eqn6.mac`,
   `solver/preprocess/getPGrid/work/getPGrid`), which #85 used and which corrects a "no solver tree"
   claim that had survived a review in `test_multiblock_weld_surface.py`.
-- **NO RULE FILE'S GLOBS REACH `tools/`**, so the O-grid rule's own spacing law —
+- ~~**NO RULE FILE'S GLOBS REACH `tools/`**, so the O-grid rule's own spacing law —
   `tools/PreProcessor/include/Spacing.hpp`, named in that rule — is unreachable from the tripwire
-  table: a session that opens it is handed no rules at all. Pre-existing and NOT created by #89's
-  split, which neither widened nor repaired it; recorded here rather than fixed, because that
-  commit had to stay a move. It is the fourth instance of the shape the budget gate's own blind
-  spot (c) tracks (`phi_quality.py`, `run_batch.py`, `CMakeLists.txt`), and the same one: the
-  unreachable file is always the one OUTSIDE the package the rule's other modules live in.
+  table: a session that opens it is handed no rules at all.~~ **CLOSED BY #177**, whose
+  `.claude/rules/mesher-spacing.md` globs that header outright and is the FIRST rule file in the
+  repo to reach `tools/` at all. Kept as a specimen rather than deleted, because the SHAPE is
+  still live and the budget gate's own blind spot (c) still tracks the rest of it
+  (`phi_quality.py`, `run_batch.py`, `CMakeLists.txt`): the unreachable file is always the one
+  OUTSIDE the package the rule's other modules live in. What closed this instance was a rule
+  file being born for an unrelated reason — the budget — and not a decision to go and fix it,
+  which is worth knowing before assuming the other three will close themselves. Pre-existing and
+  NOT created by #89's split, which neither widened nor repaired it.
