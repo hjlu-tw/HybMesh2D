@@ -435,8 +435,8 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
   overridable by a `0 = derived` spin box. The trailing-edge cell is the ONE spacing the whole
   document clusters to — both surfaces at both ends, the wake where it leaves the trailing edge,
   and the far field's two nose sides at their trailing-edge end so the outer distribution tracks
-  the body's. Clustering the nose sides' OTHER end as well was measured and is worse (82 degrees of
-  peak non-orthogonality against 49). Gate: checks 11-11d.
+  the body's. Clustering the nose sides' OTHER end as well was measured and is worse (**80.6 deg of
+  peak non-orthogonality against 31.5**, re-measured at #178). Gate: checks 11-11d.
 - **`Family.binds` IS THE REGISTRY'S ANSWER TO "DOES THIS FAMILY NEED A BINDING CONTEXT"**, asked by
   the panel so a third binding family needs no edit there and the H-grid still pays nothing — a
   context is a `.dat` and a `.meta` parse per geometry, paid per keystroke. It IS `broken is not

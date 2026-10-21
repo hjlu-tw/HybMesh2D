@@ -192,9 +192,10 @@ class Plan:
              f"that is where you drew them — so 'Wake Length' and 'Far-Field "
              f"Radius' above are greyed out"
              if self.far_bound else
-             "far field: GENERATED from the two lengths, so its six sides carry the "
-             "run's BC_GEOM; the section's two carry the conditions on its own CAD "
-             "segments"),
+             "far field: GENERATED from the two lengths as a D — four straight "
+             "sides and two ARCS across the nose (#178) — so its six sides carry "
+             "the run's BC_GEOM; the section's two carry the conditions on its own "
+             "CAD segments"),
         ]
 
 
@@ -379,7 +380,7 @@ def build(model, ctx=None) -> dict:
         # own surface spacing and not to a tuned number: left uniform, the shipped
         # hand-written case meshed with zero inverted cells and then drove the
         # solver to NaN in 40 iterations. Why, and why clustering the OTHER end
-        # too is worse (82 degrees against 49): `.claude/rules/gui-topology.md`.
+        # too is worse (80.6 deg against 31.5): `.claude/rules/gui-topology.md`.
         {"id": "e_ff_nose_up", "corners": ["f1", "f2"], "kind": "wall",
          "spacing": {"ds_start": ds}},
         {"id": "e_ff_nose_lo", "corners": ["f2", "f3"], "kind": "wall",

@@ -806,13 +806,16 @@ def poly_area(ring):
 _chord_ring = [_ffg.spans[sid].point_at(0.0) for sid in _ffg.seg_ids]
 _drawn = pf.drawn_ring(_ffg)
 check(f"18c3. ...and the containment refusal tests the DRAWN outline, not the six "
-      f"corner chords, which is the whole difference between the two paths: a "
-      f"generated hexagon's sides ARE its chords, while a drawn D curves OUTWARD "
-      f"between its joints, so the region the drawn ring encloses is STRICTLY LARGER "
+      f"corner chords: a drawn D curves OUTWARD between its joints, so the region "
+      f"the drawn ring encloses is STRICTLY LARGER "
       f"({poly_area(_drawn) / poly_area(_chord_ring):.4f}x over "
       f"{len(_drawn)} points against {len(_chord_ring)}). Testing containment on the "
       f"chords would refuse a section that sits comfortably inside the shape the "
-      f"user actually drew",
+      f"user actually drew. THIS LABEL SAID 'a generated hexagon's sides ARE its "
+      f"chords' UNTIL #178, when the generated nose sides became declared arcs: "
+      f"that path's ring is a deliberate INNER bound now and not an identity, and "
+      f"a passing check whose label asserts a false sentence is worse than no "
+      f"label (`.claude/rules/gui-preflight.md`)",
       len(_drawn) > len(_chord_ring)
       and poly_area(_drawn) > poly_area(_chord_ring) * 1.01)
 

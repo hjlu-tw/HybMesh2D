@@ -226,10 +226,10 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
     FieldSpec("topo_cgrid_far_radius", "sci", "Far-Field Radius",
               "How far out the far field reaches, measured ahead of the leading "
               "edge and above and below the trailing edge. With Far-Field Geometry "
-              "blank the far field is GENERATED from this and the wake length, so "
-              "its six sides are straight and carry the run's BC_GEOM; the "
-              "section's own two carry the conditions on its CAD segments. INERT "
-              "once a far field is named.",
+              "blank the far field is GENERATED from this and the wake length as a "
+              "D — four straight sides and two ARCS across the nose — whose six "
+              "sides all carry the run's BC_GEOM; the section's own two carry the "
+              "conditions on its CAD segments. INERT once a far field is named.",
               model="cgrid_far_radius", group=GROUP, modes=_MB,
               opts=dict(lo=1e-12, hi=1e9)),
     FieldSpec("topo_cgrid_cell", "sci", "Target Cell Edge",

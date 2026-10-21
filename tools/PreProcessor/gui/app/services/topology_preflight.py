@@ -249,12 +249,17 @@ def outline_refusal(ctx, role: str, name, g, what: str = "shape",
 def drawn_ring(g) -> list:
     """A drawn outline's own polyline, as the polygon :func:`outside_point` tests.
 
-    Its POLYLINES rather than the chords between its joints, which is the whole
-    difference between a drawn far field and a generated one: a drawn D curves
+    Its POLYLINES rather than the chords between its joints: a drawn D curves
     OUTWARD between its joints, so a chord ring would refuse a body that sits
-    comfortably inside the shape the user actually drew. A generated hexagon has
-    no such gap — its sides ARE the chords — which is why
-    ``topology_cgrid_section.generated_ring`` is the corners.
+    comfortably inside the shape the user actually drew.
+
+    THE GENERATED RING IS STILL THE CORNERS, AND SINCE #178 THAT IS A CHOICE AND
+    NOT AN IDENTITY. This docstring read "a generated hexagon has no such gap —
+    its sides ARE the chords — which is why ``generated_ring`` is the corners",
+    which stopped being true when its two nose sides became declared arcs. They
+    bulge outward exactly as a drawn D does; that ring is kept as a strict INNER
+    bound on purpose, because `outside_point` exists to stop a fold rather than
+    to be exact. See ``.claude/rules/gui-preflight.md``.
     """
     return [pt for sid in g.seg_ids for pt in g.spans[sid].points[:-1]]
 

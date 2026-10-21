@@ -3592,6 +3592,28 @@ that places the far field — and the remaining 5 lines came from a 10-line comm
 nose-spacing rationale that `.claude/rules/gui-topology.md` already carries verbatim. 499 lines,
 with no other ticket's text touched.
 
+**ONE OBSERVABLE THAT CHANGED AND IS NOT A DEFECT.** The generated run's smoother now reports
+`Converged: NO — and PAST ITS BEST; the iteration has turned, so this mesh is an ITERATE` where
+the hexagon reported the plain `NO — the mesh is the partly-solved one`. That is the TURNED
+branch of #156's cap report, and `.claude/rules/mesher-smoothing.md` already records that **all
+five shipped CURVED cases take it at the default cap of 20** — so the generated C-grid has simply
+joined them by becoming one. #156's rule is the reason this is not acted on: the residual
+describes the ITERATION and never the mesh, and nothing may advise from it. Every quality figure
+above is better, measured on the exported mesh.
+
+**THREE FIGURES THE CHANGE MADE STALE, found by the Spec review and RE-MEASURED rather than
+re-labelled.** The nose-spacing comparison read "82 degrees of peak non-orthogonality against
+49" in two homes — and the 49 was the HEXAGON's own peak, so the baseline moved underneath it.
+Re-measured 2026-10-21 by clustering both ends of the two nose sides on the generated document:
+**80.6 against 31.5**, so the conclusion is unchanged and the margin is wider (2.6x rather than
+1.7x). The other two were sentences rather than numbers and were simply false after the change:
+`topology_preflight.drawn_ring`'s docstring still said "a generated hexagon has no such gap —
+its sides ARE the chords", and check 18c3's PASSING LABEL asserted the same thing, which is the
+worse of the two — a green check whose label states something untrue is read as evidence for it.
+The field-spec row for `cgrid_far_radius` and the template's provenance read-out were the other
+half of the same sweep: both told the user the six sides are straight, which is acceptance item 6
+and user story 3, and neither was caught by any gate because no gate reads prose.
+
 **Gates**: `tests/test_topology_cgrid.py` 13c (the two nose sides carry a `curve` and the other
 four do not), 13c2 (one arc, both sides, `ccw`), 13c3 (all three corners on it to the mesher's own
 tolerance), 13c4 (the BOUND path carries a binding and NO curve, because the mesher refuses both
