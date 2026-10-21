@@ -26,8 +26,13 @@ MESH_TOPOLOGY_FILE examples/topology/cgrid_naca0012.json
 
 # The airfoil (two segments, upper and lower, split at the leading edge because
 # that is where a block corner sits) and the D-shaped far field (six segments).
+#
+# The far field is on a 'DOMAIN_FILE' line for the reason
+# config/multiblock_ogrid.dat states at the same place (#171): in MESH_MODE 1 the
+# two line kinds load identically, and this one reads back as the 'farfield' role
+# so that 'the extent of the body' is the CHORD and not the domain.
 GEOM_FILE examples/geometries/naca0012_cgrid.dat
-GEOM_FILE examples/geometries/cgrid_farfield.dat
+DOMAIN_FILE examples/geometries/cgrid_farfield.dat nobl
 
 # The wall-normal spacing, under the name it already has. Every radial edge in
 # the topology declares its body end a wall end and takes this height for its

@@ -154,6 +154,53 @@ fixtures by hand cannot reach the step that measures them, and a check that read
 source off DISK cannot see any mutant at all.
   Why: `docs/design_notes/gui.md`, "A MISJUDGED THRESHOLD IS CORRECTED WITH EVIDENCE".
 
+**A SHIPPED CASE TYPE HAS TO BE AUTHORED FROM A CASE THAT CARRIES ITS FAMILY**
+(`examples/case_types/ogrid_circle.casetype.json`, authored from
+`config/pipeline/ogrid_family_demo.json`; #171, parent #158). The mechanism #164/#165/#170 built
+was complete and gated, and for six tickets NO shipped artefact exercised it: the tree's one case
+type owned three mesh fields, named no `topology.family` and declared no `characteristic_length`,
+so picking it told the operator "this case type names no topology family that binds to your CAD,
+there are no roles to assign" and every geometric size was carried at 1:1. Five of #158's own
+user stories (2, 3, 4, 22, 40) were true of the gates' fixtures and unreachable from the window.
+Shipping content is a separate act from building the mechanism, and this is the rule that act
+produced.
+
+- **A `.dat` CANNOT BE THE `--fields-from` SOURCE OF A CASE TYPE THAT NAMES A FAMILY.** When
+  `cfg.topology` names one, `models/mesh_config_io.py::save_config_to_file` PROJECTS the family's
+  document and writes the path to it as `MESH_TOPOLOGY_FILE` — so in a `.dat` the family is an
+  OUTPUT and the document is the input, and `mesh_topology_file` is a field no case type may own
+  (`case_type_fields.EXCLUDED`). The authoring source must therefore be the shape that holds a
+  `topology` section: a `.hws` workspace or a pipeline script, both of which
+  `MeshConfig.to_dict()` writes it into.
+- **AND THE FAR FIELD HAS TO BEAR `farfield`, OR THE RULER IS THE DOMAIN.** `measure_role` selects
+  the geometries bearing a `MeshConfig.geom_roles` role and spells the DEFAULT role as the absence
+  of an entry, so a far field on a plain `GEOM_FILE` line reads back as `body`: `body.x_extent`
+  measured **20** on the O-grid where the maintainer means 1, and **30** on the C-grid where they
+  mean the chord. It would have gone on working — consistently, at both ends — which is why
+  nothing had noticed. The one-line fix is `DOMAIN_FILE … nobl`, and it REQUIRED a mesher change
+  to be legal at all (`.claude/rules/mesher.md`): that path did not load the domain outline, so
+  the role an operator assigns to say what the curve IS made it invisible to the document bound
+  to it.
+- **THE SHIPPED CASE TYPE'S OVERLAY AND ITS EVIDENCE ARE ONE CASE, and that is checkable rather
+  than asserted.** The O-grid family at `ogrid_cell 0.033` and `ogrid_radial_count 49` projects a
+  document IDENTICAL to the hand-written `examples/topology/ogrid_circle.json` — corner for
+  corner, count for count — and so a canonically identical mesh (`golden_mesh.py`'s comparison,
+  worst deviation 0.0, and the same nine published figures). So the family could be added to the
+  overlay with NO threshold re-derived and none re-defended, which is what made #171 content
+  rather than a second case type with new numbers to argue about. `test_case_type_apply.py`
+  check 16 asserts the identity in both directions — from the case type through the roles, and
+  from the authoring script — because "the file's opinion describes the mesh its own thresholds
+  were measured from" is the whole claim a reference mesh makes.
+- **THE DATES MOVED AND THE FIGURES DID NOT.** Re-authoring re-read both provenance sidecars, so
+  both references are `measured_on` 2026-10-21; every figure and every threshold came back
+  identical, and the exemplar gained the three `size_jump.*` its sidecar has published since
+  `3b71c21`. A date that says when the figures were read is the only thing a re-read may change.
+Gated by `tests/test_case_type_apply.py` check 16 (outside that file's mutant comparison on
+purpose — its subject is the ARTEFACT, not the service) and `tests/test_case_type_fields.py`
+checks 1, 4 and 9, which pin the overlay the script captures and the three fields a `.dat` cannot.
+  Why: `docs/design_notes/gui.md`, "A SHIPPED CASE TYPE HAS TO BE AUTHORED FROM A CASE THAT
+  CARRIES ITS FAMILY".
+
 ## Named blind spots
 
 One list per rule file (`docs/agents/rule-file-style.md` rule 5). These are this file's coverage
@@ -178,6 +225,15 @@ which are capability refusals.
   `sqrt(base * cap)` does not round to a value strictly between them, so two meshes that close
   place no bound at all and the addition is refused as inseparable. Nothing constructs that case
   in the gate; it is reasoned from the arithmetic.
+- **NOTHING SWEEPS `examples/case_types/` FOR THE PROPERTIES #171 SHIPPED.** Check 16 names the
+  one file; a SECOND shipped case type that named no family would be covered by nothing. Left as
+  it is because the tree holds one, and a sweep over one file is a sweep that cannot fail for the
+  reason it was written.
+- **AND NOTHING RUNS `config/pipeline/ogrid_family_demo.json`.** Its `topology` section is pinned
+  (check 16) and its captured scalars are (`test_case_type_fields.py` check 1), so the half that
+  decides the mesh is covered; a typo in its `cads`, `solver` or `results` sections is not. That
+  is every shipped script's exposure but `naca_demo.json`'s, which is the one CI runs end to end.
+  It was run by hand on 2026-10-21 and produced the reference mesh's own figures exactly.
 - **NO GUI ACTION AUTHORS OR CORRECTS A CASE TYPE.** `add_reference_mesh.py` is headless, like
   `save_case_type.py` and `show_case_type.py` beside it. #169 gave the window a PICKER — which
   selects what judges and writes nothing — and authoring stays #158's own Out of Scope.

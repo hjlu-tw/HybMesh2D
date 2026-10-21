@@ -49,12 +49,17 @@ supplied retarget whose key is absent.
 
 Known blind spots, stated rather than pretended away:
 
- a. A ``GEOM_FILE`` line carrying per-geometry ``KEY=VALUE`` BL tokens (the
-    feature ``.claude/rules/mesher.md`` describes) has a value that is a path PLUS
-    tokens. This module takes the whole remainder as the path, so such a line
-    raises as "does not exist" rather than being retargeted. Loud and wrong beats
-    quiet and wrong, but it IS wrong: no shipped multi-block config uses one today,
-    and the first that does will land here.
+ a. CLOSED BY #171, and kept as the record of how it closed. A ``GEOM_FILE`` or
+    ``DOMAIN_FILE`` line's value is a path PLUS trailing tokens (``bl`` / ``nobl``,
+    ``bc=<name>``, per-geometry ``KEY=VALUE`` BL overrides). This module took the
+    whole remainder as the path, so such a line raised as "does not exist" — loud
+    and wrong rather than quiet and wrong, and the note said "the first shipped
+    config that uses one will land here". It did: #171 put the O-grid's and the
+    C-grid's far field on ``DOMAIN_FILE ... nobl`` so the GUI reads it back as the
+    ``farfield`` ROLE, and the first run of ``golden_mesh.py compare`` raised
+    exactly that. The path is now the first token and the rest is carried through
+    verbatim. What is still NOT handled is a token carrying a path of its own;
+    none exists in the grammar today.
  b. The unknown-key sweep asks whether a value resolves to a file IN THIS
     CHECKOUT. A relative path that happens not to exist — a typo, or an output
     directory that has not been created — resolves to nothing and passes through
@@ -150,6 +155,18 @@ def shipped_config(name, paths=None, dirs=None, overrides=None):
         key = parts[0] if parts else ""
         val = ln[len(key):].strip()
         if key in _MB_PATH_KEYS:
+            # THE PATH IS THE FIRST TOKEN, AND THE REST OF THE LINE RIDES ALONG
+            # (#171). `GEOM_FILE` / `DOMAIN_FILE` take trailing tokens that are
+            # not part of the path — `bl` / `nobl`, `bc=<name>`, per-geometry
+            # `KEY=VALUE` BL overrides — and taking the whole remainder as the
+            # path raised "does not exist" on the first shipped config to use
+            # one, which was this module's own blind spot (a) above. The tokens
+            # are carried through UNTOUCHED rather than parsed: what they mean is
+            # `include/Config.hpp`'s business, and a retargeter that understood
+            # them would be a second parser of that grammar.
+            rest = val.split(None, 1)
+            val, tokens = (rest[0] if rest else ""), (rest[1] if len(rest) > 1
+                                                      else "")
             if key in paths:
                 target = paths[key]
             elif key in dirs:
@@ -163,7 +180,7 @@ def shipped_config(name, paths=None, dirs=None, overrides=None):
                       "test cannot drive the shipped config. Either the config "
                       "moved the file or the caller's retarget is wrong."
                       % (path, key, val, target))
-            ln = key + " " + target
+            ln = key + " " + target + ((" " + tokens) if tokens else "")
         elif key == "OUTPUT_FILENAME":
             hit[key] = True
             ext = os.path.splitext(val)[1]

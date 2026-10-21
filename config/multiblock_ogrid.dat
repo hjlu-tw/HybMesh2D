@@ -18,8 +18,16 @@ MESH_TOPOLOGY_FILE examples/topology/ogrid_circle.json
 
 # Both circles. The body carries 'wall' in its sidecar and the far field carries
 # 'farfield', so each patch's condition comes from the geometry it lies on.
+#
+# THE FAR FIELD IS ON A 'DOMAIN_FILE' LINE, and that is a ROLE rather than a
+# second way of naming a file (#171). In MESH_MODE 1 the two line kinds load
+# identically — this path builds no far field, so there is nothing for the
+# hybrid path's distinction to decide — but the GUI reads this line back as the
+# 'farfield' role, which is what lets a case type measure its sizes against the
+# BODY. On a plain GEOM_FILE line the far field reads back as the default role,
+# so 'the extent of the body' measured 20 (this circle's far field) instead of 1.
 GEOM_FILE examples/geometries/circle_body.dat
-GEOM_FILE examples/geometries/circle_farfield.dat
+DOMAIN_FILE examples/geometries/circle_farfield.dat nobl
 
 # THE WALL SPACING, under the name it already has. Every radial edge in the
 # topology declares its body end a wall end and takes this height for its first

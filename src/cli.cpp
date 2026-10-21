@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <cstdint>
 #include <vector>
+#include <algorithm>
 #include <string>
 #include <map>
 #include <set>
@@ -631,8 +632,28 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // file. What changed with geometry binding is that a declaration REFERRING to
     // such a file is now refused by name, inside the seam, where the reference is
     // visible.
+    //
+    // THE OUTER-DOMAIN OUTLINE IS ONE OF THEM (#171). `DOMAIN_FILE` and
+    // `GEOM_FILE` are a HYBRID-path distinction — which outline the far field is
+    // built from, and whether it grows a boundary layer — and this path builds no
+    // far field at all: a topology declares its own outer boundary, so the domain
+    // outline here is simply another geometry a corner or an edge may name. It
+    // was not loaded until #171, so a case whose far field carried the `farfield`
+    // role (which is what the GUI writes as `DOMAIN_FILE ... nobl`) was refused
+    // with "no geometry named 'x' was loaded" — the role an operator assigns to
+    // say what the curve IS made the curve invisible to the document bound to it.
+    // Appended rather than prepended, and skipped when a `GEOM_FILE` line already
+    // names it, so the loaded ORDER of every existing case is untouched: this
+    // path resolves a name against the exact declared path and then a unique
+    // basename, never against a position in this list, but the banner prints it.
+    std::vector<std::string> topologyGeomFiles = config.geomFiles;
+    if (!config.domainFile.empty()
+        && std::find(topologyGeomFiles.begin(), topologyGeomFiles.end(),
+                     config.domainFile) == topologyGeomFiles.end()) {
+        topologyGeomFiles.push_back(config.domainFile);
+    }
     std::vector<hybmesh::MbGeometry> geoms;
-    for (const auto& f : config.geomFiles) {
+    for (const auto& f : topologyGeomFiles) {
         hybmesh::MbGeometry g;
         g.file = f;
         LoadStatus st = LoadStatus::Ok;

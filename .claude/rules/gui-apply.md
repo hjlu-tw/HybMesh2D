@@ -240,6 +240,11 @@ afterwards.
   it here would be worse, the confirmation dialog NAMES the case type before anything is
   written, and the variable is the channel the picker exists to replace. It is a divergence all
   the same, and a reader changing either side should move both.
+- **ONE SHIPPED CASE TYPE EXERCISES THIS PATH, AND IT ARRIVED SIX TICKETS LATE.** Every check in
+  `tests/test_case_type_apply.py` but 16 BUILDS the case type it needs, so all fifteen passed
+  while nothing an operator could pick named a family or declared a ruler. #171 shipped that
+  content; check 16 is the only check here whose subject is the ARTEFACT, which is why it sits
+  outside the mutant comparison. Rules: `.claude/rules/gui-evidence.md`.
 - **THE RULER IS STILL READ OFF WHOLE GEOMETRIES.** `case_type_scale.measure_role` measures the
   geometries bearing a `MeshConfig.geom_roles` role, which is per FILE, while the role assigned
   here is per SEGMENT. A drawing whose body and far field are two files measures the same ruler

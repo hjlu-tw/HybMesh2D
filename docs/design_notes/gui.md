@@ -4017,7 +4017,8 @@ mistake for a violated rule if they find thresholds here without reading it.
 * **THE SHIPPED CASE TYPE'S NUMBERS WERE HAND-AUTHORED, AND SAID SO — #161 REPLACED THEM.**
   `ogrid_circle.casetype.json`, under `examples/` rather than `config/`, bounded `median` at
   2.5/6.0, `bulk.p95` at 2.5/5.0 and `max` at 50/200, against the shipped O-grid's published
-  1.845977 / 1.877756 / 32.767868 (measured 2026-09-30) — so it read that mesh as `usable`, and
+  1.845977 / 1.877756 / 32.767868 (measured 2026-09-30; the shipped document says 2026-10-21 since
+  #171 re-read the same sidecar) — so it read that mesh as `usable`, and
   the gate also proves it is not decoration by tightening every bound to 1.0 and watching the
   verdict move. They were ROUND numbers above a measurement, not a measurement times a tolerance,
   which this section's own blind spot named. The entry below is the ticket that closed it; #168 is
@@ -5694,6 +5695,106 @@ RENDERS a frozen copy from outside `examples/case_types/` — `write_choice` add
 value the list does not hold, which is `test_case_type_picker.py` check 5's subject on the Browse
 path, and #172 relies on that behaviour without re-measuring it here.
 
+
+**A SHIPPED CASE TYPE HAS TO BE AUTHORED FROM A CASE THAT CARRIES ITS FAMILY** (#171, parent #158;
+rules in `.claude/rules/gui-evidence.md`, and the mesher half in `.claude/rules/mesher.md`).
+
+**WHAT THE TICKET FOUND, AND IT WAS NOT A DEFECT IN ANY DELIVERY.** #158's acceptance verification
+measured the one case type in the tree: three owned fields (`mesh_mode`, `bl_initial_thickness`,
+`export_vtk`), no `topology.family`, no `characteristic_length`. Pick it in the window and the
+roles table said *"This case type names no topology family that binds to your CAD, so there are no
+roles to assign."* So the half of the mechanism #164, #165 and #170 built — assign a role to each
+segment, pre-select them, confirm every pre-selection, fit the sizes to a drawing at another
+scale, declare which length the sizes are relative to — was proven by the gates' own fixtures,
+which DO own a family, and by nothing a user could reach. #158 says in its own Out of Scope that
+it builds the mechanism; shipping content is a separate act, and this is that act.
+
+**THE PREREQUISITE THE TICKET MEASURED, AND THE PART OF IT THAT WAS WRONG.** The ticket's own
+comment had already measured why `ogrid_circle` correctly declared no ruler: no `.dat` in
+`config/` sets a geometry role, both two-geometry multi-block cases put the far field on a second
+`GEOM_FILE` line, and `measure_role` spells the DEFAULT role as the ABSENCE of an entry — so
+`body.x_extent` selected the pair and came back **20** on the O-grid (where the maintainer means
+1) and **30** on the C-grid (where they mean the chord). It would have gone on working,
+consistently at both ends, which is exactly why nobody had noticed. The comment then proposed the
+fix — `DOMAIN_FILE … nobl`, one line per config, which `models/mesh_config_io.py` reads back as
+`farfield` — and, to its credit, told the implementer to prove the mesh unchanged first, because
+"`DOMAIN_FILE` vs `GEOM_FILE` is not only a role label". **It was not only a role label, and the
+proposed fix broke the case outright**: `buildMultiBlockMesh` loaded `config.geomFiles` and never
+`config.domainFile`, so the first run came back `corner 'f0': no geometry named
+'circle_farfield.dat' was loaded`, exit 8, nothing exported. A correct diagnosis, a correct
+remedy, and a prerequisite that did not hold — found by running it rather than by reading it.
+
+**SO THE TICKET'S "NO NEW CODE SHOULD BE NEEDED" WAS FALSE, AND THE CODE IS IN THE MESHER.** The
+alternative was available and was declined: `GEOM_FILE … nobl` also makes `body` select the body,
+needs no C++ at all, and labels the far field an *obstacle that grows no boundary layer* — a lie
+in the model, written into shipped documentation, to avoid a five-line change. The rationale for
+the change itself is `docs/design_notes/mesher.md`.
+
+**THE CASE TYPE WAS NOT REPLACED AND NO THRESHOLD WAS RE-DEFENDED, which is the whole reason this
+is one artefact and not two.** The ticket's open question was "which case(s)? ... each costs
+thresholds that have to be defended". It cost none. The O-grid FAMILY at `ogrid_cell 0.033` and
+`ogrid_radial_count 49` projects a document identical to the hand-written
+`examples/topology/ogrid_circle.json` — corner for corner, count for count, binding for binding —
+so the mesh it produces is canonically identical (`golden_mesh.py`'s own comparator, worst
+deviation **0.0** across `.vtk`, `.cel` and `.bnd`) and publishes the same nine figures. The
+existing exemplar, the existing C-grid counter-example and all three thresholds therefore survived
+re-authoring unchanged; what the document gained is `characteristic_length` (`body.x_extent` = 1,
+centred at the origin) and three `topology.` fields. A unit-diameter body was chosen for the first
+one precisely so every geometric size in the file reads as a fraction of the body.
+
+**WHAT MOVED THAT DID NOT HAVE TO.** Re-authoring went through the real hosts —
+`save_case_type.py` then `add_reference_mesh.py`, never a hand edit — so both references were
+re-read and both carry `measured_on` 2026-10-21 where they carried 2026-09-30 and 2026-10-07. The
+figures came back identical and the exemplar gained the three `size_jump.*` its sidecar has
+published since `3b71c21`. That is a date saying when the figures were read, which is what it is
+for; the cost is that two sentences stating the old date (one in
+`tests/test_case_type_verdict.py`'s docstring, one in this file) had to move with it.
+
+**`ogrid_splits` IS ABSENT FROM THE OVERLAY AND THAT IS THE CAPTURE WORKING.** The authoring case
+sets it to 1 and 1 is the default, so the subtraction drops it — the property
+`case_type_fields`'s sparseness exists for, visible in the shipped artefact rather than only in a
+fixture.
+
+**THE AUTHORING SOURCE IS A PIPELINE SCRIPT, AND IT HAD TO BE SOMETHING OTHER THAN A `.dat`.**
+`save_config_to_file` PROJECTS a named family's document and writes the path to it, so in a `.dat`
+the family is an output and `mesh_topology_file` — which no case type may own — is the input.
+`config/pipeline/ogrid_family_demo.json` holds the same O-grid case driven by the family, with its
+own `geom_files`, its `farfield` role and its `topology` section, and `cads: []` (legal in
+`MESH_MODE 1`). It is also the first shipped artefact in the tree that drives ANY of the four
+families: every multi-block case before it names a hand-written document.
+
+**THE GATE IS CHECK 16 OF `tests/test_case_type_apply.py`, OUTSIDE THAT FILE'S MUTANT
+COMPARISON.** Every other check there builds the case type it needs, which is why fifteen of them
+passed throughout the six tickets in which no artefact exercised the path; check 16's subject is
+the ARTEFACT, so running it under a mutant would score reachability as a property of the mutation.
+It asserts the family, the ruler, two real role rows with a pre-selection each on the repo's OWN
+circles, a scale factor of 1.0, and — the claim that ties the opinion to the evidence — that
+applying the case type through the roles and nothing else projects exactly
+`examples/topology/ogrid_circle.json`, in both directions: from the case type, and from the script
+its overlay was captured from.
+
+**THREE GATES MOVED, AND TWO OF THEM FOR A REASON WORTH KEEPING.**
+`tests/test_case_type_fields.py` pinned the shipped overlay literally, so it had to learn both the
+new six-field answer and the `.dat`'s own three-field one — pinned as two constants rather than
+one derived from the other, because the three it is missing are what the ticket is about. Its
+injections A and G then reddened MORE checks than their claims said: A (a binding becomes ownable)
+now fails check 1 as well as 8, because the overlay is captured from a case that BINDS; G (a
+topology parameter written flat) now fails 4 and 6 as well as 3 and 5, because the shipped case
+type now owns three `topology.` fields and every check that applies it walks through the mutation.
+Both claims were widened rather than the checks narrowed: a mutation whose damage is visible in
+more places is more evidence for the rule, not less.
+
+**Named blind spots.** Nothing sweeps `examples/case_types/` for the properties this shipped: a
+second case type naming no family would be covered by nothing, which is acceptable only while the
+tree holds one. Nothing RUNS `config/pipeline/ogrid_family_demo.json` — its `topology` section and
+its captured scalars are pinned, so the half that decides the mesh is covered, but a typo in its
+`cads`, `solver` or `results` sections is not; it was run by hand on 2026-10-21 and produced the
+reference mesh's figures exactly. The two shipped cases that gained the `farfield` role are the
+O-grid and the C-grid; the three two-ring cases still carry every geometry on `GEOM_FILE`, and one
+of them is a `seam`, which `MeshConfig.geom_roles` has no word for — so a case type authored from
+a two-ring case would hit the same ruler problem and the fix for it is not the same one line.
+And the limit `.claude/rules/gui-handoff.md` names is untouched: the ruler is still read off whole
+GEOMETRIES while the role a family binds is per SEGMENT.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

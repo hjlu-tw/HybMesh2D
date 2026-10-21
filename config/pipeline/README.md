@@ -91,6 +91,26 @@ The topology file is staged into the case alongside the CAD
 (`results/solver/<name>/grid/cad/`) and listed in `SOURCES.txt` with its original absolute
 path, because in this mode it decides the mesh as much as the geometry does.
 
+**Or name a topology FAMILY instead of a document** (`ogrid_family_demo.json`, the only
+shipped script that does). A `mesh.topology` section with `"family": "ogrid"`, the two
+geometries it binds and their segment lists replaces `mesh_topology_file` entirely: the
+document is PROJECTED from those parameters when the case is written, so there is no
+hand-maintained JSON to keep in step with the geometry. That section is also what lets a
+case type carry the family — `save_case_type.py --fields-from` can read it off a script or
+a `.hws` and cannot read it off a `.dat`, where the family is an output rather than an
+input. This script is the source `examples/case_types/ogrid_circle.casetype.json` was
+authored from, and it projects the same document as
+`examples/topology/ogrid_circle.json`, mesh for mesh.
+
+```bash
+./run_pipeline.sh config/pipeline/ogrid_family_demo.json --no-solver
+```
+
+Note its far field is given the `farfield` role (`mesh.geom_roles`). In mode 1 that role
+changes no mesh — it is written as a `DOMAIN_FILE … nobl` line, which this path loads
+exactly like a `GEOM_FILE` one — but it is what makes "the extent of the body" measure the
+body (1) rather than the domain (20) when a case type scales its sizes to your drawing.
+
 ### Geometry — `cads` (a list, one entry per geometry)
 ```json
 "cads": [

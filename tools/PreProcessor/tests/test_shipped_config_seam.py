@@ -369,7 +369,13 @@ def _checkout(tmp, names, edit=None):
         for line in text.splitlines():
             parts = line.split()
             if parts and parts[0] in mb_shipped_config._MB_PATH_KEYS:
-                val = line[len(parts[0]):].strip()
+                # THE PATH IS THE FIRST TOKEN, the rest of the line being the
+                # role and option tokens `include/Config.hpp` parses (#171).
+                # Taking the whole remainder left `DOMAIN_FILE <path> nobl`
+                # uncopied, and the seam then raised "does not exist" from
+                # inside check 2 — the same blind spot, in this staging loop as
+                # well as in the retargeter it stages for.
+                val = line[len(parts[0]):].split()[0] if len(parts) > 1 else ""
                 dst = os.path.join(root, val)
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 if os.path.isfile(os.path.join(_REPO, val)):
@@ -590,25 +596,30 @@ def behaviour_checks():
                 print("       got: %r" % msg)
 
         # ── 5. the arguments refuse what they cannot mean ──────────────────
+        # THE FIXTURE IS NAMED PER ROW, not inferred from the arguments (#171).
+        # It was `multiblock_ogrid if "GEOM_FILE" in str(kw)`, which worked only
+        # while that config had TWO `GEOM_FILE` lines; #171 moved its far field to
+        # `DOMAIN_FILE` and the last row silently stopped exercising a repeated
+        # key — a refusal that cannot fire is a check that passes on nothing.
+        # `multiblock_tworing` is the case with three.
         refusals = [
-            ("a directory for a key that holds no path",
+            ("a directory for a key that holds no path", "multiblock_square",
              {"dirs": {"BC_GEOM": tmp}}, ("BC_GEOM", "_MB_PATH_KEYS")),
             ("an override for a key the retargeting rule owns",
+             "multiblock_square",
              {"overrides": {"OUTPUT_FILENAME": "x.vtk"}},
              ("OUTPUT_FILENAME", "undo the retarget")),
-            ("an override for a PATH key",
+            ("an override for a PATH key", "multiblock_ogrid",
              {"overrides": {"GEOM_FILE": "x.dat"}},
              ("GEOM_FILE", "undo the retarget")),
-            ("one key given under two arguments",
+            ("one key given under two arguments", "multiblock_square",
              {"paths": {"MESH_TOPOLOGY_FILE": topo},
               "dirs": {"MESH_TOPOLOGY_FILE": tmp}},
              ("MESH_TOPOLOGY_FILE", "two answers to one")),
-            ("one path for a key the config repeats",
+            ("one path for a key the config repeats", "multiblock_tworing",
              {"paths": {"GEOM_FILE": topo}}, ("GEOM_FILE", "dirs=")),
         ]
-        for label, kw, needles in refusals:
-            name = ("multiblock_ogrid" if "GEOM_FILE" in str(kw)
-                    else "multiblock_square")
+        for label, name, kw, needles in refusals:
             msg = _raises(lambda: shipped_config(name, **kw))
             ok = msg is not None and all(n in msg for n in needles)
             check("5. %s is refused, naming %s" % (label, " and ".join(needles)), ok)

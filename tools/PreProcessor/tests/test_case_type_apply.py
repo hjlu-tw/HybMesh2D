@@ -20,7 +20,7 @@ WHAT IT IS FOR. Three failures are worth more than the feature:
   * three refusals reached one at a time, which is three runs to clear what is
     one screen of edits.
 
-The fifteen checks, in the order the operator meets them:
+The sixteen checks, in the order the operator meets them:
 
   1.  The assignment is a `MeshConfig` field: it round-trips through
       `to_dict`/`load_from_dict`, survives a real `.hws` through two live
@@ -67,6 +67,15 @@ The fifteen checks, in the order the operator meets them:
       drawing before picking produce the identical roles table — #158's story 5,
       and an asymmetry #170 shipped until review: the role combos were built
       against an empty drawing and nothing rebuilt them when the curves arrived.
+  16. THE SHIPPED CASE TYPE IS REACHABLE WITHOUT A FIXTURE (#171). Every check
+      above builds the case type it needs, so all fifteen passed while the one
+      artefact an operator could pick named no family, declared no ruler and
+      produced a roles table reading "this case type names no topology family".
+      `examples/case_types/ogrid_circle.casetype.json` now names `ogrid` and a
+      `body.x_extent` ruler, and applying it to the repo's OWN circles — through
+      the roles and nothing else — projects exactly
+      `examples/topology/ogrid_circle.json`, the document that produces the
+      reference mesh its thresholds were measured from.
   12. THE WHOLE ACT THROUGH THE LIVE WINDOW: picker -> table -> the button's
       signal -> the controller -> the panel holds the fitted configuration. Its
       first half is the one property no in-process check above can see — a table
@@ -102,7 +111,10 @@ to stay green:
 Checks 1 (the `.hws` half), 10 and 12 drive live `AppController`s, which hold
 their own already-imported modules and no in-memory mutant reaches — so they are
 excluded from the others-stay-green comparison and carry no injection. That is
-stated rather than left to be counted.
+stated rather than left to be counted. Check 16 is excluded too, for a DIFFERENT
+reason it states at its own block: its subject is the shipped ARTEFACT rather
+than the service, so a mutant would score the artefact's reachability as a
+property of the mutation.
 
 Run:  QT_QPA_PLATFORM=offscreen python3 tools/PreProcessor/tests/test_case_type_apply.py
 Needs Qt (offscreen). Needs no build tree and no network.
@@ -850,6 +862,142 @@ with tempfile.TemporaryDirectory() as _tmp:
           % (getattr(_undone, "surface_mesh_size", None),
              getattr(_undone, "mesh_mode", None)))
 
+
+# ══ 16: the SHIPPED case type, with no fixture anywhere ══════════════════════
+#
+# OUTSIDE `CHECKS`, like 1's `.hws` half, 10 and 12 and for a different reason
+# that is stated rather than left to be counted: every check above is about the
+# MECHANISM and builds the case type it needs, so a mutant tells you something
+# about the service. This one is about the ARTEFACT — #171's whole subject,
+# which is that the mechanism was complete and nothing an operator could pick
+# exercised the half of it #164/#165/#170 built. Running it under a mutant would
+# score the artefact's reachability as a property of the mutation.
+print("══ 16: the shipped artefact ══════════════════════════════════════════")
+_SHIPPED_CT = os.path.join("examples", "case_types", "ogrid_circle.casetype.json")
+_SHIPPED_TOPO = os.path.join("examples", "topology", "ogrid_circle.json")
+_SHIPPED_BODY = os.path.join("examples", "geometries", "circle_body.dat")
+_SHIPPED_FAR = os.path.join("examples", "geometries", "circle_farfield.dat")
+
+
+def _shipped_drawing():
+    """The drawing the shipped case type was authored on, as a `MeshConfig`.
+
+    The geometries are the repo's own, NOT a fixture: that is the claim. The far
+    field bears `farfield` because `config/multiblock_ogrid.dat` puts it on a
+    `DOMAIN_FILE ... nobl` line (#171), which is what makes `body.x_extent`
+    measure the body (1.0) rather than the domain (20.0).
+    """
+    cfg = MeshConfig()
+    cfg.add_geom_file(os.path.join(_REPO, _SHIPPED_BODY))
+    cfg.add_geom_file(os.path.join(_REPO, _SHIPPED_FAR))
+    cfg.geom_roles[os.path.join(_REPO, _SHIPPED_FAR)] = {"role": "farfield"}
+    cfg.case_type_file = _SHIPPED_CT
+    return cfg
+
+
+def _document(model, cfg):
+    """`model` projected, with every geometry path reduced to its basename.
+
+    Compared by BASENAME because the shipped document names its geometries the
+    way a hand-written file does and a projection names them the way the config
+    spells them; the mesher resolves either (exact path, then unique basename),
+    so a comparison that demanded one spelling would be about path spelling and
+    not about the topology.
+    """
+    from app.services import topology_binding, topology_model
+    doc = topology_model.build_document(
+        model, topology_binding.context_for_config(cfg))
+    out = {}
+    for section in ("corners", "edges", "blocks"):
+        rows = {}
+        for row in doc[section]:
+            row = dict(row)
+            if row.get("binding"):
+                row["binding"] = {"geom": os.path.basename(row["binding"]["geom"]),
+                                  "seg": row["binding"]["seg"]}
+            if "geom" in row:
+                row["geom"] = os.path.basename(row["geom"])
+            rows[row["id"]] = row
+        out[section] = rows
+    return out
+
+
+def _shipped_document():
+    """`examples/topology/ogrid_circle.json`, parsed, in `_document`'s shape.
+
+    Its `//` line comments are the mesher's own extension to JSON, stripped the
+    way `test_multiblock_cgrid_surface.topology` strips them.
+    """
+    import re
+    text = open(os.path.join(_REPO, _SHIPPED_TOPO), encoding="utf-8").read()
+    doc = json.loads(re.sub(r"//.*", "", text))
+    out = {}
+    for section in ("corners", "edges", "blocks"):
+        out[section] = {r["id"]: {**r, **({"geom": os.path.basename(r["geom"])}
+                                          if "geom" in r else {}),
+                                  **({"binding": {
+                                      "geom": os.path.basename(r["binding"]["geom"]),
+                                      "seg": r["binding"]["seg"]}}
+                                     if r.get("binding") else {})}
+                        for r in doc[section]}
+    return out
+
+
+_ship = case_type_mod.load(os.path.join(_REPO, _SHIPPED_CT))
+check(_ship.fields.values.get("topology.family") == "ogrid",
+      "16. the SHIPPED case type names a topology FAMILY, so picking it answers "
+      "'which family and with what parameters' and not only 'what size cells' "
+      "(%r)" % _ship.fields.values.get("topology.family"))
+check(_ship.characteristic is not None
+      and (_ship.characteristic.role, _ship.characteristic.measure)
+      == ("body", "x_extent"),
+      "16. ...and declares a CHARACTERISTIC LENGTH, so its geometry-driven "
+      "sizes fit a drawing at another scale instead of being carried 1:1 (%s)"
+      % (_ship.characteristic.describe() if _ship.characteristic else None))
+
+_sdraw = _shipped_drawing()
+_splan = _W.plan(_sdraw)
+_sroles = {slot.role: _splan.roles.guesses.get(slot.role)
+           for slot in _splan.roles.slots}
+check(set(_sroles) == {"body", "farfield"},
+      "16. ...so the roles table has REAL ROWS on the repo's own drawing — "
+      "#158's story 2, reachable with no test fixture (%s)"
+      % sorted(_sroles))
+check(all(g is not None for g in _sroles.values()),
+      "16. ...each carrying a PRE-SELECTION the operator confirms — stories 3 "
+      "and 4 (%s)"
+      % {r: (g.describe() if g else None) for r, g in _sroles.items()})
+check(_splan.application is not None
+      and abs(_splan.application.scale.factor - 1.0) < 1e-12,
+      "16. ...and the ruler READS on that drawing, at 1.0 because this is the "
+      "drawing it was authored on — a unit-diameter body, so every size in the "
+      "file is a fraction of the body and the arithmetic is checkable by eye")
+
+_splan.assign({role: "" for role in _sroles})
+_sapplied = _W.apply(_splan, _sdraw,
+                     {c.name: c.offered for c in _splan.confirmations})
+check(_document(_sapplied.config.topology, _sapplied.config)
+      == _shipped_document(),
+      "16. ...and applying it, through the roles and nothing else, projects "
+      "EXACTLY `%s` — the document that produces the reference mesh its own "
+      "thresholds were measured from, so the file's opinion and its evidence "
+      "are the same case" % _SHIPPED_TOPO)
+check(_sdraw.topology.family == "",
+      "16. ...while the drawing it was applied TO is untouched, the deep copy "
+      "being what every refusal above rests on (%r)" % _sdraw.topology.family)
+
+# AND THE CASE IT WAS CAPTURED FROM PROJECTS THE SAME DOCUMENT. `_SHIPPED_SOURCE`
+# is where the overlay came from; `test_case_type_fields.py` pins the SCALARS it
+# captures and nothing pinned its BINDINGS, which a capture cannot see — they are
+# excluded from an overlay by construction. Asserted here rather than there
+# because it is the same question this check is already asking, from the other
+# end: the authoring case and the applied case must be one case.
+_SHIPPED_SOURCE = os.path.join("config", "pipeline", "ogrid_family_demo.json")
+_src_cfg = case_type_fields.read_config(os.path.join(_REPO, _SHIPPED_SOURCE))
+check(_document(_src_cfg.topology, _src_cfg) == _shipped_document(),
+      "16. ...and `%s`, the case its overlay was CAPTURED from, projects that "
+      "same document — so the file's numbers and the mesh its thresholds were "
+      "measured from come from one case and not two" % _SHIPPED_SOURCE)
 
 # ══ the injections ════════════════════════════════════════════════════════
 print("══ injections ════════════════════════════════════════════════════════")

@@ -165,6 +165,12 @@ _SHIPPED = os.path.join("examples", "case_types", "ogrid_circle.casetype.json")
 #: A real working case in each of the three shapes `read_config` classifies.
 _OGRID_DAT = os.path.join("config", "multiblock_ogrid.dat")
 _PIPELINE = os.path.join("config", "pipeline", "multiblock_cgrid_demo.json")
+#: WHERE THE SHIPPED CASE TYPE'S OVERLAY WAS CAPTURED FROM (#171), which is NOT
+#: `_OGRID_DAT` any more and cannot be: a `.dat` carries no topology FAMILY, only
+#: the path to the document a family was projected to. This script holds the same
+#: O-grid case driven by the family instead, and is what
+#: `SHIPPED_FIELDS` is the capture of.
+_SHIPPED_SOURCE = os.path.join("config", "pipeline", "ogrid_family_demo.json")
 #: The mesh section the WORKSPACE leg of check 9 is built from. A source rather
 #: than a workspace, because this repo ships no `.hws`: the only one it had was a
 #: GUI session's default name that `.gitignore` excludes BY NAME, so the leg that
@@ -276,12 +282,34 @@ OGRID = dict(cells=4608, median=1.845977, p95=23.662285, maximum=32.767868)
 OGRID_LAYER = dict(cells=2304, median=5.184358, p95=28.507718, maximum=32.767868)
 OGRID_BULK = dict(cells=2304, median=1.692763, p95=1.877756, maximum=1.881891)
 
-#: What the shipped O-grid `.dat` has moved off the default, verified by hand
-#: against the file on 2026-10-01. Pinned rather than re-derived, because "the
+#: What the shipped O-grid case has moved off the default, verified by hand
+#: against the file on 2026-10-21. Pinned rather than re-derived, because "the
 #: capture is a subtraction" is only a claim if the expected answer is itself
 #: computed by the thing under test.
+#:
+#: THE THREE `topology.` ENTRIES ARRIVED WITH #171, and the source of the capture
+#: moved with them: it was `config/multiblock_ogrid.dat` until then, and a `.dat`
+#: cannot carry a FAMILY — `save_config_to_file` projects the family's document
+#: and writes the path to it, so the family is an output of that file and never
+#: an input to it. The overlay is now captured from
+#: `config/pipeline/ogrid_family_demo.json`, whose `mesh` section holds the same
+#: case driven by the family rather than by the hand-written document, and which
+#: produces a canonically IDENTICAL mesh (`tools/scripts/golden_mesh.py`'s
+#: comparison, worst deviation 0.0). `topology.ogrid_splits` is 1 in that case
+#: and 1 by default, so it is correctly absent: the capture is a subtraction.
 SHIPPED_FIELDS = {"mesh_mode": 1, "bl_initial_thickness": 0.001,
-                  "export_vtk": True}
+                  "export_vtk": True, "topology.family": "ogrid",
+                  "topology.ogrid_cell": 0.033,
+                  "topology.ogrid_radial_count": 49}
+
+#: What `_OGRID_DAT` alone moves off the default — the same case written as a
+#: `.dat`, which is `SHIPPED_FIELDS` MINUS the three topology entries. Pinned as
+#: its own constant rather than derived from the one above, because the three it
+#: is missing are exactly what #171 is about: the `.dat` names the hand-written
+#: document (`mesh_topology_file`, which no case type may own) where the script
+#: names the family that projects it.
+OGRID_DAT_FIELDS = {"mesh_mode": 1, "bl_initial_thickness": 0.001,
+                    "export_vtk": True}
 
 #: Every binding parameter today's four families declare. Pinned so that a fifth
 #: family's bindings being excluded by SUFFIX is a measured property rather than
@@ -355,11 +383,11 @@ def check_capture_is_sparse(w):
     """What a working case records is what it MOVED, not what it holds."""
     out = []
     F = w.fields
-    config = F.read_config(os.path.join(_REPO, _OGRID_DAT))
+    config = F.read_config(os.path.join(_REPO, _SHIPPED_SOURCE))
     captured = F.capture_differences(config)
     if dict(captured.values) != SHIPPED_FIELDS:
         out.append("capturing %s gave %s, not the fields it moved off the "
-                   "default (%s)" % (_OGRID_DAT, dict(captured.values),
+                   "default (%s)" % (_SHIPPED_SOURCE, dict(captured.values),
                                      SHIPPED_FIELDS))
     total = len(F.ownable_names())
     if len(captured) >= total:
@@ -760,7 +788,13 @@ def check_the_hosts_answer(w, show_host=""):
         # and a host that only ever saw a `.dat` would be a host that works for
         # one third of this repo's own working cases.
         for label, source, expect in (
-                ("dat", os.path.join(_REPO, _OGRID_DAT), SHIPPED_FIELDS),
+                # The `.dat` leg keeps its OWN expectation, which is NOT the
+                # shipped overlay any more (#171): a `.dat` cannot carry a
+                # family, so capturing from one records three fields where the
+                # shipped case type records six. That gap is the reason
+                # `_SHIPPED_SOURCE` exists, and pinning both here is what says
+                # so in a form that fails if either moves.
+                ("dat", os.path.join(_REPO, _OGRID_DAT), OGRID_DAT_FIELDS),
                 ("pipeline", os.path.join(_REPO, _PIPELINE), None),
                 ("workspace", ws_file, None)):
             dest = os.path.join(tmp, "%s.casetype.json" % label)
@@ -989,10 +1023,14 @@ inj = mutate("case_type_fields",
              "    return False")
 check("topology.ogrid_body_segs" in inj.fields.ownable_names(),
       "injection A. injection is well-formed: a binding is now an ownable field")
-check(check_unownable_fields_are_refused(inj) and others_green(inj, 8),
-      "injection A. check 8 ALONE fails when a case type may own a BINDING — a "
+check(check_unownable_fields_are_refused(inj)
+      and check_capture_is_sparse(inj) and others_green(inj, 1, 8),
+      "injection A. checks 1 and 8 fail when a case type may own a BINDING — a "
       "stable segment id into the maintainer's geometry, which the operator's "
-      "drawing does not have")
+      "drawing does not have. It reddened 8 ALONE until #171, and the second "
+      "one is what shipping a case type with a family bought: the overlay is "
+      "now CAPTURED from a case that binds, so an ownable binding is caught "
+      "where it would reach a document and not only where it is refused")
 
 inj = mutate("case_type_fields", 'DAT_PRECISION = "%.6g"',
              'DAT_PRECISION = "%.17g"')
@@ -1062,10 +1100,15 @@ inj = mutate("case_type_fields",
              "    setattr(config, name.replace(TOPOLOGY_PREFIX, ''), value)")
 check(check_apply_leaves_the_rest_at_default(inj)
       and check_deviation_names_owned_fields_only(inj)
-      and others_green(inj, 3, 5),
-      "injection G. checks 3 and 5 fail when a topology parameter is written "
-      "onto the mesh config as a flat attribute nothing reads — the family and "
-      "its parameters are half of what a case type carries")
+      and check_a_new_mesher_field_changes_nothing(inj)
+      and check_deviated_verdict_is_issued_and_marked(inj)
+      and others_green(inj, 3, 4, 5, 6),
+      "injection G. checks 3, 4, 5 and 6 fail when a topology parameter is "
+      "written onto the mesh config as a flat attribute nothing reads — the "
+      "family and its parameters are half of what a case type carries. It "
+      "reddened 3 and 5 until #171; 4 and 6 joined them because the SHIPPED "
+      "case type now owns three `topology.` fields, so every check that "
+      "applies it walks through the mutation rather than past it")
 
 # H reaches the one file the in-memory mutants cannot: the inspecting HOST,
 # which runs as a subprocess. Without it check 9 — the acceptance criterion that

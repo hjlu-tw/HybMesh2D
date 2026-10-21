@@ -5038,6 +5038,84 @@ reaches it.
     the next change to that file falls into rather than this one.
 
 
+**`DOMAIN_FILE` AND `GEOM_FILE` ARE ONE KIND OF LINE UNDER `MESH_MODE 1`** (#171, parent #158;
+rule in `.claude/rules/mesher.md`).
+
+**WHAT THE DISTINCTION IS FOR, AND WHERE IT STOPS MEANING ANYTHING.** On the hybrid path the two
+line kinds decide real things: `DOMAIN_FILE` names the OUTER-DOMAIN outline the far field is built
+from, and its `bl` / `nobl` token decides whether that outline grows a boundary layer (internal
+flow wall vs external far field). `Config` keeps them apart structurally — `domainFile` is a single
+`std::string`, `geomFiles` a vector — and `buildFarFieldOutline` reads only the first. The
+multi-block path builds no far field at all: a topology declares its own outer boundary, so there
+is nothing left for the distinction to decide and the domain outline is simply another geometry a
+corner or an edge may name.
+
+**IT WAS NOT LOADED, AND THE PRICE WAS PAID IN THE GUI.** `buildMultiBlockMesh` iterated
+`config.geomFiles` alone, so a config whose outer curve sat on a `DOMAIN_FILE` line handed that
+path a topology referring to a geometry it had never seen — and the seam's own refusal fired
+correctly on a situation that should not have arisen: `corner 'f0': no geometry named
+'circle_farfield.dat' was loaded. This run loaded 'examples/geometries/circle_body.dat'.`, exit 8,
+nothing exported. That is not a hand-written-`.dat` curiosity: `models/mesh_config_io.py` writes
+the `farfield` and `wall` ROLES as a `DOMAIN_FILE` line, so an operator who marked their outer
+circle as the far field — the obviously right thing to do, and what a case type needs in order to
+measure its sizes against the BODY (`docs/design_notes/gui.md`) — made that circle invisible to the
+template bound to it. The role said what the curve IS; the mesher read it as which file the far
+field comes from.
+
+**THE FIX IS FIVE LINES AND ITS SHAPE IS THE ARGUMENT.** The domain outline is APPENDED to the
+list that path loads, and skipped when a `GEOM_FILE` line already names it. Appended rather than
+prepended because this path resolves a geometry BY NAME — exact declared path, then a unique
+basename, never by position — but the banner prints the list, and there was no reason to renumber
+every existing case's output. Skipped on a duplicate because a file named twice would be two
+`MbGeometry` entries with one basename, which turns a working unique-basename reference into an
+ambiguous one.
+
+**PROVEN UNCHANGED, NOT ARGUED UNCHANGED.** The change is a no-op for every case with no
+`DOMAIN_FILE` line, which is every shipped multi-block case before #171 — "by construction", which
+is the claim this repo distrusts. Measured instead: the pre-change binary was built from
+`git archive HEAD` into a temp tree, `HYBMESH_GOLDEN_BIN` pointed the capture at it, and
+`golden_mesh.py compare` came back **22/22 SAME at exactly 0.000e+00** over `.vtk`, `.cel` and
+`.bnd` — once for the C++ change alone, and again after the two shipped configs moved their far
+field onto a `DOMAIN_FILE … nobl` line.
+
+**THE POSITIVE CLAIM IS GATED SEPARATELY, BECAUSE NOTHING ELSE STATES IT.**
+`test_multiblock_ogrid_surface.py` check 10 runs the shipped config and the same config with that
+ONE line spelled `GEOM_FILE`, and requires identical nodes, cells and `.bnd` faces under identical
+patch names. Checks 2 through 9 of that file, both C-grid gates, the quality gate, the block-field
+gate, the smoothing gate and the golden comparator all redden if the geometry stops being loaded —
+but every one of them only says the run did not break. "The two spellings agree" is a different
+sentence and now has its own check, plus a first assertion that the shipped config really does
+carry a `DOMAIN_FILE` line, so the check cannot pass vacuously.
+
+**TWO TEST HELPERS HAD THE SAME BLIND SPOT, AND ONE OF THEM HAD WRITTEN IT DOWN.**
+`mb_shipped_config.shipped_config` took the whole remainder of a path line as the path, so
+`DOMAIN_FILE <path> nobl` retargeted to a filename ending in ` nobl` and raised "does not exist";
+its own blind spot (a) said in as many words that "no shipped multi-block config uses one today,
+and the first that does will land here". It did. `test_shipped_config_seam.py::_checkout`'s
+staging loop had the identical line and failed the same way one gate later. Both now take the
+FIRST token and carry the remainder verbatim; neither parses it, `include/Config.hpp` owning that
+grammar. A third consequence surfaced with them: that seam gate's "one path for a key the config
+repeats" refusal picked its fixture as `multiblock_ogrid if "GEOM_FILE" in str(kw)`, which worked
+only while that config had TWO `GEOM_FILE` lines — after #171 it had one, and the refusal could no
+longer fire. The fixture is now named per row (`multiblock_tworing`, which has three), because a
+refusal that cannot fire is a check passing on nothing.
+
+**AND ONE HELPER'S ARGUMENT WENT HALF-BLIND.** `test_multiblock_ogrid_surface.base_config`'s
+`geom_dir` mapped to `dirs={"GEOM_FILE": geom_dir}`, which after #171 would retarget the body into
+the caller's directory and leave the far field resolving against the repo — one generated circle
+meshed against one shipped one, silently. The seam raises for a key the caller NAMES and the
+config does not have; it cannot raise for a key the caller never names. It maps to both keys now.
+No caller passes `geom_dir` today, which is why this was latent rather than a failure.
+
+**Blind spots.** The `bl` / `nobl` token on a `DOMAIN_FILE` line is still parsed and still
+recorded under `MESH_MODE 1`, where it decides nothing — it is not in `MeshMode.hpp`'s inert-key
+list, so a `DOMAIN_FILE … bl` under this mode warns about nothing. It is not inert in the sense
+that list means (the GUI needs the role on the round trip), which is why it was left alone rather
+than declared. Nothing gates the C-grid's own `DOMAIN_FILE` line the way check 10 gates the
+O-grid's; the two cases are the same shape and one check is where the argument lives. And the
+`.bnd` consequence is covered only through check 4's existing patch-name assertion: a domain
+outline loaded without its `.meta` sidecar would put the fallback `BC_GEOM` on four patches, which
+that check would catch on the O-grid and nothing would catch elsewhere.
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

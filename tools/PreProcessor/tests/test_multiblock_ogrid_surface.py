@@ -38,6 +38,14 @@ What this pins down:
      two cells, the boundary edge set is exactly the ``.bnd``, and the whole mesh
      is ONE connected component by node identity. A last block that failed to weld
      back to the first would leave two components and a doubled seam.
+ 10. ``DOMAIN_FILE`` AND ``GEOM_FILE`` LOAD IDENTICALLY IN THIS MODE (#171). The
+     shipped config names its far field on a ``DOMAIN_FILE ... nobl`` line, which
+     is what makes the GUI read it back as the ``farfield`` ROLE and so what lets
+     a case type measure its sizes against the BODY. The same case with that one
+     line spelled ``GEOM_FILE`` must produce the identical mesh — same nodes,
+     cells and ``.bnd`` faces. Stated POSITIVELY because every other check here
+     only says the run did not break: until #171 the multi-block path loaded
+     ``geomFiles`` alone and the shipped run was refused outright.
 
 THE ACCEPTANCE RUN, dated and quoted rather than replaced by a shape check. CI has
 no solver binary, so this is recorded here in the convention this repo adopted
@@ -272,11 +280,21 @@ def base_config(topo=None, thickness=None, geom_dir=None):
     the shipped config was repointed at another file — the blindness the needle
     list it replaced did not have. Unset, the seam resolves whatever the config
     says. #126's review found it.
+
+    `geom_dir` REACHES BOTH GEOMETRY KEYS (#171). This config puts its far field on
+    a `DOMAIN_FILE` line so the GUI reads it back as the `farfield` role, and a
+    `dirs` entry naming only `GEOM_FILE` would have retargeted the body into the
+    caller's directory and left the far field resolving against the repo — a run
+    that silently meshed one generated circle against one shipped one. The seam
+    raises for a key the caller names and the config does not HAVE, which is the
+    guard that would have caught the opposite mistake; it cannot catch a key the
+    caller never names.
     """
     return shipped_config(
         "multiblock_ogrid",
         paths=({"MESH_TOPOLOGY_FILE": topo} if topo is not None else None),
-        dirs=({"GEOM_FILE": geom_dir} if geom_dir is not None else None),
+        dirs=({"GEOM_FILE": geom_dir, "DOMAIN_FILE": geom_dir}
+              if geom_dir is not None else None),
         overrides=({"BL_INITIAL_THICKNESS": thickness}
                    if thickness is not None else None))
 
@@ -473,6 +491,39 @@ def main() -> int:
                  gap, worst, worst / 2.0),
               p5.returncode == 0 and gap >= worst / 2.0 - 1e-3
               and gap <= worst / 2.0 + 0.05 + 1e-3)
+
+        # ── 10. `DOMAIN_FILE` AND `GEOM_FILE` LOAD IDENTICALLY HERE ─────────
+        #
+        # This config puts its far field on a `DOMAIN_FILE ... nobl` line so the
+        # GUI reads it back as the `farfield` ROLE (#171). On the hybrid path
+        # that line kind decides something — which outline the far field is built
+        # from, and whether it grows a boundary layer — and on THIS path it
+        # decides nothing, because a topology declares its own outer boundary.
+        # Until #171 it decided one thing all the same: `buildMultiBlockMesh`
+        # loaded `config.geomFiles` and not `config.domainFile`, so the shipped
+        # run was REFUSED with "corner 'f0': no geometry named
+        # 'circle_farfield.dat' was loaded" — the role an operator assigns to say
+        # what the curve IS made the curve invisible to the document bound to it.
+        # Check 2 above would redden on that, and so would checks 3 to 9 and the
+        # golden comparator; what this check adds is the POSITIVE claim, which
+        # none of them states: the two line kinds produce the SAME MESH.
+        conf = base_config()
+        check("10. the shipped config really does put its far field on a "
+              "DOMAIN_FILE line, so check 10 is not vacuous",
+              "\nDOMAIN_FILE " in conf)
+        p10, stem10 = run_case(tmp, "ogrid_as_geom",
+                               conf.replace("\nDOMAIN_FILE ", "\nGEOM_FILE "))
+        check("10. ...and the same case with that one line spelled GEOM_FILE "
+              "exits 0 too (rc=%d)" % p10.returncode, p10.returncode == 0)
+        if p10.returncode == 0:
+            same_nodes = vrt_nodes(stem10) == nodes
+            same_cells = cel_cells(stem10) == cells
+            same_faces = sorted(bnd_faces(stem10)) == sorted(faces)
+            check("10. ...producing the IDENTICAL mesh — same nodes, same "
+                  "cells, same boundary faces under the same patch names "
+                  "(nodes=%s cells=%s faces=%s)"
+                  % (same_nodes, same_cells, same_faces),
+                  same_nodes and same_cells and same_faces)
 
     print()
     if failures:

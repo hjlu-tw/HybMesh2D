@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **50,045
-characters (50,321 bytes, 2026-10-20) ≈ 13k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **50,284
+characters (50,560 bytes, 2026-10-21) ≈ 13k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**51,000**, leaving 955 characters of slack — derived by a rule the gate states at that
+**51,000**, leaving 716 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -333,9 +333,9 @@ plus any number of geometry files; `--run` then executes Run All.
 python3 tools/PreProcessor/save_case_type.py results/meshes/multiblock_ogrid/mesh_multiblock_ogrid.vtk \
     --name "Circular body, O-grid" --out config/my_case.casetype.json \
     --advice "max=Ask for a less aggressive first cell." --override "max.unusable=200.0" \
-    --fields-from config/multiblock_ogrid.dat
+    --fields-from config/pipeline/ogrid_family_demo.json --characteristic body.x_extent
 ```
-That mesh becomes the REFERENCE MESH: every bound is a figure it published times a tolerance factor, and the file records which mesh, when, and which bounds were hand-set instead. `--advice` selects the figures bounded; one the mesh could not measure gets none, out loud. `--fields-from` records the fields that case MOVED off the default, as a SPARSE overlay — so a field no case type mentions takes the ordinary default. `--characteristic ROLE.MEASURE` (e.g. `body.x_extent`) declares the CHARACTERISTIC LENGTH the geometry-driven sizes are relative to, MEASURED off that case's role-bearing geometries — omitted above on purpose, since BOTH of that case's geometries bear `body` and the ruler would be the far field's extent rather than the body's. Worked: `examples/case_types/ogrid_circle.casetype.json`, which declares none for that reason.
+That mesh becomes the REFERENCE MESH: every bound is a figure it published times a tolerance factor, and the file records which mesh, when, and which bounds were hand-set instead. `--advice` selects the figures bounded; one the mesh could not measure gets none, out loud. `--fields-from` records the fields that case MOVED off the default, as a SPARSE overlay — so a field no case type mentions takes the ordinary default; it must be the case as a `.hws` or a pipeline script if the overlay is to carry a topology FAMILY, since a `.dat` names only the document a family was projected to. `--characteristic ROLE.MEASURE` declares the CHARACTERISTIC LENGTH the geometry-driven sizes are relative to, MEASURED off that case's role-bearing geometries — so the far field has to BEAR the `farfield` role, or `body` selects the pair and the ruler is the domain's extent (20) rather than the body's (1). Worked: `examples/case_types/ogrid_circle.casetype.json`, the one shipped case type, authored from `config/pipeline/ogrid_family_demo.json` (#171).
 
 **Apply a case type to your own geometry, at your own scale (headless):**
 ```bash

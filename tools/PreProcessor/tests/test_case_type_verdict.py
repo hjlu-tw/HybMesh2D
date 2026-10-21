@@ -67,8 +67,13 @@ What this pins down:
      is said rather than only raised on.
  13. THE SHIPPED CASE TYPE IS NOT VACUOUS: `examples/case_types/ogrid_circle.casetype.json`
      reads the shipped O-grid's published figures (median 1.845977, p95
-     23.662285, max 32.767868; bulk 1.692763 / 1.877756 / 1.881891, measured
-     2026-09-30) as `usable`, and one bound tightened by hand moves it off that.
+     23.662285, max 32.767868; bulk 1.692763 / 1.877756 / 1.881891) as `usable`,
+     and one bound tightened by hand moves it off that. The DATE those figures
+     were read is deliberately not quoted here any more: #171 re-authored the
+     document through the real hosts and the same sidecar came back identical
+     under a new `measured_on`, so a date in this docstring was a figure about
+     another file that this gate does not measure. What it is about — that the
+     mesh the case type was authored on passes it — does not depend on one.
  14. A VERDICT NAMES THE FILE THAT ISSUED IT when the case type came from one,
      and claims no file when it did not — `CaseType.source` is kept for
      traceability and a field nobody prints cannot provide it. It is also the

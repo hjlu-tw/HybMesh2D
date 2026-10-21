@@ -688,11 +688,11 @@ which are capability refusals.
   way, so narrowing it to the role-bearing segments changes nothing on any shipped case — which
   is why it was not done, and is the reason this stays a named limit rather than a defect.
 - **NOTHING JUDGES WHETHER THE DECLARED RULER IS THE RIGHT CURVE.** A case type naming the
-  `body` role on a drawing whose far field also bears it (which is what a `MESH_MODE 1` case
-  with two plain `GEOM_FILE` lines looks like) measures the pair — consistently at both ends,
-  so the ratio still scales, but it is not the chord the maintainer meant. The refusal is for
-  a role NOBODY bears, never for one borne by something unintended. The shipped case type
-  therefore declares no characteristic length at all.
+  `body` role on a drawing whose far field also bears it measures the pair — consistently at
+  both ends, so the ratio still scales, but it is not the chord the maintainer meant. The
+  refusal is for a role NOBODY bears, never for one borne by something unintended. That is
+  what two plain `GEOM_FILE` lines used to make of every shipped `MESH_MODE 1` case, and
+  #171 is the one line per config that fixed it: `.claude/rules/gui-evidence.md`.
 - **THE LENGTH CLASSIFICATION IS A JUDGEMENT.** That `bl_initial_thickness` is physical and
   `surface_mesh_size` is not is argued in `case_type_scale.py`'s docstring; what the gate
   measures is that every `sci` field HAS a judgement, not that each one is right.

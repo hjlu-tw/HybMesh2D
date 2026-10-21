@@ -94,6 +94,31 @@ the old and new trees:
 **An unrecognised per-geometry `KEY=VALUE` override is NAMED, not dropped**
 (`parseBLOverrideToken` asks `isBLParam` and warns) — same "the setting does nothing" failure class.
 
+**`DOMAIN_FILE` AND `GEOM_FILE` ARE ONE KIND OF LINE UNDER `MESH_MODE 1`** (`buildMultiBlockMesh`
+in `src/cli.cpp`; #171). On the hybrid path the two decide different things — which outline the
+far field is built from, and whether it grows a BL — and `Config` keeps them apart, `domainFile`
+being a single `std::string` beside `geomFiles`. The multi-block path builds no far field, a
+topology declaring its own outer boundary, so there is nothing left for the distinction to decide
+and the domain outline is simply another geometry a corner or an edge may name. It is therefore
+APPENDED to the list that path loads, skipped when a `GEOM_FILE` line already names it, so the
+loaded order of every existing case is untouched (22/22 golden SAME at exactly 0.0).
+- **Until #171 it was not loaded at all, and the cost was NOT a hybrid-path concern.** The GUI
+  writes the `farfield` and `wall` ROLES as a `DOMAIN_FILE` line (`models/mesh_config_io.py`), so
+  an operator who said what their outer curve IS made that curve invisible to the document bound
+  to it: `corner 'f0': no geometry named 'circle_farfield.dat' was loaded`, exit 8, nothing
+  exported. That role is also what makes `body` select the BODY when a case type measures its
+  characteristic length (`.claude/rules/gui-handoff.md`), so the two shipped cases that have a far
+  field now carry it on a `DOMAIN_FILE … nobl` line.
+- **The claim gated is POSITIVE, not "the run did not break"**: `test_multiblock_ogrid_surface.py`
+  check 10 runs the shipped config and the same config with that ONE line spelled `GEOM_FILE`, and
+  requires the identical nodes, cells and `.bnd` faces. Every other check in that file, and the
+  golden comparator, redden on the refusal; none of them says the two spellings agree.
+- **Two TEST helpers took the whole remainder of such a line as the path** and raised "does not
+  exist" on the first shipped config to carry a token — `mb_shipped_config.shipped_config`, whose
+  own blind spot (a) had predicted exactly this, and `test_shipped_config_seam.py::_checkout`'s
+  staging loop. Both now take the FIRST token and carry the rest verbatim; neither parses it,
+  `include/Config.hpp` owning that grammar.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 
