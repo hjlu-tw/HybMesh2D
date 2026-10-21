@@ -153,6 +153,25 @@ makes each of those reachable.
   C-grid's far field and it is unchanged by the two families that now share the walk: a far field
   one body-length out contains the body and is refused by nothing. The check exists to stop blocks
   folding, not to judge a domain.
+- **THE C-GRID's GENERATED RING STAYS THE CORNER CHORDS, AND SINCE #178 THAT IS A CHOICE RATHER
+  THAN AN IDENTITY** (`generated_ring` in `services/topology_cgrid_section.py`). While its two
+  nose sides were chords, the ring WAS the region and there was nothing to decide. They are
+  declared arcs now (`.claude/rules/gui-topology.md`), which bulge OUTWARD, so this ring is a
+  strict INNER bound of what the document declares — **and that is the direction to be wrong
+  in**, because `outside_point` exists to stop a fold rather than to be exact: a conservative
+  ring costs a false refusal on a section nearly touching its far field, a generous one costs a
+  fold the user cannot read.
+  - **MEASURED, NOT ARGUED, AND THE GENEROUS VERSION WAS WRITTEN FIRST.** Following the arcs here
+    makes `cgrid_far_radius = 0.02` on a unit chord CONTAIN the section — the arc through three
+    nearly-coincident corners balloons to R = 0.51 — so the one containment refusal fixture in
+    `tests/test_topology_cgrid.py` stopped firing, while the document it now accepted would fold
+    every block at the nose. The gap given up is 1.1378x of area, on a configuration already at
+    the edge of meshing.
+  - **AND IT IS WHY THE RADIUS KNOB IS NOT THE ARC's RADIUS.** `R = (S^2 + r^2) / (2S)` with
+    `S = chord + r`: 10.045 against a requested 10 at the shipped defaults, but 1.25 against 1 at
+    a radius of one chord. At the 10-20 chords a C-grid is run at the knob means what it says;
+    below about five it does not, and NOTHING WARNS — the containment refusal above is the only
+    thing between that regime and a fold.
 - **A TANGENT TOUCH IS NOT RESOLVED.** `outside_point` is a crossing test, so a point lying exactly
   ON the outer polyline may read either way. Inherited from #149 rather than introduced, and no
   shipped case is within a rounding of it.

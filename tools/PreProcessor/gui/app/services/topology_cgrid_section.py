@@ -215,11 +215,105 @@ def far_corners(te_xy, x_le: float, wake_len: float, radius: float) -> dict:
             "f3": (x_te, y0 - radius), "fl": (x_out, y0 - radius)}
 
 
+def far_nose_arc(far: dict) -> tuple:
+    """The ONE circle the generated far field's two nose sides lie on (#178).
+
+    Returns ``((cx, cy), radius)`` for the circle through ``f1``, ``f2`` and
+    ``f3`` — which exists and is unique, because those three are not collinear
+    and are symmetric about ``y0``.
+
+    WHY A CIRCLE THROUGH THE CORNERS WE ALREADY HAVE, rather than a semicircle
+    about the trailing edge. #178 proposed the latter: it would make the nose
+    exactly tangent to the straight top and bottom, 0 degrees of kink. It also
+    MOVES ``f2`` from ``x_le - r`` to ``x_te - r``, and check 13 asserts that the
+    six generated corners land on the shipped hand-written document's own TO 0.0.
+    Measured before choosing (shipped unit chord, radius 10): the chord leaves a
+    **42.274 degree** kink at ``f1``, this arc leaves **5.453**, and the
+    semicircle would leave 0. Taking 87% of the improvement for no corner
+    movement is the better trade, and #178's own recommendation was corrected to
+    it rather than followed.
+
+    THE CLOSED FORM, derived rather than iterated. With ``S = x_te - x_le + r``
+    the centre sits at ``x_te - u`` and the radius is ``S - u`` where
+
+        u = (S^2 - r^2) / (2 S)
+
+    from ``(x_te - cx)^2 + r^2 = R^2`` and ``R = cx - (x_le - r)``. ``S > 0``
+    whenever the radius is positive and the trailing edge is downstream of the
+    leading one, which `plan` has already established. As the chord shrinks to
+    nothing ``u -> 0`` and this degenerates CONTINUOUSLY to the semicircle about
+    the (now coincident) edges, so there is no second branch to get wrong.
+    """
+    f1, f2, f3 = far["f1"], far["f2"], far["f3"]
+    y0 = f1[1] - (f1[1] - f3[1]) / 2.0
+    r = f1[1] - y0
+    x_te = f1[0]
+    # `f2[0] + r` IS x_le, by `far_corners`' own placement, so `S` is recovered
+    # from the placed corners and the caller does not have to pass the section
+    # back in — the same "measure it off what was placed" rule the wake and
+    # radial spans already follow.
+    s = x_te - (f2[0] + r) + r
+    u = (s * s - r * r) / (2.0 * s)
+    return (x_te - u, y0), s - u
+
+
+#: The two generated far-field sides that are arcs rather than chords (#178).
+NOSE_EDGES = ("e_ff_nose_up", "e_ff_nose_lo")
+
+
+def attach_nose_curve(edges: list, far: dict) -> None:
+    """Give the two nose sides the arc they lie on, in place (#178).
+
+    #133's rule is that a template writes NO GEOMETRY, and before #175 a curved
+    boundary could only come from a polyline on disk — so these two sides were
+    the straight chords between their corners and the generated far field was a
+    hexagon where the shipped hand-written document has a curved D. `curve` has
+    no file in it: the arc IS the document, so the rule is kept rather than bent.
+
+    ONE CIRCLE FOR BOTH SIDES, through the three corners they already have, so
+    check 13's "the six generated corners land on the shipped document's own to
+    0.0" is untouched. What it buys, measured through the real mesher on the
+    shipped defaults (``tests/test_topology_cgrid.py`` 14b, 14c, 14g): peak
+    non-orthogonality **48.580 -> 31.481 deg**, which is 1.63x the hand-written
+    document's down to 1.05x; and the ALGEBRAIC wall first cell, before the
+    elliptic sweeps, **32.62% -> 0.30%** off ``BL_INITIAL_THICKNESS`` — the
+    smoother had been recovering a height the document could have placed.
+
+    BOTH SIDES SWEEP ``ccw`` about this centre, which is what the ring's own
+    winding makes them; each spans 95.45 deg on the shipped defaults, under the
+    half-turn the mesher warns about.
+
+    CALLED ONLY ON THE GENERATED PATH. A `curve` beside a `binding` is refused by
+    name — the mesher takes exactly one answer to "where does this edge lie" — and
+    the bound path writes a binding onto these same two ids.
+    """
+    (cx, cy), radius = far_nose_arc(far)
+    arc = {"kind": "arc", "centre": [cx, cy], "r": radius, "sweep": "ccw"}
+    for e in edges:
+        if e["id"] in NOSE_EDGES:
+            e["curve"] = dict(arc)
+
+
 def generated_ring(far: dict) -> list:
     """The GENERATED far field's outline, as the polygon ``outside_point`` tests.
 
     ``wk`` is left out because it lies ON the outlet plane between ``fu`` and
-    ``fl``; the five remaining corners bound exactly the same region.
+    ``fl``; the remaining corners bound exactly the same region.
+
+    STILL THE CORNERS SINCE #178, AND THE REASON CHANGED UNDER IT. While the two
+    nose sides were chords the reason was that "a generated hexagon's sides ARE
+    its chords", so the ring was the region exactly. They are arcs now, which
+    bulge OUTWARD, so this ring is a strict INNER bound of the declared region —
+    and that is the direction to be wrong in. `outside_point` exists so that "a
+    body poking through its far field produces blocks that fold rather than a
+    refusal the user can read", so a conservative ring costs a false refusal on a
+    section nearly touching its far field, while a generous one costs a fold.
+    MEASURED, the generous version is not hypothetical: following the arcs here
+    makes `cgrid_far_radius = 0.02` on a unit chord CONTAIN the section — the arc
+    through three nearly-coincident corners balloons to R = 0.51 — so the one
+    refusal fixture for containment stopped firing while the document it accepted
+    would fold every block at the nose. The gap being given up is 1.1378x of
+    area, on a configuration already at the edge of meshing.
     """
     return [far[k] for k in ("fu", "f1", "f2", "f3", "fl")]
 

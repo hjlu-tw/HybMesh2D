@@ -153,6 +153,25 @@ is this file's own recurring finding one more time: a check narrower than its la
       first version of this greyed the rows in `_refresh_topology_counts` and was
       silently undone by the detach refresh on every keystroke.
 
+#178's ROUND, 2026-10-21, SIX injections against this file, each one run and its EXIT
+CODE read, with a NAMED negative control that stayed green. All six bite.
+
+  J1. `far_nose_arc` loses the `- r * r` from its closed form -> 8 checks, 13c3 first:
+      the corners stop being ON the circle the document declares, which the mesher
+      itself would refuse by name.
+  J2. only ONE of the two nose sides gets the curve -> 13c. The pair is the rule.
+  J3. the curve attached on the BOUND path too -> 13c4 and three more. A `curve`
+      beside a `binding` is two answers to "where does this edge lie" and the mesher
+      refuses it, so this is the injection that would have broken #149 outright.
+  J4. the sweep declared `cw` -> 9 checks. The arc goes the long way round the
+      circle and the far field turns inside out.
+  J5. the containment ring made to FOLLOW the arcs -> 12c. This is the half that was
+      written, measured and REVERTED: with the arcs, `cgrid_far_radius = 0.02` on a
+      unit chord contains the section and the one containment refusal stops firing.
+      The injection is here so the revert cannot be quietly undone.
+  J6. the arc centred from the LEADING edge instead of the trailing one -> 8 checks.
+      The two are a chord length apart and only one puts all three corners on it.
+
   THE FIRST RUN OF THIS HARNESS WAS WRONG TWICE, and both corrections are in the tree
   rather than in this comment. (i) Apple's python3 caches bytecode OUTSIDE the tree
   (``~/Library/Caches/com.apple.python``) and validates it by ``(mtime, size)``, so a
@@ -202,6 +221,7 @@ Skips the real-binary half cleanly if ./build/HybMesh2D is not built.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -648,6 +668,61 @@ check(f"13b. ...and those really are the untouched defaults (wake "
        _def.cgrid_te_cell, _def.cgrid_wake_count, _def.cgrid_radial_count)
       == (19.0, 10.0, 0.02, 0.005, 0, 0))
 
+# ── 13c. the two nose sides are DECLARED ARCS, and the corners did not move ─
+#
+# #178. The corners above are what makes this a swap of edge SHAPE rather than a
+# new far field: check 13 still holds to 1e-9, so a user who generated a mesh
+# from this template gets the same six points and a different curve between two
+# pairs of them. The arc is the unique circle through `f1`, `f2` and `f3`, which
+# is why no corner had to move — #178's own proposal was a semicircle about the
+# trailing edge (0 degrees of kink instead of 5.453) and it was CORRECTED to
+# this, because it would have moved `f2` by a chord length and check 13 with it.
+_tpl_doc = tm.project(model(_SHIP_AF), os.path.join(_T, "arc.dat"),
+                      tb.context_for_config(Cfg([_SHIP_AF])))
+with open(_tpl_doc, encoding="utf-8") as _fh:
+    _arc_doc = json.load(_fh)
+_arc_edges = {e["id"]: e for e in _arc_doc["edges"]}
+_noses = ("e_ff_nose_up", "e_ff_nose_lo")
+check(f"13c. the generated far field's two nose sides declare a `curve` and the "
+      f"other four do not, so only the shape that was a chord changed "
+      f"({sorted(k for k, e in _arc_edges.items() if 'curve' in e)})",
+      all("curve" in _arc_edges[n] for n in _noses)
+      and sorted(k for k, e in _arc_edges.items() if "curve" in e) == sorted(_noses))
+_c0 = _arc_edges[_noses[0]]["curve"]
+check(f"13c2. ...as ONE arc, the same one for both sides, swept ccw "
+      f"({_c0['kind']}, centre {[round(v, 6) for v in _c0['centre']]}, r "
+      f"{_c0['r']:.6f}, {_c0['sweep']})",
+      _c0["kind"] == "arc" and _c0["sweep"] == "ccw"
+      and _arc_edges[_noses[1]]["curve"] == _c0)
+# THE CORNERS ARE ON IT, to the tolerance the MESHER applies rather than one
+# chosen here: `MB_CURVE_ON_TOL` is 1e-9 RELATIVE to the larger semi-axis, and a
+# corner off the curve is refused by name. Measured against the PLACED corners,
+# not against the formula that produced them.
+_cc, _rr = (_c0["centre"][0], _c0["centre"][1]), _c0["r"]
+_on = {k: abs(math.hypot(_tpl.far[k][0] - _cc[0], _tpl.far[k][1] - _cc[1]) - _rr)
+       for k in ("f1", "f2", "f3")}
+check(f"13c3. ...with all three nose corners ON it, to the mesher's own "
+      f"MB_CURVE_ON_TOL of 1e-9 relative (worst {max(_on.values()):.3e} against "
+      f"a radius of {_rr:.4f}; "
+      f"{ {k: float(f'{v:.3e}') for k, v in _on.items()} })",
+      max(_on.values()) <= 1e-9 * _rr)
+# AND THE BOUND PATH MUST NOT CARRY ONE. The mesher takes exactly one answer to
+# "where does this edge lie": a `curve` beside a `binding` is refused by name, so
+# a template that wrote both would make #149's path stop meshing. The two ids are
+# the same two, which is what makes this reachable rather than theoretical.
+_bound_doc_path = tm.project(
+    model(_SHIP_AF, cgrid_far_geom=_SHIP_FF),
+    os.path.join(_T, "arc_bound.dat"), _ship_ctx)
+with open(_bound_doc_path, encoding="utf-8") as _fh:
+    _bound_doc = json.load(_fh)
+_bedges = {e["id"]: e for e in _bound_doc["edges"]}
+check(f"13c4. ...while the BOUND path carries a binding on those same two ids and "
+      f"NO curve, because the mesher refuses both on one edge "
+      f"(curves {[k for k, e in _bedges.items() if 'curve' in e]}, nose bindings "
+      f"{[n for n in _noses if 'binding' in _bedges.get(n, {})]})",
+      not any("curve" in e for e in _bedges.values())
+      and all("binding" in _bedges[n] for n in _noses))
+
 # ── 18. the far field is OPTIONALLY DRAWN (#149) ──────────────────────────
 # The SECOND of the two paths, and the one the shipped hand-written document has
 # always been on. Nothing here is a new mechanism: the binding, the capture, the
@@ -908,15 +983,18 @@ else:
         pat = r"west 'af_(?:up|lo)'\s*:.*?\(([0-9.]+)%\)"
         wf = re.findall(pat, post or pre)
         raw = re.findall(pat, pre) if post else []
-        check(f"14b. ...and the first cell at the SECTION's own wall, in the mesh that "
-              f"was EXPORTED, is the run's BL_INITIAL_THICKNESS to the percentages "
-              f"the mesher itself reports ({wf}) — where the algebraic grid before "
-              f"the elliptic sweeps was {raw} off it, because the generated hexagon "
-              f"is nearer the section at mid-chord than at the nose and the first "
-              f"cell scales with the local i-line. The wall control functions are "
-              f"what recover it",
+        check(f"14b. ...and the first cell at the SECTION's own wall is the run's "
+              f"BL_INITIAL_THICKNESS, in the mesh that was EXPORTED ({wf}) AND in "
+              f"the algebraic grid before the elliptic sweeps ({raw}). THE SECOND "
+              f"HALF IS #178's: while the generated far field was a hexagon the "
+              f"algebraic figure was 32.62%, because a straight nose side is nearer "
+              f"the section at mid-chord than at the nose and the first cell scales "
+              f"with the local i-line — so the wall control functions were "
+              f"recovering a height the document could have placed. With the nose "
+              f"declared as an arc the fill delivers it, and the sweeps no longer "
+              f"have that to repair",
               len(wf) == 2 and all(float(v) < 1.0 for v in wf)
-              and len(raw) == 2 and all(float(v) > 1.0 for v in raw))
+              and len(raw) == 2 and all(float(v) < 1.0 for v in raw))
         check(f"14b2. ...while the six GENERATED far-field sides carry the config's "
               f"BC_GEOM, because a free corner belongs to no geometry — the .bnd "
               f"names {names}, one name where the shipped document has two",
@@ -936,10 +1014,13 @@ else:
               f"{q.get('cells')} cells / {q.get('nonortho_max_deg')} deg peak "
               f"non-orthogonality against shipped {q2.get('cells')} / "
               f"{q2.get('nonortho_max_deg')}, i.e. {cells:.2f}x the cells at "
-              f"{ratio:.2f}x the peak. The difference is the far field: a generated "
-              f"hexagon where the drawn one curves, which costs at that one corner "
-              f"and nothing at the wall",
-              rc2 == 0 and q2.get("inverted") == "0" and 0.0 < ratio < 2.0
+              f"{ratio:.2f}x the peak. SINCE #178 THE TWO SHAPES AGREE: the "
+              f"generated far field's two nose sides are declared arcs through the "
+              f"corners they already had, where they were the straight chords "
+              f"between them, and the peak went 48.580 -> 31.481 deg (1.63x -> "
+              f"1.05x). The cell count is unmoved and is this family's own "
+              f"derivation, not the far field's — which is why 14c2 below exists",
+              rc2 == 0 and q2.get("inverted") == "0" and 0.0 < ratio < 1.15
               and 0.5 < cells < 2.0)
 
         # THE COMPARISON WHERE IT MATTERS. Peak non-orthogonality and a cell count
@@ -994,17 +1075,19 @@ else:
                if qb.get("nonortho_max_deg") and q2.get("nonortho_max_deg") else 0.0)
         _cb = (int(qb["cells"]) / int(q2["cells"])
                if qb.get("cells") and q2.get("cells") else 0.0)
-        check(f"14g. ...and the peak non-orthogonality the hexagon cost is GONE, "
-              f"because the corner is gone: bound {qb.get('nonortho_max_deg')} deg "
-              f"against shipped {q2.get('nonortho_max_deg')} is {_rb:.2f}x, where "
-              f"the GENERATED path is {ratio:.2f}x. The CELL COUNT does not move "
-              f"between the two paths ({qb.get('cells')} either way, {_cb:.2f}x the "
-              f"shipped document's {q2.get('cells')}) — which is the useful half of "
-              f"the reading: what 14c measured as '1.28x the cells at 1.63x the "
-              f"peak' was two different causes, and only the second was the far "
-              f"field. The counts are this family's own derivation and #149 does "
-              f"not touch them",
-              0.0 < _rb < 1.2 and _rb < ratio
+        check(f"14g. ...and SINCE #178 THE TWO TEMPLATE PATHS AGREE ON THE SHAPE, "
+              f"so what #149 buys is the boundary NAMES and no longer the peak: "
+              f"bound {qb.get('nonortho_max_deg')} deg against shipped "
+              f"{q2.get('nonortho_max_deg')} is {_rb:.2f}x, and the GENERATED path "
+              f"is now {ratio:.2f}x — marginally the better of the two. THIS CHECK "
+              f"ASSERTED `_rb < ratio` UNTIL #178 and that is the point of leaving "
+              f"the sentence here rather than deleting it: while the generated far "
+              f"field was a hexagon, drawing one was worth 1.63x -> 1.05x of peak "
+              f"non-orthogonality, and it is worth none of it now. The CELL COUNT "
+              f"does not move between the two paths ({qb.get('cells')} either way, "
+              f"{_cb:.2f}x the shipped document's {q2.get('cells')}) — the counts "
+              f"are this family's own derivation and neither ticket touches them",
+              0.0 < _rb < 1.2 and abs(_rb - ratio) < 0.05
               and qb.get("cells") == q.get("cells") and _cb == cells)
         _tb2 = by_block(outb)
         _bodyb = {b: (_tb2.get(b), _s2.get(b)) for b in ("b_upper", "b_lower")}

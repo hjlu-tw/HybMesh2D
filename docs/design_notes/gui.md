@@ -3515,6 +3515,89 @@ non-orthogonality (48.6° -> 31.5°, against the shipped 29.9°) is the only who
 sees it. The ticket predicted the wrong instrument; the check now says so rather than asserting a
 bound that happens to hold.
 
+#### THE C-GRID'S GENERATED FAR FIELD IS A D (#178, measured 2026-10-21)
+
+The generated far field was a HEXAGON: six free corners and the straight chords between them,
+where the shipped hand-written document has a curved D. That was not an oversight. **#133's rule
+is that a template writes NO GEOMETRY**, and before #175 a curved boundary could only come from a
+polyline on disk, so a generated one had nowhere to put the curve. `curve` has no file in it — the
+arc is declared in the document — so the rule is KEPT rather than bent, and this is the first
+template to use the key.
+
+**WHAT THE HEXAGON COST, through the real mesher on the shipped defaults.** Peak non-orthogonality
+**48.580 deg against the hand-written document's 29.895**, i.e. 1.63x; and, less visibly, the
+ALGEBRAIC wall first cell — before the elliptic sweeps — **32.62% off `BL_INITIAL_THICKNESS`**,
+because a straight nose side is nearer the section at mid-chord than at the nose and the first
+cell scales with the local i-line. The control functions recovered that to 0.05%, so the shipped
+mesh was never wrong; the smoother was repairing a shape the document could have placed. After:
+**31.481 deg (1.05x) and 0.30%**.
+
+**THE TICKET'S OWN RECOMMENDATION WAS WRONG AND WAS CORRECTED BEFORE IT WAS FOLLOWED.** #178
+proposed a true semicircle about the TRAILING edge — every corner on one circle, each nose side an
+exact quarter arc, tangent to the straight top and bottom by construction, **0 degrees of kink**.
+It also MOVES `f2` from `x_le - r` to `x_te - r`, one chord length, and `tests/test_topology_cgrid.py`
+check 13 asserts that the six generated corners land on the shipped document's own **to 0.0** — so
+that version changes what the template produces for anyone who has used it, and breaks the
+property that makes "reproduces the target" a comparison rather than a resemblance. The ticket had
+dismissed the alternative in one clause: *"it keeps every corner, but the shape then matches
+neither document and the tangency at `f1` is lost, which is the corner that costs."* **That clause
+was asserted and not computed.** Measured on the shipped unit chord at radius 10: the chord leaves
+**42.274 deg** of kink at `f1`, the arc through the three existing corners leaves **5.453**, the
+semicircle 0. Taking 87% of the improvement for no corner movement is plainly the better trade, so
+the recommendation flipped.
+
+**THE CIRCLE IS CLOSED FORM, AND IT DEGENERATES CONTINUOUSLY.** With `S = x_te - x_le + r`, the
+centre sits at `x_te - u` and the radius is `S - u` where `u = (S^2 - r^2) / (2S)` — from
+`(x_te - cx)^2 + r^2 = R^2` and `R = cx - (x_le - r)`. As the chord shrinks to nothing `u -> 0`
+and it becomes the semicircle about the (now coincident) edges, so there is no second branch to
+get wrong. The three corners come back on it at **1.8e-15**, against the mesher's own
+`MB_CURVE_ON_TOL` of 1e-9 relative.
+
+**AND THE RADIUS IS NOT THE KNOB'S.** `R = (S^2 + r^2) / (2S)`, which is 10.045 against a
+requested 10 at the shipped defaults — 0.45% — but 1.25 against 1 when the radius is one chord.
+For the 10-20 chords a C-grid far field is actually run at, `cgrid_far_radius` means what it says;
+below about five it does not, and nothing warns. That is a named limit rather than a defect, and
+the containment refusal is what stands between that regime and a fold.
+
+**#149's DRAWN PATH NOW BUYS THE BOUNDARY NAMES AND NO SHAPE.** Check 14g asserted
+`bound < generated` on peak non-orthogonality until this ticket; the two are now 31.528 against
+31.481, with the generated path marginally the better. What binding a drawn far field still buys
+is the `outlet` condition — a free corner belongs to no geometry, so the generated sides can only
+carry the config's `BC_GEOM` — and that is 14d/14f's. The sentence is left in 14g rather than
+deleted, because "drawing one was worth 1.63x -> 1.05x and is worth none of it now" is the
+measurement, and a check that quietly stopped asserting its own claim would hide it.
+
+**THE CONTAINMENT RING WAS CHANGED AND CHANGED BACK, AND THE ROUND TRIP IS THE FINDING.**
+`generated_ring` is the polygon `outside_point` tests a section against, and the first version of
+this work made it follow the new arcs — the same reasoning `drawn_ring` uses, that a chord ring
+would refuse a section sitting comfortably inside the real shape. That silently disabled a
+refusal: with the arcs, `cgrid_far_radius = 0.02` on a unit chord CONTAINS the section, because
+the arc through three nearly-coincident corners balloons to R = 0.51, and the document it then
+accepted would fold every block at the nose. The ring is the corner chords again, and its REASON
+changed underneath it — it was "the hexagon's sides ARE its chords", an identity; it is now a
+deliberate INNER bound, chosen because `outside_point` exists to stop a fold rather than to be
+exact. A conservative ring costs a false refusal on a section nearly touching its far field; a
+generous one costs a fold. The gap given up is **1.1378x of area** — which is, to four figures,
+the **1.137x** check 18c3 measures between the drawn D and its own chords, so the generated shape
+and the drawn one now enclose the same region.
+
+**A helper written for the reverted half was DELETED rather than left.** `nose_arc_points` sampled
+the arcs for that ring and had no other caller once the ring went back; keeping it would have been
+the speculative generality the review axis flags.
+
+**The file-length standard bit, and the fix was layering rather than trimming.** The new emission
+took `services/topology_cgrid.py` to 522 lines against the ~500 standard. `attach_nose_curve`
+moved to `topology_cgrid_section.py` — where `far_nose_arc` already was, and which is the module
+that places the far field — and the remaining 5 lines came from a 10-line comment restating the
+nose-spacing rationale that `.claude/rules/gui-topology.md` already carries verbatim. 499 lines,
+with no other ticket's text touched.
+
+**Gates**: `tests/test_topology_cgrid.py` 13c (the two nose sides carry a `curve` and the other
+four do not), 13c2 (one arc, both sides, `ccw`), 13c3 (all three corners on it to the mesher's own
+tolerance), 13c4 (the BOUND path carries a binding and NO curve, because the mesher refuses both
+on one edge), and 14b / 14c / 14g through the real binary. Check 13 is unchanged and is what says
+the corners did not move.
+
 #### THE TWO-RING O-GRID IS A FAMILY, AND THE ONE NUMBER IS DERIVED (#155, parent #133)
 
 The capability shipped TWICE as a hand-written document and zero times as something a user could

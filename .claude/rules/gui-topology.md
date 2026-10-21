@@ -324,18 +324,23 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
   O-GRID'S "DRAWN, NEVER GENERATED" IS OPTIONAL HERE RATHER THAN REVERSED.** #148's demo is "fill
   in wake length, far-field radius and target cell edge", and its criteria bind only the WALL edges
   to the aerofoil's segments — so with `cgrid_far_geom` BLANK the six far-field corners are FREE
-  coordinates and their edges the straight lines between them. **BLANK IS THE DEFAULT AND IS NOT A
+  coordinates. **BLANK IS THE DEFAULT AND IS NOT A
   DEGRADED STATE**: #148's "accept the defaults and generate" must keep working with no geometry
   named, so the generated path is not deprecated by #149 and is not to be made the second-class
   one. **The cost of it is stated, not discovered**: those six sides carry the run's `BC_GEOM` and
   cannot carry an `outlet` of their own, which the read-out's last line says. Gate: checks 13 (the
   six generated corners land on the shipped document's own, to 0.0, on the untouched defaults), 14c
-  (what the hexagon costs — 1.28x the cells at 1.63x the peak non-orthogonality, at the one corner
-  where the drawn D curves), 14c2 (**where it matters the two grids ARE the same grid**: the
-  mesher's own per-block cell-shape medians for the two body blocks agree to 1.014x) and 14b2/14d
+  (the comparison with the shipped document), 14c2 (**the two grids ARE the same grid where it
+  matters**: the mesher's own per-block cell-shape medians for the two body blocks agree to
+  1.016x) and 14b2/14d
   (one boundary name where the shipped document has two). 14c2 is #148's Spec review's, which read
   14c's assert against its own label and found the DISCRETISATION ungated where the geometry was
   not.
+- **ITS TWO NOSE SIDES CARRY A `curve`, NOT A CHORD (#178;** `attach_nose_curve` in
+  `services/topology_cgrid_section.py`**)**: ONE arc through the corners they already had, so
+  check 13 holds, and GENERATED PATH ONLY — a `curve` beside a `binding` is refused by name.
+  Gates: 13c-13c4, 14b, 14c, 14g. Why and every figure: `docs/design_notes/gui.md`, "THE
+  C-GRID'S GENERATED FAR FIELD IS A D".
 - **NAMING A FAR-FIELD GEOMETRY BINDS ALL SIX SIDES, AND ADDS NO MECHANISM (#149).** The binding,
   the capture keyed by which file, the refusal naming the edge and the repair dropdown are #137's
   and #138's, and the O-grid already drives every one of them for a far field specifically; #149 is
@@ -398,8 +403,9 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
 - **THE BOUND PATH TESTS CONTAINMENT ON THE DRAWN POLYLINE, THE GENERATED ONE ON THE CORNER
   CHORDS** (`drawn_ring` / `generated_ring`, one `outside_point`). A drawn D curves OUTWARD between
   its joints — measured at 1.137x the enclosed area over 210 points against 6 — so a chord ring
-  would refuse a section sitting comfortably inside the shape the user drew, while the generated
-  hexagon's sides ARE its chords. Gate: check 18c3, which measures the two rings apart directly
+  would refuse a section sitting comfortably inside the shape the user drew. **#178 made the
+  generated nose sides ARCS, so its chords are a deliberate INNER bound now** —
+  `.claude/rules/gui-preflight.md`. Gate: check 18c3, which measures the two rings apart directly
   after its first version measured nothing (the aerofoil sits well inside either).
 - **THE SECTION IS READ, NEVER ASSUMED**, and that is what lets ONE document shape serve a section
   drawn either way round. The trailing edge is the joint further DOWNSTREAM; the upper surface is

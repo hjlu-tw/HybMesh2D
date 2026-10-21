@@ -27,12 +27,12 @@ FROM THE O-GRID. #133 decided a template writes no geometry, and the O-grid ther
 asks the user to DRAW its far field — a radius alone would have made it a polygon with
 as many sides as there are blocks, i.e. a square. Here the ticket's own demo is "fill in
 wake length, far-field radius and target cell edge", so the six far-field corners are
-FREE coordinates and their six edges are the straight lines between them. Two consequences,
-stated rather than discovered:
+FREE coordinates. Two consequences, stated rather than discovered:
 
-  * the outer boundary is a hexagon where the shipped hand-written document has a curved
-    D, which costs non-orthogonality at the one corner where they differ and nothing at
-    the wall (measured in ``tests/test_topology_cgrid.py`` check 14);
+  * the outer boundary was a HEXAGON until #178 — those six edges being the straight
+    lines between the corners — and its two NOSE sides are declared arcs now, through
+    the corners they already had, which needs no geometry file because a ``curve`` has
+    none in it (``attach_nose_curve``, and ``tests/test_topology_cgrid.py`` 13c, 14);
   * a free corner belongs to no geometry, so those six sides carry the config's
     ``BC_GEOM`` and cannot carry an ``outlet`` of their own. The section's own walls DO
     read their conditions off its CAD segments, which is what the aerofoil is bound for.
@@ -61,6 +61,7 @@ from app.services.topology_preflight import (
 )
 from app.services.topology_cgrid_section import (
     FAR_CORNERS, FAR_EDGES, FAR_ROLE, SECTION_ROLE, SURFACE_EDGES, Section,
+    attach_nose_curve,
     far_corners, far_edge_at, generated_ring, resolve_far, resolve_section,
 )
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
@@ -374,16 +375,11 @@ def build(model, ctx=None) -> dict:
          "spacing": {"wall_ends": "start"}},
         {"id": "e_ff_up", "corners": ["fu", "f1"], "kind": "wall",
          "spacing": {"ds_end": ds}},
-        # THE TWO NOSE SIDES CLUSTER AT THEIR TRAILING-EDGE END, to the section's own
-        # surface spacing and not to a tuned number. Over the chordwise surface the
-        # body's normals are nearly vertical while this boundary runs away from the
-        # nose, so the outer point opposite a body point has to track the body's own
-        # distribution or the grid line leaving the wall is not normal to it. Left
-        # uniform, the shipped hand-written case meshed with zero inverted cells and
-        # then drove the solver to NaN in 40 iterations; the same declaration is what
-        # this family inherits. Clustering the OTHER end as well was measured and is
-        # worse (test_topology_cgrid.py's own note): 82 degrees of peak
-        # non-orthogonality against 49.
+        # THE TWO NOSE SIDES CLUSTER AT THEIR TRAILING-EDGE END, to the section's
+        # own surface spacing and not to a tuned number: left uniform, the shipped
+        # hand-written case meshed with zero inverted cells and then drove the
+        # solver to NaN in 40 iterations. Why, and why clustering the OTHER end
+        # too is worse (82 degrees against 49): `.claude/rules/gui-topology.md`.
         {"id": "e_ff_nose_up", "corners": ["f1", "f2"], "kind": "wall",
          "spacing": {"ds_start": ds}},
         {"id": "e_ff_nose_lo", "corners": ["f2", "f3"], "kind": "wall",
@@ -393,6 +389,12 @@ def build(model, ctx=None) -> dict:
         {"id": "e_out_lo", "corners": ["wk", "fl"], "kind": "wall",
          "spacing": {"wall_ends": "start"}},
     ]
+    if not p.far_bound:
+        # THE TWO NOSE SIDES ARE DECLARED ARCS, NOT CHORDS (#178), and only on
+        # this path: the bound branch below writes a `binding` onto the same two
+        # ids and the mesher refuses both. Why, and what it bought:
+        # `attach_nose_curve`.
+        attach_nose_curve(edges, p.far)
     if p.far_bound:
         # ONE side per source segment, in the order `FAR_EDGES` declares — which is
         # the order `resolve_far` has already proved the drawn outline runs them in,
