@@ -67,6 +67,12 @@ The sixteen checks, in the order the operator meets them:
       drawing before picking produce the identical roles table — #158's story 5,
       and an asymmetry #170 shipped until review: the role combos were built
       against an empty drawing and nothing rebuilt them when the curves arrived.
+  12. THE WHOLE ACT THROUGH THE LIVE WINDOW: picker -> table -> the button's
+      signal -> the controller -> the panel holds the fitted configuration. Its
+      first half is the one property no in-process check above can see — a table
+      row BUILT AFTER CONSTRUCTION reaching the model through the composite's own
+      `panel_edited`, which is what `undo_ctrl._wire_widget_edits` connects
+      because its traversal of children runs once and cannot reach a later one.
   16. THE SHIPPED CASE TYPE IS REACHABLE WITHOUT A FIXTURE (#171). Every check
       above builds the case type it needs, so all fifteen passed while the one
       artefact an operator could pick named no family, declared no ruler and
@@ -75,13 +81,10 @@ The sixteen checks, in the order the operator meets them:
       `body.x_extent` ruler, and applying it to the repo's OWN circles — through
       the roles and nothing else — projects exactly
       `examples/topology/ogrid_circle.json`, the document that produces the
-      reference mesh its thresholds were measured from.
-  12. THE WHOLE ACT THROUGH THE LIVE WINDOW: picker -> table -> the button's
-      signal -> the controller -> the panel holds the fitted configuration. Its
-      first half is the one property no in-process check above can see — a table
-      row BUILT AFTER CONSTRUCTION reaching the model through the composite's own
-      `panel_edited`, which is what `undo_ctrl._wire_widget_edits` connects
-      because its traversal of children runs once and cannot reach a later one.
+      reference mesh its thresholds were measured from. Its last two assertions
+      drive a LIVE `AppController` with the shipped file picked, because the
+      acceptance's wording is "picking it IN THE WINDOW" and every assertion
+      before them is in-process — a Spec review named that gap.
 
 EIGHT INJECTIONS, run in-process at the end of this file so they run on every CI
 run rather than by hand. Each builds a MUTATED copy of the service (and, for the
@@ -895,18 +898,15 @@ def _shipped_drawing():
     return cfg
 
 
-def _document(model, cfg):
-    """`model` projected, with every geometry path reduced to its basename.
+def _normalise(doc):
+    """A block topology document as `{section: {id: row}}`, paths by BASENAME.
 
-    Compared by BASENAME because the shipped document names its geometries the
-    way a hand-written file does and a projection names them the way the config
-    spells them; the mesher resolves either (exact path, then unique basename),
-    so a comparison that demanded one spelling would be about path spelling and
-    not about the topology.
+    ONE normaliser for both sides of check 16's comparison. Compared by basename
+    because the shipped document names its geometries the way a hand-written file
+    does and a projection names them the way the config spells them; the mesher
+    resolves either (exact declared path, then unique basename), so demanding one
+    spelling would compare path spelling rather than topology.
     """
-    from app.services import topology_binding, topology_model
-    doc = topology_model.build_document(
-        model, topology_binding.context_for_config(cfg))
     out = {}
     for section in ("corners", "edges", "blocks"):
         rows = {}
@@ -922,25 +922,22 @@ def _document(model, cfg):
     return out
 
 
+def _document(model, cfg):
+    """`model` projected against `cfg`'s drawing, normalised."""
+    from app.services import topology_binding, topology_model
+    return _normalise(topology_model.build_document(
+        model, topology_binding.context_for_config(cfg)))
+
+
 def _shipped_document():
-    """`examples/topology/ogrid_circle.json`, parsed, in `_document`'s shape.
+    """`examples/topology/ogrid_circle.json`, parsed and normalised.
 
     Its `//` line comments are the mesher's own extension to JSON, stripped the
     way `test_multiblock_cgrid_surface.topology` strips them.
     """
     import re
     text = open(os.path.join(_REPO, _SHIPPED_TOPO), encoding="utf-8").read()
-    doc = json.loads(re.sub(r"//.*", "", text))
-    out = {}
-    for section in ("corners", "edges", "blocks"):
-        out[section] = {r["id"]: {**r, **({"geom": os.path.basename(r["geom"])}
-                                          if "geom" in r else {}),
-                                  **({"binding": {
-                                      "geom": os.path.basename(r["binding"]["geom"]),
-                                      "seg": r["binding"]["seg"]}}
-                                     if r.get("binding") else {})}
-                        for r in doc[section]}
-    return out
+    return _normalise(json.loads(re.sub(r"//.*", "", text)))
 
 
 _ship = case_type_mod.load(os.path.join(_REPO, _SHIPPED_CT))
@@ -998,6 +995,33 @@ check(_document(_src_cfg.topology, _src_cfg) == _shipped_document(),
       "16. ...and `%s`, the case its overlay was CAPTURED from, projects that "
       "same document — so the file's numbers and the mesh its thresholds were "
       "measured from come from one case and not two" % _SHIPPED_SOURCE)
+
+# AND THROUGH A LIVE WINDOW, because the acceptance says "picking it IN THE
+# WINDOW produces a roles table with real rows and a real pre-selection" and
+# everything above this is in-process. Check 12 drives a live `AppController`
+# with a FIXTURE case type, so window-level coverage of the SHIPPED one was
+# generalised from it until a Spec review said so. The picker's own channel
+# (`MeshConfig.case_type_file`) is what is set, not the service, so this is the
+# operator's route: pick the file, read the table.
+_live = AppController()
+_live.global_mesh_config.load_from_dict(_shipped_drawing().to_dict())
+_live.push_panel_config(_live.main_window.mesh_config_panel,
+                        _live.global_mesh_config)
+_live_tbl = _live.main_window.mesh_config_panel.case_type_roles_table
+_live_rows = {r: [c.itemText(i) for i in range(c.count())]
+              for r, (c, _s) in _live_tbl._rows.items()}
+check(set(_live_rows) == {"body", "farfield"},
+      "16. ...and picking it in a LIVE WINDOW builds those same two rows, which "
+      "is the acceptance's own wording and the one claim the in-process checks "
+      "above only generalise (%s)" % sorted(_live_rows))
+# `_live_rows` AND the all(): `all()` over an empty dict is vacuously true, so
+# without the first clause this passed on a table with no rows at all — measured,
+# by emptying `case_type_file` on this config alone.
+check(_live_rows
+      and all(any("pre-selected" in t for t in v) for v in _live_rows.values()),
+      "16. ...each offering its pre-selection as a ROW, so the operator's only "
+      "act is to confirm it (%r)"
+      % {r: [t for t in v if "pre-selected" in t] for r, v in _live_rows.items()})
 
 # ══ the injections ════════════════════════════════════════════════════════
 print("══ injections ════════════════════════════════════════════════════════")

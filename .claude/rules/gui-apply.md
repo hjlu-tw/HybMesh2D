@@ -113,6 +113,12 @@ host remembers to show. Gate: `tests/test_case_type_apply.py`.
   beside it. The first cut called BOTH, and `fit`'s
   reason was dead on arrival (it is non-empty only when it catches what the line above had already
   let escape) while doubling the per-keystroke cost, `fit` re-running `plan` internally.
+- **ONE SHIPPED CASE TYPE EXERCISES THIS PATH, AND CHECK 16 IS THE ONLY CHECK HERE ABOUT THE
+  ARTEFACT** (`examples/case_types/ogrid_circle.casetype.json`; #171). Every other check in
+  `tests/test_case_type_apply.py` BUILDS the case type it needs, which is why all fifteen passed
+  while nothing an operator could pick named a family or declared a ruler. That is also why 16
+  sits outside the mutant comparison: a mutation must not be able to score the artefact's
+  reachability. What the artefact has to carry is `.claude/rules/gui-evidence.md`'s.
 - **THE APPLY BUTTON IS LIVE WHENEVER A CASE TYPE IS CHOSEN, not when a plan was built.** Every
   reason a plan fails is one the operator can act on and is owed in words — the file will not load,
   the ruler cannot be measured on this drawing — and a button that greys itself out says none of
@@ -240,16 +246,23 @@ afterwards.
   it here would be worse, the confirmation dialog NAMES the case type before anything is
   written, and the variable is the channel the picker exists to replace. It is a divergence all
   the same, and a reader changing either side should move both.
-- **ONE SHIPPED CASE TYPE EXERCISES THIS PATH, AND IT ARRIVED SIX TICKETS LATE.** Every check in
-  `tests/test_case_type_apply.py` but 16 BUILDS the case type it needs, so all fifteen passed
-  while nothing an operator could pick named a family or declared a ruler. #171 shipped that
-  content; check 16 is the only check here whose subject is the ARTEFACT, which is why it sits
-  outside the mutant comparison. Rules: `.claude/rules/gui-evidence.md`.
 - **THE RULER IS STILL READ OFF WHOLE GEOMETRIES.** `case_type_scale.measure_role` measures the
   geometries bearing a `MeshConfig.geom_roles` role, which is per FILE, while the role assigned
   here is per SEGMENT. A drawing whose body and far field are two files measures the same ruler
-  either way, which is every shipped case; narrowing it is still not done. Inherited from #164
-  and recorded in `gui-handoff.md` as well.
+  whether it is read per file or per segment, which is every shipped case; narrowing it is still
+  not done. Inherited from #164 and recorded in `gui-handoff.md` as well. **This is NOT the claim
+  that the ruler is right on any such drawing** — a review read it that way, and that reading is
+  false. See the next entry.
+- **ASSIGNING `farfield` IN THE TABLE DOES NOT MOVE THE RULER, BECAUSE THE TWO ROLE VOCABULARIES
+  ARE SEPARATE.** `MeshConfig.case_type_roles` is what the operator fills in here;
+  `measure_role` reads `MeshConfig.geom_roles`, and spells its DEFAULT role as the ABSENCE of an
+  entry. So on a drawing whose far field bears no `geom_roles` entry, `body` selects BOTH curves
+  and the ruler is the domain's extent — #171 measured exactly that on the shipped cases (20 where
+  1 was meant) and fixed it in the two shipped `.dat`s, not in the mechanism. What stops it being
+  silent is that `Application.describe` and the confirmation dialog state the FACTOR before
+  anything is written ("every geometry-driven size x 200"), which is why that line is shown rather
+  than computed; nothing refuses, because the role IS borne — by something unintended, which
+  `gui-handoff.md` names as a limit of its own.
 - **NOTHING JUDGES WHETHER A CONFIRMED ROLE IS THE RIGHT CURVE except the family's own
   pre-flight.** Naming the far field as the body binds exactly that, with every id resolving,
   and only `preflight_for_config` notices. That is by design — the operator confirms, the family

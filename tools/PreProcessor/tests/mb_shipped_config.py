@@ -58,7 +58,10 @@ Known blind spots, stated rather than pretended away:
     C-grid's far field on ``DOMAIN_FILE ... nobl`` so the GUI reads it back as the
     ``farfield`` ROLE, and the first run of ``golden_mesh.py compare`` raised
     exactly that. The path is now the first token and the rest is carried through
-    verbatim. What is still NOT handled is a token carrying a path of its own;
+    verbatim, by the exported ``path_and_tokens`` below — exported because
+    ``test_shipped_config_seam.py::_checkout`` stages the files these lines name
+    and so makes the identical decision; it made it separately first, and
+    differently. What is still NOT handled is a token carrying a path of its own;
     none exists in the grammar today.
  b. The unknown-key sweep asks whether a value resolves to a file IN THIS
     CHECKOUT. A relative path that happens not to exist — a typo, or an output
@@ -101,6 +104,26 @@ _RESERVED = ("OUTPUT_FILENAME", "MESH_MODE")
 
 def _fail(msg):
     raise AssertionError(msg)
+
+
+def path_and_tokens(value: str) -> tuple:
+    """``(path, trailing_tokens)`` for a path key's value.
+
+    THE PATH IS THE FIRST TOKEN. A ``GEOM_FILE`` / ``DOMAIN_FILE`` line's value is
+    a path PLUS tokens that are not part of it — ``bl`` / ``nobl``, ``bc=<name>``,
+    per-geometry ``KEY=VALUE`` BL overrides — and taking the whole remainder as
+    the path raised "does not exist" on the first shipped config to carry one
+    (#171), which was blind spot (a) above. The tokens come back UNTOUCHED rather
+    than parsed: what they mean is ``include/Config.hpp``'s business, and a
+    retargeter that understood them would be a second parser of that grammar.
+
+    EXPORTED, because ``test_shipped_config_seam.py``'s ``_checkout`` stages the
+    files these lines name and so has to make the identical decision. It made it
+    separately first, and differently — it dropped the tokens where this kept
+    them — which is the divergence this module's own docstring exists against.
+    """
+    rest = str(value or "").split(None, 1)
+    return (rest[0] if rest else ""), (rest[1] if len(rest) > 1 else "")
 
 
 def shipped_config(name, paths=None, dirs=None, overrides=None):
@@ -155,18 +178,9 @@ def shipped_config(name, paths=None, dirs=None, overrides=None):
         key = parts[0] if parts else ""
         val = ln[len(key):].strip()
         if key in _MB_PATH_KEYS:
-            # THE PATH IS THE FIRST TOKEN, AND THE REST OF THE LINE RIDES ALONG
-            # (#171). `GEOM_FILE` / `DOMAIN_FILE` take trailing tokens that are
-            # not part of the path — `bl` / `nobl`, `bc=<name>`, per-geometry
-            # `KEY=VALUE` BL overrides — and taking the whole remainder as the
-            # path raised "does not exist" on the first shipped config to use
-            # one, which was this module's own blind spot (a) above. The tokens
-            # are carried through UNTOUCHED rather than parsed: what they mean is
-            # `include/Config.hpp`'s business, and a retargeter that understood
-            # them would be a second parser of that grammar.
-            rest = val.split(None, 1)
-            val, tokens = (rest[0] if rest else ""), (rest[1] if len(rest) > 1
-                                                      else "")
+            # The path is the first token and the rest of the line rides along;
+            # `path_and_tokens` above owns that decision, for both callers.
+            val, tokens = path_and_tokens(val)
             if key in paths:
                 target = paths[key]
             elif key in dirs:

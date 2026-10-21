@@ -5736,7 +5736,9 @@ thresholds that have to be defended". It cost none. The O-grid FAMILY at `ogrid_
 `ogrid_radial_count 49` projects a document identical to the hand-written
 `examples/topology/ogrid_circle.json` — corner for corner, count for count, binding for binding —
 so the mesh it produces is canonically identical (`golden_mesh.py`'s own comparator, worst
-deviation **0.0** across `.vtk`, `.cel` and `.bnd`) and publishes the same nine figures. The
+deviation **0.0** across `.vtk`, `.cel` and `.bnd`) and republishes every one of the nine figures
+the document already carried — nine being what the DOCUMENT held, against the twelve its sidecar
+publishes, the three extra being the `size_jump.*` below. The
 existing exemplar, the existing C-grid counter-example and all three thresholds therefore survived
 re-authoring unchanged; what the document gained is `characteristic_length` (`body.x_extent` = 1,
 centred at the origin) and three `topology.` fields. A unit-diameter body was chosen for the first
@@ -5765,7 +5767,7 @@ families: every multi-block case before it names a hand-written document.
 
 **THE GATE IS CHECK 16 OF `tests/test_case_type_apply.py`, OUTSIDE THAT FILE'S MUTANT
 COMPARISON.** Every other check there builds the case type it needs, which is why fifteen of them
-passed throughout the six tickets in which no artefact exercised the path; check 16's subject is
+passed throughout, with no artefact exercising the path; check 16's subject is
 the ARTEFACT, so running it under a mutant would score reachability as a property of the mutation.
 It asserts the family, the ruler, two real role rows with a pre-selection each on the repo's OWN
 circles, a scale factor of 1.0, and — the claim that ties the opinion to the evidence — that

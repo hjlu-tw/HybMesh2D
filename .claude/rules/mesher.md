@@ -102,22 +102,27 @@ topology declaring its own outer boundary, so there is nothing left for the dist
 and the domain outline is simply another geometry a corner or an edge may name. It is therefore
 APPENDED to the list that path loads, skipped when a `GEOM_FILE` line already names it, so the
 loaded order of every existing case is untouched (22/22 golden SAME at exactly 0.0).
-- **Until #171 it was not loaded at all, and the cost was NOT a hybrid-path concern.** The GUI
-  writes the `farfield` and `wall` ROLES as a `DOMAIN_FILE` line (`models/mesh_config_io.py`), so
-  an operator who said what their outer curve IS made that curve invisible to the document bound
-  to it: `corner 'f0': no geometry named 'circle_farfield.dat' was loaded`, exit 8, nothing
-  exported. That role is also what makes `body` select the BODY when a case type measures its
-  characteristic length (`.claude/rules/gui-handoff.md`), so the two shipped cases that have a far
-  field now carry it on a `DOMAIN_FILE … nobl` line.
+- **SUPERSEDES #50:** this path loaded `geomFiles` alone, so a config naming its outer curve on a
+  `DOMAIN_FILE` line was refused by name — and the GUI writes the `farfield` and `wall` ROLES as
+  exactly that line (`models/mesh_config_io.py`), the role being what makes `body` select the BODY
+  when a case type measures its characteristic length (`.claude/rules/gui-handoff.md`). The two
+  shipped cases that have a far field now carry it there.
+  Why: `docs/design_notes/mesher.md`, "ARE ONE KIND OF LINE UNDER `MESH_MODE 1`".
 - **The claim gated is POSITIVE, not "the run did not break"**: `test_multiblock_ogrid_surface.py`
   check 10 runs the shipped config and the same config with that ONE line spelled `GEOM_FILE`, and
   requires the identical nodes, cells and `.bnd` faces. Every other check in that file, and the
   golden comparator, redden on the refusal; none of them says the two spellings agree.
+- **THE DEDUPE IS EXACT STRING EQUALITY, and what it does NOT catch is named.** One file spelled
+  two ways across the two keys (`./x.dat` and `x.dat`) is loaded twice, and `findGeometry` then
+  refuses a BASENAME reference to it as ambiguous. Exact equality is this file's own rule for a
+  path — `bcFor` and `blParamsFor` key by the declared string too — and a second notion of path
+  identity here would be a third answer beside "exact path, then unique basename". The hazard
+  PRE-DATES #171 and is narrowed by it: two identical `GEOM_FILE` lines were already loaded twice,
+  with no dedupe at all.
 - **Two TEST helpers took the whole remainder of such a line as the path** and raised "does not
   exist" on the first shipped config to carry a token — `mb_shipped_config.shipped_config`, whose
   own blind spot (a) had predicted exactly this, and `test_shipped_config_seam.py::_checkout`'s
-  staging loop. Both now take the FIRST token and carry the rest verbatim; neither parses it,
-  `include/Config.hpp` owning that grammar.
+  staging loop. Both now take the FIRST token through that module's one `path_and_tokens`.
 
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.

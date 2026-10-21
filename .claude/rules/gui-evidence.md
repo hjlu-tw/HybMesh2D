@@ -157,7 +157,7 @@ source off DISK cannot see any mutant at all.
 **A SHIPPED CASE TYPE HAS TO BE AUTHORED FROM A CASE THAT CARRIES ITS FAMILY**
 (`examples/case_types/ogrid_circle.casetype.json`, authored from
 `config/pipeline/ogrid_family_demo.json`; #171, parent #158). The mechanism #164/#165/#170 built
-was complete and gated, and for six tickets NO shipped artefact exercised it: the tree's one case
+was complete and gated, and NO shipped artefact exercised it: the tree's one case
 type owned three mesh fields, named no `topology.family` and declared no `characteristic_length`,
 so picking it told the operator "this case type names no topology family that binds to your CAD,
 there are no roles to assign" and every geometric size was carried at 1:1. Five of #158's own
@@ -185,7 +185,9 @@ produced.
   than asserted.** The O-grid family at `ogrid_cell 0.033` and `ogrid_radial_count 49` projects a
   document IDENTICAL to the hand-written `examples/topology/ogrid_circle.json` — corner for
   corner, count for count — and so a canonically identical mesh (`golden_mesh.py`'s comparison,
-  worst deviation 0.0, and the same nine published figures). So the family could be added to the
+  worst deviation 0.0), republishing every one of the nine figures the document already carried.
+  Nine is what the DOCUMENT held; the sidecar publishes twelve, and the three it had not recorded
+  are the `size_jump.*` named below. So the family could be added to the
   overlay with NO threshold re-derived and none re-defended, which is what made #171 content
   rather than a second case type with new numbers to argue about. `test_case_type_apply.py`
   check 16 asserts the identity in both directions — from the case type through the roles, and
@@ -198,8 +200,7 @@ produced.
 Gated by `tests/test_case_type_apply.py` check 16 (outside that file's mutant comparison on
 purpose — its subject is the ARTEFACT, not the service) and `tests/test_case_type_fields.py`
 checks 1, 4 and 9, which pin the overlay the script captures and the three fields a `.dat` cannot.
-  Why: `docs/design_notes/gui.md`, "A SHIPPED CASE TYPE HAS TO BE AUTHORED FROM A CASE THAT
-  CARRIES ITS FAMILY".
+  Why: `docs/design_notes/gui.md`, "AUTHORED FROM A CASE THAT CARRIES ITS FAMILY".
 
 ## Named blind spots
 
@@ -225,6 +226,15 @@ which are capability refusals.
   `sqrt(base * cap)` does not round to a value strictly between them, so two meshes that close
   place no bound at all and the addition is refused as inseparable. Nothing constructs that case
   in the gate; it is reasoned from the arithmetic.
+- **A REFERENCE MESH IS NAMED UNDER `results/`, WHICH IS GITIGNORED, so what a re-author READS
+  depends on when that machine last ran the case.** Measured 2026-10-21: the O-grid sidecar was
+  regenerated 2026-10-13 and publishes the size jump; the C-grid's is from 2026-09-30 and does
+  not. So one authoring run gave both references the same `measured_on` while their sidecars sit
+  three weeks and one figure-set apart, and a maintainer who regenerates the C-grid will see its
+  counter-example gain three figures with no threshold moving. The document records the mesh PATH
+  and the date it was read, and nothing in it pins the mesh's own content — `CaseType` cannot, the
+  file being absent on every checkout. Raised by a Spec review of #171 as a traceability cost of
+  re-dating; it is the older limit underneath that.
 - **NOTHING SWEEPS `examples/case_types/` FOR THE PROPERTIES #171 SHIPPED.** Check 16 names the
   one file; a SECOND shipped case type that named no family would be covered by nothing. Left as
   it is because the tree holds one, and a sweep over one file is a sweep that cannot fail for the

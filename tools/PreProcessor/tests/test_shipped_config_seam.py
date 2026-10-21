@@ -369,13 +369,13 @@ def _checkout(tmp, names, edit=None):
         for line in text.splitlines():
             parts = line.split()
             if parts and parts[0] in mb_shipped_config._MB_PATH_KEYS:
-                # THE PATH IS THE FIRST TOKEN, the rest of the line being the
-                # role and option tokens `include/Config.hpp` parses (#171).
-                # Taking the whole remainder left `DOMAIN_FILE <path> nobl`
-                # uncopied, and the seam then raised "does not exist" from
-                # inside check 2 — the same blind spot, in this staging loop as
-                # well as in the retargeter it stages for.
-                val = line[len(parts[0]):].split()[0] if len(parts) > 1 else ""
+                # Through the SEAM's own splitter, not a second copy of it
+                # (#171): taking the whole remainder left `DOMAIN_FILE <path>
+                # nobl` uncopied here and unretargeted there, one blind spot in
+                # two places, and the first fix for it was two spellings that
+                # disagreed about whether the tokens survive.
+                val, _tokens = mb_shipped_config.path_and_tokens(
+                    line[len(parts[0]):])
                 dst = os.path.join(root, val)
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 if os.path.isfile(os.path.join(_REPO, val)):

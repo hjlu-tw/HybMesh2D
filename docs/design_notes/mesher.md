@@ -5092,9 +5092,13 @@ carry a `DOMAIN_FILE` line, so the check cannot pass vacuously.
 `DOMAIN_FILE <path> nobl` retargeted to a filename ending in ` nobl` and raised "does not exist";
 its own blind spot (a) said in as many words that "no shipped multi-block config uses one today,
 and the first that does will land here". It did. `test_shipped_config_seam.py::_checkout`'s
-staging loop had the identical line and failed the same way one gate later. Both now take the
-FIRST token and carry the remainder verbatim; neither parses it, `include/Config.hpp` owning that
-grammar. A third consequence surfaced with them: that seam gate's "one path for a key the config
+staging loop had the identical line and failed the same way one gate later. The first fix was two
+spellings of the same decision — and they already disagreed, one keeping the trailing tokens and
+one dropping them, which is the divergence `mb_shipped_config`'s own docstring exists against.
+Both now go through that module's exported `path_and_tokens`; neither parses the tokens,
+`include/Config.hpp` owning that grammar. The seam gate already reached into
+`mb_shipped_config._MB_PATH_KEYS`, so taking one more name from it is a smaller dependency than
+the copy was. A third consequence surfaced with them: that seam gate's "one path for a key the config
 repeats" refusal picked its fixture as `multiblock_ogrid if "GEOM_FILE" in str(kw)`, which worked
 only while that config had TWO `GEOM_FILE` lines — after #171 it had one, and the refusal could no
 longer fire. The fixture is now named per row (`multiblock_tworing`, which has three), because a
@@ -5107,7 +5111,16 @@ meshed against one shipped one, silently. The seam raises for a key the caller N
 config does not have; it cannot raise for a key the caller never names. It maps to both keys now.
 No caller passes `geom_dir` today, which is why this was latent rather than a failure.
 
-**Blind spots.** The `bl` / `nobl` token on a `DOMAIN_FILE` line is still parsed and still
+**Blind spots.** THE DEDUPE IS EXACT STRING EQUALITY, so one file spelled two ways across the two
+keys (`./x.dat` under one, `x.dat` under the other) is loaded twice, and `findGeometry` then
+refuses a BASENAME reference to it as ambiguous — a working case turned into exit 8. Left as
+exact equality because that is how this file keys every path (`bcFor`, `blParamsFor`), and a
+second notion of path identity would be a third answer beside "exact declared path, then a unique
+basename"; `fs::weakly_canonical` was the alternative and touches the filesystem inside a loop
+that currently cannot throw. The hazard also PRE-DATES this change and is narrowed by it: the
+`geomFiles` loop has never deduped, so two identical `GEOM_FILE` lines were already two
+`MbGeometry` entries sharing a basename. The `bl` / `nobl` token on a `DOMAIN_FILE` line is still
+parsed and still
 recorded under `MESH_MODE 1`, where it decides nothing — it is not in `MeshMode.hpp`'s inert-key
 list, so a `DOMAIN_FILE … bl` under this mode warns about nothing. It is not inert in the sense
 that list means (the GUI needs the role on the round trip), which is why it was left alone rather
