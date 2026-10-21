@@ -339,7 +339,8 @@ Why, and every measurement: `docs/design_notes/gui.md`, "THE TOPOLOGY DETACHES I
 - **ITS TWO NOSE SIDES CARRY A `curve`, NOT A CHORD (#178;** `attach_nose_curve` in
   `services/topology_cgrid_section.py`**)**: ONE arc through the corners they already had, so
   check 13 holds, and GENERATED PATH ONLY — a `curve` beside a `binding` is refused by name.
-  Gates: 13c-13c4, 14b, 14c, 14g. Why and every figure: `docs/design_notes/gui.md`, "THE
+  **1.63x -> 1.05x of peak**, 14c's bar. Gates: 13c-13c4, 14b, 14c, 14g. Why and every
+  figure: `docs/design_notes/gui.md`, "THE
   C-GRID'S GENERATED FAR FIELD IS A D".
 - **NAMING A FAR-FIELD GEOMETRY BINDS ALL SIX SIDES, AND ADDS NO MECHANISM (#149).** The binding,
   the capture keyed by which file, the refusal naming the edge and the repair dropdown are #137's

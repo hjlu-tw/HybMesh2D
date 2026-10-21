@@ -248,11 +248,15 @@ def far_nose_arc(far: dict) -> tuple:
     y0 = f1[1] - (f1[1] - f3[1]) / 2.0
     r = f1[1] - y0
     x_te = f1[0]
-    # `f2[0] + r` IS x_le, by `far_corners`' own placement, so `S` is recovered
-    # from the placed corners and the caller does not have to pass the section
-    # back in — the same "measure it off what was placed" rule the wake and
-    # radial spans already follow.
-    s = x_te - (f2[0] + r) + r
+    # `S` MEASURED OFF THE PLACED CORNERS, which is the same rule the wake and
+    # radial spans follow — the caller does not pass the section back in. It is
+    # `x_te - f2[0]` and not `x_te - x_le`: `f2[0] + r` IS x_le by `far_corners`'
+    # own placement, and the `+ r` the derivation adds cancels it. Written the
+    # short way deliberately — the long form narrated an interpretation while a
+    # different expression ran, and this one holds for ANY `f2`, which is what
+    # keeps the circle through all three corners if that placement ever moves
+    # (check 13c3 measures exactly that).
+    s = x_te - f2[0]
     u = (s * s - r * r) / (2.0 * s)
     return (x_te - u, y0), s - u
 

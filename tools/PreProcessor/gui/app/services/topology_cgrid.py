@@ -395,7 +395,7 @@ def build(model, ctx=None) -> dict:
         # ids and the mesher refuses both. Why, and what it bought:
         # `attach_nose_curve`.
         attach_nose_curve(edges, p.far)
-    if p.far_bound:
+    else:
         # ONE side per source segment, in the order `FAR_EDGES` declares — which is
         # the order `resolve_far` has already proved the drawn outline runs them in,
         # so this is a write of what was measured rather than a second reading of it.
