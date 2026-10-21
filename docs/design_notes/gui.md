@@ -5491,9 +5491,7 @@ instead would lose the operator's work for the first. They stay on the model, th
 from the assignment, and they are named out loud. Injection C removes the filter and check 11
 goes red.
 
-**Named blind spots.** TWO HOSTS NOW APPLY and only the window uses this service, so a rule
-added here and not to `apply_case_type.py` drifts silently — that host's refusal ordering is its
-own documented contract, driven as a subprocess by `tests/test_case_type_roles.py`. THE RULER IS
+**Named blind spots.** THE RULER IS
 STILL READ OFF WHOLE GEOMETRIES (`case_type_scale.measure_role` measures per FILE while the role
 assigned here is per SEGMENT), inherited from #164 and unchanged because every shipped case
 measures the same ruler either way. NOTHING JUDGES WHETHER A CONFIRMED ROLE IS THE RIGHT CURVE
@@ -5504,6 +5502,72 @@ from the list with no reason given is the silence this seam exists against, and
 `topology_binding.outline_problem` is where the reason lives. And `ApplyPlan.ready()` IS READ
 TWICE — once by the controller before the dialog opens and once inside `apply` — which cannot
 disagree today because nothing moves in between, but would the day a dialog let a role change.
+The first of them — TWO HOSTS NOW APPLY and only the window uses this service — was closed by
+#173, below.
+
+**THE SECOND ORCHESTRATION, DELETED** (#173, parent #158; rules in `.claude/rules/gui-apply.md`).
+#170 named it as its own first blind spot and that ticket's Spec review flagged it again against
+#170's own instruction that `apply_case_type.py` "must be used, not rebuilt". What #170 actually
+did was reuse every SERVICE the ticket names — `guess_roles`, `plan_for`, `bind`,
+`case_type_scale` — and write the orchestration the window needed AROUND them, beside the one
+the host already had. The two had drifted in three ways, and only one of them has teeth: the
+service writes the overlay onto a DEEP COPY while the host wrote the live config, so a pre-flight
+refusal left the operator's configuration already overwritten at the exact moment they most need
+it back. The other two are the refusal ordering (all at once against the first) and a role
+another case type needed (named and ignored against refused).
+
+- **THE DEEP COPY IS NOT WHAT THE CLI GAINED, and the ticket said so before the work started.**
+  That host writes with `--out` and exits; the live config it was overwriting is a `MeshConfig`
+  it built from a file three statements earlier, which nothing reads afterwards. So the prize is
+  ONE OWNER of the refusal ordering and the ignored-role rule, which is a smaller claim and is
+  stated as the smaller one. What the window gained is the other direction, and it is real:
+  every rule added to the service from here reaches both hosts.
+- **THE OUTPUT ORDERING CHANGED, deliberately.** The CLI printed the roles, then the scale, then
+  refused — at the FIRST refusal, which is the physical parameter before the roles. It now prints
+  everything it printed before, in the same order and the same words, and the refusals arrive
+  together at the end. Check 10 of `test_case_type_roles.py` drives that host as a subprocess and
+  held across the change without an edit, because its assertions are on CONTENT (the roles are
+  shown before assignment; the refusal names the unconfirmed role) and not on order. That is the
+  check doing its job rather than luck, and it is why the open question could be answered by
+  reading it.
+- **TWO SMALL SERVICE CHANGES, both forced by what a command line is.** `plan` takes an optional
+  `case_type`, because the CLI names one in `argv` and there is no choice for
+  `case_type_picker.for_config` to read; writing it into `config.case_type_file` to make the
+  picker find it was the rejected alternative, a host editing the operator's configuration in
+  order to ask a question about it. And `ApplyPlan.assign` merges an assignment that arrived
+  after the plan was built, because `--role` is VALIDATED against the roles the plan declares and
+  therefore cannot be written into `MeshConfig.case_type_roles` before one exists. A role named
+  there is not filtered into `ignored` the way a stored one is — naming it is an explicit act.
+- **TWO INJECTIONS HAD TO MOVE, NOT ONE.** The ticket named #164's (injection G of
+  `test_case_type_roles.py`); `test_case_type_scale.py`'s injection I is #163's and had the same
+  shape — it asserted the host contained `fitted = application.apply(config, confirmed)` and
+  mutated it to prove the PHYSICAL confirmation cannot be skipped. Both anchors died on the same
+  edit and both gates aborted on their own assert, which is the design working twice. The second
+  one was found by running the suite, not by reading the ticket; `service_shadow.py` exists
+  because the mechanism below is now needed in two places.
+- **INJECTION G WAS THE WHOLE COST, and it is where the interesting part is.** #164's gate
+  asserted that the host contained the literal line `for binding in roles.bind(fitted, assigned):`
+  and mutated exactly it, to prove the one caller that has to ask the operator cannot skip asking.
+  Re-pointing the host deletes that anchor and the gate fails hard — by design; it is the thing
+  that stopped this happening silently, and it did fire. Re-expressed, the injection now mutates
+  `case_type_apply.apply` and requires the HOST's check to notice, which gates #173's own claim as
+  well: a host that still bound the roles itself would sail through a mutated service. It needs
+  **TWO SITES**, because the service guards the confirmation twice — `apply` collects the
+  unconfirmed roles into its refusal and `RolePlan.bind` refuses them again. Measured rather than
+  argued: with site 1 alone the host exits 1 with "2 role(s) must be confirmed before anything
+  runs" (`bind`'s wording), with site 2 alone it exits 1 with "...before anything is applied"
+  (`apply`'s), and only both together write the guess and exit 0. Defence in depth reads exactly
+  like an anchor that does not bite, and the only way to tell them apart is to try one at a time.
+  Injection I is the same shape in the same module, one guard pair down: site 1 alone refuses in
+  `Application.apply`'s words, site 2 alone in `apply`'s, both together write the `.dat` with
+  nobody having confirmed anything.
+- **THE MUTANT REACHES THE SUBPROCESS THROUGH A SHADOW PACKAGE, not a copied tree.** `tmp/gui/app`
+  and `tmp/gui/app/services` are `__init__.py` files that append the real directories to their own
+  `__path__`, with the mutated `case_type_apply.py` beside the second one; the host is copied
+  VERBATIM next to that `gui/`, because it derives its import root from its own `__file__` and
+  that is what puts the shadow in front of the real tree. Copying the whole 4.3 MB package was the
+  alternative and would have moved every module's `__file__` — `services/paths.repo_root()`
+  derives the repo from one.
 
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)

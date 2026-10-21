@@ -63,6 +63,20 @@ is a dry run.
 Headless, like the two hosts beside it: #166 owns the picker and the
 Trial/Generate actions, and a dialog authored here would be chrome to unpick.
 
+And since #173 this file ORCHESTRATES NOTHING. #170 gave the window
+`services/case_type_apply.py`, which fits the overlay, refuses what is
+unconfirmed, binds the family and asks its pre-flight — the same four steps this
+host had performed since #163, beside it rather than through it. What is left
+here is the argument grammar, the printing and the exit code. Two consequences
+an operator sees: the refusals now arrive TOGETHER, so an unconfirmed role and
+an unconfirmed first cell height are one run rather than two; and a role
+assigned on your case that THIS case type does not need is named and kept
+rather than refused, which is what makes looking at a second case type free.
+
+A case carrying a role assignment already (a `.hws` saved from the window, which
+stores one per role) counts as answered, `--role` merging on top of it — the
+window and this command share one grammar and one field for exactly that reason.
+
 Exit code is 0 when the case type was applied, 1 when it was refused — including
 the refusal that a physical parameter is unconfirmed, which is the one this
 command exists to make unavoidable, and the family's own pre-flight refusal,
@@ -81,23 +95,19 @@ if _GUI_DIR not in sys.path:
     sys.path.insert(0, _GUI_DIR)
 
 from app.services import case_type as case_type_mod
+from app.services import case_type_apply
 from app.services import case_type_fields
-from app.services import case_type_roles
-from app.services import case_type_scale
-from app.services import topology_binding
-from app.services import topology_model
-from app.services import topology_preflight
 from app.services.case_type import CaseTypeError
 
 
-def _parse_confirmations(entries, application):
+def _parse_confirmations(entries, plan):
     """`--confirm NAME[=VALUE]` entries as `{name: value}`.
 
     A bare name accepts the value the case type offers; `NAME=VALUE` supplies
     the operator's own. Confirming and adjusting are therefore one act, which is
     what keeps the question from being a button people learn to click.
     """
-    offered = {c.name: c.offered for c in application.confirmations}
+    offered = {c.name: c.offered for c in plan.confirmations}
     out = {}
     for raw in entries or []:
         name, sep, value = str(raw).partition("=")
@@ -186,8 +196,14 @@ def main() -> int:
     try:
         case_type = case_type_mod.load(args.case_type)
         config = case_type_fields.read_config(args.to)
-        application = case_type_scale.plan(case_type, config)
-        confirmed = _parse_confirmations(args.confirm, application)
+        # ONE ORCHESTRATION, AND IT IS THE SERVICE'S (#173). The overlay, the
+        # bindings and the family's pre-flight were performed here until #173,
+        # beside a second copy in `services/case_type_apply.py` that the window
+        # goes through — so a fix to either did not reach the other. The case
+        # type is handed over rather than read through the picker: it is named
+        # on the command line, so there is no choice to read.
+        plan_ = case_type_apply.plan(config, case_type)
+        confirmed = _parse_confirmations(args.confirm, plan_)
         print("Case type '%s' applied to %s" % (case_type.name, args.to))
         if case_type.characteristic is not None:
             print("  authored against: %s"
@@ -195,7 +211,7 @@ def main() -> int:
             # Read OFF THE SCALE rather than measured a second time: the
             # application already derived this, and a second derivation beside
             # it is a second answer waiting to disagree with the one applied.
-            scale = application.scale
+            scale = plan_.application.scale
             print("  this drawing:     %s %.6g, centred (%.6g, %.6g), so every "
                   "geometry-driven size x %.6g%s"
                   % (case_type.characteristic.measure,
@@ -207,43 +223,40 @@ def main() -> int:
         else:
             print("  this case type declares no characteristic length, so its "
                   "sizes are carried through unscaled")
-        for line in application.describe():
+        for line in plan_.application.describe():
             print("    " + line)
         # THE ROLES ARE SHOWN BEFORE ANYTHING IS ASSIGNED, and before `apply`
         # refuses an unconfirmed physical parameter: an operator who runs this
         # bare must see which of their curves they are being asked for, not a
         # refusal about a first cell height and nothing else.
-        roles = case_type_roles.plan_for(
-            case_type, config, topology_binding.context_for_config(config))
-        if roles.slots:
+        if plan_.roles.slots:
             print("  roles this case type needs on your own geometry:")
-            for line in roles.describe():
+            for line in plan_.roles.describe():
                 print("    " + line)
-        assigned = _parse_roles(args.role, roles)
-        # The refusal goes through `apply`, not through a check beside it: the
-        # service is what makes "never applied silently" structural, and a host
-        # that asked the question itself could answer it differently.
-        fitted = application.apply(config, confirmed)
+        for role in plan_.ignored:
+            print("  '%s' is assigned on this case and this case type does not "
+                  "need it; the assignment is kept and not used." % role)
+        # `--role` is validated against the roles this plan declares, so a typo
+        # is a sentence naming the roles that exist rather than a binding that
+        # silently does nothing — and then merged in, since an assignment typed
+        # at a command line is never stored where `plan` would have read it.
+        plan_.assign(_parse_roles(args.role, plan_.roles))
+        # EVERYTHING OR NOTHING, AND EVERY PROBLEM AT ONCE. `apply` writes the
+        # overlay onto a deep copy, binds the roles into it and asks the family
+        # whether it can fill the drawing; an unconfirmed role, a segment that
+        # does not resolve and an unconfirmed first cell height come back as ONE
+        # refusal. Until #173 they were three separate raises here, which cost
+        # three runs to clear what is one screen of edits.
+        applied = case_type_apply.apply(plan_, config, confirmed)
         for name in sorted(confirmed):
             print("  confirmed %s = %s"
                   % (name, case_type_fields.show_value(confirmed[name])))
-        # And the bindings are DERIVED from those roles against the operator's
-        # own segments, after the family has been written in: no id from the
-        # authoring geometry is read, because a case type carries none.
-        for binding in roles.bind(fitted, assigned):
+        # The bindings are DERIVED against the operator's own segments: no id
+        # from the authoring geometry is read, because a case type carries none.
+        for binding in applied.bindings:
             print("  bound %s" % binding.describe())
-        # AND THE FAMILY THEN STATES WHETHER IT CAN WORK WITH WHAT IT HAS BEEN
-        # GIVEN (#165), before anything is written and long before a mesher is
-        # launched. #164 left this exactly here as a named blind spot: a
-        # confirmed assignment naming the far field as the body binds precisely
-        # that, and only the family's own refusal notices. The refusal names the
-        # curve, so an operator reading it knows which of their own files to
-        # redraw.
-        refused = topology_model.preflight_for_config(fitted)
-        if refused:
-            raise CaseTypeError(topology_preflight.refusal_text(refused))
         if args.out:
-            fitted.save_to_file(args.out)
+            applied.config.save_to_file(args.out)
             print("  wrote %s" % args.out)
         else:
             print("  nothing written (no --out)")

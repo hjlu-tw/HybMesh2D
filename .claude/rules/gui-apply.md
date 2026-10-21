@@ -39,6 +39,28 @@ about ONE decision. `apply` writes everything or nothing; the one thing that int
 PHYSICAL parameter, and it interrupts by being REFUSED in the service rather than by a dialog a
 host remembers to show. Gate: `tests/test_case_type_apply.py`.
 
+- **BOTH HOSTS APPLY THROUGH THIS SERVICE, AND THERE IS NO SECOND ORCHESTRATION** (#173).
+  `tools/PreProcessor/apply_case_type.py` performed the same overlay -> bind -> pre-flight
+  sequence itself until #173, with the three differences that matter — the LIVE config rather
+  than a deep copy, the FIRST refusal rather than all of them, and a leftover role as a refusal
+  rather than as `ignored` — so a fix to either did not reach the other and nothing failed when
+  they diverged. The host is now argument parsing, printing and an exit code; what it still owns
+  is `--confirm` / `--role`'s GRAMMAR, because that is a command line's concern and not an
+  apply's. Gated BEHAVIOURALLY rather than by a source scan: `test_case_type_roles.py`'s
+  injection G mutates THIS service and requires the host's own check 10 to notice, which a host
+  that still bound the roles itself would not.
+- **THE CHOICE IS READ THROUGH THE PICKER, OR HANDED OVER — NEVER WRITTEN INTO THE CONFIG.**
+  `plan(config, case_type=None)`: the window passes nothing and gets `case_type_picker`'s
+  precedence rule, the CLI passes the document it loaded from `argv`, where there is no choice to
+  read. Setting `config.case_type_file` to make the picker find it was the rejected alternative —
+  a host editing the operator's configuration in order to ask a question about it, on the one
+  path whose whole claim is that nothing is written until everything passes.
+- **AN ASSIGNMENT MAY ARRIVE AFTER THE PLAN** (`ApplyPlan.assign`). `MeshConfig.case_type_roles`
+  is the PERSISTENT channel and `plan` reads it; `--role` is the transient one, and it cannot be
+  written before the plan exists because it is VALIDATED against the roles the plan declares. A
+  role named there is NOT filtered into `ignored` the way a stored one is: naming it is an
+  explicit act, not a leftover from another case type.
+
 - **NOTHING IS WRITTEN UNTIL EVERYTHING PASSES.** The overlay goes onto a DEEP COPY, the roles
   are bound into that copy and the pre-flight is asked of it; the caller gets the copy only if
   all three succeed. `case_type_fields.apply` mutates in place and `RolePlan.bind` mutates
@@ -79,7 +101,8 @@ host remembers to show. Gate: `tests/test_case_type_apply.py`.
   The two differ in exactly the way that matters here: `fit` CATCHES the ruler's refusal and falls
   back to the authored numbers, which is right for a read-out comparing fields and wrong for an act
   that writes them — a case type authored on a 1 m body would put its 0.02 surface size on a 10 mm
-  one. `apply_case_type.py` lets the same refusal through. The first cut called BOTH, and `fit`'s
+  one. `apply_case_type.py` reaches that refusal through this function since #173, rather than
+  beside it. The first cut called BOTH, and `fit`'s
   reason was dead on arrival (it is non-empty only when it catches what the line above had already
   let escape) while doubling the per-keystroke cost, `fit` re-running `plan` internally.
 - **THE APPLY BUTTON IS LIVE WHENEVER A CASE TYPE IS CHOSEN, not when a plan was built.** Every
@@ -201,17 +224,14 @@ afterwards.
 
 ## Named blind spots
 
-- **THERE ARE NOW TWO HOSTS THAT APPLY, and only one of them uses this service — SO A FIX TO ONE
-  WILL NOT REACH THE OTHER.** `tools/PreProcessor/apply_case_type.py` still orchestrates the three
-  steps itself: it reaches its refusals in three separate raises (three runs to clear what the
-  window clears in one screen of edits), it writes the overlay into the LIVE config rather than a
-  copy, and it has no ignored-role filtering. #170 reused every SERVICE the ticket names
-  (`guess_roles`, `plan_for`, `bind`, `case_type_scale`) and added the orchestration the window
-  needed around them; re-pointing that host at it is a real change to a gated host and was out of
-  scope for "the GUI work is a surface over these". **What has to move with it**:
-  `tests/test_case_type_roles.py` asserts the host contains the literal line
-  `for binding in roles.bind(fitted, assigned):` and injection G mutates exactly it, so that
-  anchor has to be re-expressed against this service before the host can change.
+- **THE CLI'S OUTPUT ORDERING CHANGED WITH #173, deliberately.** Its three refusals used to
+  arrive one per run and in the host's own order — the physical parameter before the roles; they
+  now arrive together, after everything the host prints. REVERSES the #164 host's ordering;
+  anchor: `test_case_type_roles.py` check 10, whose assertions are on CONTENT (the roles appear,
+  the refusal names the unconfirmed one) and not on order, which is why they held across it.
+  The deep copy is NOT observable to that host — it writes with `--out` and exits — so what #173
+  bought the CLI is one owner of the refusal ordering and the ignored-role rule, and that smaller
+  claim is the one to quote.
 - **`plan` READS PRECEDENCE AND THE READ-OUT ABOVE IT DOES NOT.** `case_type_picker.summary`
   asks `chosen(config)` — the operator's own pick — while `plan` asks `for_config`, which falls
   back to `HYBMESH_CASE_TYPE`. So with nothing picked and that variable set, the read-out says

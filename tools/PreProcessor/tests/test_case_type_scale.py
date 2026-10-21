@@ -112,7 +112,9 @@ Known blind spots, named rather than papered over:
 INJECTIONS — AUTOMATED, by exec'ing a mutated copy of the service sources and
 re-running the same check functions against the mutant. Each asserts the
 mutation is well-formed and really differs, then that the named check fails AND
-that no other check moves (`others_green`):
+that no other check moves (`others_green`). I is the exception on both counts:
+its subject runs in a SUBPROCESS, so it is mutated on disk through a shadow
+package and scored by its own check alone.
 
   A. `Scale.size` stops multiplying -> check 2 fails: a case type authored on a
      1 m body hands a 100 m one the same 0.02 surface size.
@@ -133,9 +135,15 @@ that no other check moves (`others_green`):
      fails: a far-field box correct only for a body at the origin.
   H. `fit` hands back the AUTHORED overlay instead of the fitted one -> check 9 fails:
      every geometric field of every rescaled run reported as deviated.
-  I. the apply HOST -- a subprocess, so no in-memory mutant reaches it -- stops
-     asking the service to apply and writes the plan directly, and check 10
-     fails.
+  I. `case_type_apply.apply` -- reached only through a subprocess, so no
+     in-memory mutant touches it -- stops asking `Application.apply` and writes
+     the overlay directly, and check 10 fails. It mutated the HOST's own call
+     until #173 deleted that orchestration; against the service it holds the
+     same property and one more, that the host really goes through it. TWO
+     SITES, because the service guards the confirmation twice (measured: site 1
+     alone still refuses with `Application.apply`'s wording, site 2 alone with
+     `apply`'s, and only both together write and exit 0), and it reaches the
+     child through `service_shadow.shadow_host` rather than by editing the tree.
   K. `plan` builds a confirmation for every PHYSICAL field whether the case
      type carries it or not -> check 4 fails: the operator is asked to confirm a
      number nobody handed them, and answering it writes somebody else's default
@@ -160,6 +168,7 @@ if _GUI not in sys.path:
     sys.path.insert(0, _GUI)
 
 from mesher_bin import mesher_env  # noqa: E402
+from service_shadow import shadow_host  # noqa: E402
 
 _SAVE_HOST = os.path.join(_REPO, "tools", "PreProcessor", "save_case_type.py")
 _SHOW_HOST = os.path.join(_REPO, "tools", "PreProcessor", "show_case_type.py")
@@ -1133,27 +1142,50 @@ check(check_deviation_is_against_the_fitted(inj) and others_green(inj, 9),
       "AUTHORED numbers — every geometric field of every rescaled run reported "
       "as the operator's own edit")
 
-# I reaches the one file an in-memory mutant cannot: the applying HOST, which
-# runs as a subprocess. Without it check 10 — the acceptance criterion that the
-# operator is ASKED — would be the only check here never shown able to redden.
-_apply_src = _read(os.path.relpath(_APPLY_HOST, _REPO))
-_anchor = "        fitted = application.apply(config, confirmed)"
-assert _anchor in _apply_src, "host injection anchor not found: %r" % _anchor
+# I reaches what an in-memory mutant cannot: `case_type_apply`, which the
+# applying HOST runs through in a subprocess. Without it check 10 — the
+# acceptance criterion that the operator is ASKED — would be the only check
+# here never shown able to redden. It mutated the host's own call to
+# `Application.apply` until #173 deleted that orchestration; re-expressed
+# against the service, it holds the same property and one more, that the host
+# really goes through it — a host still applying the overlay itself would not
+# notice this mutation.
+#
+# TWO SITES, because the service guards the confirmation twice: `apply`
+# collects the unanswered parameters into its own refusal AND
+# `Application.apply` raises on them again. Either alone still refuses, so a
+# faithful bypass is both. `service_shadow` puts the mutant in front of the
+# real tree without touching it.
+_APPLY_SERVICE_REL = "tools/PreProcessor/gui/app/services/case_type_apply.py"
+_service_src = _read(_APPLY_SERVICE_REL)
+_I_SITES = [
+    ("    missing = plan_.application.unconfirmed(confirmed)\n    if missing:\n",
+     "    missing = plan_.application.unconfirmed(confirmed)\n    if False:\n"),
+    ("    plan_.application.apply(fitted, confirmed)\n",
+     "    case_type_fields.apply(\n"
+     "        case_type_fields.FieldOverlay(plan_.application.values), fitted)\n"),
+]
+_mutant_service = _service_src
+for _old, _new in _I_SITES:
+    assert _old in _mutant_service, ("service injection anchor not found in %s:"
+                                     " %r" % (_APPLY_SERVICE_REL, _old))
+    _mutant_service = _mutant_service.replace(_old, _new, 1)
+assert _mutant_service != _service_src
 with tempfile.TemporaryDirectory() as _tmp:
-    _mutant = os.path.join(_tmp, "apply_case_type_mutant.py")
-    with open(_mutant, "w", encoding="utf-8") as _fh:
-        _fh.write(_apply_src.replace(
-            _anchor,
-            "        fitted = case_type_fields.apply(\n"
-            "            case_type_fields.FieldOverlay(application.values),\n"
-            "            config)", 1))
+    _mutant = shadow_host(_tmp, _GUI, _APPLY_HOST,
+                          {"case_type_apply": _mutant_service})
     check(check_the_hosts_answer(_REAL, apply_host=_mutant),
-          "injection I. check 10 fails when the applying HOST writes the plan "
-          "itself instead of asking the service to apply it — the refusal is "
-          "bypassed and the `.dat` lands with nobody having confirmed anything")
-    check(not check_the_hosts_answer(_REAL),
-          "injection I. ...and the UNmutated host still passes it, so the "
-          "failure above is the mutation and not the copy or its PYTHONPATH")
+          "injection I. check 10 fails when the applying SERVICE writes the "
+          "overlay itself instead of asking `Application.apply` for it — the "
+          "refusal is bypassed and the `.dat` lands with nobody having "
+          "confirmed anything, through a host that says nothing")
+    check(not check_the_hosts_answer(
+              _REAL, apply_host=shadow_host(
+                  os.path.join(_tmp, "clean"), _GUI, _APPLY_HOST,
+                  {"case_type_apply": _service_src})),
+          "injection I. ...and the host passes it through a shadow carrying "
+          "the UNMUTATED service, so the failure above is the mutation and "
+          "not the shadow package or its PYTHONPATH")
 
 inj = mutate("case_type_scale",
              "    for name, value in case_type.fields.values.items():",

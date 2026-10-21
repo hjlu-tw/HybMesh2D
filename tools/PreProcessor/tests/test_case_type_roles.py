@@ -75,7 +75,10 @@ What this pins down:
  10. THE HOST REALLY ANSWERS, driven as a SUBPROCESS: `apply_case_type.py`
      prints the roles before assignment, exits 1 naming the unconfirmed one, and
      with `--role` writes a `.dat` AND the block topology document beside it,
-     holding the operator's own ids.
+     holding the operator's own ids. Since #173 it does all of that THROUGH
+     `services/case_type_apply`, the service the window applies through, rather
+     than through a second orchestration of its own; injection G is what holds
+     that, by mutating the service and requiring this check to notice.
  11. QT-FREE, in a subprocess.
  12. END TO END THROUGH THE REAL BINARY: a case type naming the `ogrid` family,
      applied to a drawing whose segment ids are 17-20 and 31-34, meshes.
@@ -109,8 +112,8 @@ Known blind spots, named rather than papered over:
     modify; what it shows is that a role-derived binding does not break a
     guarantee that was already there. Checks 10, 11 and 12 carry none either,
     being subprocesses no in-memory mutant reaches, which is why they are
-    excluded from `others_green` — except through injection G, which mutates
-    the host on disk.
+    excluded from `others_green` — except through injection G, which puts a
+    mutated `case_type_apply` in front of the real tree on disk.
 
 INJECTIONS — AUTOMATED, by exec'ing a mutated copy of the service sources and
 re-running the same check functions against the mutant. BOTH files of the seam
@@ -140,10 +143,18 @@ that no other check moves (`others_green`):
      offered nothing.
   G1. a refinement SEED is ranked as an outline -> check 4 fails: every slot
      shifts by one.
-  G. the applying HOST -- a subprocess, so no in-memory mutant reaches it --
-     writes the guess straight into the model instead of asking the service to
-     bind it, and check 10 fails: the confirmation is bypassed by the one caller
-     that has to ask.
+  G. `case_type_apply.apply` -- reached only through a subprocess, so no
+     in-memory mutant touches it -- writes the guess straight into the model
+     instead of asking `RolePlan.bind` for it, and check 10 fails: the
+     confirmation is bypassed by the one caller that has to ask. It is TWO
+     SITES because the service guards the confirmation twice (measured: either
+     alone still refuses, naming the roles), and it reaches the service through
+     a SHADOW PACKAGE holding that one module, so the host under test is the
+     real file byte for byte. Before #173 the same injection mutated the host's
+     own orchestration; re-expressing it against the service is what let that
+     orchestration be deleted without the property going ungated, and it now
+     also holds #173's own claim -- a host that still bound the roles itself
+     would not notice this mutation at all.
   H. negative control: the unmutated service passes every check.
 
 Run:  python3 tools/PreProcessor/tests/test_case_type_roles.py
@@ -163,6 +174,7 @@ if _GUI not in sys.path:
     sys.path.insert(0, _GUI)
 
 from mesher_bin import mesher_env  # noqa: E402
+from service_shadow import shadow_host  # noqa: E402
 from topology_outline_fixture import write_outline  # noqa: E402
 
 _APPLY_HOST = os.path.join(_REPO, "tools", "PreProcessor", "apply_case_type.py")
@@ -1017,42 +1029,64 @@ check(check_guess_is_confirmed(inj) and others_green(inj, 4),
       "outline: it shifts every slot by one, so the body is pre-selected as "
       "whatever happens to be smaller than it")
 
-# G reaches the one file an in-memory mutant cannot: the applying HOST, which
-# runs as a subprocess. Without it check 10 — the acceptance criterion that the
-# operator CONFIRMS — would be the only check here never shown able to redden.
-_apply_src = _read(os.path.relpath(_APPLY_HOST, _REPO))
-_anchor = "        for binding in roles.bind(fitted, assigned):"
-assert _anchor in _apply_src, "host injection anchor not found: %r" % _anchor
+# G reaches the one module an in-memory mutant cannot: `case_type_apply`, the
+# service BOTH hosts apply through since #173 — through a SHADOW PACKAGE rather
+# than by editing the tree, so the REAL host runs byte for byte against a
+# MUTATED service. Before #173 it mutated the host's own orchestration; that
+# orchestration is gone, and the property is unchanged — the one caller that
+# has to ask the operator cannot skip asking. It now gates #173's acceptance
+# as well, in the only way a behavioural check can: a host that still bound the
+# roles itself would not notice this mutation at all.
+#
+# TWO SITES, because the service guards the confirmation TWICE — `apply`
+# collects the unconfirmed roles into its own refusal AND `RolePlan.bind`
+# refuses them again. Removing either alone leaves the other standing, which is
+# the defence in depth working rather than an anchor that does not bite; a
+# faithful bypass is both, and the assert on each is what says so.
+_APPLY_SERVICE_REL = "tools/PreProcessor/gui/app/services/case_type_apply.py"
+_service_src = _read(_APPLY_SERVICE_REL)
+_G_SITES = [
+    ("    waiting = plan_.unconfirmed_roles()\n    if waiting:\n",
+     "    waiting = plan_.unconfirmed_roles()\n    if False:\n"),
+    ("    bindings = plan_.roles.bind(fitted, plan_.assigned)\n",
+     "    bindings = []\n"
+     "    for _slot in plan_.roles.slots:\n"
+     "        _g = plan_.roles.guesses.get(_slot.role)\n"
+     "        if _g is None:\n"
+     "            continue\n"
+     "        setattr(fitted.topology, _slot.geom_field, _g.geom)\n"
+     "        setattr(fitted.topology, _slot.segs_field,\n"
+     "                ', '.join(str(s) for s in _g.segs))\n"
+     "        bindings.append(_g)\n"),
+]
+_mutant_service = _service_src
+for _old, _new in _G_SITES:
+    assert _old in _mutant_service, ("service injection anchor not found in %s:"
+                                     " %r" % (_APPLY_SERVICE_REL, _old))
+    _mutant_service = _mutant_service.replace(_old, _new, 1)
+assert _mutant_service != _service_src
+
 with tempfile.TemporaryDirectory() as _tmp:
-    _mutant = os.path.join(_tmp, "apply_case_type_mutant.py")
-    with open(_mutant, "w", encoding="utf-8") as _fh:
-        _fh.write(_apply_src.replace(
-            _anchor,
-            "        _guessed = {r: '' for r in roles.roles}\n"
-            "        _guessed.update(assigned)\n"
-            "        _bound = []\n"
-            "        for _slot in roles.slots:\n"
-            "            _g = roles.guesses.get(_slot.role)\n"
-            "            if _g is None:\n"
-            "                continue\n"
-            "            setattr(fitted.topology, _slot.geom_field, _g.geom)\n"
-            "            setattr(fitted.topology, _slot.segs_field,\n"
-            "                    ', '.join(str(s) for s in _g.segs))\n"
-            "            _bound.append(_g)\n"
-            "        for binding in _bound:", 1))
-    _mutant_ok = check_the_host_answers(_REAL, apply_host=_mutant)
+    _mutant_host = shadow_host(_tmp, _GUI, _APPLY_HOST,
+                               {"case_type_apply": _mutant_service})
+    _mutant_ok = check_the_host_answers(_REAL, apply_host=_mutant_host)
     check(bool(_mutant_ok),
-          "injection G. check 10 fails when the applying HOST writes the "
-          "pre-selection straight into the model instead of asking the service "
-          "to bind it — the confirmation is bypassed by the one caller that "
-          "has to ask")
+          "injection G. check 10 fails when the applying SERVICE writes the "
+          "pre-selection straight into the model instead of asking "
+          "`RolePlan.bind` for it — the confirmation is bypassed by the one "
+          "caller that has to ask, and the host that goes through it says "
+          "nothing")
     check(not any("could not" in f or "Traceback" in f for f in _mutant_ok),
-          "injection G. ...and the mutant host RAN rather than crashing, so "
-          "the failure above is the bypass and not an import error wearing its "
+          "injection G. ...and the mutant RAN rather than crashing, so the "
+          "failure above is the bypass and not an import error wearing its "
           "name: %s" % ("; ".join(f.split("\n")[0] for f in _mutant_ok)[:200]))
-    check(not check_the_host_answers(_REAL),
-          "injection G. ...and the UNmutated host still passes it, so the "
-          "failure above is the mutation and not the copy or its PYTHONPATH")
+    check(not check_the_host_answers(
+              _REAL, apply_host=shadow_host(
+                  os.path.join(_tmp, "clean"), _GUI, _APPLY_HOST,
+                  {"case_type_apply": _service_src})),
+          "injection G. ...and the host passes it through a shadow carrying "
+          "the UNMUTATED service, so the failure above is the mutation and not "
+          "the shadow package or its PYTHONPATH")
 
 check(not any(fn(_REAL) for num, fn in _ALL.items()),
       "injection H. negative control: the unmutated service passes every "

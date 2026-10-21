@@ -21,6 +21,13 @@ thing that must interrupt is the PHYSICAL parameter (#158 story 23), and it
 interrupts by being REFUSED here rather than by a dialog the host remembers to
 show — `case_type_scale.Application.apply`'s rule, reached rather than restated.
 
+**AND IT IS THE ONLY ORCHESTRATION OF IT.** `apply_case_type.py` is a host — the
+`--confirm` / `--role` grammar, the printing and an exit code — and goes through
+:func:`plan` and :func:`apply` like the window does (#173). Nothing holds that by
+reading this source: `test_case_type_roles.py`'s injection G mutates THIS module
+and requires the host's own end-to-end check to go red, which a host that still
+bound the roles itself would sail through.
+
 **NOTHING IS WRITTEN UNTIL EVERYTHING PASSES.** The overlay is applied to a DEEP
 COPY, the roles are bound into that copy and the pre-flight is asked of it; the
 caller is handed the copy only if all three succeed. `case_type_fields.apply`
@@ -31,8 +38,9 @@ the refusal is the moment they most need their drawing back as it was.
 
 **EVERY PROBLEM AT ONCE, ACROSS ALL THREE KINDS.** An unconfirmed role, a segment
 that does not resolve and an unconfirmed first cell height are collected into ONE
-refusal. `apply_case_type.py` reaches them in three separate raises and so costs
-three runs to clear; `case_type_roles.RolePlan` already states the rule — "every
+refusal. `apply_case_type.py` reached them in three separate raises and so cost
+three runs to clear, until #173 re-pointed it here and deleted the second
+orchestration; `case_type_roles.RolePlan` already states the rule — "every
 problem, never the first" — and this is it applied one level up, across the
 services rather than within one. The PRE-FLIGHT is the exception and cannot be
 otherwise: a family can only be asked whether it can fill a drawing once the
@@ -180,6 +188,24 @@ class ApplyPlan:
         """True when only the physical confirmations stand between this and a run."""
         return not self.unconfirmed_roles() and not self.problems()
 
+    def assign(self, assigned) -> None:
+        """Merge an assignment that arrived AFTER this plan was built.
+
+        `MeshConfig.case_type_roles` is the PERSISTENT channel and :func:`plan`
+        reads it; this is the transient one, for a host whose assignment comes
+        in as arguments and is never stored — `apply_case_type.py`'s `--role`,
+        which has to be validated against the roles this plan declares and so
+        cannot be written before the plan exists. The grammar is the same
+        `{role: spec}`, deliberately, so the two hosts express an assignment
+        identically.
+
+        A role this case type does not need is NOT filtered into
+        :attr:`ignored` the way a stored one is: a caller that NAMED it has made
+        an explicit act rather than left a leftover from another case type
+        behind, and :meth:`problems` is what tells them the role does not exist.
+        """
+        self.assigned.update(dict(assigned or {}))
+
     # -- what it would do --------------------------------------------------
     def changes(self, config, confirmed=None) -> tuple:
         """One :class:`Change` per owned field: what this drawing holds, and what it will.
@@ -235,8 +261,8 @@ class Applied:
                 + ["bound " + b.describe() for b in self.bindings])
 
 
-def plan(config) -> ApplyPlan:
-    """What applying the case type `config` NAMES would do to this drawing.
+def plan(config, case_type=None) -> ApplyPlan:
+    """What applying a case type to this drawing would do.
 
     Raises `CaseTypeError` when the configuration names no case type, or names
     one that will not load — the operator asked to apply something, and "there
@@ -245,9 +271,13 @@ def plan(config) -> ApplyPlan:
 
     `case_type_picker.for_config` is what reads the choice, so the precedence
     rule (the document in hand beats `HYBMESH_CASE_TYPE`) is this module's by
-    reference and not by a second copy.
+    reference and not by a second copy. `case_type` SHORT-CIRCUITS that read for
+    a caller already holding the document: `apply_case_type.py` names it as an
+    argument, so there is no choice to read and no precedence to apply — and
+    writing it into `config.case_type_file` to make the picker find it would be
+    a host editing the operator's configuration to ask a question about it.
     """
-    ct = case_type_picker.for_config(config)
+    ct = case_type if case_type is not None else case_type_picker.for_config(config)
     if ct is None:
         raise CaseTypeError(
             "no case type is chosen, so there is nothing to apply. Pick one in "
