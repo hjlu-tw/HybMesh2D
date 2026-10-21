@@ -202,7 +202,11 @@ class ApplyPlan:
         A role this case type does not need is NOT filtered into
         :attr:`ignored` the way a stored one is: a caller that NAMED it has made
         an explicit act rather than left a leftover from another case type
-        behind, and :meth:`problems` is what tells them the role does not exist.
+        behind, and :meth:`problems` reports it. That is the backstop rather
+        than the message anybody reads — `apply_case_type.py` refuses a `--role`
+        naming no slot while parsing, so a typo is answered before a plan is
+        touched — but a caller with no argument grammar of its own still gets a
+        refusal rather than a binding that silently does nothing.
         """
         self.assigned.update(dict(assigned or {}))
 

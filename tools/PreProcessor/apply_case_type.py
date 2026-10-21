@@ -135,7 +135,7 @@ def _parse_confirmations(entries, plan):
     return out
 
 
-def _parse_roles(entries, plan):
+def _parse_roles(entries, roles):
     """`--role NAME[=GEOM[:SEGS]]` entries as `{role: spec}`.
 
     A bare name accepts the role this tool pre-selected; `NAME=GEOM` binds every
@@ -152,10 +152,10 @@ def _parse_roles(entries, plan):
     for raw in entries or []:
         name, sep, spec = str(raw).partition("=")
         name = name.strip()
-        if plan.slot(name) is None:
+        if roles.slot(name) is None:
             raise CaseTypeError(
                 "--role %r names no role this case type needs; it needs %s"
-                % (raw, ", ".join(plan.roles) or "none"))
+                % (raw, ", ".join(roles.roles) or "none"))
         if sep and not spec.strip():
             # REFUSED rather than read as a bare name, by `--confirm`'s own
             # reasoning: `--role body=$GEOM` with the variable unset is the

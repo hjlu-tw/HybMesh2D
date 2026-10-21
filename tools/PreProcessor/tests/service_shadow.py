@@ -24,7 +24,8 @@ directory to its own `__path__`:
 so `app.services.<name>` resolves to the mutant and every other module falls
 through to the real tree, keeping its own `__file__`. That last part is the
 reason this is not a `copytree`: `services/paths.repo_root()` derives the repo
-from `__file__`, and a wholesale copy of the 4.3 MB package moves it.
+from `__file__`, and a wholesale copy of the package (4,044 KiB, measured
+2026-10-21) moves it.
 
 The HOST is copied VERBATIM beside that `gui/`, because it derives its import
 root from its own `__file__` and inserts it at `sys.path[0]` — which is what
@@ -36,11 +37,14 @@ from __future__ import annotations
 import os
 
 
-def shadow_host(tmp: str, gui_dir: str, host_path: str, modules: dict) -> str:
+def shadow_host(tmp: str, gui_dir: str, host_path: str,
+                module: str, source: str) -> str:
     """Copy `host_path` into `tmp` over a shadow of `gui_dir`; return its path.
 
-    `modules` maps a module name under `app.services` to the SOURCE it should
-    have in the child. Everything not named falls through to the real tree.
+    `module` is a name under `app.services` and `source` is what it SHOULD BE in
+    the child; every other module falls through to the real tree. One module and
+    not a map of them, because both callers mutate one — a shape nothing needs
+    is a shape that gets its first real second caller wrong.
     """
     services = os.path.join(tmp, "gui", "app", "services")
     os.makedirs(services, exist_ok=True)
@@ -51,10 +55,9 @@ def shadow_host(tmp: str, gui_dir: str, host_path: str, modules: dict) -> str:
                         os.path.join(real_app, "services"))):
         with open(init, "w", encoding="utf-8") as fh:
             fh.write("__path__.append(%r)\n" % real)
-    for name, source in modules.items():
-        with open(os.path.join(services, name + ".py"), "w",
-                  encoding="utf-8") as fh:
-            fh.write(source)
+    with open(os.path.join(services, module + ".py"), "w",
+              encoding="utf-8") as fh:
+        fh.write(source)
     out = os.path.join(tmp, os.path.basename(host_path))
     with open(host_path, encoding="utf-8") as fh:
         host_src = fh.read()

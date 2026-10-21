@@ -5524,12 +5524,23 @@ another case type needed (named and ignored against refused).
   every rule added to the service from here reaches both hosts.
 - **THE OUTPUT ORDERING CHANGED, deliberately.** The CLI printed the roles, then the scale, then
   refused — at the FIRST refusal, which is the physical parameter before the roles. It now prints
-  everything it printed before, in the same order and the same words, and the refusals arrive
-  together at the end. Check 10 of `test_case_type_roles.py` drives that host as a subprocess and
+  everything it printed before, in the same order and the same words, PLUS one line per role the
+  case has assigned that this case type does not need, and the refusals arrive together at the
+  end. That extra line is the `ignored` rule becoming reachable from this host at all, so it is
+  the drift row being closed rather than printing drifting.
+  Check 10 of `test_case_type_roles.py` drives that host as a subprocess and
   held across the change without an edit, because its assertions are on CONTENT (the roles are
   shown before assignment; the refusal names the unconfirmed role) and not on order. That is the
   check doing its job rather than luck, and it is why the open question could be answered by
   reading it.
+- **AND A FOURTH DRIFT, WHICH THE TICKET'S TABLE DOES NOT LIST.** `plan` reads
+  `MeshConfig.case_type_roles`, so a case that already carries an assignment — a `.hws` saved from
+  the window, where the roles table writes one per role — now ANSWERS those roles on the command
+  line, with `--role` merging on top. The old host read the field not at all and asked for every
+  role afresh. It is the same change in kind as the other three (one rule, reached from both
+  hosts) and it is the one an operator could be surprised by, since a role they confirmed in the
+  window is a role this command no longer stops on. Stated in the host's own docstring, because
+  that is where somebody running it bare will look.
 - **TWO SMALL SERVICE CHANGES, both forced by what a command line is.** `plan` takes an optional
   `case_type`, because the CLI names one in `argv` and there is no choice for
   `case_type_picker.for_config` to read; writing it into `config.case_type_file` to make the
@@ -5565,7 +5576,8 @@ another case type needed (named and ignored against refused).
   and `tmp/gui/app/services` are `__init__.py` files that append the real directories to their own
   `__path__`, with the mutated `case_type_apply.py` beside the second one; the host is copied
   VERBATIM next to that `gui/`, because it derives its import root from its own `__file__` and
-  that is what puts the shadow in front of the real tree. Copying the whole 4.3 MB package was the
+  that is what puts the shadow in front of the real tree. Copying the whole package (4,044 KiB,
+  measured 2026-10-21) was the
   alternative and would have moved every module's `__file__` — `services/paths.repo_root()`
   derives the repo from one.
 

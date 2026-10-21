@@ -1068,7 +1068,7 @@ assert _mutant_service != _service_src
 
 with tempfile.TemporaryDirectory() as _tmp:
     _mutant_host = shadow_host(_tmp, _GUI, _APPLY_HOST,
-                               {"case_type_apply": _mutant_service})
+                     "case_type_apply", _mutant_service)
     _mutant_ok = check_the_host_answers(_REAL, apply_host=_mutant_host)
     check(bool(_mutant_ok),
           "injection G. check 10 fails when the applying SERVICE writes the "
@@ -1083,7 +1083,7 @@ with tempfile.TemporaryDirectory() as _tmp:
     check(not check_the_host_answers(
               _REAL, apply_host=shadow_host(
                   os.path.join(_tmp, "clean"), _GUI, _APPLY_HOST,
-                  {"case_type_apply": _service_src})),
+                  "case_type_apply", _service_src)),
           "injection G. ...and the host passes it through a shadow carrying "
           "the UNMUTATED service, so the failure above is the mutation and not "
           "the shadow package or its PYTHONPATH")

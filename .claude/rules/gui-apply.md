@@ -38,7 +38,6 @@ user stories 2-4, 21-24). Fields, roles and the family's own pre-flight are thre
 about ONE decision. `apply` writes everything or nothing; the one thing that interrupts is the
 PHYSICAL parameter, and it interrupts by being REFUSED in the service rather than by a dialog a
 host remembers to show. Gate: `tests/test_case_type_apply.py`.
-
 - **BOTH HOSTS APPLY THROUGH THIS SERVICE, AND THERE IS NO SECOND ORCHESTRATION** (#173).
   `tools/PreProcessor/apply_case_type.py` performed the same overlay -> bind -> pre-flight
   sequence itself until #173, with the three differences that matter — the LIVE config rather
@@ -49,6 +48,15 @@ host remembers to show. Gate: `tests/test_case_type_apply.py`.
   apply's. Gated BEHAVIOURALLY rather than by a source scan: `test_case_type_roles.py`'s
   injection G mutates THIS service and requires the host's own check 10 to notice, which a host
   that still bound the roles itself would not.
+  **REVERSES #164:** the CLI's three refusals arrive together, after everything it prints, where
+  they used to arrive one per run and physical-parameter-first.
+  Why: `docs/design_notes/gui.md`, "THE OUTPUT ORDERING CHANGED, deliberately".
+  **The deep copy is NOT what that host gained** — it writes with `--out` and exits — so the claim
+  to quote is the smaller one: ONE OWNER of the refusal ordering and the ignored-role rule.
+- **A ROLE THE CASE ALREADY CARRIES ANSWERS ON THE CLI TOO** (#173), which it did not before:
+  `plan` reads `MeshConfig.case_type_roles`, so a `.hws` saved from the window arrives with its
+  assignment and `--role` merges on top. That is the field's own rule applied to the second host
+  rather than a new one, and it is the fourth drift the two orchestrations had.
 - **THE CHOICE IS READ THROUGH THE PICKER, OR HANDED OVER — NEVER WRITTEN INTO THE CONFIG.**
   `plan(config, case_type=None)`: the window passes nothing and gets `case_type_picker`'s
   precedence rule, the CLI passes the document it loaded from `argv`, where there is no choice to
@@ -224,14 +232,6 @@ afterwards.
 
 ## Named blind spots
 
-- **THE CLI'S OUTPUT ORDERING CHANGED WITH #173, deliberately.** Its three refusals used to
-  arrive one per run and in the host's own order — the physical parameter before the roles; they
-  now arrive together, after everything the host prints. REVERSES the #164 host's ordering;
-  anchor: `test_case_type_roles.py` check 10, whose assertions are on CONTENT (the roles appear,
-  the refusal names the unconfirmed one) and not on order, which is why they held across it.
-  The deep copy is NOT observable to that host — it writes with `--out` and exits — so what #173
-  bought the CLI is one owner of the refusal ordering and the ignored-role rule, and that smaller
-  claim is the one to quote.
 - **`plan` READS PRECEDENCE AND THE READ-OUT ABOVE IT DOES NOT.** `case_type_picker.summary`
   asks `chosen(config)` — the operator's own pick — while `plan` asks `for_config`, which falls
   back to `HYBMESH_CASE_TYPE`. So with nothing picked and that variable set, the read-out says

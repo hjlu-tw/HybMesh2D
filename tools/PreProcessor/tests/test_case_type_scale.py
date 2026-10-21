@@ -1173,7 +1173,7 @@ for _old, _new in _I_SITES:
 assert _mutant_service != _service_src
 with tempfile.TemporaryDirectory() as _tmp:
     _mutant = shadow_host(_tmp, _GUI, _APPLY_HOST,
-                          {"case_type_apply": _mutant_service})
+                     "case_type_apply", _mutant_service)
     check(check_the_hosts_answer(_REAL, apply_host=_mutant),
           "injection I. check 10 fails when the applying SERVICE writes the "
           "overlay itself instead of asking `Application.apply` for it — the "
@@ -1182,7 +1182,7 @@ with tempfile.TemporaryDirectory() as _tmp:
     check(not check_the_hosts_answer(
               _REAL, apply_host=shadow_host(
                   os.path.join(_tmp, "clean"), _GUI, _APPLY_HOST,
-                  {"case_type_apply": _service_src})),
+                  "case_type_apply", _service_src)),
           "injection I. ...and the host passes it through a shadow carrying "
           "the UNMUTATED service, so the failure above is the mutation and "
           "not the shadow package or its PYTHONPATH")
