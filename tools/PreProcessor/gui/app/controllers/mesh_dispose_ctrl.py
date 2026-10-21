@@ -188,7 +188,7 @@ class MeshDispositionMixin:
     def _commit_trial(self, trial):
         """Write `trial` into the case, and say what landed where."""
         dest = self._get_expected_vtk_path(self.global_mesh_config)
-        pipeline = self._commit_pipeline(trial)
+        pipeline = self._commit_pipeline(trial, dest)
         try:
             written = mesh_commit.commit(trial, dest, pipeline=pipeline)
         except mesh_commit.CommitRefused as exc:
@@ -242,7 +242,7 @@ class MeshDispositionMixin:
             self.log("[Mesh] [WARNING] this mesh was not judged, so the case "
                      "carries no verdict and no embedded case type.")
 
-    def _commit_pipeline(self, trial):
+    def _commit_pipeline(self, trial, dest):
         """The pipeline script to leave beside `trial`'s mesh, or ``None``.
 
         Built by the same verb the Pipeline menu's Save uses, so the script a
@@ -264,9 +264,29 @@ class MeshDispositionMixin:
         topology declares its own corners legitimately has no CAD at all — but a
         committed case silently missing its script is the acceptance criterion
         going quiet, which is what #166's Spec review found.
+
+        AND IT IS JUDGED BY THE COPY FROZEN BESIDE IT, not by the file the
+        operator picked (#172). The picked one goes on being maintained and
+        `add_reference_mesh.py` makes correcting its bounds a routine act, so a
+        script naming it reproduces the mesh exactly and then grades it against
+        numbers that have since moved — contradicting the frozen record lying
+        next to it with nothing saying so. `mesh_commit.as_frozen` does the
+        re-pointing, through the SAME `mesh_cfg` override the fallback uses,
+        because the rule above allows the committed script one builder and no
+        second `PipelineConfig`. The two overrides are mutually exclusive by
+        construction: a fallback mesh freezes no case type, which is why
+        `as_hybrid` clears the field instead (#167).
         """
-        mesh_cfg = (mesh_fallback.as_hybrid(self.global_mesh_config)
-                    if trial.fallback is not None else None)
+        if trial.fallback is not None:
+            mesh_cfg = mesh_fallback.as_hybrid(self.global_mesh_config)
+        elif trial.verdict is not None:
+            mesh_cfg = mesh_commit.as_frozen(self.global_mesh_config, dest)
+        else:
+            # NOTHING WAS FROZEN, so there is nothing to re-point at. A run with
+            # no verdict embeds no case type — whether because none was in play
+            # or because the one named would not load — and the script keeps the
+            # operator's own choice, which is the only spelling that exists.
+            mesh_cfg = None
         try:
             return self.build_pipeline_config(mesh_cfg=mesh_cfg)
         except Exception as exc:        # noqa: BLE001 - reported, not discarded

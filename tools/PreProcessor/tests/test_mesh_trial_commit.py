@@ -82,6 +82,22 @@ What this pins down:
      corners legitimately is — and `global_vtk_path` moves to the committed mesh,
      so Export and Send to Solver reach the file Generate approved rather than
      the scratch copy it was made from.
+ 15. THE COMMITTED SCRIPT NAMES THE FROZEN COPY, NOT THE FILE THE OPERATOR
+     PICKED (#172). Three dispositions, three answers, because a rule that only
+     ever re-points would be as wrong as one that never does: a JUDGED commit's
+     script names `<stem>.casetype.json` beside the mesh and that file is really
+     there; a FALLBACK commit's names none, the exemption #167 put in
+     `as_hybrid` and which must stay; and a commit whose chosen case type would
+     not LOAD keeps the operator's own spelling, because nothing was frozen and
+     there is nothing to point at. The panel's own configuration is unchanged in
+     all three — the re-pointing belongs to the script.
+ 16. AND RE-RUNNING IT REPRODUCES THE FROZEN VERDICT AFTER THE SOURCE HAS MOVED.
+     The acceptance criterion end to end: commit, then rewrite the SOURCE case
+     type with bounds that really do flip this mesh to `unusable` — measured
+     here rather than assumed — then run `./run_pipeline.sh <script> --no-solver`
+     and read what it printed. The verdict is the frozen state, it names the
+     frozen copy as the file that issued it, and the flipped state appears
+     nowhere. Skipped without a build tree.
 
 Known blind spots, named rather than papered over:
   - Checks 3-9 drive the REAL controller methods against a recording stand-in
@@ -93,6 +109,19 @@ Known blind spots, named rather than papered over:
     `AppController` with a loaded CAD session, which would need a mesher run
     inside a Qt event loop. It therefore proves the committed ARTEFACT runs;
     that the GUI builds the right one is check 11's structural claim.
+  - Checks 15 and 16 drive the REAL `_commit_pipeline` but hand it a stand-in
+    `build_pipeline_config` that honours the `mesh_cfg` override, for the same
+    reason: the live builder needs a CAD session. What the stand-in cannot fake
+    is the override itself — it is what the disposition passes — so the claim
+    under test travels through the real code. That the live builder uses the
+    argument at all is check 11's, and `pipeline_io_ctrl` has exactly one
+    `mesh_cfg` parameter for both callers.
+  - Nothing here re-freezes anything on a RE-RUN. Check 16's `run_pipeline.sh`
+    overwrites the committed mesh and leaves the frozen copy and the verdict
+    record standing, so a case whose script was re-run holds a record of the
+    first run beside a mesh from the second. That is the standing blind spot in
+    `.claude/rules/gui-dispositions.md` ("nothing checks that a committed case
+    is still consistent later") and #172 does not widen it.
   - Nothing here judges whether a case type's thresholds are RIGHT, or whether
     the verdict is a good verdict. That is `test_case_type_verdict.py`'s
     subject, and #168's.
@@ -130,6 +159,18 @@ other check moves:
      mesher is handed -> check 12 fails. Not a source mutation either, and for
      the same reason as F: the two halves live in two mixins and no edit to
      `mesh_commit` can pull them apart, so the pre-fix consumer is handed in.
+  J. `as_frozen` handing back the configuration unchanged -> check 15 fails, and
+     the committed script goes back to naming the maintained file: the mesh
+     reproduces and the verdict is recomputed against whatever that file says on
+     the day, which is #172 exactly. Check 16 cannot see it — it runs
+     `run_pipeline.sh` in a child process, which loads the real module from disk
+     — so the in-process check is the one that scores the mutation and the
+     end-to-end one is what proves the fix is worth having.
+  K. `as_frozen` re-pointing the configuration IN PLACE instead of a copy ->
+     check 15 fails on its third leg. The script would be right and the
+     operator's own case-type choice would silently become the frozen copy,
+     so their next Trial — and the workspace they then save — would be judged
+     by a historical document they were never asked about.
 
   Check 5 has no injection of its own. Its defect is the same one F commits —
   a disposition reaching a run that was not a Generate — and it is not vacuous
@@ -913,6 +954,172 @@ def check_commit_is_audible_and_in_hand(w):
     return out
 
 
+def _commit_for_script(w, tmp, case, vtk, mesh_cfg, fallback=None):
+    """Drive a real Generate and return `(host, the script as a dict or None)`.
+
+    The host's `build_pipeline_config` is a stand-in that HONOURS the `mesh_cfg`
+    override, because the live one needs a CAD session (see the blind spots).
+    The override itself is the real disposition's, which is the claim under test.
+    """
+    from app.models.pipeline_config import PipelineConfig
+
+    host = make_host(w, mesh_cfg, tmp)
+    def _build(mesh_cfg=None):
+        return PipelineConfig.from_configs(
+            "frozen_probe", [],
+            host.global_mesh_config if mesh_cfg is None else mesh_cfg,
+            None, {})
+    host.build_pipeline_config = _build
+    try:
+        host._commit_after_mesh = True
+        host._trial_fallback = fallback
+        host._on_mesh_gen_finished(0, os.path.join(tmp, "absent.dat"), vtk)
+    finally:
+        release(host)
+    script = os.path.join(case, "mesh_probe.pipeline.json")
+    if not os.path.isfile(script):
+        return host, None
+    with open(script, encoding="utf-8") as fh:
+        return host, json.load(fh)
+
+
+def _probe_config(tmp, case, case_type_file=""):
+    """The O-grid's own mesher config, pointed at the case. `None` if unmeshed."""
+    cfg = MeshConfig()
+    cfg.load_from_file(os.path.join(tmp, "trial_para.dat"))
+    cfg.output_filename = os.path.join(case, "mesh_probe.vtk")
+    cfg.case_type_file = case_type_file
+    return cfg
+
+
+def check_script_names_the_frozen_copy(w):
+    """#172: the script a commit leaves is judged by the copy frozen beside it."""
+    if not os.path.isfile(_MESHER):
+        return []
+    from app.services import case_type_picker, mesh_fallback
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        vtk = make_mesh(os.path.join(tmp, "trial"))
+        ct_path = write_case_type(os.path.join(tmp, "t.casetype.json"))
+
+        # (a) A JUDGED commit re-points at the frozen copy, and that copy is
+        #     really the file the script now names — a spelling nothing can
+        #     resolve would be this fix with its own failure mode.
+        case = os.path.join(tmp, "judged")
+        os.makedirs(case)
+        cfg = _probe_config(tmp, case, case_type_file=ct_path)
+        _host, doc = _commit_for_script(w, tmp, case, vtk, cfg)
+        frozen = os.path.join(case, "mesh_probe" + case_type_picker.SUFFIX)
+        if doc is None:
+            return ["a judged Generate left no pipeline script"]
+        named = str(doc.get("mesh", {}).get("case_type_file", ""))
+        want = case_type_picker.stored_spelling(os.path.abspath(frozen))
+        if named != want:
+            out.append("the committed script names %r, not the frozen copy %r"
+                       % (named, want))
+        if not os.path.isfile(case_type_picker.resolve(named)):
+            out.append("the script names a case type that is not on disk: %r"
+                       % named)
+        if os.path.abspath(case_type_picker.resolve(named)) == \
+                os.path.abspath(ct_path):
+            out.append("the script still names the source case type, which "
+                       "goes on being maintained")
+        # (c) and the operator's own configuration is untouched by the commit.
+        if cfg.case_type_file != ct_path:
+            out.append("the commit changed the operator's own case type choice "
+                       "to %r" % cfg.case_type_file)
+
+        # (b) A FALLBACK commit names NO case type. #167's exemption, which #172
+        #     must leave exactly as it found it: an unstructured mesh freezes no
+        #     case type, so there is nothing beside it to point at.
+        case = os.path.join(tmp, "fallback")
+        os.makedirs(case)
+        cfg = _probe_config(tmp, case, case_type_file=ct_path)
+        fb = mesh_fallback.Fallback(reason="The C-grid family refuses this "
+                                           "drawing.", family="cgrid")
+        _host, doc = _commit_for_script(w, tmp, case, vtk, cfg, fallback=fb)
+        if doc is None:
+            out.append("a fallback Generate left no pipeline script")
+        elif str(doc.get("mesh", {}).get("case_type_file", "")):
+            out.append("a fallback commit's script names a case type (%r); an "
+                       "unstructured mesh is judged by none"
+                       % doc["mesh"]["case_type_file"])
+
+        # (d) NOTHING FROZEN, NOTHING TO POINT AT. A chosen case type that will
+        #     not load issues no verdict and embeds no copy, so the script keeps
+        #     the operator's own spelling rather than naming a sidecar that was
+        #     never written.
+        case = os.path.join(tmp, "broken")
+        os.makedirs(case)
+        gone = os.path.join(tmp, "gone.casetype.json")
+        cfg = _probe_config(tmp, case, case_type_file=gone)
+        _host, doc = _commit_for_script(w, tmp, case, vtk, cfg)
+        if doc is None:
+            out.append("a commit with an unloadable case type left no script")
+        elif str(doc.get("mesh", {}).get("case_type_file", "")) != gone:
+            out.append("a commit that froze nothing re-pointed the script "
+                       "anyway: %r" % doc.get("mesh", {}).get("case_type_file"))
+        if os.path.isfile(os.path.join(case, "mesh_probe" + case_type_picker.SUFFIX)):
+            out.append("a case type that would not load was embedded anyway")
+    return out
+
+
+def check_rerun_reproduces_the_frozen_verdict(w):
+    """#172's acceptance, end to end through `run_pipeline.sh`."""
+    if not os.path.isfile(_MESHER):
+        print("      (skipping: no build tree)", flush=True)
+        return []
+    from app.services import case_type as ct_mod
+    from app.services import case_type_verdict
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        vtk = make_mesh(os.path.join(tmp, "trial"))
+        case = os.path.join(tmp, "case")
+        os.makedirs(case)
+        ct_path = write_case_type(os.path.join(tmp, "t.casetype.json"))
+        cfg = _probe_config(tmp, case, case_type_file=ct_path)
+        _host, doc = _commit_for_script(w, tmp, case, vtk, cfg)
+        if doc is None:
+            return ["the commit left no pipeline script to re-run"]
+        record = os.path.join(case, "mesh_probe.verdict.json")
+        if not os.path.isfile(record):
+            return ["the commit left no frozen verdict to reproduce"]
+        with open(record, encoding="utf-8") as fh:
+            frozen_state = json.load(fh)["state"]
+
+        # THE SOURCE MOVES, the way `add_reference_mesh.py` moves one: bounds
+        # that really do flip THIS mesh. Measured, not assumed — a premise that
+        # silently stopped flipping would make the rest of this check vacuous.
+        write_case_type(ct_path, attention=1.0, unusable=1.0001)
+        moved, _text, _lvl = case_type_verdict.run_verdict(
+            vtk, 0, case_type=ct_mod.load(ct_path))
+        if moved.state == frozen_state:
+            return ["the edited source case type still grades this mesh %r, so "
+                    "there is no disagreement left for the re-run to resolve"
+                    % frozen_state]
+
+        script = os.path.join(case, "mesh_probe.pipeline.json")
+        os.remove(os.path.join(case, "mesh_probe.vtk"))
+        proc = subprocess.run(["./run_pipeline.sh", script, "--no-solver"],
+                              cwd=_REPO, capture_output=True, text=True,
+                              timeout=900)
+        said = proc.stdout
+        if not os.path.isfile(os.path.join(case, "mesh_probe.vtk")):
+            return ["the committed script did not regenerate the mesh "
+                    "(rc=%d)\n%s" % (proc.returncode, said[-2000:])]
+        if "Verdict: %s" % frozen_state not in said:
+            out.append("the re-run did not reproduce the frozen verdict %r:\n%s"
+                       % (frozen_state, said[-2000:]))
+        if "Verdict: %s" % moved.state in said:
+            out.append("the re-run was graded by the EDITED source: it says "
+                       "%r, which the frozen record does not" % moved.state)
+        frozen_copy = os.path.join(case, "mesh_probe.casetype.json")
+        if "from " + frozen_copy not in said:
+            out.append("the re-run does not name the frozen copy as the file "
+                       "that issued its verdict")
+    return out
+
+
 def check_one_pipeline_builder(_w):
     out = []
     tree = ast.parse(_SRC["dispose"])
@@ -950,6 +1157,8 @@ _ALL = {
     12: check_fingerprint_halves_agree,
     13: check_commit_service_is_qt_free,
     14: check_commit_is_audible_and_in_hand,
+    15: check_script_names_the_frozen_copy,
+    16: check_rerun_reproduces_the_frozen_verdict,
 }
 
 _LABELS = {
@@ -976,6 +1185,11 @@ _LABELS = {
     13: "check 13. services/mesh_commit is Qt-free, measured in a subprocess",
     14: "check 14. a commit says what it could not leave, and repoints the "
         "session at the mesh it approved",
+    15: "check 15. the committed script is judged by the copy FROZEN beside the "
+        "mesh — and by none at all for a fallback, and by the operator's own "
+        "spelling when nothing was frozen",
+    16: "check 16. re-running that script after the SOURCE case type has been "
+        "edited reproduces the frozen verdict and names the frozen copy",
 }
 
 _REAL = world()
@@ -996,7 +1210,10 @@ for num in sorted(_ALL):
 # 13 imports the REAL module from disk in a child process and cannot see an
 # in-memory mutant at all; 12 drives the real controller, whose fingerprint
 # comes from the injected module and so DOES move under one.
-_SKIP_UNDER_MUTATION = (1, 2, 10, 11, 13)
+# 16 is skipped for check 10's reason and only that one: it runs
+# `run_pipeline.sh` in a child process, which loads the REAL module from disk.
+# Its in-process half is check 15, which is where injections J and K are scored.
+_SKIP_UNDER_MUTATION = (1, 2, 10, 11, 13, 16)
 
 
 def others_green(w, *reddened):
@@ -1081,6 +1298,23 @@ if os.path.isfile(_MESHER):
           "injection H. check 12 fails when the Generate half fingerprints the "
           "PANEL's config instead of the one the mesher is handed — the defect "
           "that made every trial read as stale while a branch claimed otherwise")
+
+    inj = mutate("    out.case_type_file = case_type_picker.stored_spelling(\n"
+                 "        sidecar_paths(os.path.abspath(dest_mesh))[\"case_type\"])",
+                 "    out.case_type_file = cfg.case_type_file")
+    check(check_script_names_the_frozen_copy(inj) and others_green(inj, 15),
+          "injection J. check 15 ALONE fails when the script stops being "
+          "re-pointed — it names the maintained file again, so the mesh "
+          "reproduces and the verdict is recomputed against bounds that moved")
+
+    inj = mutate("    out = copy.deepcopy(cfg)\n    out.case_type_file = "
+                 "case_type_picker.stored_spelling(",
+                 "    out = cfg\n    out.case_type_file = "
+                 "case_type_picker.stored_spelling(")
+    check(check_script_names_the_frozen_copy(inj) and others_green(inj, 15),
+          "injection K. check 15 ALONE fails when the re-pointing mutates the "
+          "operator's own configuration instead of a copy — their next Trial "
+          "would be judged by a historical document nobody asked them about")
 
     check(not any(fn(_REAL) for num, fn in _ALL.items()),
           "injection G. negative control: the unmutated module passes every "

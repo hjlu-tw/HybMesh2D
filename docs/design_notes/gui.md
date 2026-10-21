@@ -5581,6 +5581,86 @@ another case type needed (named and ignored against refused).
   alternative and would have moved every module's `__file__` — `services/paths.repo_root()`
   derives the repo from one.
 
+**A COMMITTED SCRIPT IS JUDGED BY THE COPY FROZEN BESIDE IT** (#172, parent #158; rules in
+`.claude/rules/gui-dispositions.md`). #158's acceptance verification, checking story 45 ("be
+handed a script rather than a recollection when an operator asks me about their mesh"), found the
+seam between two stories that each held. A Generate commits three records beside the mesh: the
+whole case-type document frozen (`<stem>.casetype.json`), the rendered verdict
+(`<stem>.verdict.json`) and a runnable script (`<stem>.pipeline.json`). Story 43's guarantee — "an
+old case's verdict must not change when I edit a case type" — really did hold: nothing in the tree
+rewrites the frozen copy. **But the script did not point at it.** `_commit_pipeline` built it from
+`global_mesh_config`, whose `case_type_file` is the operator's own pick, and nothing re-pointed
+it. So re-running a committed script reproduced the MESH exactly and recomputed the verdict
+against whatever the picked file said at that moment. 43 was about the RECORD and 45 about the
+SCRIPT, and no gate covered the gap between them.
+
+**IT IS NOT A HYPOTHETICAL EDIT.** #168 shipped `add_reference_mesh.py` precisely so a threshold
+that judged wrong is corrected with evidence, and every correction re-derives the MEASURED bounds
+from the whole exemplar set. Editing a shipped case type is therefore a routine maintenance act,
+not an accident — which is what makes a script that follows the maintained file wrong by design
+rather than merely fragile.
+
+**THREE OPTIONS, AND WHY THE FIRST.** The ticket left the decision open. (1) *Point the script at
+the frozen copy*: re-running reproduces the verdict, at the cost of naming a file that lives beside
+the mesh. (2) *Leave it and make the disagreement audible*: a re-run compares what it is about to
+judge with the frozen copy and says when they differ — cheaper and portable, but it reports the
+problem rather than removing it, and the operator is then holding two verdicts and a diagnosis.
+(3) *Record an identity rather than a path* — a hash or a version checked on re-run: the most
+machinery for an answer that is still only a diagnosis. The first was taken, and the repo's own
+rule for the frozen copy is the argument: "a name points at a file that moves; a hash proves only
+that it moved" (#166). The picked path IS that name, and the frozen copy is already a document
+`case_type.load` reads back — `services/mesh_commit.py`'s docstring said so from the start, which
+is the design intent this closes rather than extends.
+
+**WHAT THE COST ACTUALLY IS, stated rather than argued away.** A script copied to a checkout that
+does not hold its case directory names a case type that is not there. The mesh still regenerates
+and the verdict layer says plainly why there is none — `for_config` raises on a NAMED case type
+that will not load, and `run_verdict` renders "No verdict:" with the loader's own sentence, which
+names the missing file. The alternative was silently grading one mesh by another document's
+current numbers. Note what the old spelling bought and what it did not: in another checkout
+`examples/case_types/ogrid_circle.casetype.json` really does exist, so the script would have
+produced a verdict — from a possibly different version of that file, with nothing saying so. A
+verdict that is absent and explains itself beats one that is present and wrong.
+
+**ONE TRANSFORMATION, BESIDE THE ONE THAT WAS ALREADY THERE.** `mesh_commit.as_frozen` is shaped
+on `mesh_fallback.as_hybrid`: a deepcopy, duck-typed on the config, Qt-free, naming its rule in
+its own docstring. It goes through the SAME `mesh_cfg` override `build_pipeline_config` already
+had, because "one builder for the committed script" (#166) forbids a second `PipelineConfig` and
+an override is how the fallback already answered that. The two are chosen by one `if` in
+`_commit_pipeline` and are mutually exclusive by construction — a fallback mesh freezes no case
+type, so there is nothing beside it to point at, which is why #167's clear stays where it is
+rather than being re-expressed here. The third branch is the one a naive fix would have missed: a
+commit with NO verdict freezes nothing either, so it keeps the operator's own spelling rather than
+naming a sidecar nobody wrote.
+
+**THE PANEL IS NEVER MUTATED, and that is the half an injection scores.** The re-pointing belongs
+to the SCRIPT; the operator's choice and the workspace they go on saving still name what they
+picked. Dropping the deepcopy would leave the script correct and silently make the frozen copy
+their current choice — judging their next Trial against a historical document they were never
+asked about, which is exactly what `project_state_ctrl._say_committed_case_type` exists to avoid
+on the reopen path. Injection K is that mutation, and check 15's third leg is what reddens.
+
+**THE GATE RUNS THE SCENARIO, IT DOES NOT ASSERT A SENTENCE.** Check 15 is in-process and scores
+all three dispositions — judged, fallback, nothing-frozen — so the injections can redden it. Check
+16 is the acceptance criterion end to end: commit a case, rewrite the SOURCE case type with bounds
+that really do flip this mesh, then run `./run_pipeline.sh <script> --no-solver` and read what it
+printed. The flip is MEASURED first (`run_verdict` against the edited document) rather than
+assumed, because a premise that quietly stopped holding would make the rest of the check vacuous —
+this repo's own "a check that asserts a sentence" failure mode. Falsified by hand before the fix
+was kept: with `as_frozen`'s body removed the re-run prints `Verdict: unusable` where the frozen
+record says `usable`, which is #172 in one line of output. Check 16 cannot be scored by injection
+— `run_pipeline.sh` is a child process loading the real module from disk — so it is in
+`_SKIP_UNDER_MUTATION` and check 15 is what the mutations answer to.
+
+**Named blind spots.** Nothing RE-FREEZES on a re-run: `run_pipeline.sh` overwrites the committed
+mesh and leaves the frozen copy and the verdict record describing the first run, which is #166's
+standing "nothing checks that a committed case is still consistent later" and is not widened here.
+A script carried off alone gets no verdict, as above. And loading a committed script through the
+Pipeline menu does put a historical document in the picker — the one place the frozen copy is ever
+selected — which is the operator asking for that run back by name rather than a reopened case
+changing their choice under them.
+
+
 ### PreProcessor CLI (`tools/PreProcessor/src/main.cpp`)
 - Reads JSON config via `nlohmann/json.hpp` (header-only, bundled)
 - `detectFeaturePoints()` → `splitPolyline()` → `alignEndpoints()` → `distributePointsProportionally()`

@@ -958,13 +958,17 @@ def check_8(w):
             if int(given.mesh_mode) != 0 or given.topology.family:
                 out.append("the script's mesh section is mode=%r family=%r"
                            % (given.mesh_mode, given.topology.family))
-    # an ordinary commit hands the builder no override at all: the parameter has
-    # exactly one caller, which is what keeps it from becoming a second builder.
+    # A commit with NOTHING TO SAY about the mesh section hands the builder no
+    # override at all, so the parameter cannot drift into being a second
+    # builder that always rewrites. It is no longer the fallback's alone: #172
+    # gave a JUDGED commit its own override, re-pointing the script at the case
+    # type frozen beside the mesh (`mesh_commit.as_frozen`), which is why this
+    # leg is driven by a trial carrying neither — no fallback and no verdict.
     h2 = make_host(cfg, _tmpdir(), pipeline=_Pipeline())
     h2._commit_trial(commit_mod.TrialMesh(src, 0))
     if h2.pipeline_cfgs != [None]:
-        out.append("an ordinary commit overrode the script's mesh section: %r"
-                   % (h2.pipeline_cfgs,))
+        out.append("a commit with no fallback and no verdict overrode the "
+                   "script's mesh section: %r" % (h2.pipeline_cfgs,))
     # ONE BUILDER, read off the source: no `PipelineConfig(` of its own.
     tree = ast.parse(_DISPOSE_SRC)
     fn = next((n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)

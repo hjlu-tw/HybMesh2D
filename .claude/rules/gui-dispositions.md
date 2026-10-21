@@ -16,7 +16,8 @@ disposition controller, the mesh-generation controller, the mesh stage's diagnos
 the pipeline-script reader/writer is read. Rules only — the rationale (the
 measurements, the injections and the named blind spots) is `docs/design_notes/gui.md`, sections
 "TRIAL AND GENERATE: ONE GENERATION, TWO DISPOSITIONS", "A SHAPE NO FAMILY COVERS IS A DOWNGRADE,
-NOT A DEAD END" and "A CASE TYPE THE OPERATOR CAN PICK, AND A VERDICT THEY CAN SEE".
+NOT A DEAD END", "A CASE TYPE THE OPERATOR CAN PICK, AND A VERDICT THEY CAN SEE" and "A COMMITTED
+SCRIPT IS JUDGED BY THE COPY FROZEN BESIDE IT".
 Read the matching section before overruling a rule here; when a rule changes, update BOTH.
 
 **THE FOURTEENTH RULE FILE, AND THE FIFTH TAKEN BECAUSE ONE WAS FULL.** These rules belong beside
@@ -76,7 +77,8 @@ actions; `controllers/mesh_gen_ctrl.py` = the one generation).
   hash proves only that it moved, and the copy is a case type `case_type.load` reads back;
   `<stem>.verdict.json`, the verdict as TEXT already rendered plus its state, deviations and exit
   code, FROZEN so that editing a borrowed case type cannot rewrite a finished case's judgement;
-  and `<stem>.pipeline.json`, a runnable script. The record holds no threshold numbers of its own —
+  and `<stem>.pipeline.json`, a runnable script **whose case type is the FROZEN COPY beside it,
+  never the file the operator picked** (#172). The record holds no threshold numbers of its own —
   the bounds are in the embedded document beside it, and two copies of one number is how they come
   to disagree.
 - **NO HOST SPELLS A VERDICT, AND A DISPOSITION IS A HOST.** The refusal is
@@ -117,6 +119,30 @@ actions; `controllers/mesh_gen_ctrl.py` = the one generation).
   the Pipeline menu's Save and the commit use; the disposition constructs no `PipelineConfig` of
   its own. Two builders is how a case ends up carrying a script that reproduces something else.
   A script that cannot be built costs the operator the script, never the mesh they just approved.
+  Its `mesh_cfg` override now has TWO callers, both in `_commit_pipeline` and mutually exclusive —
+  `mesh_fallback.as_hybrid` for a downgrade (#167) and `mesh_commit.as_frozen` for a judged commit
+  (#172) — and a commit that is NEITHER still hands it nothing, which is what keeps the parameter
+  from becoming a second builder that always rewrites. Gate: `test_mesh_fallback.py` check 8.
+- **THE COMMITTED SCRIPT IS JUDGED BY THE COPY FROZEN BESIDE IT** (#172, `mesh_commit.as_frozen`).
+  The picked file goes on being maintained and `add_reference_mesh.py` makes correcting its bounds
+  a routine act (#168), so a script naming it reproduced the MESH exactly and then recomputed the
+  verdict against whatever that file said on the day — contradicting the frozen record lying next
+  to it with nothing saying so. Neither story was violated alone: 43's record really was untouched
+  and 45's "reproduce what they saw" held for the mesh; the gap was the seam between them, and no
+  gate covered it. The re-pointing REMOVES the disagreement rather than reporting it. **A COPY,
+  never a mutation** — the operator's own choice and the workspace they go on saving still name
+  what they picked; it is the SCRIPT that is historical. **NOTHING FROZEN, NOTHING RE-POINTED**:
+  a run with no verdict (none in play, or a chosen case type that would not load) embeds no copy,
+  so the script keeps the operator's spelling rather than naming a sidecar nobody wrote. **AND A
+  FALLBACK IS EXEMPT**, which is `as_hybrid`'s clear and not a second rule here: an unstructured
+  mesh is judged by nobody, so there is no frozen copy to point at. THE COST IS NAMED: the copy
+  lives beside the mesh, so a script carried off without its case directory names a file that is
+  not there — `case_type.load` refuses, the verdict layer says so and names it, and the mesh is
+  still regenerated. That beats judging one mesh by another document's numbers in silence.
+  Gate: `test_mesh_trial_commit.py` checks 15 and 16, the second re-running the committed script
+  through `run_pipeline.sh` after the source has been edited to a state that really does flip.
+  Why — including the two options NOT taken: `docs/design_notes/gui.md`, "A COMMITTED SCRIPT IS
+  JUDGED BY THE COPY FROZEN BESIDE IT"; this bullet's neighbours above point at #166's section.
 - **`Preview` IS STILL `Preview`.** The existing canvas drawing of the far-field box and the
   boundaries — "BC Preview" in the menu — meshes nothing and is untouched; the new action is named
   **Trial** for exactly that reason. Both are distinct from **Run All**, which remains the whole
@@ -306,13 +332,19 @@ Qt-free; `views/panels/mesh_case_type_mixin.py` = the section at the top of the 
   automatically would judge the operator's next Trial against a historical document — and they
   would never have been asked. One line, through the user-log service, from
   `project_state_ctrl._say_committed_case_type`; silent for a case carrying no embedded copy, which
-  is every case committed before #166.
+  is every case committed before #166. THE ONE PLACE THE FROZEN COPY IS SELECTED IS THE COMMITTED
+  SCRIPT (#172), and loading one through the Pipeline menu therefore does put a historical document
+  in the picker — but that is the operator asking for that run back, by name, rather than a reopened
+  case changing their choice under them. The picker lists it by its own name and the summary says
+  what it owns, so the state is visible rather than inferred.
 - **A FALLBACK RUN NAMES NO CASE TYPE, AND `mesh_fallback.as_hybrid` IS WHERE THAT IS DONE.** The
   block above forbids a fallback mesh being judged; #169 opens a new route to the same defect,
   because the committed script is built from that same copy and would have anyone who re-ran it
   headlessly judge an unstructured mesh against bounds measured on structured quads. Cleared in the
   ONE transformation that says "this run is a downgrade"; a second clear at the script builder
-  would be that rule written twice.
+  would be that rule written twice. #172 re-points a JUDGED commit's script at the frozen copy and
+  leaves this path alone for the same reason — the two overrides are chosen by one `if`, and a
+  fallback freezes nothing to point at.
 - **IT IS IN `case_type_fields.EXCLUDED` WITH A REASON.** A new `MeshConfig` scalar automatically
   becomes a field a case type MAY own. Two reasons and the second is the harder one: it is a path
   into the maintainer's own tree, which is `mesh_topology_file`'s; and a case type that could set
@@ -388,4 +420,13 @@ which are capability refusals.
 - **NOTHING CHECKS THAT A COMMITTED CASE IS STILL CONSISTENT LATER.** Whether the mesh beside a
   frozen verdict is still the mesh that verdict judged is nobody's question once Generate returns:
   a later Export, a hand-edit or a headless `run_pipeline.sh` over the same output path can replace
-  the mesh and leave the record standing.
+  the mesh and leave the record standing. #172 makes that re-run PRINT the frozen verdict rather
+  than a contradicting one, which is the half a script can answer; it re-freezes nothing, so the
+  record on disk still describes the first run. `test_mesh_trial_commit.py`'s blind-spot list says
+  so at the check that does the re-running.
+- **A COMMITTED SCRIPT CARRIED OFF ALONE GETS NO VERDICT.** It names the frozen copy by the
+  ordinary stored spelling — repo-relative inside the repo — so a script copied to a checkout that
+  does not hold its case directory names a case type that is not there. The mesh still regenerates
+  and the verdict layer says plainly why there is none. The alternative was judging it by a
+  maintained file's current numbers, which is the defect #172 exists against, so this is the
+  chosen direction rather than an oversight — but it is a real cost and it is not free.

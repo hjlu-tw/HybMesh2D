@@ -53,6 +53,12 @@ WHAT A COMMITTED CASE CARRIES, and why each file is separate rather than one:
   (user story 44), written by the host's own `PipelineConfig`. Taken as an
   object with a `save_to_file` method rather than imported, so this module
   stays a stranger to the GUI's model layer and a test can hand it a stub.
+  **It names the FROZEN copy above as the case type that judges it**, never the
+  file the operator picked (#172): the picked one is maintained, and
+  `add_reference_mesh.py` makes correcting it a routine act, so a script that
+  named it would reproduce the mesh exactly and then grade it against bounds
+  that have moved — disagreeing with the frozen record beside it and saying
+  nothing. `as_frozen` is where that re-pointing is done.
 
 THE FINGERPRINT ANSWERS ONE QUESTION: is the mesh in hand still the mesh this
 configuration would produce? It is taken over the mesher's own config text —
@@ -64,14 +70,15 @@ missing, so an unreadable input makes the trial stale rather than silently fresh
 """
 from __future__ import annotations
 
+import copy
 import datetime
 import hashlib
 import json
 import os
 import shutil
 
-from app.services import (case_sources, case_type, case_type_verdict,
-                          mesh_fallback)
+from app.services import (case_sources, case_type, case_type_picker,
+                          case_type_verdict, mesh_fallback)
 from app.services.logging_setup import get_logger
 
 logger = get_logger(__name__)
@@ -213,6 +220,45 @@ def sidecar_paths(dest_mesh: str) -> dict:
     """The three files a committed case carries beside `dest_mesh`, by role."""
     stem = os.path.splitext(dest_mesh)[0]
     return {role: stem + ext for role, ext in SIDECAR_EXTS.items()}
+
+
+def as_frozen(cfg, dest_mesh: str):
+    """``cfg`` as the COMMITTED SCRIPT carries it: judged by the FROZEN copy.
+
+    A copy, never a mutation — the operator's configuration still names the case
+    type they picked, and so does the workspace they go on saving. What is
+    re-pointed belongs to the SCRIPT, exactly as `mesh_fallback.as_hybrid`
+    re-points what belongs to a downgraded RUN.
+
+    WHY THE SCRIPT MUST NOT NAME THE PICKED FILE (#172). A commit freezes the
+    whole case-type document beside the mesh precisely because the picked one
+    goes on being maintained — `add_reference_mesh.py` makes correcting its
+    bounds a routine act (#168). A script naming the picked file therefore
+    reproduces the MESH exactly and then grades it against whatever that file
+    says on the day it is re-run, so the verdict it prints can contradict the
+    frozen record lying next to it with nothing saying which is which. Naming
+    the frozen copy removes the disagreement rather than reporting it: the
+    script reproduces both halves of what the operator saw.
+
+    THE COST IS NAMED RATHER THAN HIDDEN. The copy lives beside the mesh, so a
+    script carried off ALONE — without the case directory it was committed into
+    — names a file that is not there. That is the honest failure: `case_type.load`
+    refuses, the verdict layer says "No verdict:" and names the missing file, and
+    the mesh is still regenerated. The alternative silently judges one mesh by
+    another case type's numbers.
+
+    A FALLBACK COMMIT NEVER REACHES HERE, and that exemption is deliberate
+    (#167): there is no frozen copy beside an unstructured mesh, because no case
+    type judged it. `mesh_fallback.as_hybrid` has already cleared the field, and
+    the caller picks one transformation or the other.
+
+    Duck-typed on the config, like `as_hybrid`, so this module stays a stranger
+    to the GUI's model layer.
+    """
+    out = copy.deepcopy(cfg)
+    out.case_type_file = case_type_picker.stored_spelling(
+        sidecar_paths(os.path.abspath(dest_mesh))["case_type"])
+    return out
 
 
 def verdict_record(trial: TrialMesh, dest_mesh: str, when: str) -> dict:
