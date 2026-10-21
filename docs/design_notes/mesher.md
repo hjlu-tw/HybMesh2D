@@ -4935,10 +4935,33 @@ at 0.000e+00 across two builds, with no shipped document declaring unequal ends.
 also why "a symmetric request reproduces the one-parameter solver" cannot be asserted AT the
 symmetric point: the two-sided law is never reached there, so the equality would be asserted of
 nothing. Check 60(b) declares `0.01` against `0.01 * (1 + 1e-12)`, which routes through the new
-law, and holds its nodes to the symmetric law's. **A single clustered end is not expressible in
-this family at all** — "unconstrained at one end" has no `A` — which is why that half stays a
-dispatch, and is the same thing Pointwise's documentation says when it falls back to a different
-function.
+law, and holds its nodes to the symmetric law's.
+
+**BUT THAT GATES THE SHIPPED BEHAVIOUR AND NOT THE DECISION, AND A REVIEW AXIS SAID SO.** #177's
+Implementation decision asks that "a two-parameter solver ASKED FOR a symmetric pair must
+reproduce it, and that equality is the gate rather than a claim". Nothing driven through
+`buildMultiBlock` can ask it, because the dispatch never does. `tests/cpp/test_spacing_two_sided.cpp`
+is the answer: it links NO library at all — the law is header-only arithmetic — and is handed
+`tools/PreProcessor/include` by name rather than inheriting it, so if the spacing laws ever reach
+for a mesh or gmsh that executable stops building. It calls `solveTanhTwoSided(L, n, d, d)` across
+four lengths, four counts and three cell sizes and holds `A` at 1 (worst 1.0e-12) and every station
+to a derived bar.
+
+**AND WRITING THAT GATE OVERTURNED A CLAIM THIS TICKET HAD MADE THREE TIMES.** Its last check was
+written to confirm that a SINGLE clustered end is *not* expressible in this family — "unconstrained
+at one end has no `A`" — and it went red at 3.05e-15. Measured properly, with the finer end leading
+as `spacingAlong` hands it: given the one-sided law's own two end intervals, the two-sided solver
+reproduces its whole distribution to **7.7e-13 of the edge over 64 combinations**. The one-sided
+law IS a member. The false claim came from Pointwise's note that `Tanh` falls back to "a
+*different*, one-sided function ... if the spacing is unconstrained at only one end" — an API fact
+about an UNDECLARED end, read as a statement about the mathematics. **That is the same error as the
+refusal this ticket exists to remove, made twice inside the ticket that removes it**, which is
+worth more than the correction: reading a vendor's API as the subject's shape is evidently not a
+one-off. What is actually true is a counting argument — one declared height is ONE equation and
+this family has TWO parameters, so with the far end undeclared there is nothing to solve `A` from,
+and `solveTanhStartDelta` is the rule that picks a member of the family rather than a rival to it.
+The dispatch stays for that reason and for bit-for-bit compatibility, which are both better reasons
+than the one it was given.
 
 **WHAT IT BUYS, MEASURED ON A SHIPPED DOCUMENT.** With both sides of the two-ring O-grid's seam
 declared, the seam height becomes a free parameter instead of a constant read off a run, and the
@@ -4965,19 +4988,36 @@ of the ring has to stretch more to pay for the squared end. The layer half is id
 is the control — the change really is confined to the outer ring. A capability is not an
 improvement, and this one is a knob that can be turned the wrong way.
 
-**WHAT IT DOES NOT FIX, AND THE ISSUE's OWN MOTIVATION 1 IS THE EXAMPLE.** #177 names a Turek
-channel band whose counts "had to be hand-chosen so the far end happened to land near the right
-value". Measured: those edges (`h0_*`) ask for 0.002 at their ring end over a span of 0.1 at 57
-nodes, where the UNIFORM spacing is already 0.0017857 — so the request is coarser than the count
-allows and the one-sided law correctly returns uniform. The two-sided law reaches 0.002 there
-only with the other end at 0.0016 or finer, which is not what a channel band wants; at 0.01 the
-pair scores 441 against a bound of 3025. **The existing warning's advice — lower the count on
-this edge's equivalence class — was right, and remains the fix.** One of the three pieces of work
-the refusal was blamed for was not the refusal's fault.
+**ACCEPTANCE ITEM 6 IS NOT MET, AND THE FIRST ATTEMPT TO ARGUE IT AWAY WAS WRONG.** The
+issue asks that "`turek`'s hand-chosen counts are replaced by declared end spacings and the
+mesh is no worse, as the first real use". That case is scratch work and **exists nowhere in
+this tree** — nothing in the repo can run it, and nothing can falsify a claim about it in
+either direction, which is the first thing to say about any figure quoted from it.
 
-**The injection ledger** is eleven mutations of the new code, dated 2026-10-20 beside check 60 in
-`tests/cpp/test_multiblock.cpp`, each built and its EXIT CODE read against both gates with a
-NAMED negative control. Eight bite. The three that do not are named there with their reasons, and
+The first version of this paragraph said #177 does not fix that case, on a measurement of its
+`h0_*` edges: they ask for 0.002 at one end where their own 57 nodes over 0.1 give a uniform
+0.0017857, so the request is coarser than the count allows and a two-sided law reaches it only
+with the other end at 0.0016 or finer. **That arithmetic is right and the attribution was
+not.** `h0_*` runs `g0_0 -> g1_0`, which is STREAMWISE; the issue's motivation 1 is a band
+that "must resolve the wall at one end and meet the ring's spacing at the other", which is a
+WALL-NORMAL edge. The edges measured were simply the ones that had WARNED, which is the
+shape of a sweep that varies what you chose to vary: the complaint was taken for the subject. A review axis caught it.
+
+So the honest statement is the short one. **Acceptance item 6 is not met**, its case is not in
+the tree, and no substitute measurement of it belongs here — a second analysis of a file
+nobody else can open would be the same defect again. What IS measured is the shipped two-ring
+O-grid above, which is the issue's user story 2 ("a radial ring whose two ends meet different
+neighbours") on a document anyone can run and a gate re-runs. A future ticket that wants item
+6 has to bring the case into the tree first; until then the criterion is unfalsifiable rather
+than unmet-and-known.
+
+**The injection ledger** is THIRTEEN mutations of the new code, dated 2026-10-20 and re-run
+2026-10-21 beside check 60 in `tests/cpp/test_multiblock.cpp`, each built and its EXIT CODE
+read against both gates with a NAMED negative control. Ten bite, two of them the review's own
+— and one of those, I12, found a SHIPPED DEFECT rather than confirming a gate: the pair
+clause's last sentence credited the other end from the LAW's tie-break rule instead of from
+the measurement, so wherever the law held NEITHER end it shipped twice in one run, each
+warning crediting the other's number. Nothing read the clause, only that it appeared. The three that do not are named there with their reasons, and
 two of them are statements about the CODE rather than about the gates: the `A > 0` guard is
 unreachable from the one caller this repo has, because `spacingAlong` sorts; and the `twoEnded`
 guard on the pair clause is already held by the arithmetic, an unclustered end having `ds == 0`

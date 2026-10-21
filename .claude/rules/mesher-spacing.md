@@ -55,14 +55,14 @@ resampled geometry as well as a block fill, and the golden set covers both.
   a polyline, so a first interval spanning several facets has a shorter chord, and comparing that
   fired the warning on a law that had honoured the request exactly, blaming the node count for the
   geometry's own faceting. Gated with a negative control by `test_multiblock.cpp` 36.
-  **TWO DIFFERENT HEIGHTS AT THE TWO ENDS LEFT THIS LIST IN #177** and is the rule below. The
-  refusal was honest about the implementation and FALSE about the subject, and that is the
-  shape to look for in the rest of the list: it said "the tanh law here is symmetric when both
-  ends cluster", which was true of `Spacing.hpp` and of nothing else. ICEM's `Hyperbolic` takes
-  `Spacing1` AND `Spacing2`, Pointwise's `Tanh` IS the two-sided function, HYPGEN takes `DZ0`
-  and `DZ1` (`docs/research/cell-size-range-within-a-block.md` section L3, read from the vendor
-  documentation). A missing primitive stated as a property of the subject blocked three pieces
-  of work in one week.
+  **TWO DIFFERENT HEIGHTS AT THE TWO ENDS LEFT THIS LIST IN #177** and is the rule below.
+  **THE TEST THAT MOVED IT IS THE ONE TO APPLY BEFORE ADDING A ROW HERE**: this list means
+  the SUBJECT cannot, and that refusal meant only that `Spacing.hpp` had no such solver —
+  it said "the tanh law here is symmetric when both ends cluster", which was true of this
+  repo's file and of no tanh anywhere else. A primitive three competing tools ship is not a
+  property of the subject. Which three, with their own parameter names and where they were
+  read: `docs/research/cell-size-range-within-a-block.md` section L3, and
+  `docs/design_notes/mesher.md`.
 
 **AN EDGE MAY CLUSTER TO A DIFFERENT HEIGHT AT EACH END, AND IT IS THE SAME FAMILY THE
 SYMMETRIC LAW IS A MEMBER OF** (`Spacing::solveTanhTwoSided` / `generateTanhTwoSided`; the
@@ -81,15 +81,28 @@ dispatch is `spacingAlong` in `src/MultiBlock.cpp`; #177). **NO NEW KEY** — `d
 - **THE ONE-PARAMETER SOLVERS STAY, AND THE DISPATCH IS WHAT KEEPS THEM REACHED.** An EQUAL
   pair still goes to `solveTanhDelta` and a SINGLE clustered end still goes to
   `solveTanhStartDelta`, bit for bit, so no shipped document's nodes move — measured, 22/22
-  golden cases SAME at 0.000e+00 across two builds. **A single end is not expressible in this
-  family at all**, which is why that half is a dispatch and not a reduction: "unconstrained at
-  one end" has no `A`, and Pointwise says the same thing in its own documentation by falling
-  back to a DIFFERENT function there.
-- **THE REDUCTION IS THEREFORE GATED ONE ULP AWAY FROM THE SYMMETRIC POINT, NOT AT IT.** The
-  two-sided law is never exercised at an equal pair, so an equality asserted there would be
-  asserted of nothing; `test_multiblock.cpp` 60(b) declares `0.01` against
-  `0.01 * (1 + 1e-12)`, which routes through the NEW law, and holds its nodes to the symmetric
-  law's.
+  golden cases SAME at 0.000e+00 across two builds.
+- **THE REDUCTION IS GATED TWICE, BECAUSE THE DISPATCH PUTS IT OUT OF ONE GATE's REACH.**
+  Through `buildMultiBlock` the two-sided law is never exercised AT an equal pair, so an
+  equality asserted there would be asserted of nothing: `test_multiblock.cpp` 60(b) declares
+  `0.01` against `0.01 * (1 + 1e-12)`, which routes through the NEW law, and holds its nodes
+  to the symmetric law's. That is the shipped BEHAVIOUR's gate. The DECISION #177 states — "a
+  two-parameter solver asked for a symmetric pair must reproduce it, and that equality is the
+  gate rather than a claim" — needs the solver called directly, which no test linking
+  `hybmesh_pure` can do, so `tests/cpp/test_spacing_two_sided.cpp` links NOTHING and is handed
+  the header by name. Both are wanted; a review axis found the second missing.
+- **AND THE ONE-SIDED LAW IS A MEMBER OF THIS FAMILY TOO, SO THE DISPATCH IS ABOUT
+  DETERMINACY AND NOT CAPABILITY.** Handed the one-sided law's own two end intervals, the
+  two-sided solver reproduces its WHOLE distribution — worst 7.7e-13 of the edge over 64
+  combinations of length, count and cell size. This file said the opposite until the gate that
+  was written to confirm it went red: "a single clustered end is not expressible here" came
+  from Pointwise falling back to "a *different*, one-sided function ... if the spacing is
+  unconstrained at only one end", which is an API fact about an UNDECLARED end, read as a
+  mathematical one. **The same mistake as the refusal this ticket removed, made twice in one
+  ticket.** What is true: one declared height is ONE equation and this family has TWO
+  parameters, so with the far end undeclared there is nothing to solve `A` from, and
+  `solveTanhStartDelta` is the rule that picks a member. The dispatch stays for that and for
+  bit-for-bit compatibility.
 - **THE FINER END LEADS, AND THE RESULT IS MIRRORED** when the document declared it trailing —
   the same reflection the one-sided branch uses, and for the same reason. Two things follow and
   both are rules. The solve PINS its leading height when the pair cannot be had, so **what
@@ -113,11 +126,13 @@ dispatch is `spacingAlong` in `src/MultiBlock.cpp`; #177). **NO NEW KEY** — `d
   test rather than by a second rule. The degenerate end of that region — a declared height
   longer than the WHOLE EDGE — is the one place `A <= 0` is reachable, and `tanhTwoSidedPos`
   divides by it: the difference between that row and a NaN mesh is one guard.
-- **WHAT IT DOES NOT FIX, MEASURED RATHER THAN ASSUMED.** #177's own motivation 1 (the Turek
-  channel band) is NOT this: its `h0_*` edges ask for 0.002 where their own count gives
-  0.0017857, and a two-sided law reaches that only with the other end at 0.0016 or finer — so
-  the existing message's advice, LOWER THE COUNT, was right and remains the fix.
-- Gated by `tests/cpp/test_multiblock.cpp` 60 (11 hand injections, dated in that file, 8
+- **ACCEPTANCE ITEM 6 IS NOT MET AND THE RULE IS NOT TO ARGUE IT AWAY.** #177 asks for the
+  `turek` channel band as the first real use; that case is scratch and is NOT IN THIS TREE, so
+  nothing here can falsify a claim about it either way. A first attempt measured its `h0_*`
+  edges and concluded the ticket does not fix it — right arithmetic, wrong edges: those run
+  streamwise while the issue's band is wall-normal, and they were picked because they were the
+  ones WARNING. What is measured instead is user story 2 on the SHIPPED two-ring O-grid.
+- Gated by `tests/cpp/test_multiblock.cpp` 60 (13 hand injections, dated in that file, 10
   biting and the 3 inert ones named with their reasons) and
   `tools/PreProcessor/tests/test_multiblock_two_sided_surface.py`, which drives the SHIPPED
   two-ring O-grid through the real binary and measures four declared heights on one radial

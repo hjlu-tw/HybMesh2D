@@ -74,12 +74,13 @@ Known blind spots, stated rather than pretended away:
      advantage is worth after the solve.
 
 THE INJECTIONS ARE HAND RUNS and are recorded ONCE, beside check 60 in
-``tests/cpp/test_multiblock.cpp``: eleven mutations of the new code, dated
-2026-10-20, each built and its EXIT CODE read against BOTH gates, with a named
-negative control. Four of the eight that bite are seen only here — the message's
-own arithmetic among them — and three are seen only by the C++ group, which is
-why neither file is worth much alone. Restating the ledger here would be a second
-home for it; read it there.
+``tests/cpp/test_multiblock.cpp``: thirteen mutations of the new code, dated
+2026-10-20 and re-run 2026-10-21, each built and its EXIT CODE read against BOTH
+gates, with a named negative control. Of the ten that bite, some are seen only
+here — the message's own arithmetic among them — and some only by the C++ group,
+which is why neither file is worth much alone. The split between them is NOT
+restated here: it moved once already when two injections were added, and a count
+with two homes is the figure that goes stale. Read the ledger there.
 
 Run:  python3 tools/PreProcessor/tests/test_multiblock_two_sided_surface.py
 """
@@ -482,6 +483,16 @@ def main() -> int:
                   abs(lhs - want_lhs) <= 2e-3 * max(1.0, abs(want_lhs)))
             check("6. ...and that left-hand side really is below the bound, so the "
                   "message is not announcing a failure it cannot see", lhs < rhs)
+            # WHAT IT SAYS THE OTHER END GOT, read rather than assumed. The seam
+            # end here really is held — it is the finer of the two and the law
+            # pins it — so the clause must say so with that end's own number.
+            # Its first version asserted this from the tie-break RULE instead of
+            # from the measurement, and was false wherever the law held neither.
+            check("6. ...and names what the OTHER end actually got, measured, with "
+                  "that end's own declared %g in it" % ship,
+                  "was produced exactly" in txt and ("%.6f" % ship) in txt)
+            check("6. ...and does not claim neither end was held, because one was",
+                  "NEITHER end was held" not in out)
 
     print("\n%d check(s) failed" % len(failures) if failures else "\nAll checks passed.")
     return 1 if failures else 0

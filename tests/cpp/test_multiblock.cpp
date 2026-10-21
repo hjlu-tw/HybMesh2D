@@ -5296,10 +5296,8 @@ int main() {
     // Refused by name until #177, and the refusal was honest about the
     // implementation rather than about the subject: `Spacing.hpp` had the
     // SYMMETRIC tanh and the ONE-SIDED tanh and nothing between them. Two
-    // different end spacings on one edge is the industry default — ICEM's
-    // `Hyperbolic` takes Spacing1 AND Spacing2, Pointwise's `Tanh` is the
-    // two-sided function, HYPGEN takes DZ0 and DZ1 (docs/research/cell-size-
-    // range-within-a-block.md section L3, from the vendor documentation).
+    // different end spacings on one edge is the industry default; which tools
+    // ship it and where that was read is `docs/design_notes/mesher.md`.
     //
     // Measured on the WEST edge of a unit square, which runs sw -> nw with `nj`
     // nodes, so `nodeOf(r, b, 0, j)` walks it and consecutive distances are the
@@ -5307,24 +5305,35 @@ int main() {
     // distance between two nodes of a finished fill, which is the same rule
     // check 36 holds the one-parameter solvers to.
     //
-    // ELEVEN HAND INJECTIONS, run 2026-10-20 against this group AND against
-    // tools/PreProcessor/tests/test_multiblock_two_sided_surface.py, each one
+    // THIRTEEN HAND INJECTIONS, run 2026-10-20 and re-run 2026-10-21 after the
+    // review fix below, against THREE gates — this group,
+    // tests/cpp/test_spacing_two_sided.cpp and
+    // tools/PreProcessor/tests/test_multiblock_two_sided_surface.py — each one
     // built and its EXIT CODE read rather than its FAIL-line count, with a NAMED
-    // negative control (a comment line) that stayed green. Eight bite; the three
+    // negative control (a comment line) that stayed green. TEN bite; the three
     // that do not are named here rather than left as a count, because an inert
     // injection is a statement about the code and not only about the gate:
     //
-    //   I1  the Mobius map dropped (the two-sided law becomes the symmetric one)  both
-    //   I2  `tanhTwoSidedA` drops its `- 1.0`, so `A` targets the wrong cell      both
-    //   I3  the "neither end finer than uniform" early return deleted             C++
+    //   I1  the Mobius map dropped (the two-sided law becomes the symmetric one)   all
+    //   I2  `tanhTwoSidedA` drops its `- 1.0`, so `A` targets the wrong cell       all
+    //   I3  the "neither end finer than uniform" early return deleted      C++ + law
     //   I4  the `A > 0` guard dropped                                            INERT
     //   I5  the solve returns `hi` instead of `lo`                               INERT
     //   I6  the FINER end no longer leads, so `ds_start` is always pinned         C++
     //   I7  the pair bound squared from `count - 1` instead of `count - 2`     surface
     //   I8  the `twoEnded` guard on the pair clause dropped                      INERT
     //   I9  an unequal pair routed to the SYMMETRIC law on `ds_start` alone       both
-    //   I10 the bisection truncated from 200 sweeps to 8                          both
-    //   I11 `tanhTwoSidedTrail` reports the FIRST interval, not the last          both
+    //   I10 the bisection truncated from 200 sweeps to 8                           all
+    //   I11 `tanhTwoSidedTrail` reports the FIRST interval, not the last           all
+    //   I12 the pair clause credits the other end from the RULE, not the measure  C++
+    //   I13 the mirror is dropped, so a trailing-finer pair is not reflected      C++
+    //
+    // I12 AND I13 ARE THE REVIEW's, AND I12 FOUND A SHIPPED DEFECT RATHER THAN
+    // CONFIRMING A GATE: the clause's last sentence asserted "the other end's X
+    // was honoured in full" from the LAW's tie-break rule, so in (e) — where both
+    // heights are coarser than uniform and the law holds NEITHER — it shipped
+    // twice in one run, each warning crediting the other's number. Nothing read
+    // the clause, only that it appeared. Both branches are read now.
     //
     // I4 is inert because `spacingAlong` hands the FINER height in first, which
     // makes `ds_lead < uniform <= L` wherever the guard above it lets execution
@@ -5494,6 +5503,16 @@ int main() {
             CHECK(said(r, "it is the PAIR that did not fit"),
                   "60. ...and says it was the PAIR, so a reader is not sent to "
                   "refine an end that is already as fine as it asked to be");
+            // ...AND WHAT IT SAYS THE OTHER END GOT IS READ, not just that the
+            // clause appeared. The clause's last sentence used to assert "the
+            // other end's X was honoured in full" from the LAW's tie-break rule
+            // rather than from the measurement — true here and FALSE in the row
+            // below, where it shipped twice in one run, each warning naming the
+            // other's number. Nothing read it, which is why.
+            CHECK(said(r, "was produced exactly"),
+                  "60. ...and names what the other end actually got, measured");
+            CHECK(!said(r, "NEITHER end was held"),
+                  "60. ...and does not say neither was held, because one was");
             // ...AND THE SAME PAIR THE OTHER WAY ROUND HOLDS THE OTHER END.
             // Without this row the whole mirroring in `spacingAlong` is
             // unfalsifiable: the FEASIBLE case reaches the same distribution
@@ -5544,6 +5563,17 @@ int main() {
             CHECK(said(r, "'start' end asks for a first cell height")
                       && said(r, "'end' end asks for a first cell height"),
                   "60. ...and BOTH ends are told they did not get what they asked for");
+            // THE ROW THE CLAUSE WAS WRONG ON. Both heights are coarser than this
+            // count's uniform spacing, so the law holds NEITHER — and the pair
+            // bound is also missed, so the clause fires on both warnings. Each
+            // used to end "the other end's <the other number> was honoured in
+            // full": two false statements in one run, under a comment three lines
+            // up saying the figures are measured on the produced nodes.
+            CHECK(said(r, "NEITHER end was held"),
+                  "60. ...and the PAIR clause says neither was held rather than "
+                  "crediting the end it did not hold either");
+            CHECK(!said(r, "was produced exactly"),
+                  "60. ...and credits no end with a height it did not produce");
             // ...INCLUDING THE DEGENERATE END OF THAT REGION, where a declared
             // height is longer than the WHOLE EDGE. The map's weight `A` would be
             // non-positive there and `tanhTwoSidedPos` divides by it, so the

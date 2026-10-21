@@ -491,10 +491,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    17 rule files now — 59,760 / 59,576 / 59,117 / 56,802 / 56,405 / 41,250 / 36,306 / 33,344 / 25,539 / 24,556 / 23,361 / 18,773 / 15,762 / 15,090 / 14,917 / 11,484 / 8,969  characters (gui-handoff, gui-topology, mesher-multiblock, mesher-smoothing, pipeline-case, gui-panels-config, mesher, gui-dispositions, gui-seams, mesher-quality, gui-canvas-edit, gui-apply, gui-results, gui-preflight, gui-evidence, mesher-spacing, gui-lifecycle) — so "moving text into another rule file
+    17 rule files now — 59,760 / 59,576 / 59,117 / 56,802 / 56,405 / 41,250 / 36,306 / 33,344 / 25,539 / 24,556 / 23,361 / 18,773 / 15,762 / 15,090 / 14,917 / 12,846 / 8,969  characters (gui-handoff, gui-topology, mesher-multiblock, mesher-smoothing, pipeline-case, gui-panels-config, mesher, gui-dispositions, gui-seams, mesher-quality, gui-canvas-edit, gui-apply, gui-results, gui-preflight, gui-evidence, mesher-spacing, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 240 / 424 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    15, which have 883 / 3,198 / 3,595 / 18,750 / 23,694 / 26,656 / 34,461 / 35,444 / 36,639 / 41,227 / 44,238 / 44,910 / 45,083 / 48,516 / 51,031. #76 spent 3,446 of
+    15, which have 883 / 3,198 / 3,595 / 18,750 / 23,694 / 26,656 / 34,461 / 35,444 / 36,639 / 41,227 / 44,238 / 44,910 / 45,083 / 47,154 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a

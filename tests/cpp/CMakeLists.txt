@@ -82,3 +82,28 @@ foreach(t IN LISTS HYBMESH_PURE_TESTS)
     target_link_libraries(${t} PRIVATE hybmesh_pure hybmesh_test_check)
     add_test(NAME ${t} COMMAND ${t})
 endforeach()
+
+# Tests of a HEADER-ONLY law, linking NO library at all.
+#
+# `tools/PreProcessor/include/Spacing.hpp` is pure arithmetic shared by the
+# mesher's decision layer and by `surface_resampler`. `hybmesh_pure` carries that
+# directory PRIVATE precisely so a test linking it does not pick the header up by
+# accident; a test that wants it asks for it BY NAME, here, and links nothing —
+# which is the pure layer's own signal one step stronger. If the spacing laws
+# ever reach for a mesh, a topology or gmsh, these executables stop building.
+set(HYBMESH_HEADER_TESTS
+    # The two-sided tanh's reduction to the one-parameter law (#177). The
+    # dispatch in `spacingAlong` never ASKS the two-sided solver for a symmetric
+    # pair, so the equality the ticket asks to be gated is unreachable from
+    # `test_multiblock.cpp`, which drives everything through `buildMultiBlock`.
+    test_spacing_two_sided
+)
+
+foreach(t IN LISTS HYBMESH_HEADER_TESTS)
+    add_executable(${t} ${t}.cpp)
+    target_link_libraries(${t} PRIVATE hybmesh_test_check)
+    target_include_directories(${t} PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/tools/PreProcessor/include)
+    add_test(NAME ${t} COMMAND ${t})
+endforeach()

@@ -939,6 +939,23 @@ std::vector<Point2D> subPath(const std::vector<Point2D>& path,
     return out;
 }
 
+// A law's stations, read from the other end of the edge.
+//
+// `L - s[n - 1 - i]`, which is the SAME arithmetic both one-ended laws below need:
+// a one-sided tanh clustered at the FAR end, and the two-sided law whose solve
+// pins its LEADING height and so is handed the finer one first. Written once
+// because it was written twice — twelve lines apart, under a comment claiming it
+// was not a second formula.
+//
+// NOT exact under reversal: one subtraction per station, so a mirror of a mirror
+// agrees to that rounding and not bit for bit (1.023e-16 on a length-1 edge,
+// `test_multiblock.cpp` 60(c)).
+std::vector<double> mirrorStations(const std::vector<double>& s, double L) {
+    std::vector<double> t(s.size());
+    for (size_t x = 0; x < s.size(); ++x) t[x] = L - s[s.size() - 1 - x];
+    return t;
+}
+
 // The arc-length positions of one edge's nodes, from its declared law.
 //
 // The one place the four laws are chosen between. Goes through the existing
@@ -988,10 +1005,7 @@ std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
         HybMesh::Spacing::solveTanhTwoSided(L, e.count, dsLead, dsTrail, dlt, A);
         const std::vector<double> f =
             HybMesh::Spacing::generateTanhTwoSided(L, e.count, dlt, A);
-        if (startFiner) return f;
-        std::vector<double> t(f.size());
-        for (size_t x = 0; x < f.size(); ++x) t[x] = L - f[f.size() - 1 - x];
-        return t;
+        return startFiner ? f : mirrorStations(f, L);
     }
     for (int k = END_START; k <= END_FINISH; ++k) {
         if (!e.cluster[k]) continue;
@@ -1001,9 +1015,7 @@ std::vector<double> spacingAlong(const EdgeSpec& e, double L) {
         // Clustered at the FAR end: the same one-sided law, MIRRORED. Built by
         // reflecting the start-clustered positions rather than by a second
         // formula, so the two ends cannot drift apart.
-        std::vector<double> t(f.size());
-        for (size_t x = 0; x < f.size(); ++x) t[x] = L - f[f.size() - 1 - x];
-        return t;
+        return mirrorStations(f, L);
     }
     return HybMesh::Spacing::generateTanh(L, e.count, e.delta);
 }
@@ -2836,9 +2848,26 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
                     + " against "
                     + fmt3(static_cast<double>(e.count - 2)
                            * static_cast<double>(e.count - 2))
-                    + " on this edge's " + fmt3(edgeLen)
-                    + " of arc. The FINER of the two is the one held, so the other end's "
-                    + std::to_string(e.ds[other]) + " was honoured in full.";
+                    + " on this edge's " + fmt3(edgeLen) + " of arc."
+                    // WHAT THE OTHER END GOT IS MEASURED, NEVER ASSERTED FROM THE
+                    // RULE. "The finer end is held" is the LAW's tie-break and it
+                    // is true only where the law had something to hold: when BOTH
+                    // heights are at or coarser than the uniform spacing this count
+                    // gives, the solve leaves the edge uniform and neither end is
+                    // honoured. This clause said "the other end's X was honoured in
+                    // full" in both of that case's two warnings, each naming the
+                    // other's number — two false statements under a comment that
+                    // says the figures come from the produced nodes. The same
+                    // `achieved` array three lines up is what settles it.
+                    + (std::fabs(achieved[other] - e.ds[other]) <= 1e-9 * e.ds[other]
+                           ? " The FINER of the two is the one the law holds, and here "
+                             "that is the other end: its "
+                             + std::to_string(e.ds[other]) + " was produced exactly."
+                           : " NEITHER end was held: both are at or coarser than the "
+                             "uniform spacing this count already gives ("
+                             + std::to_string(edgeLen / (e.count - 1))
+                             + "), which is not a clustering request at all, so the law "
+                               "left this edge uniform.");
             }
             r.warnings.push_back(
                 "edge '" + e.id + "': its "
