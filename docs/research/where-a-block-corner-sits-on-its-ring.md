@@ -921,9 +921,42 @@ implemented. Three consequences, and they move two of §9's five recommendations
    solve that would carry it* was not running, for an unrelated and separately measured reason.
    The open question is therefore narrower and sharper than §8.3 states: **can the existing
    control functions hold a boundary angle without the size-distribution cost that made the
-   smoother worth turning off?** Nothing here answers that, and it is a cheap experiment —
-   `MB_SMOOTH_ITERS` against both metrics at once, which is what `mesher-smoothing.md` already
-   demands of every claim about that cap.
+   smoother worth turning off?**
+
+   **ANSWERED, 2026-10-22: no, and for a reason this note did not anticipate. [M]** Nine caps
+   (0, 1, 2, 5, 10, 20, 40, 80, 160) on the 128-block mesh, both metrics every run:
+
+   | cap | non-orth mean | max | ring seam p95 | ring seam max | range/block |
+   |----:|--------------:|----:|--------------:|--------------:|------------:|
+   | 0   | 10.119 | 49.15 | 1.067 | 1.101 | 10.9x |
+   | 5   | **10.092** | 48.60 | 1.127 | 1.318 | 10.2x |
+   | 10  | 10.111 | **48.33** | 1.182 | 1.446 |  9.9x |
+   | 20  | 10.173 | 52.26 | 1.266 | 1.672 |  9.5x |
+   | 40  | 10.318 | 58.46 | 1.397 | 2.063 |  8.9x |
+   | 160 | 10.194 | 53.56 | 1.286 | 1.734 |  9.4x |
+
+   The whole purchase is **0.027 deg of mean** (at cap 5) and 0.82 deg off the max (at cap 10),
+   against ring-seam p95 +5.6% and ring-seam max +20% at cap 5 alone. Past cap 10 both metrics
+   degrade together. It never converges (best residual 1.5e-04 against a 1e-08 tolerance), the
+   clip count falls 217 -> 133 and then rises, and caps 80 and 160 return bit-identical meshes,
+   so the iteration has stalled rather than arrived.
+
+   **Why, and this is the part that matters: the angle deficit is not where the control functions
+   act.** Mean non-orthogonality by ring, 0 at the wall:
+
+   | cap | r0 | r1 | r2 | r3 | r4 | r5 | r6 | r7 |
+   |----:|---:|---:|---:|---:|---:|---:|---:|---:|
+   | 0   | 5.08 | 4.51 | 7.14 | 10.44 | 13.50 | 14.40 | 13.38 | 13.04 |
+   | 10  | 4.87 | 4.44 | 7.10 | 10.47 | 13.55 | 14.48 | 13.50 | 13.03 |
+   | 40  | 4.68 | 4.60 | 7.31 | 10.77 | 13.89 | 14.88 | 13.98 | 12.99 |
+
+   The wall rings are the BEST part of the mesh (4.5-5.1 deg) and the smoother improves them
+   exactly as L3 says it should (5.08 -> 4.68 at the wall). Every outer ring gets worse. The
+   10.1 deg lives three to six rings out, where nothing sources an angle and a Winslow sweep only
+   equalises. **ICEM's sentence in L4 is the right mechanism pointed the wrong way: here the first
+   layer is already orthogonal, and the layers that curve are the ones no control function
+   reaches.** A wall-anchored control function cannot fix a mid-field angle, so raising its decay
+   rate (SS10.1) would not have helped either; the decay is not the binding constraint on this mesh.
 
 **What this does not change.** L1–L6 and §8.1–§8.2 are about the literature, not about this repo,
 and are unaffected: the position of a boundary point along its boundary is a named boundary
