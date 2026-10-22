@@ -389,6 +389,18 @@ So the workshops **permit** all three and **require** none. What the participant
 
 ---
 
+> **CORRECTED 2026-10-22 by `meshing-the-cove-and-the-trailing-edges.md`.**
+> * Section 4's "none of them mentions block topology" should read **"none of them PRESCRIBES"**:
+>   HiLiftPW-1 (d) and HiLiftPW-2 (f) do both say "maintain … same topology", as a constancy
+>   requirement ACROSS REFINEMENT LEVELS rather than a choice of topology. HiLiftPW-3 and HLPW-4
+>   contain the string zero times. The section's conclusion stands.
+> * Section 5 records two trailing-edge point ladders (4/6/9/14 and 4/6/9/12/18/27). A **third**
+>   exists: Chan's HL-CRM material states the "workshop prescribed" ladder as **5/9/13/17**. The
+>   three are not reconciled.
+> * Section L1 reads Liou & Liu and LAVA as agreeing that a cove gets its own zone. They do — and
+>   both are AEROACOUSTIC. The systems that do not are force-prediction. The split follows the
+>   question being asked, not the geometry.
+
 ## 5. Published rules of thumb
 
 **Block counts.** For three elements in 2-D: **26 blocks** conforming C-topology (Kim, Alonso &

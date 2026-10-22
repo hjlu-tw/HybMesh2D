@@ -81,6 +81,25 @@ overlap −2.50 %; flap gap **1.27 %**, overlap **+0.27 %**; chords 0.1492 / 0.8
 chord-line angles −46.01° / −3.24° / +29.56°. Those match the published 30P30N numbers
 (2.95 % / −2.5 %, 1.27 % / 0.25 %), so this is the standard configuration.
 
+> **CORRECTED 2026-10-22 by `meshing-the-cove-and-the-trailing-edges.md`.** Three claims below
+> are narrower than they read, and the primary sources are in that note.
+>
+> * **"A ribbon cannot pass through a cove" is true of OFFSETS, not of coves.** NASA Ames' 2-D
+>   three-element best practice marches the slat's O-mesh straight through its own cove with no
+>   separate cove grid, and names the price: extreme TANGENTIAL stretching, while "the spacing
+>   close to the wall is largely unaffected". A pure offset is the zero-smoothing limit of that
+>   marcher; HYPGEN switches smoothing on BY DETECTING converging grid lines, which is what
+>   `largest_offset`'s refusal detects and then refuses instead of damping.
+> * **"The main gets a patch, the flap gets wake bands" is one mesh's choice, not a practice.**
+>   The same paper adds "a wake grid … to EACH O mesh", on a configuration whose main tail also
+>   sits just ahead of its flap. It never has to choose because overset grids overlap; a
+>   conforming topology must, so this repo's tail patch is a CONFORMITY WORKAROUND and should be
+>   recorded as one.
+> * **Target 2 is one mesh's operating point, not a standard.** At this case's own c = 0.4572 m
+>   and Re_c = 1.71e6, the measured 1.07e-4-chord first cell is about y+ = 7 by a flat-plate
+>   estimate — not the y+ ~ 1 the workshop documents ask for. Read the reference as a TOPOLOGY
+>   standard.
+
 ## The recipe, in one paragraph
 
 Wrap every surface — including inside both coves — in a thin structured ribbon about 1.5 %
