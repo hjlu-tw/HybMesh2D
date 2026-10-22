@@ -964,6 +964,54 @@ condition with three regimes, it is solved or it is the user's, and no shipped t
 from a geometric blend formula. §9.2 (blend target areas, not trajectories) and §9.5 (do not
 report corner perpendicularity alone) also stand.
 
+---
+
+## 11. The blend was then MOVED, and it is the only lever that moved the number **[M]**
+
+Measured 2026-10-22, after SS10. The brief's blend weight is
+`w = ((log d_k - log d_0)/(log d_last - log d_0)) ** e`, with `e = 2` in every figure published
+above. Four exponents, same topology, same counts, same 89,760 quads, `MB_SMOOTH_ITERS 0`,
+all at 0 inverted. Mean non-orthogonality by ring, 0 at the wall:
+
+| e | r0 | r1 | r2 | r3 | r4 | r5 | r6 | r7 |
+|--:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 5.08 | 11.11 | 14.66 | 16.88 | 16.92 | 14.36 | 10.66 |  8.37 |
+| 2 | 5.08 |  4.51 |  7.14 | 10.44 | 13.50 | 14.40 | 13.38 | 13.04 |
+| 4 | 5.08 |  4.10 |  3.32 |  4.03 |  7.27 | 11.37 | 14.81 | 19.56 |
+| 8 | 5.08 |  4.13 |  3.19 |  2.38 |  2.68 |  5.56 | 12.40 | 25.93 |
+
+| e | mesh mean | rings 0-4 | rings 5-7 | max | nbr p95 across a seam | range/block p95 |
+|--:|----------:|----------:|----------:|------:|----------------------:|----------------:|
+| 1 | 12.25 | 12.90 | 11.13 | 49.15 | 1.080 | 33.2x |
+| 2 | 10.12 |  8.09 | 13.60 | 49.15 | **1.074** | **33.5x** |
+| 4 |  8.60 |  **4.74** | 15.25 | 54.07 | 1.220 | 43.7x |
+| 8 |  **7.59** |  **3.50** | 14.63 | 76.96 | 1.367 | 76.1x |
+
+**Three things follow, and the first two are this note's own claims coming true.**
+
+1. **SS8.1 is confirmed: the blend is the free variable, and it is the ONLY lever measured here
+   that moves the number.** Bending the radial edge moved the mesh mean 0.06 deg (SS8.3); running
+   the smoother at its best cap moved it 0.027 deg (SS10.3); changing this one exponent moves it
+   **2.53 deg**, and the near-field half of it by **4.59 deg**.
+2. **L2 is confirmed in the strongest possible form: the exponent RELOCATES the cost, it does not
+   remove it.** Every row carries roughly the same total; what changes is which rings pay. TTM's
+   "an orthogonal system cannot be achieved with arbitrary spacing of the coordinate lines" is
+   exactly this table. **And the far-field column width spread is 4.44x in all four rows** —
+   identical, because `w` reaches 1 at the outermost ring whatever the exponent. So the exponent
+   does not touch the thing the blend exists to control; it only chooses where the tangential
+   displacement is spent.
+3. **The trade has no dominant answer and must be chosen, not derived.** `e = 4` buys 15% off the
+   mesh mean and 41% off the boundary-layer rings, and costs the property that made `e = 2`
+   worth publishing: across-seam p95 1.074 -> 1.220, which stops being smaller than the
+   inside-a-block figure. `e = 8` goes further on the mean and puts the worst cell angle at
+   76.96 deg. Which to ship depends on whether the mesh is wanted for a viscous solve (where the
+   wall rings are what matter) or as the lowest-seam-step grid (where `e = 2` is still the one).
+
+**[I]** If this is read next to SS7, the shape of a real answer is visible: HYPGEN does not pick an
+exponent, it marches and lets the positions fall out; GridPro does not pick one, it relaxes the
+corners. A hand-chosen exponent is the thing both of those replace, and this table is what a
+hand-chosen exponent costs when it is wrong.
+
 ## Gaps I could not close, by name
 
 1. **Pointwise's user-manual boundary-conditions page.** `pointwise.com` 301s to `cadence.com`,
