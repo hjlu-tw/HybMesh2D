@@ -40,6 +40,19 @@ latter recognisable by every Y being exactly 0.
 | unstructured domains | 8 | 1,011,462 triangles (511,228 points) |
 | **total** | | **~1.22 M** |
 
+> **CORRECTED 2026-10-22: there are NINE unstructured domains, not eight, and 1,019,916
+> triangles.** The missing one is the MAIN COVE's fill — 4,361 points, 8,454 triangles,
+> x 0.730…0.788, y −0.008…0.028, median edge 0.0004 — and the difference between the two
+> totals is exactly its triangle count. Found while reading the connectivity, which this note
+> did not: `grids()` returns an unstructured domain's POINTS but not its cells, and the
+> triangles are a FLAT int32 array of three indices per triangle following each domain's point
+> array (`arrays()` reports it as 1-D, not the (M, 3) the module docstring describes). Pairing
+> each int32 array with the nearest point array before it reproduces this note's own figures
+> for the six tabulated boxes exactly — 469,626 / 155,172 / 130,222 / 100,554 / 68,698 /
+> 46,078 — which is how the pairing is known to be right, and it is also what made the ninth
+> domain visible. **The "~1.22 M" total above is unaffected** (206,370 + 1,019,916 =
+> 1,226,286); it is the unstructured subtotal and the domain count that were one short.
+
 Each structured domain is ALSO stored as a triangulated copy whose point count is exactly
 `I*J`; those are the CAE export's and are not counted twice above.
 
