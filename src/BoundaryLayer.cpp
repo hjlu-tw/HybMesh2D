@@ -779,6 +779,9 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     (void)maxNTrans;
     const bool stdoutIsTty = HYBMESH_ISATTY(HYBMESH_FILENO(stdout)) != 0;
     std::cout << "Step: Generating " << totalLayers << " boundary layers..." << std::endl;
+    // Said once per generate(), not once per thread: a static would stay set
+    // for a second mesh built in the same process.
+    bool taperWarned = false;   // said once, whichever condition fires first
     for (int layer = 0; layer < totalLayers; ++layer) {
 
         // --- 1. 候選位置預算 (Candidate Phase) ---
@@ -792,6 +795,8 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             RayInfo rayInfo;
         };
         std::vector<std::vector<CandidateNode>> allCandidates(fronts.size());
+        bool crossGeomFreeze = false;      // set by EITHER cross-geometry test
+        Point2D crossGeomAt{0.0, 0.0};
 
         for (int fIdx = 0; fIdx < (int)fronts.size(); ++fIdx) {
             auto& fs = fronts[fIdx];
@@ -982,11 +987,87 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                             if ((cand.pos - cand2.pos).lengthSq() < th2 * th2) {
                                 currentLayerNodesToFreeze.insert(cand.parentNodeId);
                                 currentLayerNodesToFreeze.insert(cand2.parentNodeId);
+                                if (!crossGeomFreeze) {
+                                    crossGeomFreeze = true;
+                                    crossGeomAt = cand.pos;
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+
+        // B2. 跨幾何的「線段 vs 線段」檢查, per layer, BEFORE committing.
+        //
+        // B above compares candidate POINTS pairwise, which is a point test for
+        // a segment condition: two fronts can pass through each other between
+        // samples without any two candidates being within a cell of each other.
+        // The final-front gate below DOES test segments -- and then throws,
+        // losing the whole mesh.
+        //
+        // Candidate-against-candidate is not enough either, and the reason is
+        // worth keeping: freezing A's nodes does not stop B from growing INTO
+        // them, because a frozen node simply stays where it is. So each front's
+        // CANDIDATE polyline is tested against the other front's COMMITTED one,
+        // both ways. A hit freezes the candidate's parent, which is the taper
+        // the skipBL path already documents as sound ("the BL simply tapers to
+        // zero here and the far-field mesher fills the gap") and is what the
+        // published practice does when a front cannot advance: it stops THAT
+        // NODE rather than the run.
+        // See docs/research/meshing-the-cove-and-the-trailing-edges.md.
+        {
+            std::vector<std::vector<Point2D>> committed(fronts.size());
+            for (int f = 0; f < (int)fronts.size(); ++f) {
+                committed[f].reserve(fronts[f].activeFront.size());
+                for (int id : fronts[f].activeFront)
+                    committed[f].push_back(m_mesh.nodes[id].pos);
+            }
+            for (int fA = 0; fA < (int)fronts.size(); ++fA) {
+                for (int fB = 0; fB < (int)fronts.size(); ++fB) {
+                    if (fA == fB) continue;
+                    if (fronts[fA].geomId == fronts[fB].geomId) continue;
+                    const auto& candA = allCandidates[fA];
+                    const auto& ringB = committed[fB];
+                    if (candA.size() < 2 || ringB.size() < 2) continue;
+                    for (size_t i1 = 0; i1 + 1 < candA.size(); ++i1) {
+                        if (candA[i1].parentNodeId == candA[i1 + 1].parentNodeId)
+                            continue;           // a fan's own rays, not a front segment
+                        const Point2D& a = candA[i1].pos;
+                        const Point2D& b = candA[i1 + 1].pos;
+                        // The ring CLOSES: the final-front gate below wraps with
+                        // `% n`, so an open polyline here misses the one segment
+                        // that joins the last node back to the first.
+                        for (size_t i2 = 0; i2 < ringB.size(); ++i2) {
+                            size_t j2 = (i2 + 1) % ringB.size();
+                            if (!segmentsIntersect(a, b, ringB[i2], ringB[j2]))
+                                continue;
+                            currentLayerNodesToFreeze.insert(candA[i1].parentNodeId);
+                            currentLayerNodesToFreeze.insert(candA[i1 + 1].parentNodeId);
+                            currentLayerNodesToFreeze.insert(fronts[fB].activeFront[i2]);
+                            currentLayerNodesToFreeze.insert(fronts[fB].activeFront[j2]);
+                            if (!crossGeomFreeze) {
+                                crossGeomFreeze = true;
+                                crossGeomAt = a;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // A taper the user did not ask for is not allowed to be silent. Both
+        // cross-geometry tests above freeze nodes; this says so once, naming
+        // where and at which layer, and what to change to avoid it.
+        if (crossGeomFreeze && !taperWarned) {
+            taperWarned = true;
+            LOG_WARN("Two geometries' boundary layers meet near ("
+                     << crossGeomAt.x << ", " << crossGeomAt.y << ") at layer "
+                     << layer << " of " << totalLayers << ". The layer TAPERS to zero "
+                     "there -- those nodes stop growing and the far-field mesher fills "
+                     "the gap -- so the ribbon does not reach that stretch of wall. "
+                     "Reduce BL_LAYERS / BL_INITIAL_THICKNESS / BL_GROWTH_RATE if you "
+                     "want it to.");
         }
 
         // --- 3. 提交階段 (Commit Phase) ---
@@ -1016,8 +1097,24 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     nextFront.push_back(nodeId);
                     p2c[i].push_back(nodeId);
 
-                    if (checkCollision(m_mesh.nodes[nodeId].pos, fs.bl.blInitialThickness, {nodeId}, fs.geomId)) {
-                        throw std::runtime_error("Error: Critical proximity detected after retreat at node " + std::to_string(nodeId));
+                    // A frozen node grows nothing, so a wall within one first cell
+                    // of it costs no cell -- the layer simply tapers to zero there
+                    // and the far-field mesher fills the gap, exactly as the
+                    // skipBL branch above describes. Aborting the whole run for it
+                    // is the refusal
+                    // docs/research/meshing-the-cove-and-the-trailing-edges.md
+                    // names: the published practice stops THAT NODE and keeps
+                    // going. Said once per run, with the node and the height.
+                    if (!taperWarned
+                        && checkCollision(m_mesh.nodes[nodeId].pos, fs.bl.blInitialThickness, {nodeId}, fs.geomId)) {
+                        taperWarned = true;
+                        LOG_WARN("A retreated BL node at (" << m_mesh.nodes[nodeId].pos.x
+                                 << ", " << m_mesh.nodes[nodeId].pos.y << ") still has another "
+                                 "geometry within one first cell (" << fs.bl.blInitialThickness
+                                 << "). The layer tapers to zero there and the far-field mesher "
+                                 "fills the gap; nothing is exported wrong. Reduce BL_LAYERS / "
+                                 "BL_INITIAL_THICKNESS / BL_GROWTH_RATE if you want the ribbon "
+                                 "to reach that stretch of wall.");
                     }
                     continue;
                 }

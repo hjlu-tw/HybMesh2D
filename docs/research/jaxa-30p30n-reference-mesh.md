@@ -137,6 +137,14 @@ hard limit the two-element experiments hit is a consequence of that one assumpti
 **None of these exist for a ribbon**, because a ribbon's outer boundary is wherever the
 author stops. The reference does not solve these problems; it never has them.
 
+> **CORRECTED 2026-11-02.** Target 1's shortfall — "the one target this does not reach is the
+> ribbon depth", capped at 0.0038 chord by two fronts meeting at the main's aft tongue — was a
+> REFUSAL, not a geometric limit, and it is gone. A cross-geometry front meeting now freezes the
+> nodes involved and the layer tapers to zero there; measured, the section builds at 0.0089 chord
+> (`BL_LAYERS 120`, 1,214,780 cells, exit 0, one warning naming the slot). Also note Target 2's
+> own standing, corrected above: its 1e-4 first cell is about y+ 7 at this case's Re, so it is one
+> mesh's operating point and not a bar.
+
 ## Targets this sets
 
 A mesh "of the same standard" on the same geometry is one that meets these, measured the
