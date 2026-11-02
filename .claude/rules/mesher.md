@@ -45,6 +45,7 @@ Key-value text file, command-line args override file values. Parameters grouped 
 | BL/no-BL Junction | `BL_JUNCTION_METHOD` (0=taper-to-zero legacy, 1=4-case angle-driven, default), `BL_JUNCTION_ANGLE_C1/C2/C3` (°) |
 | Transition | `BL_TRANSITION_LAYERS`, `BL_TRANSITION_GROWTH_RATE`, `BL_TRANSITION_BUFFER` |
 | Gmsh | `GMSH_ALGORITHM` (6=Frontal-Delaunay), `GMSH_OPTIMIZE`, `FARFIELD_GROWTH_RATE`, `FARFIELD_MESH_SIZE` |
+| Refinement seeds | `SEED_FILE <path> [size] [radius] [source|embed]`, `SEED_SIZE`, `SEED_RADIUS`, `SEED_MODE` — the per-file values win, a negative one falls back to the global, and a still-negative one is derived |
 | Output | `EXPORT_VTK`, `EXPORT_STARCD`, `BC_XMIN/XMAX/YMIN/YMAX/GEOM` |
 | Units | `LENGTH_UNIT` (m/cm/mm/um/in/ft/custom), `LENGTH_UNIT_METRES`, `LENGTH_UNIT_NAME` |
 
@@ -230,7 +231,20 @@ parameters SILENT, a negative a log-scraping test would have to establish by abs
   `tests/test_size_field_ceiling.py`. Caveat: a
   custom domain outline is added with `geomId = -1`, so for a pure internal-flow case
   (`DOMAIN_FILE … nobl`, no `GEOM_FILE`) the wall-distance field is never built and
-  `FARFIELD_GROWTH_RATE` is inert — only `FARFIELD_GROWTH_RATE_OUTER` grades the mesh.
+  `FARFIELD_GROWTH_RATE` is inert — only `FARFIELD_GROWTH_RATE_OUTER` grades the mesh. **A
+  REFINEMENT SEED's `radius` is an INVERSE GRADIENT, not a box size**: the `Threshold` runs
+  `SizeMin = size` at the seed to `SizeMax = farFieldSize` at `DistMax = radius`
+  (`StopAtDistMax` 1), so what the pair asks for is `(farFieldSize − size) / radius` per unit
+  length — and a seed is therefore **INERT under a dead cap**, because `Min()` hands the cell
+  straight back to the wall ramp. Measured twice, the second time as a pair of controls on the
+  shipped `config/hybrid_30p30n.dat`: the same seed moves **466 cells of 790,353** with the cap
+  at the 1.0 default, and **84,326 of 1,333,330** with it at the reference's 0.0152, where it
+  also takes the wake from 0.0060 to 0.0036 median edge. The cap and the seed are ONE change;
+  neither alone does what it was asked for. A seed's `size` left auto is read
+  from the seed's OWN point spacing, so a two-point wake line asks for a cell as long as the
+  wake — state it. `embed` additionally forces nodes onto the curve and is priced per SEGMENT
+  and per SPAN, both measured in `docs/research/jaxa-30p30n-reference-mesh.md`. Why, and every
+  figure: that note's "O4 and O5 carried into the shipped case".
 - **`MultiBlock.cpp`**: the whole multi-block path behind one pure entry point — parse,
   resolve, fill (transfinite interpolation), split, and the already-resolved boundary edges
   the adapter records. Never throws; a malformed document comes back as an error string.

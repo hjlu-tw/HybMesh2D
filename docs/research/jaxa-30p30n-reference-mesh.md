@@ -322,6 +322,55 @@ seed. Mapping O1–O5 onto it:
 - **O3 has no counterpart and needs none here**: tiling is how Pointwise keeps each domain
   simply connected, not a property of the mesh.
 
+### O4 and O5 carried into the shipped case, and the control that earns the pairing
+
+Everything above was worked out on the two-element rebuild. `config/hybrid_30p30n.dat` — the
+shipped case, the one whose own header says it is matched against this reference — still had
+`FARFIELD_MESH_SIZE` at the **1.0 default** on 2026-11-02 (`Config.hpp:254`), 19 days after
+`20e35d4` created the file and derived the ramp beside it against the reference's near field.
+One of the two numbers was matched to the reference and the other was never looked at, in the
+same block of the same file. Measured, all at `BL_LAYERS 60`,
+as median EDGE length so the numbers sit beside the table above without a conversion:
+
+| cap | rate | wake seed | cells | wake edge | edge at 3–5 chords |
+|---|---|---|---|---|---|
+| 1.0 | 0.014 | none | 790,353 | 0.0054 | 0.0508 |
+| 1.0 | 0.014 | 0.0022 / 0.65 | 790,819 | 0.0054 | 0.0508 |
+| 0.0152 | 0.014 | none | 1,333,330 | 0.0060 | 0.0152 |
+| **0.0152** | 0.014 | 0.0022 / 0.65 | **1,417,656** | **0.0036** | **0.0152** |
+| 0.0152 | 0.014 | trimmed to x ≤ 1.4 | 1,341,678 | 0.0046 | 0.0152 |
+| 0.05 | 0.05 | 0.0022 / 2.39 | 589,652 | 0.0036 | 0.0500 |
+| the reference | | | ~1,220,000 | 0.00223 to x = 1.213 | 0.0152 |
+
+- **A dead cap is not a loose cap, it is NO cap.** With it at 1.0 the ramp climbed past the
+  reference's far-field size and kept going to 0.0984; the mesh came out at 0.0508 edge beyond
+  three chords, **3.3× COARSER than the reference it is held to**. The intuition that sent me
+  here was the opposite one — that a far field a long way below the nominal 1.0 was wasted
+  refinement — and it was wrong in sign. `FARFIELD_MESH_SIZE` is a `Min()` cap, which
+  `.claude/rules/mesher.md` already said; reading it as a target is what produced the
+  backwards reading, and a size-field sweep toward COARSER (0.05, 0.10, 0.20 → 379 k, 316 k,
+  288 k cells) was run before the table above and was pointed the wrong way.
+- **The INERT-SEED control, which is the row that earns the other two.** Row 2 is this exact
+  seed added while the cap was still 1.0: `(1.0 − 0.0022) / 0.65 = 1.53` per unit, the `Min()`
+  goes to the wall ramp at the first cell, and the mesh moves by **466 cells out of 790,353**.
+  The note above predicted that from the arithmetic; this measures it on the shipped case. The
+  OTHER control is the row above the shipped one: the cap live and no seed, which leaves the
+  wake at 0.0060. The cap and the seed are ONE change, and either alone does nothing of what it
+  was asked for — the seed moves 466 cells without the cap and 84,326 with it, off a base of
+  1,333,330. The first table I wrote credited the seed with the whole 627,303-cell difference
+  from the old mesh, which is the cap's bill and the seed's added together; this row is what
+  separates them, and it was run because the claim could not be checked without it.
+- **The 1.8× is the CAP, not the seed.** Trimming the seed to the reference's own extent
+  (its finest box ends at x = 1.213, so there is no band running downstream to the outlet)
+  saves 5%. 0.0152 over x ∈ [−5, 4], y ∈ [−5, 3] is 598,000 cells beyond one chord however the
+  wake is drawn, which is the same bill the reference pays: 754,820 of its 1.22 M.
+- **The cheap row is not a worse mesh everywhere, and that is worth stating.** It resolves the
+  wake exactly as well (0.0036) for **fewer cells than the case cost before any of this**, by
+  declining the reference's far field. The seed radius moves with the cap because the radius is
+  a gradient: `(0.05 − 0.0022) / 0.02 = 2.39`. It is not the default only because this case's
+  stated job is to be matched against the reference, and it is recorded in the config beside
+  the shipped row.
+
 ### P4 implemented: the wedge replaced by a wake band
 
 Drawing the partition had made the wedge's size plain — each trailing edge threw one, the

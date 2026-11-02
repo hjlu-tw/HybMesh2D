@@ -19,11 +19,49 @@
 # this section builds at BL_LAYERS 120, i.e. 0.0089 chord, 1,214,780 cells,
 # exit 0, with one warning naming the slot at (0.8767, 0.0249) where the taper
 # starts -- at layer 9 of 123, so that stretch was always going to be thin.
+# That 1,214,780 was measured BEFORE the far-field change below and is left as
+# it was taken: the depth and the warning still hold, the cell count does not.
 # 160 layers still fails, on a DIFFERENT condition: one geometry's own front
 # self-intersecting, which is the convex-cusp rule and not this one.
 #
 # BL_LAYERS stays at 60 so this shipped case keeps its size and its cost. The
 # depth is now a choice rather than a cap; raise it if you want the ribbon.
+#
+# THE FAR FIELD AND THE WAKE, changed 2026-11-02 and measured against the
+# reference's own table rather than against the eye. Six runs, all BL_LAYERS
+# 60, cell sizes as median EDGE length (this file's measurements used to be
+# sqrt(area), which is 0.658x an edge on an equilateral triangle -- both are
+# stated wherever one is):
+#
+#   cap     rate   wake seed        cells       wake edge   edge at 3-5 chords
+#   1.0     0.014  none             790,353     0.0054      0.0508
+#   1.0     0.014  0.0022 / 0.65    790,819     0.0054      0.0508   <- INERT
+#   0.0152  0.014  none           1,333,330     0.0060      0.0152
+#   0.0152  0.014  0.0022 / 0.65  1,417,656     0.0036      0.0152   <- SHIPPED
+#   0.0152  0.014  trimmed to 1.4 1,341,678     0.0046      0.0152
+#   0.05    0.05   0.0022 / 2.39    589,652     0.0036      0.0500
+#   reference                     ~1,220,000    0.00223*    0.0152
+#   (* the reference's finest level is a BOX ending at x = 1.213, not a band
+#    running downstream; past x = 1.4 it is at the 0.0152 far field.)
+#
+# ROWS 2 AND 3 ARE THE CONTROLS THAT EARN THE PAIRING. The seed alone, under
+# the dead cap, moved 466 cells of 790,353 and left the wake where it was. The
+# cap alone left the wake at 0.0060. Only together do they reach 0.0036: the
+# cap is what gives the seed's Threshold a SizeMax low enough to win the Min(),
+# and the seed is what puts the wake below the cap. Neither is half the fix.
+#
+# The shipped row costs 1.8x the old one and that is the cap, not the seed:
+# trimming the seed to the reference's own extent saves 5%, because 0.0152 over
+# x in [-5,4] y in [-5,3] is 598,000 cells beyond one chord however the wake is
+# drawn. It lands within 10% of the reference's own total.
+#
+# THE LAST ROW IS THE CHEAP ALTERNATIVE and it is not a worse mesh everywhere:
+# it resolves the wake exactly as well (0.0036) for 590 k cells -- FEWER than
+# the 790 k this case used to cost -- by declining to pay for the reference's
+# far field. Take it by setting FARFIELD_MESH_SIZE 0.05, FARFIELD_GROWTH_RATE
+# 0.05 and the seed radius to 2.39, which is what keeps the wake gradient at
+# the same 0.02 per unit when the cap moves. It is not the default only because
+# this file's stated job is to be matched against the reference.
 LENGTH_UNIT custom
 LENGTH_UNIT_METRES 0.4572          # the stowed chord, so lengths here are chords
 MESH_MODE 0
@@ -35,11 +73,37 @@ DOMAIN_Y_MAX  3.0
 
 SURFACE_MESH_SIZE 0.004
 AUTO_SURFACE_SIZE 1
-FARFIELD_MESH_SIZE 1.0
+# 0.0152 is the reference's OWN far-field edge length, which it holds CONSTANT
+# all the way to 5 chords -- 754,820 of its 1.22 M cells are there. This key is
+# a Min() CAP, never a target (.claude/rules/mesher.md), and it sat at the 1.0
+# default until 2026-11-02 while the ramp below was derived. A cap the ramp
+# never reaches is not a loose cap, it is NO cap: the size went on climbing to
+# 0.0984 and the far field came out at 0.0508 edge, 3.3x COARSER than the
+# reference it is matched against. Measured here with it live: active over
+# 59.9% of the domain, and d = 1..5 chords all read 0.0152 exactly.
+FARFIELD_MESH_SIZE 0.0152
 # 0.014 is derived, not tuned by eye: the size field is LINEAR in the distance
 # from the boundary-layer front, so this rate is what puts ~0.0034 chord at the
 # distance where the reference's near field reads ~0.0039.
 FARFIELD_GROWTH_RATE 0.014
+
+# THE WAKE. The size field above is a function of wall distance ALONE, so it
+# can only draw circles: before this line the mesh had an isotropic halo and
+# nothing downstream, where the reference puts its FINEST level (0.00223 over
+# the slot and the flap's wake). That is O5 in
+# docs/research/jaxa-30p30n-reference-mesh.md -- "no law in distance from the
+# wall can produce it" -- and a refinement seed is how this repo expresses it.
+#
+# A seed's RADIUS IS AN INVERSE GRADIENT, not a box size: the Threshold runs
+# from `size` at the seed to FARFIELD_MESH_SIZE at `radius`, so this pair asks
+# for (0.0152 - 0.0022) / 0.65 = 0.02 per unit length.
+#
+# WHICH IS WHY THE TWO LINES BELONG TOGETHER, measured as a control on
+# 2026-11-02: this exact seed added while the cap was still 1.0 asked for 1.53
+# per unit, lost the Min() to the wall ramp at the first cell, and changed the
+# mesh by 466 cells out of 790,353 -- INERT. The cap is what makes the seed do
+# anything.
+SEED_FILE examples/geometries/30p30n_wake_seed.dat 0.0022 0.65 source
 
 # 60 layers, first cell 5.4e-5 chord, growth 1.005 -> 0.0038 total. The near
 # uniform normal spacing is the reference's own: its ribbons run 0.2 to 2.2 in
