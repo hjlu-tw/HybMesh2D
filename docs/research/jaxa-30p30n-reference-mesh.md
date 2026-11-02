@@ -90,6 +90,18 @@ chord-line angles −46.01° / −3.24° / +29.56°. Those match the published 3
 >   close to the wall is largely unaffected". A pure offset is the zero-smoothing limit of that
 >   marcher; HYPGEN switches smoothing on BY DETECTING converging grid lines, which is what
 >   `largest_offset`'s refusal detects and then refuses instead of damping.
+>
+>   **CONFIRMED BY MEASUREMENT HERE, 2026-11-02.** The true distance-d level set of this very
+>   main element passes through its cove with NO self-crossing at every depth tried --
+>   0.0028, 0.0053, 0.0100 and 0.0160 chord -- holding the distance to within 2.4%. The
+>   element's band is now built as one continuous stretch through the cove (lip, blunt face,
+>   inner corner, ceiling, trailing edge) and the mesh is unchanged in quality: 13 inverted
+>   cells against 12, all of them at the two trailing edges, none in the cove. Two mechanisms
+>   were tried and do NOT work, and the reason is worth keeping: a convergence-weighted
+>   Laplacian (HYPGEN's detector used as a smoother) pulls the colliding points CLOSER, and a
+>   project-then-cut-the-loop pass on the offset was worse still. What works is not correcting
+>   the offset at all -- it is extracting the level set from the distance field, where the
+>   corner is a kink and there is nothing to untangle.
 > * **"The main gets a patch, the flap gets wake bands" is one mesh's choice, not a practice.**
 >   The same paper adds "a wake grid … to EACH O mesh", on a configuration whose main tail also
 >   sits just ahead of its flap. It never has to choose because overset grids overlap; a
