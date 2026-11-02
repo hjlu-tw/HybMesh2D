@@ -139,11 +139,13 @@ author stops. The reference does not solve these problems; it never has them.
 
 > **CORRECTED 2026-11-02.** Target 1's shortfall — "the one target this does not reach is the
 > ribbon depth", capped at 0.0038 chord by two fronts meeting at the main's aft tongue — was a
-> REFUSAL, not a geometric limit, and it is gone. A cross-geometry front meeting now freezes the
-> nodes involved and the layer tapers to zero there; measured, the section builds at 0.0089 chord
-> (`BL_LAYERS 120`, 1,214,780 cells, exit 0, one warning naming the slot). Also note Target 2's
-> own standing, corrected above: its 1e-4 first cell is about y+ 7 at this case's Re, so it is one
-> mesh's operating point and not a bar.
+> REFUSAL, not a geometric limit, and that CAP is gone. The SHORTFALL is not: see the table
+> below, where Target 1 is still the one target this does not reach, now by 0.0089 chord against
+> 0.015 rather than by 0.0038. A cross-geometry front meeting now freezes the nodes involved and
+> the layer tapers to zero there; measured, the section builds at 0.0089 chord (`BL_LAYERS 120`,
+> exit 0, one warning naming the slot — 1,214,780 cells then, 1,832,326 under the far field this
+> case now ships). Also note Target 2's own standing, corrected above: its 1e-4 first cell is
+> about y+ 7 at this case's Re, so it is one mesh's operating point and not a bar.
 
 ## Targets this sets
 
@@ -161,35 +163,84 @@ same way:
 ## Where this repo stands against them, measured
 
 `config/hybrid_30p30n.dat` — the hybrid path (`MESH_MODE 0`: boundary-layer quads off every
-wall, Gmsh triangles outside), on the same three curves, over the same domain. Measured the
-same way, by the same scripts:
+wall, Gmsh triangles outside), on the same three curves, over the same domain.
+
+**Re-measured 2026-11-02**, after two changes this column was not written against: the
+far-field cap and the wake seed (`8f04b8f`), and a front that meets another front tapering
+instead of aborting the run (`178b2c1`). Every figure in the "this repo" column is read off ONE
+file — `results/meshes/hybrid_30p30n/mesh_hybrid_30p30n.vtk`, 1,417,656 elements, `BL_LAYERS
+60` — and the ribbon is told apart from the unstructured fill by distance from the wall: a cell
+whose centroid lies within 0.0041 chord of a geometry point is ribbon. That cut is not chosen to
+taste. It reproduces the mesher's OWN layer count — 249,703 against the 250,708 in
+`mesh_hybrid_30p30n.provenance.json`, 0.4 % apart — and it brackets the ribbon this config asks
+for: 60 base layers close-form to 0.0038 chord and 3 transition layers sit on top of that. A
+SECOND, independent cut agrees: edge ratio > 2 selects 248,512 cells, so the split does not rest
+on one ruler. (Feeding the ribbon cut a fourth file —
+`examples/geometries/30p30n_jaxa_main_resampled.dat`, which a `30p30n_jaxa_*.dat` glob picks up
+and which this mesh was NOT built from — moves the count to 249,783. The three files the
+provenance names are the ones to measure against.)
 
 | target | reference | this repo | |
 |---|---|---|---|
-| 1 structured depth on every wall | 0.015 chord (median) | **0.0038** | **not met** |
+| 1 structured depth on every wall | 0.015 chord (median) | **0.0038** shipped, **0.0089** reachable | **not met** |
 | 2 first cell / normal distribution | 1.07e−4, near-uniform | 5.4e−5, growth 1.005 | met |
 | 3 the 1.27 % slot | resolved both sides | resolved both sides | met |
-| 4 near field (x −0.2…1.4, y −0.5…0.5) | 463,722 cells, triangle edge 0.0039 | 571,681 cells, edge 0.0034 | met |
-| 5 total cells | ~1.22 M | 790,197 (1,063,840 at rate 0.010) | met |
+| 4 near field (x −0.2…1.4, y −0.5…0.5) | 463,722 cells, triangle edge 0.0039 | 575,543 cells, unstructured edge 0.0024 | met |
+| 5 total cells | ~1.22 M | 1,417,652 | met |
 | 6 inverted or degenerate cells | 0 | 0 | met |
 
-Triangle quality outside the layer: median edge ratio 1.050, p95 1.321 (1.0 is equilateral).
-Every figure in that column is read off ONE run of that config, because this mesher is not
-bit-reproducible: two runs of it differ by about 0.05 % in cell count (790,197 against
-789,769), which is the same wobble `tools/scripts/golden_mesh.py` exists to see past.
-The four zero-area cells a naive shoelace finds are the domain's four boundary LINE elements,
-not degenerate triangles — worth saying, because that is how the first count of them read.
+Triangle quality outside the ribbon: median edge ratio 1.000, p95 1.251. Those are the mesher's
+own `tri_edge_ratio`, whose bulk split the provenance file publishes (1.000133 / 1.248824) and
+which an independent max/min over the same cells reproduces — so this line is re-derivable from
+a committed file rather than from a scratchpad script, which the figures it replaces (1.050 and
+1.321) were not.
 
-**Target 1 is the one that is not met, and the reason is structural rather than a setting.**
-The boundary layer is capped at 0.0038 chord by the main element's aft tongue, which is about
-0.003 thick: two fronts grown from its two sides meet. Measured, not assumed — it builds at
-0.0038 and refuses at 0.0042 with `Critical proximity detected after retreat`, and the same
-cap applies before the 1.27 % slot is reached, so the slot is not what binds. The reference
-does not grow two fronts into each other there: it lays structured blocks that SHARE the
-region, which a front-marching layer cannot do. **What this repo would need is a front that
-stops at a medial axis and matches its neighbour, rather than one that retreats and fails** —
-and that is a feature, not a parameter. Until then this geometry carries a structured ribbon
-a quarter as deep as the reference's, with everything else at or beyond the same standard.
+**Rows 4 and 5 moved, and row 1 did not.** This table first carried 571,681 cells at edge 0.0034
+and 790,197 in total. Both were measured under the dead far-field cap that `8f04b8f` replaced,
+which is also why row 5 now overshoots the reference by 16 % where it used to undershoot it by
+35 %. The ribbon did not move because `BL_LAYERS` stayed at 60: what changed there is the
+ceiling above it, not the mesh.
+
+This mesher is not bit-reproducible: two runs of this config as it stood before 2026-11-02
+differed by about 0.05 % in cell count (790,197 against 789,769), the same wobble
+`tools/scripts/golden_mesh.py` exists to see past. A figure here is one run's, not a constant.
+The four zero-area cells a naive shoelace finds are the domain box's four sides, written as
+`VTK_POLYGON` (type 7) with two vertices each rather than as line elements; among the 1,417,652
+real triangles there is no cell of zero or of negative area.
+
+**Target 1 is still the one that is not met, but the reason has changed and the gap has
+shrunk.**
+
+> **Superseded 2026-11-02, KEPT AS A SPECIMEN.** This paragraph used to read that the cap "is
+> structural rather than a setting": 0.0038 chord, set by the main element's aft tongue where
+> two fronts grown from its two sides meet, which "a front-marching layer cannot do … and that
+> is a feature, not a parameter". The REMEDY it named — "a front that stops at a medial axis and
+> matches its neighbour, rather than one that retreats and fails" — was right, and is what
+> `178b2c1` built. The DIAGNOSIS was not: this was never a geometric limit, it was a refusal.
+> The mesh at 0.0042 was built and then thrown away by a guard, and the same section now reaches
+> 0.0089 with the abort replaced by a per-node taper.
+
+What binds now is a DIFFERENT refusal, one that lives further out.
+
+`BL_LAYERS 120` builds: 0.0089 chord, exit 0, one warning naming the slot at (0.8767, 0.0249)
+where the taper starts, at layer **92** of 123. That layer number was re-run on 2026-11-02
+because the figure first recorded was "layer 9" — a dropped digit, and one that turned a ribbon
+stopping where it MEETS its neighbour into one that had barely started. 92 layers is 0.0064
+chord a side, and two of those are the 1.27 % slot, which is the whole story: the fronts stop
+where they meet, not where they fail. Under the shipped far field that run costs 1,832,326
+cells.
+
+`BL_LAYERS 160` does not build: exit 5, the SLAT's own final front crossing itself at
+(−0.0280, −0.0950). That point is 0.0138 from the wall and 163 layers reach 0.0137, so the front
+crosses itself exactly where it runs out of height — on the medial axis between the slat's
+concave cove and the fan around its sharp tip at (−0.0267, −0.1088), whose included wall angle
+is 11°. **It is the same shape `178b2c1` just fixed, one geometry rather than two**: the
+per-layer freeze skips same-`geomId` pairs (`src/BoundaryLayer.cpp:1029`) and the final-front
+gate throws instead (`:1348`).
+
+So the ribbon this geometry can carry is 0.0089 against the reference's 0.015 — **59 % of it
+rather than the 25 % this table used to record** — and the shipped case sits at 60 layers by a
+choice about cost, not by a cap. Issue #179 carries the next step.
 
 ## The PARTITIONING, which is the part worth copying
 

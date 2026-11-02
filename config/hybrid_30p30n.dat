@@ -16,13 +16,28 @@
 # practice does when a front cannot advance -- it stops that node, not the run
 # (docs/research/meshing-the-cove-and-the-trailing-edges.md; gated by
 # tools/PreProcessor/tests/test_bl_front_meeting.py). Re-measured 2026-11-02:
-# this section builds at BL_LAYERS 120, i.e. 0.0089 chord, 1,214,780 cells,
-# exit 0, with one warning naming the slot at (0.8767, 0.0249) where the taper
-# starts -- at layer 9 of 123, so that stretch was always going to be thin.
-# That 1,214,780 was measured BEFORE the far-field change below and is left as
-# it was taken: the depth and the warning still hold, the cell count does not.
-# 160 layers still fails, on a DIFFERENT condition: one geometry's own front
-# self-intersecting, which is the convex-cusp rule and not this one.
+# this section builds at BL_LAYERS 120, i.e. 0.0089 chord, exit 0, with one
+# warning naming the slot at (0.8767, 0.0249) where the taper starts -- at
+# LAYER 92 of 123. This comment said "layer 9" until 2026-11-02,
+# a dropped digit, and the conclusion drawn from it ("so that stretch was
+# always going to be thin") was the wrong one: 92 layers is 0.0064 chord of
+# ribbon on each side, which is two halves of the 1.27% slot, so the two
+# fronts stop where they MEET and not where they fail. Re-run to check it:
+# the same warning at BL_LAYERS 160 also says layer 92, as it must, because
+# the layer heights do not depend on how many were asked for.
+# That run cost 1,214,780 cells BEFORE the far-field change below and
+# 1,832,326 after it (re-run 2026-11-02). Both are kept: the ribbon is the
+# same in each and only the fill around it differs, which is the point.
+#
+# 160 LAYERS STILL FAILS, on a DIFFERENT condition, and here it is measured
+# rather than named: exit 5, the slat (Geometry 0) self-intersecting in its
+# own final front at (-0.0280, -0.0950). That point is 0.0138 from the wall
+# and 163 layers reach 0.0137, so the front crosses itself exactly where it
+# runs out -- on the medial axis between the slat's concave COVE and the fan
+# around its sharp tip at (-0.0267, -0.1088), an 11 deg included angle. It is
+# the same shape the cross-geometry taper above now handles, inside ONE
+# geometry: src/BoundaryLayer.cpp:1029 skips same-geomId pairs in the
+# per-layer freeze, and the final gate at :1348 throws instead. Issue #179.
 #
 # BL_LAYERS stays at 60 so this shipped case keeps its size and its cost. The
 # depth is now a choice rather than a cap; raise it if you want the ribbon.
@@ -53,7 +68,9 @@
 # The shipped row costs 1.8x the old one and that is the cap, not the seed:
 # trimming the seed to the reference's own extent saves 5%, because 0.0152 over
 # x in [-5,4] y in [-5,3] is 598,000 cells beyond one chord however the wake is
-# drawn. It lands within 10% of the reference's own total.
+# drawn. Against the reference's own 1.22 M the shipped row is +16% and the
+# trimmed one +10%; an earlier draft of this comment put the SHIPPED row
+# within 10%, which is the trimmed row's figure and not this one's.
 #
 # THE LAST ROW IS THE CHEAP ALTERNATIVE and it is not a worse mesh everywhere:
 # it resolves the wake exactly as well (0.0036) for 590 k cells -- FEWER than
