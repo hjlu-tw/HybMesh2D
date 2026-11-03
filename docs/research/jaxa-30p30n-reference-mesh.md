@@ -180,6 +180,24 @@ on one ruler. (Feeding the ribbon cut a fourth file —
 and which this mesh was NOT built from — moves the count to 249,783. The three files the
 provenance names are the ones to measure against.)
 
+**Every figure in that column comes back from one command**, which is the part that was missing
+when the column was first written and is why two of its rows had gone stale without anything
+noticing:
+
+```bash
+./run.sh -conf config/hybrid_30p30n.dat
+python3 tools/scripts/measure_hybrid_standing.py \
+    results/meshes/hybrid_30p30n/mesh_hybrid_30p30n.vtk \
+    examples/geometries/30p30n_jaxa_slat.dat \
+    examples/geometries/30p30n_jaxa_main.dat \
+    examples/geometries/30p30n_jaxa_flap.dat
+```
+
+That script prints each row beside the rule that produced it, reads the mesher's own layer count
+out of the sidecar and says how far the ribbon cut is from it, and prints the independent
+edge-ratio cut next to it. It does NOT re-run the mesher: this one is "where does this mesh
+stand", and `tools/scripts/golden_mesh.py` is still the tool for "did this change anything".
+
 | target | reference | this repo | |
 |---|---|---|---|
 | 1 structured depth on every wall | 0.015 chord (median) | **0.0038** shipped, **0.0089** reachable | **not met** |
@@ -189,11 +207,15 @@ provenance names are the ones to measure against.)
 | 5 total cells | ~1.22 M | 1,417,652 | met |
 | 6 inverted or degenerate cells | 0 | 0 | met |
 
-Triangle quality outside the ribbon: median edge ratio 1.000, p95 1.251. Those are the mesher's
-own `tri_edge_ratio`, whose bulk split the provenance file publishes (1.000133 / 1.248824) and
-which an independent max/min over the same cells reproduces — so this line is re-derivable from
-a committed file rather than from a scratchpad script, which the figures it replaces (1.050 and
-1.321) were not.
+Triangle quality outside the ribbon: median edge ratio 1.000, p95 1.251. Those agree with the
+mesher's own `tri_edge_ratio`, whose bulk split the provenance sidecar publishes
+(1.000133 / 1.248824).
+
+> **CORRECTED the day after it was written.** This paragraph said the line was "re-derivable
+> from a committed file". It is not: the sidecar lives under `results/`, which `.gitignore`
+> ignores, so it is a RUN PRODUCT. What is committed is the config that produces it and — since
+> this correction — the script that reads it. The distinction is the whole point of the
+> paragraph, so getting it wrong here mattered more than it would have anywhere else.
 
 **Rows 4 and 5 moved, and row 1 did not.** This table first carried 571,681 cells at edge 0.0034
 and 790,197 in total. Both were measured under the dead far-field cap that `8f04b8f` replaced,
