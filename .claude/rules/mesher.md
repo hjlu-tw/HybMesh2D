@@ -496,6 +496,14 @@ one list. #68 moved the first; #69 moved the rest; #89 took the multi-block four
   (-0.0280, -0.0950), 0.0138 from the wall where 163 layers reach 0.0137. Issue #179; nothing in
   `tools/PreProcessor/tests/test_bl_front_meeting.py` covers it, by construction — every fixture
   there is two bodies.
+- **The cross-geometry collision phase IS the boundary-layer phase's cost**, and the segment test
+  is not where it lives. Measured on `config/hybrid_30p30n.dat` at `BL_LAYERS 120`, timing from
+  "Step: Generating N boundary layers" to "Step: Validating final boundary layer fronts", two runs
+  each: 143.4 s with `ENABLE_COLLISION_DETECTION 1`, **0.14 s** with it at 0, and 137.8 s with the
+  segment test alone removed. So A and B are 96% of it and B2 is 5.6 s. Both are `O(F^2 * n^2)` per
+  layer and unindexed — the same order, B2 being the ordered pairs of what B does over unordered
+  ones — so the SEGMENT test is not a new complexity class and optimising it would be chasing 4%.
+  Issue #180.
 - **Two fronts that meet PARALLEL are caught by neither test.** The point tests need a node pair
   within a cell and the segment test needs an intersection; two flat walls facing each other across
   a closing gap offer neither — the fronts interpenetrate without ever crossing. Not measured,

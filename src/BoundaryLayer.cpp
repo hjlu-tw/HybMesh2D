@@ -779,8 +779,10 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     (void)maxNTrans;
     const bool stdoutIsTty = HYBMESH_ISATTY(HYBMESH_FILENO(stdout)) != 0;
     std::cout << "Step: Generating " << totalLayers << " boundary layers..." << std::endl;
-    // Said once per generate(), not once per thread: a static would stay set
-    // for a second mesh built in the same process.
+    // Said once per generate(), not once per PROCESS: a function-local static
+    // would stay set for a second mesh built in the same process, and the GUI
+    // builds several. ("per thread" is what this said until 2026-11-03, which
+    // named the one axis a plain static does NOT vary over.)
     bool taperWarned = false;   // said once, whichever condition fires first
     // Which cross-geometry test did the freezing, counted separately and
     // reported once at the end. The warning below cannot tell them apart --
