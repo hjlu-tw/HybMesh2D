@@ -782,6 +782,14 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     // Said once per generate(), not once per thread: a static would stay set
     // for a second mesh built in the same process.
     bool taperWarned = false;   // said once, whichever condition fires first
+    // Which cross-geometry test did the freezing, counted separately and
+    // reported once at the end. The warning below cannot tell them apart --
+    // A/B and B2 set the same flag and print the same sentence -- so a gate
+    // asserting that sentence is green whether or not B2 exists, which is how
+    // B2 shipped untested. These are HITS, not nodes: a node both tests catch
+    // is counted by both, which is the question being asked.
+    long pointFreezeHits = 0;     // A and B: candidate POINT against a point
+    long segmentFreezeHits = 0;   // B2: candidate SEGMENT against a ring's
     for (int layer = 0; layer < totalLayers; ++layer) {
 
         // --- 1. 候選位置預算 (Candidate Phase) ---
@@ -977,6 +985,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     // A. 候選點 vs 已有節點
                     if (checkCollision(cand.pos, th, currentAllFrontsSet, fronts[fIdx].geomId)) {
                         currentLayerNodesToFreeze.insert(cand.parentNodeId);
+                        ++pointFreezeHits;
                     }
                     // B. 候選點 vs 其他幾何候選點 (use the larger of the two fronts'
                     //    thicknesses so either front's cell size can trigger a freeze)
@@ -987,6 +996,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                             if ((cand.pos - cand2.pos).lengthSq() < th2 * th2) {
                                 currentLayerNodesToFreeze.insert(cand.parentNodeId);
                                 currentLayerNodesToFreeze.insert(cand2.parentNodeId);
+                                ++pointFreezeHits;
                                 if (!crossGeomFreeze) {
                                     crossGeomFreeze = true;
                                     crossGeomAt = cand.pos;
@@ -1016,7 +1026,16 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         // published practice does when a front cannot advance: it stops THAT
         // NODE rather than the run.
         // See docs/research/meshing-the-cove-and-the-trailing-edges.md.
-        {
+        //
+        // UNDER THE SAME KNOB AS A AND B, and this is not decoration: B2 is
+        // multi-geometry collision detection, which is what
+        // ENABLE_COLLISION_DETECTION says it switches off (README.md,
+        // README_EN.md, mesh_field_specs.py; examples/config/
+        // UNICONES_letters.dat ships it as 0). It is a SECOND `if` on the same
+        // condition rather than one widened block so that this stays a
+        // separate phase with its own snapshot -- A and B work off candidates
+        // alone, B2 needs every front's committed ring.
+        if (m_config.enableCollisionDetection) {
             std::vector<std::vector<Point2D>> committed(fronts.size());
             for (int f = 0; f < (int)fronts.size(); ++f) {
                 committed[f].reserve(fronts[f].activeFront.size());
@@ -1046,6 +1065,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                             currentLayerNodesToFreeze.insert(candA[i1 + 1].parentNodeId);
                             currentLayerNodesToFreeze.insert(fronts[fB].activeFront[i2]);
                             currentLayerNodesToFreeze.insert(fronts[fB].activeFront[j2]);
+                            ++segmentFreezeHits;
                             if (!crossGeomFreeze) {
                                 crossGeomFreeze = true;
                                 crossGeomAt = a;
@@ -1274,6 +1294,16 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
         }
     }
     if (stdoutIsTty) std::cout << std::endl;
+
+    // One machine-readable line per run, in the shape of this repo's other
+    // HYBMESH_* markers, printed whenever either test froze anything. It is
+    // what lets a gate assert that the SEGMENT test did work, which the
+    // user-facing warning cannot: a scenario the point test already catches
+    // prints the same sentence either way.
+    if (pointFreezeHits > 0 || segmentFreezeHits > 0) {
+        std::cout << "HYBMESH_BL_TAPER point_freezes=" << pointFreezeHits
+                  << " segment_freezes=" << segmentFreezeHits << std::endl;
+    }
 
     // --- 4. Final Geometric Validation (Pre-Gmsh) ---
     std::cout << "Step: Validating final boundary layer fronts before Gmsh..." << std::endl;

@@ -36,6 +36,16 @@ What this pins down:
      that is always printed.
   4. The mesh that comes back has no inverted cell, because "tapers" has to
      mean the cells near the taper are sound, not merely that a file appeared.
+  5. ENABLE_COLLISION_DETECTION still switches the whole cross-geometry phase
+     off. The per-layer segment test added with this behaviour was written
+     OUTSIDE that guard, so the key stopped meaning what three documents say it
+     means; 5b keeps 5 from passing on a run that never got that far.
+  6. The SEGMENT test does something no point test does. Checks 1-4 do not
+     reach it -- 6c measures that, rather than asserting it -- because two
+     circles meet tangentially and a point test always wins there. An end
+     meeting a flank meets transversally and only the segment test catches it:
+     delete that block and check 6 goes to exit 5 while 1-4 stay green. The
+     shipped three-element case agrees: point_freezes=5, segment_freezes=56.
 """
 from __future__ import annotations
 
@@ -65,7 +75,29 @@ def _circle(path: str, cx: float, cy: float, r: float, n: int = 160) -> None:
             fh.write("%.12f %.12f\n" % (cx + r * math.cos(a), cy + r * math.sin(a)))
 
 
-def _conf(path: str, out: str, g1: str, g2: str, layers: int) -> None:
+def _sliver(path: str, x0: float, y0: float, x1: float, y1: float,
+            half: float, n: int = 24) -> None:
+    """A thin closed body along (x0,y0)-(x1,y1), sampled coarsely on purpose.
+
+    Coarse is the point: the segment test only earns its keep where the node
+    spacing is larger than a layer's thickness, so that two fronts can pass
+    through each other between samples.
+    """
+    dx, dy = x1 - x0, y1 - y0
+    length = math.hypot(dx, dy)
+    ux, uy = dx / length, dy / length
+    nx, ny = -uy, ux
+    pts = [(x0 + ux * length * k / n + nx * half, y0 + uy * length * k / n + ny * half)
+           for k in range(n + 1)]
+    pts += [(x0 + ux * length * k / n - nx * half, y0 + uy * length * k / n - ny * half)
+            for k in range(n, -1, -1)]
+    with open(path, "w") as fh:
+        for x, y in pts:
+            fh.write("%.12f %.12f\n" % (x, y))
+
+
+def _conf(path: str, out: str, g1: str, g2: str, layers: int,
+          collision: int = 1) -> None:
     with open(path, "w") as fh:
         fh.write("MESH_MODE 0\n")
         fh.write("DOMAIN_X_MIN -3.0\nDOMAIN_X_MAX 3.0\n")
@@ -75,6 +107,7 @@ def _conf(path: str, out: str, g1: str, g2: str, layers: int) -> None:
         fh.write("BL_INITIAL_THICKNESS 0.004\nBL_GROWTH_RATE 1.05\n")
         fh.write("BL_LAYERS %d\nBL_TRANSITION_LAYERS 0\n" % layers)
         fh.write("BL_AUTO_TRANSITION_LAYERS 0\n")
+        fh.write("ENABLE_COLLISION_DETECTION %d\n" % collision)
         fh.write("GEOM_FILE %s\nGEOM_FILE %s\n" % (g1, g2))
         fh.write("BC_GEOM wall\nEXPORT_VTK 1\nEXPORT_STARCD 0\n")
         fh.write("OUTPUT_FILENAME %s\n" % out)
@@ -116,10 +149,11 @@ def main() -> int:
     _circle(g2, 0.40, 0.0, 0.25)
 
     runs = {}
-    for name, layers in (("thick", 40), ("thin", 6)):
+    for name, layers, collision in (("thick", 40, 1), ("thin", 6, 1),
+                                    ("off", 40, 0)):
         conf = os.path.join(tmp, name + ".dat")
         out = os.path.join(tmp, name + ".vtk")
-        _conf(conf, out, g1, g2, layers)
+        _conf(conf, out, g1, g2, layers, collision)
         p = subprocess.run([_BIN, "-conf", conf], capture_output=True, text=True,
                            cwd=_REPO)
         runs[name] = (p.returncode, (p.stdout or "") + (p.stderr or ""), out)
@@ -146,6 +180,74 @@ def main() -> int:
     # Gmsh's, so a signed-area test calls a third of a sound mesh inverted.
     check("cells are INVERTED" not in log_t,
           "4. the mesher reports no inverted cell in the tapered mesh")
+
+    # ENABLE_COLLISION_DETECTION gates the WHOLE cross-geometry phase, B2
+    # included. When this was written B2 sat outside that guard, so a user who
+    # had switched collision detection off still got frozen nodes and this
+    # warning; measured on two circles 0.1 apart, the warning fired with the
+    # key at 0. Both halves are asserted on purpose: the first is the knob
+    # being honoured, and the second is what stops the first passing on a run
+    # that died before it got there -- "no warning" is true of a segfault too.
+    rc_o, log_o, _ = runs["off"]
+    check("boundary layers meet near" not in log_o
+          and "retreated BL node" not in log_o,
+          "5. the knob is honoured: nothing freezes with collision detection OFF",
+          "exit %d" % rc_o)
+    check("Intersection detected between Geometry" in log_o,
+          "5b. and that run really reached the final-front gate, so 5 is not "
+          "vacuous")
+
+    # 6. A scenario the POINT tests cannot catch, which is the whole reason the
+    # segment test exists. Two circles meeting head-on touch TANGENTIALLY, so
+    # the region where the fronts are within one cell of each other is long and
+    # some pair of nodes always lands in it -- measured on the fixture above:
+    # point_freezes=27, segment_freezes=0 at n=160, and still 0 at n=8, 10, 12,
+    # 16, 24 and 40. Checks 1-4 therefore pass with the whole segment block
+    # deleted, which is how it shipped unmeasured.
+    #
+    # An END pointing at a FLANK crosses TRANSVERSALLY instead: the fronts meet
+    # at an angle, so they are within a cell of each other over a span of about
+    # one cell, and at this sampling no two nodes land in it. Measured: with
+    # the segment test, exit 0 and point_freezes=2 / segment_freezes=32; with
+    # the block deleted, exit 5, "Intersection detected between Geometry", and
+    # point_freezes=24 / segment_freezes=0.
+    #
+    # This is not a fixture-only effect. config/hybrid_30p30n.dat at
+    # BL_LAYERS 120 reports point_freezes=5 segment_freezes=56: on the shipped
+    # case the segment test does almost all of the work, and the one warning
+    # that case prints is the one the point test would never have raised.
+    ga = os.path.join(tmp, "end.dat")
+    gb = os.path.join(tmp, "flank.dat")
+    _sliver(ga, -1.0, 0.0, -0.20, 0.0, 0.03)
+    _sliver(gb, 0.10, -1.0, 0.10, 1.0, 0.03)
+    conf_x = os.path.join(tmp, "cross.dat")
+    out_x = os.path.join(tmp, "cross.vtk")
+    _conf(conf_x, out_x, ga, gb, 40)
+    p_x = subprocess.run([_BIN, "-conf", conf_x], capture_output=True, text=True,
+                         cwd=_REPO)
+    log_x = (p_x.stdout or "") + (p_x.stderr or "")
+    check(p_x.returncode == 0
+          and "Intersection detected between Geometry" not in log_x,
+          "6. an END meeting a FLANK transversally also exports, not aborts",
+          "exit %d" % p_x.returncode)
+
+    marks = [l for l in log_x.split("\n") if l.startswith("HYBMESH_BL_TAPER")]
+    seg = pnt = -1
+    if marks:
+        f = dict(kv.split("=") for kv in marks[0].split()[1:])
+        seg, pnt = int(f.get("segment_freezes", -1)), int(f.get("point_freezes", -1))
+    check(seg > 0, "6b. and the SEGMENT test is what did it",
+          "segment_freezes=%d point_freezes=%d" % (seg, pnt))
+
+    marks_t = [l for l in log_t.split("\n") if l.startswith("HYBMESH_BL_TAPER")]
+    seg_t = -1
+    if marks_t:
+        f = dict(kv.split("=") for kv in marks_t[0].split()[1:])
+        seg_t = int(f.get("segment_freezes", -1))
+    check(seg_t == 0,
+          "6c. negative control: the two-circle fixture never reaches it, so "
+          "checks 1-4 cannot see the segment test at all",
+          "segment_freezes=%d" % seg_t)
 
     print("-------------------------------------------")
     if _FAILS:

@@ -489,3 +489,15 @@ one list. #68 moved the first; #69 moved the rest; #89 took the multi-block four
 - **`golden_mesh.py` does not compare the `.bnd` `segm_no` column**, so a defect confined to a
   boundary edge's source-segment key is invisible to it — measured; the C++ unit test caught one in
   0.5 s while all 68 other tests and the 9-case golden set passed.
+- **The per-layer segment test SKIPS same-geometry pairs** (`src/BoundaryLayer.cpp`,
+  `if (fronts[fA].geomId == fronts[fB].geomId) continue;`), while the final-front gate it backs up
+  does NOT, so one geometry whose own front crosses itself still loses the whole mesh after
+  building it. Measured on `config/hybrid_30p30n.dat` at `BL_LAYERS 160`: exit 5, the slat at
+  (-0.0280, -0.0950), 0.0138 from the wall where 163 layers reach 0.0137. Issue #179; nothing in
+  `tools/PreProcessor/tests/test_bl_front_meeting.py` covers it, by construction — every fixture
+  there is two bodies.
+- **Two fronts that meet PARALLEL are caught by neither test.** The point tests need a node pair
+  within a cell and the segment test needs an intersection; two flat walls facing each other across
+  a closing gap offer neither — the fronts interpenetrate without ever crossing. Not measured,
+  derived from what the two tests compare, and the reason the fixtures in that gate are a
+  tangential pair (checks 1-4) and a transversal one (check 6) rather than a parallel one.
