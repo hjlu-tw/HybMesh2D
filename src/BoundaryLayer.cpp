@@ -1148,6 +1148,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         m_mesh.nodes.back().geomId = fs.geomId;
                         nextFront.push_back(newId);
                         p2c[i].push_back(newId);
+                        fs.parentOf[newId] = nodeId;
                         fs.nodeDirections[newId] = cand.dir;
                         fs.nodeStepMultipliers[newId] = cand.multiplier;
                         if (cand.isParaCenter) fs.paraCenterNodes.insert(newId);
@@ -1319,6 +1320,10 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     // normal geometry is bit-for-bit unchanged. Used for BOTH the validation below
     // and the far-field edge emission so they stay consistent.
     std::vector<std::vector<int>> finalFronts(fronts.size());
+    // Rebuildable, because the taper below changes `activeFront` and then has to
+    // ask the same question again of the ring that results (#179).
+    auto buildFinalFronts = [&]() {
+    for (auto& r : finalFronts) r.clear();
     for (size_t fi = 0; fi < fronts.size(); ++fi) {
         const auto& fsr = fronts[fi];
         const auto& af  = fsr.activeFront;
@@ -1356,6 +1361,178 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             }
         }
     }
+    };
+    buildFinalFronts();
+
+    // --- 4a. A front that folds onto ITSELF tapers; it does not end the run ---
+    //
+    // #179. `178b2c1` did this for two geometries' fronts and left the
+    // one-geometry case throwing, so a cove or a sharp tail whose two flanks
+    // grow into each other still lost a mesh that had already been built.
+    //
+    // IT IS DONE HERE, NOT PER LAYER, AND THAT IS THE DESIGN. A per-layer self
+    // test was built and measured first: it froze real folds -- ring-slot
+    // distances of 2 to 35, so not an adjacency artefact -- but it cost the
+    // shipped `curved_duct` case 26% of its cells by pre-empting the retreat and
+    // concave-corner machinery that was already resolving them, and it did NOT
+    // fix the case this exists for, because the ring the gate rejects is built
+    // by walking columns and is not any layer's front. Acting on the gate's own
+    // answer changes only the runs that abort today; every run that passes is
+    // bit-for-bit what it was.
+    std::set<int> trimmedAway;
+    {
+        // TERMINATION IS THE TRIM, NOT THE COUNT. Every pass that does anything
+        // strictly shortens a column, and the stack is finite, so the loop ends
+        // on `trimmedThisPass == 0` by itself. The cap is only a runtime guard --
+        // each pass rescans every ring, which is quadratic in its length -- and
+        // it was `totalLayers + 2` until a one-body U fixture needed more: a node
+        // can be drawn into a crossing only AFTER its neighbours step back, so
+        // the number of passes is not bounded by the depth.
+        const int maxPasses = 8 * totalLayers + 16;
+        int passes = 0;
+        for (;; ++passes) {
+            // Every crossing in one pass, not the first: trimming one layer at a
+            // time off a single pair would need as many passes as the fold is
+            // deep, and each pass rescans every ring.
+            std::vector<std::pair<int,int>> hits;   // (front, ring index)
+            Point2D firstAt{0.0, 0.0};
+            bool firstIsSelf = true;
+            for (int i = 0; i < (int)fronts.size(); ++i) {
+                const auto& ring = finalFronts[i];
+                int nN = (int)ring.size();
+                if (nN < 3) continue;
+                for (int j = 0; j < nN; ++j) {
+                    for (int k = j + 2; k < nN; ++k) {
+                        if ((k + 1) % nN == j) continue;
+                        if (!segmentsIntersect(m_mesh.nodes[ring[j]].pos,
+                                               m_mesh.nodes[ring[(j + 1) % nN]].pos,
+                                               m_mesh.nodes[ring[k]].pos,
+                                               m_mesh.nodes[ring[(k + 1) % nN]].pos))
+                            continue;
+                        if (hits.empty())
+                            firstAt = getIntersectionPoint(
+                                m_mesh.nodes[ring[j]].pos,
+                                m_mesh.nodes[ring[(j + 1) % nN]].pos,
+                                m_mesh.nodes[ring[k]].pos,
+                                m_mesh.nodes[ring[(k + 1) % nN]].pos);
+                        hits.push_back({i, j});
+                        hits.push_back({i, (j + 1) % nN});
+                        hits.push_back({i, k});
+                        hits.push_back({i, (k + 1) % nN});
+                    }
+                }
+                // TWO rings crossing is the same defect and the same remedy, and
+                // leaving it out was measured: with only the self case tapering,
+                // config/hybrid_30p30n.dat at BL_LAYERS 180 resolves its own folds
+                // (1,089 nodes, 98 passes) and then dies on THIS check instead.
+                // 178b2c1 made the per-layer cross-geometry test freeze nodes and
+                // left this gate as a backstop; at that depth the backstop is
+                // reached, and a backstop that throws away a built mesh is the
+                // refusal #179 exists to remove.
+                // ...and the CROSS half obeys ENABLE_COLLISION_DETECTION while the
+                // SELF half above does not. The key says "multi-geometry collision
+                // detection" and a front folding onto itself is neither; switching
+                // it off must still mean what it meant, which is what check 5b in
+                // tools/PreProcessor/tests/test_bl_front_meeting.py measures -- it
+                // went red on the first version of this block, which had the whole
+                // taper outside the key exactly as B2 once was.
+                if (!m_config.enableCollisionDetection) continue;
+                for (int i2 = i + 1; i2 < (int)fronts.size(); ++i2) {
+                    const auto& ring2 = finalFronts[i2];
+                    int nN2 = (int)ring2.size();
+                    if (nN2 < 2) continue;
+                    for (int j = 0; j < nN; ++j) {
+                        for (int k = 0; k < nN2; ++k) {
+                            if (!segmentsIntersect(m_mesh.nodes[ring[j]].pos,
+                                                   m_mesh.nodes[ring[(j + 1) % nN]].pos,
+                                                   m_mesh.nodes[ring2[k]].pos,
+                                                   m_mesh.nodes[ring2[(k + 1) % nN2]].pos))
+                                continue;
+                            if (hits.empty()) {
+                                firstIsSelf = false;
+                                firstAt = getIntersectionPoint(
+                                    m_mesh.nodes[ring[j]].pos,
+                                    m_mesh.nodes[ring[(j + 1) % nN]].pos,
+                                    m_mesh.nodes[ring2[k]].pos,
+                                    m_mesh.nodes[ring2[(k + 1) % nN2]].pos);
+                            }
+                            hits.push_back({i, j});
+                            hits.push_back({i, (j + 1) % nN});
+                            hits.push_back({i2, k});
+                            hits.push_back({i2, (k + 1) % nN2});
+                        }
+                    }
+                }
+            }
+            if (hits.empty()) break;
+
+            // Step each involved node down ONE layer, by replacing it in its
+            // front with the node it grew from. A surface node has no parent and
+            // a junction-column node is referenced by the slide/cap bookkeeping
+            // that runs after this, so neither can be trimmed -- if a crossing
+            // consists only of those, nothing here can resolve it and the gate
+            // below still refuses, which is the old behaviour for a case this
+            // cannot help.
+            int trimmedThisPass = 0;
+            for (const auto& h : hits) {
+                auto& fsr = fronts[h.first];
+                const auto& ring = finalFronts[h.first];
+                if (h.second >= (int)ring.size()) continue;
+                int id = ring[h.second];
+                if (fsr.nodeToJunctionRoot.count(id)) continue;
+                auto par = fsr.parentOf.find(id);
+                if (par == fsr.parentOf.end()) continue;
+                for (auto& slot : fsr.activeFront) {
+                    if (slot != id) continue;
+                    slot = par->second;
+                    m_mesh.nodes[par->second].isFrozen = true;
+                    trimmedAway.insert(id);
+                    ++trimmedThisPass;
+                    break;
+                }
+            }
+            if (trimmedThisPass == 0 || passes >= maxPasses) {
+                LOG_WARN("A boundary layer front "
+                         << (firstIsSelf ? "folds onto ITSELF"
+                                         : "crosses ANOTHER geometry's")
+                         << " near (" << firstAt.x << ", " << firstAt.y
+                         << ") and the taper could not resolve it in " << passes
+                         << " passes: what crosses is on the surface itself or "
+                         "inside a junction column, neither of which can be "
+                         "stepped back. The refusal below still applies.");
+                break;
+            }
+            buildFinalFronts();
+        }
+
+        if (!trimmedAway.empty()) {
+            // The cells above the new outer node would stick out through the
+            // ring handed to the far-field mesher, so they go. Edges are
+            // registered after this block, so nothing holds an index into
+            // `elements` yet.
+            size_t before = m_mesh.elements.size();
+            m_mesh.elements.erase(
+                std::remove_if(m_mesh.elements.begin(), m_mesh.elements.end(),
+                               [&](const Element& el) {
+                                   for (int id : el.nodeIds)
+                                       if (trimmedAway.count(id)) return true;
+                                   return false;
+                               }),
+                m_mesh.elements.end());
+            LOG_WARN("A boundary layer front crossed one it must not, so the ribbon "
+                     "TAPERS there rather than the run ending: " << trimmedAway.size()
+                     << " node(s) stepped back over " << passes << " pass(es) and "
+                     << (before - m_mesh.elements.size()) << " cell(s) dropped, and "
+                     "the far-field mesher fills the gap. This is a cove or a sharp "
+                     "tail whose flanks grow into each other, or two bodies whose "
+                     "layers meet -- reduce BL_LAYERS "
+                     "/ BL_INITIAL_THICKNESS / BL_GROWTH_RATE, or refine the surface "
+                     "there, if you want the ribbon to reach that stretch of wall.");
+            std::cout << "HYBMESH_BL_RING_TAPER nodes=" << trimmedAway.size()
+                      << " passes=" << passes << std::endl;
+        }
+    }
+
     for (int i = 0; i < (int)fronts.size(); ++i) {
         const auto& fs = fronts[i];
         const auto& ring = finalFronts[i];

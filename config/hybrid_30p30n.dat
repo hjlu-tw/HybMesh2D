@@ -29,15 +29,21 @@
 # 1,832,326 after it (re-run 2026-11-02). Both are kept: the ribbon is the
 # same in each and only the fill around it differs, which is the point.
 #
-# 160 LAYERS STILL FAILS, on a DIFFERENT condition, and here it is measured
-# rather than named: exit 5, the slat (Geometry 0) self-intersecting in its
-# own final front at (-0.0280, -0.0950). That point is 0.0138 from the wall
-# and 163 layers reach 0.0137, so the front crosses itself exactly where it
-# runs out -- on the medial axis between the slat's concave COVE and the fan
-# around its sharp tip at (-0.0267, -0.1088), an 11 deg included angle. It is
-# the same shape the cross-geometry taper above now handles, inside ONE
-# geometry: src/BoundaryLayer.cpp:1029 skips same-geomId pairs in the
-# per-layer freeze, and the final gate at :1348 throws instead. Issue #179.
+# 160 LAYERS USED TO FAIL, and does not any more (#179, 2026-11-03). It was
+# exit 5, the slat (Geometry 0) self-intersecting in its own final front at
+# (-0.0280, -0.0950) -- 0.0138 from the wall where 163 layers reach 0.0137, on
+# the medial axis between the slat's concave COVE and the fan around its sharp
+# tip at (-0.0267, -0.1088), an 11 deg included angle. The final ring now
+# TAPERS where it crosses instead of throwing away the mesh it has built:
+# 160 layers gives 2,017,055 cells and 180 gives 2,033,547, both exit 0.
+#
+# SO THE REFERENCE'S OWN RIBBON DEPTH IS REACHABLE: 180 layers is 0.0150
+# chord, which is target 1 of the research note. BL_LAYERS stays at 60 anyway
+# -- 2.03 M cells against the reference's 1.22 M is not a trade this case
+# wants, and the depth has been a choice rather than a cap since 178b2c1.
+# What is NOT clean at 180: four triangles of about -5e-10 at the slat fold,
+# which the mesher's own inverted count (0) does not see and a signed area
+# does. Named in .claude/rules/mesher.md's blind spots.
 #
 # BL_LAYERS stays at 60 so this shipped case keeps its size and its cost. The
 # depth is now a choice rather than a cap; raise it if you want the ribbon.

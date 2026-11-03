@@ -489,13 +489,14 @@ one list. #68 moved the first; #69 moved the rest; #89 took the multi-block four
 - **`golden_mesh.py` does not compare the `.bnd` `segm_no` column**, so a defect confined to a
   boundary edge's source-segment key is invisible to it — measured; the C++ unit test caught one in
   0.5 s while all 68 other tests and the 9-case golden set passed.
-- **The per-layer segment test SKIPS same-geometry pairs** (`src/BoundaryLayer.cpp`,
-  `if (fronts[fA].geomId == fronts[fB].geomId) continue;`), while the final-front gate it backs up
-  does NOT, so one geometry whose own front crosses itself still loses the whole mesh after
-  building it. Measured on `config/hybrid_30p30n.dat` at `BL_LAYERS 160`: exit 5, the slat at
-  (-0.0280, -0.0950), 0.0138 from the wall where 163 layers reach 0.0137. Issue #179; nothing in
-  `tools/PreProcessor/tests/test_bl_front_meeting.py` covers it, by construction — every fixture
-  there is two bodies.
+- **The final-front taper leaves SLIVERS at the fold it resolves.** Measured on
+  `config/hybrid_30p30n.dat` at `BL_LAYERS 180`: the mesher's own inverted count is 0 and a signed
+  area finds FOUR triangles of -2.5e-10 to -5.9e-10, all four within 0.001 of the slat fold at
+  (-0.0277, -0.0949). A typical cell there is 1.3e-6, so they are about 1/2600 of one — degenerate
+  rather than turned inside out, and the two rulers disagree because the mesher's has a tolerance.
+  `tools/scripts/measure_hybrid_standing.py` row 6 reports the signed-area count, so the
+  disagreement is visible rather than buried. Not cleaned up: trimming by signed area inside the
+  generator is unsafe while the exporters own a winding normalisation.
 - **The cross-geometry collision phase IS the boundary-layer phase's cost**, and the segment test
   is not where it lives. Measured on `config/hybrid_30p30n.dat` at `BL_LAYERS 120`, timing from
   "Step: Generating N boundary layers" to "Step: Validating final boundary layer fronts", two runs

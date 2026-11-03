@@ -200,7 +200,7 @@ stand", and `tools/scripts/golden_mesh.py` is still the tool for "did this chang
 
 | target | reference | this repo | |
 |---|---|---|---|
-| 1 structured depth on every wall | 0.015 chord (median) | **0.0038** shipped, **0.0089** reachable | **not met** |
+| 1 structured depth on every wall | 0.015 chord (median) | **0.0038** shipped, **0.0150** reachable | **MET**, at a depth nobody ships |
 | 2 first cell / normal distribution | 1.07e−4, near-uniform | 5.4e−5, growth 1.005 | met |
 | 3 the 1.27 % slot | resolved both sides | resolved both sides | met |
 | 4 near field (x −0.2…1.4, y −0.5…0.5) | 463,722 cells, triangle edge 0.0039 | 575,543 cells, unstructured edge 0.0024 | met |
@@ -263,6 +263,22 @@ gate throws instead (`:1348`).
 So the ribbon this geometry can carry is 0.0089 against the reference's 0.015 — **59 % of it
 rather than the 25 % this table used to record** — and the shipped case sits at 60 layers by a
 choice about cost, not by a cap. Issue #179 carries the next step.
+
+> **TARGET 1 IS MET, 2026-11-03 (#179).** The refusal above is gone: a front that crosses one it
+> must not now TAPERS at the final ring instead of throwing away a mesh that has been built. The
+> same section reaches **0.0150 chord at `BL_LAYERS 180`** — exit 0, 2,033,547 cells, the taper
+> stepping 1,098 nodes back over 98 passes — which is the reference's own median ribbon depth.
+> 160 layers, the depth that refused when the paragraph above was written, now builds too:
+> 2,017,055 cells, 269 nodes, 27 passes.
+>
+> **Two things that figure does NOT say.** It is a capability, not a shipped mesh: the config
+> stays at `BL_LAYERS 60`, so the row above still reads 0.0038 for what this repo actually
+> produces, and 180 layers costs 2.03 M cells against the reference's 1.22 M. And target 6 is
+> no longer clean at that depth — the mesher's own inverted count is 0, while a signed area finds
+> FOUR triangles of about -5e-10, all at the slat fold the taper resolved, against a typical
+> 1.3e-6 there. Degenerate slivers rather than inverted cells, and the two rulers disagree because
+> the mesher's has a tolerance; `tools/scripts/measure_hybrid_standing.py` prints the signed-area
+> count so the disagreement stays visible. At the shipped 60 layers both rulers say 0.
 
 ## The PARTITIONING, which is the part worth copying
 

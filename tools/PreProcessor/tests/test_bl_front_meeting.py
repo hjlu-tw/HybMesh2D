@@ -46,6 +46,15 @@ What this pins down:
      meeting a flank meets transversally and only the segment test catches it:
      delete that block and check 6 goes to exit 5 while 1-4 stay green. The
      shipped three-element case agrees: point_freezes=5, segment_freezes=56.
+  7. A front that folds onto ITSELF tapers too (#179), with no second geometry
+     in the run. This is decided on the FINAL ring rather than per layer, and
+     7d is the control that says a layer which fits is left alone -- a per-layer
+     self test was built first and cost `curved_duct` 26% of its cells by
+     pre-empting machinery that was already resolving those folds.
+  8. The same taper covers two rings that cross, which is the gate 178b2c1 left
+     as a backstop -- reached in practice at BL_LAYERS 180 on the shipped
+     three-element case. 8c pins that this half obeys the collision-detection
+     key and the self half does not.
 """
 from __future__ import annotations
 
@@ -94,6 +103,36 @@ def _sliver(path: str, x0: float, y0: float, x1: float, y1: float,
     with open(path, "w") as fh:
         for x, y in pts:
             fh.write("%.12f %.12f\n" % (x, y))
+
+
+def _u_shape(path: str, n: int = 18) -> None:
+    """A U, as ONE body. The layer grows outward, so the inside of the U is
+    where the two arms' fronts converge -- a front folding onto ITSELF, with no
+    second geometry anywhere in the run."""
+    w, h, t = 0.5, 1.0, 0.18
+    outer = [(-w, 0.0), (-w, h), (-w + t, h), (-w + t, t),
+             (w - t, t), (w - t, h), (w, h), (w, 0.0)]
+    pts = []
+    for a, b in zip(outer, outer[1:] + outer[:1]):
+        length = math.hypot(b[0] - a[0], b[1] - a[1])
+        m = max(2, int(length * n))
+        pts += [(a[0] + (b[0] - a[0]) * k / m, a[1] + (b[1] - a[1]) * k / m)
+                for k in range(m)]
+    with open(path, "w") as fh:
+        for x, y in pts:
+            fh.write("%.12f %.12f\n" % (x, y))
+
+
+def _conf_one(path: str, out: str, g: str, layers: int) -> None:
+    """The same configuration as `_conf`, with a single geometry."""
+    _conf(path, out, g, g, layers)
+    with open(path) as fh:
+        text = fh.read()
+    first = text.index("GEOM_FILE")
+    second = text.index("GEOM_FILE", first + 1)
+    end = text.index("\n", second) + 1
+    with open(path, "w") as fh:
+        fh.write(text[:second] + text[end:])
 
 
 def _conf(path: str, out: str, g1: str, g2: str, layers: int,
@@ -248,6 +287,83 @@ def main() -> int:
           "6c. negative control: the two-circle fixture never reaches it, so "
           "checks 1-4 cannot see the segment test at all",
           "segment_freezes=%d" % seg_t)
+
+    # 7. ONE body, folding onto ITSELF (#179). Until this landed, 178b2c1's
+    # taper covered two geometries and a single geometry whose own front crossed
+    # still threw away a mesh it had already built -- measured on
+    # config/hybrid_30p30n.dat at BL_LAYERS 160: exit 5, the slat's front
+    # crossing itself at (-0.0280, -0.0950). It now exits 0 with 2,017,055 cells.
+    #
+    # The U grows its layer OUTWARD, so the inside of the U is where its two
+    # arms' fronts converge. There is no second geometry in the run at all, so
+    # nothing the cross-geometry tests do can be what resolves it.
+    gu = os.path.join(tmp, "u.dat")
+    _u_shape(gu)
+    runs_u = {}
+    for name, layers in (("deep", 40), ("shallow", 5)):
+        conf_u = os.path.join(tmp, "u_" + name + ".dat")
+        out_u = os.path.join(tmp, "u_" + name + ".vtk")
+        _conf_one(conf_u, out_u, gu, layers)
+        pu = subprocess.run([_BIN, "-conf", conf_u], capture_output=True,
+                            text=True, cwd=_REPO)
+        runs_u[name] = (pu.returncode, (pu.stdout or "") + (pu.stderr or ""), out_u)
+
+    rc_u, log_u, out_u = runs_u["deep"]
+    check(rc_u == 0 and "Self-intersection detected in the final front" not in log_u,
+          "7. one body whose own front folds EXPORTS a mesh, not an exit code",
+          "exit %d" % rc_u)
+    check(os.path.exists(out_u) and "cells are INVERTED" not in log_u,
+          "7b. and that mesh is there with no inverted cell")
+
+    marks_u = [l for l in log_u.split("\n") if l.startswith("HYBMESH_BL_RING_TAPER")]
+    nodes_u = -1
+    if marks_u:
+        f = dict(kv.split("=") for kv in marks_u[0].split()[1:])
+        nodes_u = int(f.get("nodes", -1))
+    check(nodes_u > 0, "7c. and the SELF taper is what did it, said out loud",
+          "nodes=%d" % nodes_u)
+
+    rc_s, log_s, _ = runs_u["shallow"]
+    check(rc_s == 0 and "HYBMESH_BL_RING_TAPER" not in log_s
+          and "folds onto ITSELF" not in log_s,
+          "7d. negative control: the same body with a layer that fits tapers "
+          "nothing and says nothing", "exit %d" % rc_s)
+
+    # 8. TWO rings crossing is the same defect and gets the same remedy. The
+    # per-layer cross-geometry freeze (check 1) is not always enough: these two
+    # slivers cross at 90 degrees and used to die on the final-front gate with
+    # "Intersection detected between Geometry". Measured on the shipped case
+    # too -- config/hybrid_30p30n.dat at BL_LAYERS 180 resolves its own folds
+    # and then died here, which is what sent this half of the change in.
+    #
+    # 8c is the knob, and it is not a copy of 5b: 5 and 5b reach the gate by a
+    # per-layer route, this one by the final-front taper. The SELF half (7) is
+    # deliberately NOT under the key -- one body folding is not multi-geometry
+    # collision -- and nothing but a check says which half is which.
+    ga2 = os.path.join(tmp, "cross_a.dat")
+    gb2 = os.path.join(tmp, "cross_b.dat")
+    _sliver(ga2, -1.0, -1.0, 0.1, 0.1, 0.03)
+    _sliver(gb2, -1.0, 1.2, 0.1, 0.1 + 0.30 * math.sqrt(2.0), 0.03)
+    runs_x = {}
+    for name, coll in (("on", 1), ("off", 0)):
+        conf_c = os.path.join(tmp, "cross_" + name + ".dat")
+        out_c = os.path.join(tmp, "cross_" + name + ".vtk")
+        _conf(conf_c, out_c, ga2, gb2, 40, coll)
+        pc = subprocess.run([_BIN, "-conf", conf_c], capture_output=True,
+                            text=True, cwd=_REPO)
+        runs_x[name] = (pc.returncode, (pc.stdout or "") + (pc.stderr or ""))
+
+    rc_c, log_c = runs_x["on"]
+    check(rc_c == 0 and "Intersection detected between Geometry" not in log_c,
+          "8. two rings that cross taper as well, instead of ending the run",
+          "exit %d" % rc_c)
+    check("HYBMESH_BL_RING_TAPER" in log_c,
+          "8b. and the FINAL-FRONT taper is what did it, not the per-layer freeze")
+
+    rc_co, log_co = runs_x["off"]
+    check("Intersection detected between Geometry" in log_co,
+          "8c. and the CROSS half obeys ENABLE_COLLISION_DETECTION, while the "
+          "self half (7) does not", "exit %d" % rc_co)
 
     print("-------------------------------------------")
     if _FAILS:

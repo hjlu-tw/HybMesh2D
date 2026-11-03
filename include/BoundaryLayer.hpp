@@ -64,6 +64,13 @@ struct FrontState {
     // recover it, because the column is a straight ray while the wall may curve.
     std::map<int, std::vector<int>> slideColumns;    // root -> [surface, L1, ..., outer]
     std::map<int, std::vector<int>> slideWallRun;    // root -> [root, absorbed..., first surviving node]
+
+    // Child node -> the node it grew from, for EVERY growing node (#179).
+    // `blParaGroups` looks like this map and is not: it is populated only for
+    // candidates carrying a RayRole, so a plain column is absent from it. The
+    // final-front taper has to walk an arbitrary column back down one layer,
+    // which needs the link for all of them.
+    std::map<int, int> parentOf;
 };
 
 class BoundaryLayerGenerator {
