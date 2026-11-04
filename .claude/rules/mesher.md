@@ -472,6 +472,40 @@ the shipped configs — and the PARTIALLY tagged refusal, which no run can produ
 PARTIAL half of the rule is held.
 Why: `docs/design_notes/mesher.md`, "THE BLOCK ID AS A VTK CELL FIELD".
 
+**THE CROSS-GEOMETRY COLLISION PHASE PRUNES THROUGH ONE SPATIAL INDEX, AND THE INDEX NEVER
+DECIDES** (`include/SpatialGrid.hpp`, used three ways in `src/BoundaryLayer.cpp`'s layer loop;
+#180). A, B and B2 all ask "is anything within `th` of here", and all three used to answer by
+scanning — A over every node of the mesh, B over every candidate of every other front, B2 over
+every segment of every other front's committed ring.
+- **`forEachNear` hands back a SUPERSET and the caller's own comparison decides.** Every
+  `lengthSq() < th * th` and every `segmentsIntersect` below it is the one that was there before,
+  run against a shorter list. That is what makes an index change a pure speed change, and it is
+  why `tools/scripts/golden_mesh.py` is its gate rather than a judgement call. **Never move a test
+  INTO the grid**: a radius filter there would be the index answering, and B2 does not ask about a
+  radius at all.
+- **A SEGMENT TEST REACHES A POINT INDEX THROUGH ITS MIDPOINTS.** Two segments that properly cross
+  share the crossing point, so the midpoints are within `(lenA + lenB)/2` of each other; B2
+  indexes the ring's segment midpoints and queries exactly that. The bound is the reason the
+  pruning cannot drop a crossing, and it is gated — check 7 of `tests/cpp/test_spatial_grid.cpp`,
+  over 200,000 random crossings — rather than asserted here.
+- **NOTHING IS BUILT WHEN `ENABLE_COLLISION_DETECTION` IS 0.** Every `build` sits inside the same
+  `if` the phase does, because an index built for a phase that will not run is a cost the knob no
+  longer removes. Measured both sides: 0.05-0.06 s either way.
+- **THE LOOP ORDER IS LOAD BEARING AND THE INDEX IS BUILT PER FRONT FOR THAT REASON.**
+  `crossGeomAt` — the coordinate in the one taper warning — is the FIRST hit in `(fIdx, cand)`
+  order for B and `(fA, fB, i1)` order for B2. One index over every front's candidates at once
+  would be cheaper and would name a different point. A `std::set` ignore list likewise became a
+  flag per node id, which is sound only because a node id IS its index into `m_mesh.nodes`
+  (`Mesh::addNode`).
+- **`checkCollision`'s linear scan STAYS, for its one remaining caller.** The retreated-node
+  warning in the commit phase asks the question while that phase is still ADDING nodes, so the
+  layer's index is already stale there; it is guarded by `!taperWarned` and runs at most until the
+  first warning.
+- Gated by `tests/cpp/test_spatial_grid.cpp` (8 checks, 5 hand injections, no library linked) for
+  the index, and by `tools/scripts/golden_mesh.py` plus
+  `tools/PreProcessor/tests/test_bl_front_meeting.py` for the answer being unchanged.
+  Why: `docs/design_notes/mesher.md`, "THE COLLISION PHASE'S SPATIAL INDEX".
+
 ## Named blind spots
 
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against
@@ -497,14 +531,14 @@ one list. #68 moved the first; #69 moved the rest; #89 took the multi-block four
   `tools/scripts/measure_hybrid_standing.py` row 6 reports the signed-area count, so the
   disagreement is visible rather than buried. Not cleaned up: trimming by signed area inside the
   generator is unsafe while the exporters own a winding normalisation.
-- **The cross-geometry collision phase IS the boundary-layer phase's cost**, and the segment test
-  is not where it lives. Measured on `config/hybrid_30p30n.dat` at `BL_LAYERS 120`, timing from
-  "Step: Generating N boundary layers" to "Step: Validating final boundary layer fronts", two runs
-  each: 143.4 s with `ENABLE_COLLISION_DETECTION 1`, **0.14 s** with it at 0, and 137.8 s with the
-  segment test alone removed. So A and B are 96% of it and B2 is 5.6 s. Both are `O(F^2 * n^2)` per
-  layer and unindexed — the same order, B2 being the ordered pairs of what B does over unordered
-  ones — so the SEGMENT test is not a new complexity class and optimising it would be chasing 4%.
-  Issue #180.
+- **The collision phase is no longer the boundary-layer phase's cost, and NOTHING MEASURES THAT
+  IT STAYS THAT WAY.** #180 took `config/hybrid_30p30n.dat` at `BL_LAYERS 120` from 137.2 / 139.7 /
+  140.8 s to 0.56 / 0.65 s, and the eight-body `examples/config/UNICONES_letters.dat` with the knob
+  forced to 1 from 233.4 s to 0.38 s — timing from "Step: Generating N boundary layers" to "Step:
+  Validating final boundary layer fronts". No gate reads a clock: `tests/cpp/test_spatial_grid.cpp`
+  check 2b bounds the points VISITED per query and 2c the CELLS allocated, which is the index
+  pruning rather than the phase being fast. A caller that queried the right index with the wrong
+  radius would pass both and be slow again, and only a hand re-run of the table above would say so.
 - **Two fronts that meet PARALLEL are caught by neither test.** The point tests need a node pair
   within a cell and the segment test needs an intersection; two flat walls facing each other across
   a closing gap offer neither — the fronts interpenetrate without ever crossing. Not measured,

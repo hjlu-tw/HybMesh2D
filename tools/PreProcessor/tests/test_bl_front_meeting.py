@@ -240,9 +240,18 @@ def main() -> int:
     # segment test exists. Two circles meeting head-on touch TANGENTIALLY, so
     # the region where the fronts are within one cell of each other is long and
     # some pair of nodes always lands in it -- measured on the fixture above:
-    # point_freezes=27, segment_freezes=0 at n=160, and still 0 at n=8, 10, 12,
-    # 16, 24 and 40. Checks 1-4 therefore pass with the whole segment block
-    # deleted, which is how it shipped unmeasured.
+    # point_freezes=57, segment_freezes=0 at n=160 (the default above), and the
+    # segment count is still 0 at n=8, 10, 12, 16, 24 and 40. Checks 1-4
+    # therefore pass with the whole segment block deleted, which is how it
+    # shipped unmeasured.
+    #
+    # THE POINT COUNT HERE READ 27 UNTIL 2026-11-04 (#180), and that was never
+    # true of this fixture: `db896ae`, the commit that wrote it, reports 57 when
+    # rebuilt and so does every commit since. It is a figure taken at some other
+    # sampling and attributed to n=160. Nothing re-derives it -- only the
+    # SEGMENT half of the sentence is gated, by check 6c -- so it decayed in
+    # silence. #180 rebuilt db896ae, 70fbe86^ and HEAD to find out, which is the
+    # only reason the correction is a measurement and not a second guess.
     #
     # An END pointing at a FLANK crosses TRANSVERSALLY instead: the fronts meet
     # at an angle, so they are within a cell of each other over a span of about

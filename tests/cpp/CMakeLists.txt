@@ -92,6 +92,14 @@ endforeach()
 # which is the pure layer's own signal one step stronger. If the spacing laws
 # ever reach for a mesh, a topology or gmsh, these executables stop building.
 set(HYBMESH_HEADER_TESTS
+    # The uniform bucket index the cross-geometry collision phase prunes with
+    # (#180). `include/SpatialGrid.hpp` is arithmetic over coordinates and
+    # `std::vector`; it knows nothing of a mesh, a front or gmsh, which is the
+    # property that lets all three collision tests share one index. Linking
+    # nothing is how that stays true: the moment it reaches for `Mesh` this
+    # executable stops building. Its include path is `${CMAKE_SOURCE_DIR}/include`,
+    # granted below alongside the preprocessor's.
+    test_spatial_grid
     # The two-sided tanh's reduction to the one-parameter law (#177). The
     # dispatch in `spacingAlong` never ASKS the two-sided solver for a symmetric
     # pair, so the equality the ticket asks to be gated is unreachable from

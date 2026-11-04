@@ -5129,6 +5129,83 @@ O-grid's; the two cases are the same shape and one check is where the argument l
 `.bnd` consequence is covered only through check 4's existing patch-name assertion: a domain
 outline loaded without its `.meta` sidecar would put the fallback `BC_GEOM` on four patches, which
 that check would catch on the O-grid and nothing would catch elsewhere.
+**THE COLLISION PHASE'S SPATIAL INDEX** (#180, measured 2026-11-04). Meshing
+`config/hybrid_30p30n.dat` at `BL_LAYERS 120` spent **137-141 seconds** in the boundary-layer
+phase and **0.05 s** with `ENABLE_COLLISION_DETECTION 0`. The cross-geometry collision phase was
+not part of that cost; it was all of it.
+
+**THE OBVIOUS SUSPECT WAS THE NEWEST CODE, AND IT WAS 4%.** `178b2c1`'s per-layer segment test
+(B2) had been flagged by `/code-review` as "O(F^2*|cand|*|ring|) per layer, unindexed". It is
+unindexed and it is that order, and removing it left 137.8 s of the 143. The pre-existing point
+tests are the SAME order; B2 merely does over ordered front pairs what B already did over
+unordered ones. #180's ticket says so in as many words and forbids special-casing it, which is
+the only reason the work landed on A.
+
+| what runs | BL phase, before | after |
+|---|---|---|
+| `config/hybrid_30p30n.dat`, `BL_LAYERS 120`, knob 1 | 137.21 / 139.70 / 140.75 s | **0.65 / 0.56 s** |
+| the same, knob 0 | 0.05 / 0.06 s | 0.05 / 0.05 s |
+| `examples/config/UNICONES_letters.dat`, 8 bodies, knob forced 1 | 233.42 s | **0.38 s** |
+
+**WHERE IT ACTUALLY WENT, AND IT IS NOT THE `O(F^2 n^2)` THE TICKET NAMED.** B's candidate-against-
+candidate loop is ~2,000 x 2,000 per layer. A is `checkCollision(cand.pos, th,
+currentAllFrontsSet, geomId)` against **every node of the mesh**, which at layer 120 is 240,000 —
+two orders of magnitude more than every candidate of every front put together. The `std::set<int>`
+in the ticket's description is the IGNORE list, consulted once per node; the scan it sits inside is
+over `m_mesh.nodes`. 2,000 candidates x ~120,000 nodes x 123 layers is 3e10 iterations, and that is
+the 140 seconds.
+
+**A SUPERSET, NOT AN ANSWER — WHICH IS WHAT MAKES IT PROVABLE.** `include/SpatialGrid.hpp` is a
+uniform bucket index in CSR form that hands back every point whose CELL overlaps the query box.
+Every comparison in the phase is the one that was there before, run against a shorter list, so the
+claim "the mesh does not move" is checkable rather than argued: `tools/scripts/golden_mesh.py`
+reports **22/22 SAME at 0.000e+00** against a binary built from `70fbe86`, and
+`HYBMESH_BL_TAPER point_freezes=5 segment_freezes=56` is byte-identical on the 30P30N case. Both
+rulers were needed — coordinates are the coarse one, the counters the fine one.
+
+**THE CELL IS NOT THE THRESHOLD, AND THE TICKET'S SUGGESTION THAT IT SHOULD BE IS WHY.** "The
+threshold IS a natural cell size" is true of the query and false of the grid: the threshold here is
+a FIRST CELL HEIGHT, 5.4e-5 against a 1.1 x 0.35 ribbon, so honouring it literally asks for 140
+million cells to clear on every layer — slower than the scan it replaces. `build` sizes the cell
+from `max(hintRadius, sqrt(area / maxCells))` and then grows it until the grid fits. The index
+stays exact either way; only the pruning gets weaker, which is the trade a cell count can be
+allowed to make and an answer cannot.
+
+**THE GUARD THAT WAS INERT UNTIL SOMETHING MEASURED THE CELL COUNT.** Injection I4 deleted that
+growth loop and `tests/cpp/test_spatial_grid.cpp` stayed green: the `sqrt(area / maxCells)` term
+bounds a square cloud on its own, so nothing could see the loop. The one shape it is actually for
+is an extreme aspect ratio — a cloud 1 wide and 1e-9 tall has almost no area, and the estimate
+asked for a 680,000 x 1 grid over 100 points. Checks 2c and 8 were added to measure
+`SpatialGrid::cells()`, and I4 reddens both. The loop was right; the gate was not yet about it.
+
+**HOW A SEGMENT TEST USES A POINT INDEX.** B2 asks whether two segments cross, which no radius
+describes. Two segments that properly cross share the crossing point X, so each midpoint is within
+half its own length of X and the two midpoints are within `(lenA + lenB)/2` of each other. B2
+indexes the ring's segment MIDPOINTS and queries that radius. Check 7 drives 200,000 random pairs
+through `segmentsIntersect` and asserts the bound on every real crossing; relaxing it to
+`/4` (injection I5) reddens on the first one.
+
+**ORDER IS PART OF THE ANSWER, SO THE INDEX IS PER FRONT.** `crossGeomAt` — the coordinate in the
+one taper warning a user sees — is the first hit in `(fIdx, cand)` order for B and `(fA, fB, i1)`
+order for B2. ONE index over every front's candidates would be cheaper and would name a different
+point. The inner loops were replaced and the outer ones left alone for that reason alone; the
+freezes themselves go into a `std::set` and the hit counters are per pair, so nothing else in the
+phase can see an ordering.
+
+**A FIGURE IN THE ACCEPTANCE CRITERIA WAS WRONG WHEN IT WAS WRITTEN.** #180 asks for
+`HYBMESH_BL_TAPER` to be unchanged on `test_bl_front_meeting.py`'s fixtures at "27 / 0 and 2 / 32".
+The transversal fixture is 2 / 32. The two-circle one is **57 / 0**, and rebuilding `db896ae` — the
+commit whose comment states 27 — reports 57 as well, as do `70fbe86^` and HEAD. The 27 was taken at
+some other sampling and attributed to the shipped `n = 160`. Only the SEGMENT half of that sentence
+is gated (check 6c), so the point half decayed in silence from the day it was written. Corrected in
+the comment, with the three rebuilds recorded there; the invariant the ticket actually wants —
+unchanged across this change — holds at 57 / 0.
+
+**WHAT IS STILL UNGATED.** No test reads a clock. `test_spatial_grid.cpp` 2b bounds the points
+visited per query and 2c the cells allocated, which is the INDEX pruning, not the PHASE being
+fast: a caller that queried the right index with the wrong radius would pass both. Re-running the
+table above by hand is the only thing that would notice.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 
@@ -5217,4 +5294,5 @@ no geometry writer in the repo produces, so no mesh-level test has ever reached 
 - **`MbQuality.cpp`**: The multi-block quality instrument — inverted cells (per corner, over the exported cells), non-orthogonality (the corner angles of the structured cells), and the wall first-cell height against what the declaration asked for. Pure, total, never throws: an empty or half-built result is measured as what it is rather than refused. See Configuration above.
 - **`Config.hpp`**: Single-header; parses `.dat` files into ~50 typed parameters
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross products
+- **`SpatialGrid.hpp`**: Header-only uniform bucket index over 2-D points, in CSR form. The cross-geometry collision phase's three tests prune through it; it hands back a SUPERSET and never decides. Gated by `tests/cpp/test_spatial_grid.cpp`, which links no library at all. See "THE COLLISION PHASE'S SPATIAL INDEX" above.
 
