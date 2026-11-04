@@ -103,3 +103,8 @@ zz_file_length_probe.py
 
 # The silent-handler gate (#118) does the same, one probe per injected keyword.
 zz_silent_handler_probe.py
+
+# PowerPoint / Word owner-lock temp files. One was committed by mistake in
+# 82c4b3a and removed again here: the editor recreates it every time the deck
+# is open, so without this line it comes back as untracked noise.
+~$*
