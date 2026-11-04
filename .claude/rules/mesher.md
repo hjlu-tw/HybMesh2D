@@ -487,7 +487,9 @@ every segment of every other front's committed ring.
   share the crossing point, so the midpoints are within `(lenA + lenB)/2` of each other; B2
   indexes the ring's segment midpoints and queries exactly that. The bound is the reason the
   pruning cannot drop a crossing, and it is gated — check 7 of `tests/cpp/test_spatial_grid.cpp`,
-  over 200,000 random crossings — rather than asserted here.
+  over the 46,237 real crossings `segmentsIntersect` finds in 200,000 random PAIRS — rather than
+  asserted here. **The pairs are not the crossings**: this bullet said "200,000 random crossings"
+  until #180's own Spec review read the check.
 - **NOTHING IS BUILT WHEN `ENABLE_COLLISION_DETECTION` IS 0.** Every `build` sits inside the same
   `if` the phase does, because an index built for a phase that will not run is a cost the knob no
   longer removes. Measured both sides: 0.05-0.06 s either way.
@@ -501,8 +503,15 @@ every segment of every other front's committed ring.
   warning in the commit phase asks the question while that phase is still ADDING nodes, so the
   layer's index is already stale there; it is guarded by `!taperWarned` and runs at most until the
   first warning.
-- Gated by `tests/cpp/test_spatial_grid.cpp` (8 checks, 5 hand injections, no library linked) for
-  the index, and by `tools/scripts/golden_mesh.py` plus
+- **THE PER-FRONT EXTENT IS PART OF THE ANSWER, NOT A HINT** (`Bounds2D`, also in
+  `include/SpatialGrid.hpp`). B rejects a front pair whose candidates cannot come within `th2`, so
+  its pad is a real radius; B2 rejects one whose segments cannot cross, so its pad is 0 AND its
+  extent is over the ring's NODES — the midpoints' extent would reject pairs that really do cross,
+  since a segment reaches half its own length past its own midpoint. A wrong rejection is a node
+  that silently stops freezing. Gated by check 9, which asserts conservativeness against brute
+  force in BOTH shapes and separately asserts that it rejects at all.
+- Gated by `tests/cpp/test_spatial_grid.cpp` (9 groups, 29 checks, 8 hand injections, no library
+  linked) for the index and the extent, and by `tools/scripts/golden_mesh.py` plus
   `tools/PreProcessor/tests/test_bl_front_meeting.py` for the answer being unchanged.
   Why: `docs/design_notes/mesher.md`, "THE COLLISION PHASE'S SPATIAL INDEX".
 

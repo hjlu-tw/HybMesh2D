@@ -40,6 +40,21 @@
 //   I5  the midpoint bound in check 7 relaxed to (lenA + lenB)/4 -> check 7 red
 //       on the first crossing, confirming the bound B2 rests on is the tight
 //       one and not a guess.
+//   I6  `Bounds2D::overlaps` padding the WRONG side (`x0 + pad <= o.x1 &&
+//       o.x0 <= x1 - pad`, i.e. shrinking) -> 9a red: a pair with a point
+//       inside the pad was rejected.
+//   I7  `Bounds2D::overlaps` stuck at `return true` -> 9a and 9b stay GREEN
+//       (nothing is ever rejected, so nothing is wrongly rejected) and 9c is
+//       what fails, at 0 of 4000. That asymmetry is the reason 9c exists: a
+//       conservativeness check cannot see a rejection that never happens.
+//   I8  the `!empty && !o.empty` guard dropped -> 9d red.
+//
+// THE OTHER HALF OF THE SUBJECT. `Bounds2D` is the same pruning at one cell,
+// and it was reachable only from inside `BoundaryLayer::generate()` until
+// #180's review moved it beside the grid. It is here because the pair
+// rejection is load bearing for "the answer must not change" in two different
+// shapes -- a real radius for B, a pad of 0 over the ring's NODES for B2 --
+// and golden_mesh.py, minutes downstream, was its only witness.
 #include "SpatialGrid.hpp"
 #include "check.hpp"
 
@@ -265,6 +280,72 @@ int main() {
               + " cells for " + std::to_string(thin.size()) + " points");
         CHECK(superset(g, thin, {{0.5, 5e-10}, {0.0, 0.0}, {0.99, 1e-9}}, 1e-9),
               "8b. ...and is still exact after the cell grew");
+    }
+
+    // --- 9. The COARSEST pruning: Bounds2D, the per-front pair rejection. ---
+    // This is the other half of "the answer must not change", and until #180's
+    // review it was argued in a comment and witnessed only by golden_mesh.py
+    // several minutes downstream. It is load bearing in two different shapes:
+    // B rejects a front pair whose candidates cannot come within `th2`, so its
+    // pad is a real radius; B2 rejects one whose segments cannot cross, so its
+    // pad is 0 and the extents are over the ring's NODES. Both are asserted
+    // here against brute force, and a rejection that is ever wrong is a node
+    // that silently stops freezing.
+    {
+        Rng rng;
+        long rejected = 0, padRejected = 0;
+        for (int trial = 0; trial < 4000; ++trial) {
+            // Two small clouds placed at a random offset, so some pairs overlap
+            // and most do not -- the regime the eight-body case is in.
+            double ox = rng.in(-2.0, 2.0), oy = rng.in(-2.0, 2.0);
+            std::vector<Point2D> A, B;
+            for (int i = 0; i < 12; ++i) A.push_back({rng.in(0, 1), rng.in(0, 1)});
+            for (int i = 0; i < 12; ++i) B.push_back({ox + rng.in(0, 1), oy + rng.in(0, 1)});
+            Bounds2D bA, bB;
+            for (Point2D p : A) bA.add(p);
+            for (Point2D p : B) bB.add(p);
+
+            // 9a. B's shape: a pad that is a radius.
+            const double pad = rng.in(0.0, 0.5);
+            bool anyNear = false;
+            for (Point2D p : A)
+                for (Point2D q : B)
+                    if ((p - q).lengthSq() < pad * pad) anyNear = true;
+            if (!bA.overlaps(bB, pad)) {
+                ++padRejected;
+                if (anyNear) {
+                    CHECK(false, "9a. a padded extent rejected a pair that HAS a point within pad");
+                    break;
+                }
+            }
+
+            // 9b. B2's shape: pad 0, and the question is whether segments cross.
+            bool anyCross = false;
+            for (std::size_t i = 0; i + 1 < A.size() && !anyCross; ++i)
+                for (std::size_t j = 0; j + 1 < B.size(); ++j)
+                    if (segmentsIntersect(A[i], A[i + 1], B[j], B[j + 1])) { anyCross = true; break; }
+            if (!bA.overlaps(bB, 0.0)) {
+                ++rejected;
+                if (anyCross) {
+                    CHECK(false, "9b. an unpadded extent rejected a pair whose segments CROSS");
+                    break;
+                }
+            }
+        }
+        // 9c. ...and it rejected something. Without this, an `overlaps` stuck at
+        // `true` passes 9a and 9b and the pair rejection does nothing at all.
+        CHECK(rejected > 400 && padRejected > 400,
+              "9c. the extent rejected " + std::to_string(rejected) + " unpadded and "
+              + std::to_string(padRejected) + " padded pairs of 4000 -- it is not rejecting");
+        // 9d. An empty extent is never an excuse to skip work... it rejects,
+        // because a front with no candidates has nothing to collide with. Both
+        // callers rely on that: `allCandidates[f]` is empty on a fully frozen
+        // front and the loops below still run.
+        Bounds2D none, some;
+        some.add({0, 0});
+        CHECK(!none.overlaps(some, 1e9) && !some.overlaps(none, 1e9),
+              "9d. an empty extent overlaps nothing, at any pad");
+        CHECK(some.overlaps(some, 0.0), "9e. a one-point extent overlaps itself");
     }
 
     return report("test_spatial_grid");

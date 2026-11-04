@@ -5129,6 +5129,7 @@ O-grid's; the two cases are the same shape and one check is where the argument l
 `.bnd` consequence is covered only through check 4's existing patch-name assertion: a domain
 outline loaded without its `.meta` sidecar would put the fallback `BC_GEOM` on four patches, which
 that check would catch on the O-grid and nothing would catch elsewhere.
+
 **THE COLLISION PHASE'S SPATIAL INDEX** (#180, measured 2026-11-04). Meshing
 `config/hybrid_30p30n.dat` at `BL_LAYERS 120` spent **137-141 seconds** in the boundary-layer
 phase and **0.05 s** with `ENABLE_COLLISION_DETECTION 0`. The cross-geometry collision phase was
@@ -5144,8 +5145,19 @@ the only reason the work landed on A.
 | what runs | BL phase, before | after |
 |---|---|---|
 | `config/hybrid_30p30n.dat`, `BL_LAYERS 120`, knob 1 | 137.21 / 139.70 / 140.75 s | **0.65 / 0.56 s** |
-| the same, knob 0 | 0.05 / 0.06 s | 0.05 / 0.05 s |
+| the same, knob 0 | 0.14 / 0.05 / 0.05 / 0.05 s | 0.11 / 0.04 / 0.04 / 0.04 s |
 | `examples/config/UNICONES_letters.dat`, 8 bodies, knob forced 1 | 233.42 s | **0.38 s** |
+
+**THE CONTROL ROW DOES NOT REPRODUCE THE TICKET'S FIGURE, AND THE REASON IS THE FIRST RUN.**
+#180's acceptance asks that "the `ENABLE_COLLISION_DETECTION 0` path still costs ~0.14 s", and the
+warm figure here is 0.04-0.05 s — a 3x miss on the one row that is supposed to be a constant. It
+is not the instrument and it is not the change: the FIRST run of any batch reports 0.11-0.14 s and
+every run after it 0.04-0.05, on the parent binary and on this one alike, so the ticket's 0.14 is a
+cold-cache reading and 0.05 is a warm one. Both columns are given above at four runs each for that
+reason. The same temperature gap is why the "before" column reads 137.2-140.8 s against the
+ticket's 142.5-144.3: ~3%, well inside what a loaded machine moves it by. **The honest figure from
+this table is therefore the RATIO, not either absolute**, and it is the ratio the blind spot in
+`.claude/rules/mesher.md` states.
 
 **WHERE IT ACTUALLY WENT, AND IT IS NOT THE `O(F^2 n^2)` THE TICKET NAMED.** B's candidate-against-
 candidate loop is ~2,000 x 2,000 per layer. A is `checkCollision(cand.pos, th,
@@ -5201,10 +5213,21 @@ is gated (check 6c), so the point half decayed in silence from the day it was wr
 the comment, with the three rebuilds recorded there; the invariant the ticket actually wants —
 unchanged across this change — holds at 57 / 0.
 
+**THE COARSE PRUNING WAS ARGUED AND NOT GATED, AND #180'S OWN SPEC REVIEW SAID SO.** The per-front
+bounding box is the other half of "the answer must not change" — it decides whether a front PAIR is
+looked at at all — and it shipped as a function-local `struct Box` inside `generate()`, reachable
+from no test, with `golden_mesh.py` minutes downstream as its only witness. The Standards axis
+independently asked for it to move out of that function for an unrelated reason (the function is
+already too large), and moving it to `include/SpatialGrid.hpp` as `Bounds2D` is what made the gate
+cheap. Check 9 now asserts conservativeness against brute force in both the shapes the phase uses
+it in, and separately asserts that it rejects ANYTHING — injection I7 (`overlaps` stuck at `true`)
+leaves the two conservativeness checks GREEN, because a rejection that never happens is never
+wrongly made.
+
 **WHAT IS STILL UNGATED.** No test reads a clock. `test_spatial_grid.cpp` 2b bounds the points
-visited per query and 2c the cells allocated, which is the INDEX pruning, not the PHASE being
-fast: a caller that queried the right index with the wrong radius would pass both. Re-running the
-table above by hand is the only thing that would notice.
+visited per query, 2c the cells allocated and 9c the pairs rejected, which is the INDEX pruning,
+not the PHASE being fast: a caller that queried the right index with the wrong radius would pass
+all three. Re-running the table above by hand is the only thing that would notice.
 
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
@@ -5294,5 +5317,5 @@ no geometry writer in the repo produces, so no mesh-level test has ever reached 
 - **`MbQuality.cpp`**: The multi-block quality instrument — inverted cells (per corner, over the exported cells), non-orthogonality (the corner angles of the structured cells), and the wall first-cell height against what the declaration asked for. Pure, total, never throws: an empty or half-built result is measured as what it is rather than refused. See Configuration above.
 - **`Config.hpp`**: Single-header; parses `.dat` files into ~50 typed parameters
 - **`GeomUtils.hpp`**: `Vector2D`/`Point2D`, segment intersection, normals, dot/cross products
-- **`SpatialGrid.hpp`**: Header-only uniform bucket index over 2-D points, in CSR form. The cross-geometry collision phase's three tests prune through it; it hands back a SUPERSET and never decides. Gated by `tests/cpp/test_spatial_grid.cpp`, which links no library at all. See "THE COLLISION PHASE'S SPATIAL INDEX" above.
+- **`SpatialGrid.hpp`**: Header-only uniform bucket index over 2-D points, in CSR form. The cross-geometry collision phase's three tests prune through it; it hands back a SUPERSET and never decides. Gated by `tests/cpp/test_spatial_grid.cpp`, which links no library at all. The rationale, the measurements and the injection that came back inert are in the Configuration section above, under the heading this module is named in.
 

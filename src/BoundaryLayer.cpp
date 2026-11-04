@@ -814,33 +814,24 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
     // `if (m_config.enableCollisionDetection)`, because an index built for a
     // phase that will not run is a cost the knob no longer removes -- and
     // `examples/config/UNICONES_letters.dat` ships with it at 0.
-    struct Box {
-        double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-        bool empty = true;
-        void add(Point2D p) {
-            if (empty) { x0 = x1 = p.x; y0 = y1 = p.y; empty = false; return; }
-            x0 = std::min(x0, p.x); x1 = std::max(x1, p.x);
-            y0 = std::min(y0, p.y); y1 = std::max(y1, p.y);
-        }
-        // Inclusive, and padded on THIS box only: a pair is rejected only when
-        // no point of one can be within `pad` of any point of the other, so the
-        // rejection can never drop a hit the inner loop would have found.
-        bool overlaps(const Box& o, double pad) const {
-            return !empty && !o.empty
-                && x0 - pad <= o.x1 && o.x0 <= x1 + pad
-                && y0 - pad <= o.y1 && o.y0 <= y1 + pad;
-        }
-    };
-    SpatialGrid meshGrid;                   // A:  every committed mesh node
+    SpatialGrid meshGrid;                   // A: every committed mesh node
     std::vector<Point2D> meshPts;
-    std::vector<char> onFront;              // A:  the ignore set, as a flag per node id
-    std::vector<SpatialGrid> candGrid;      // B:  one per front, over its candidates
-    std::vector<Box> candBox;               // B and B2: per-front candidate extent
-    std::vector<char> pairPossible;         // B:  F x F, the bounding-box rejection
-    std::vector<SpatialGrid> ringGrid;      // B2: one per front, over its ring's MIDPOINTS
-    std::vector<std::vector<Point2D>> ringMid;
-    std::vector<double> ringHalfMax;        // B2: half the longest segment of that ring
-    std::vector<Box> ringBox;
+    std::vector<char> onFront;              // A: the ignore set, as a flag per node id
+    // ONE RECORD PER FRONT, not six parallel vectors indexed by the same number:
+    // `cands` and `ringMids` are filled in different phases, and six `resize`
+    // calls that must agree is a way for them to stop agreeing.
+    struct FrontIndex {
+        SpatialGrid cands;              // B:  this front's candidate positions
+        Bounds2D candExtent;            // B and B2: ...and their extent
+        SpatialGrid ringMids;           // B2: its committed ring's segment MIDPOINTS
+        std::vector<Point2D> ringMid;
+        double ringHalfMax = 0.0;       // B2: half its longest ring segment
+        // THE RING'S NODES, NOT ITS MIDPOINTS, and the two differ: a segment
+        // reaches half its own length past its midpoint, so the midpoints'
+        // extent would reject pairs whose segments really do cross.
+        Bounds2D ringExtent;
+    };
+    std::vector<FrontIndex> fidx;
 
     for (int layer = 0; layer < totalLayers; ++layer) {
 
@@ -1046,26 +1037,18 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             for (std::size_t i = 0; i < m_mesh.nodes.size(); ++i) meshPts[i] = m_mesh.nodes[i].pos;
             meshGrid.build(meshPts.data(), meshPts.size(), hint);
 
-            candGrid.resize(nF);
-            candBox.assign(nF, Box{});
+            fidx.resize(nF);
             std::vector<Point2D> candPts;
             for (int f = 0; f < nF; ++f) {
+                fidx[f].candExtent = Bounds2D{};
                 candPts.clear();
                 candPts.reserve(allCandidates[f].size());
-                for (const auto& c : allCandidates[f]) { candPts.push_back(c.pos); candBox[f].add(c.pos); }
-                candGrid[f].build(candPts.data(), candPts.size(), hint);
-            }
-            // B's bounding-box rejection, decided once per front PAIR rather than
-            // once per candidate: with three geometries it saves little, with the
-            // eight of `examples/config/UNICONES_letters.dat` it is most of B.
-            pairPossible.assign((std::size_t)nF * (std::size_t)nF, 0);
-            for (int a = 0; a < nF; ++a)
-                for (int b = a + 1; b < nF; ++b) {
-                    if (fronts[a].geomId == fronts[b].geomId) continue;
-                    double th2 = std::max(fronts[a].currentH, fronts[b].currentH);
-                    if (candBox[a].overlaps(candBox[b], th2))
-                        pairPossible[(std::size_t)a * nF + b] = 1;
+                for (const auto& c : allCandidates[f]) {
+                    candPts.push_back(c.pos);
+                    fidx[f].candExtent.add(c.pos);
                 }
+                fidx[f].cands.build(candPts.data(), candPts.size(), hint);
+            }
 
             for (int fIdx = 0; fIdx < nF; ++fIdx) {
                 // Each front's proximity threshold is its own current thickness.
@@ -1089,9 +1072,14 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     // B. 候選點 vs 其他幾何候選點 (use the larger of the two fronts'
                     //    thicknesses so either front's cell size can trigger a freeze)
                     for (int fIdx2 = fIdx + 1; fIdx2 < nF; ++fIdx2) {
-                        if (!pairPossible[(std::size_t)fIdx * nF + fIdx2]) continue;
+                        if (fronts[fIdx].geomId == fronts[fIdx2].geomId) continue;
                         double th2 = std::max(th, fronts[fIdx2].currentH);
-                        candGrid[fIdx2].forEachNear(cand.pos, th2, [&](int ci) {
+                        // Two fronts whose candidates cannot come within `th2`
+                        // of each other at all: with three geometries this saves
+                        // little, with the eight of
+                        // `examples/config/UNICONES_letters.dat` it is most of B.
+                        if (!fidx[fIdx].candExtent.overlaps(fidx[fIdx2].candExtent, th2)) continue;
+                        fidx[fIdx2].cands.forEachNear(cand.pos, th2, [&](int ci) {
                             const auto& cand2 = allCandidates[fIdx2][ci];
                             if ((cand.pos - cand2.pos).lengthSq() < th2 * th2) {
                                 currentLayerNodesToFreeze.insert(cand.parentNodeId);
@@ -1155,23 +1143,23 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
             // (fA, fB, i1) loop order below is the one that was here: `crossGeomAt`
             // is the first candidate segment that hits, and reordering those
             // loops would name a different one.
-            ringGrid.resize(nF);
-            ringMid.resize(nF);
-            ringHalfMax.assign(nF, 0.0);
-            ringBox.assign(nF, Box{});
+            fidx.resize(nF);
             for (int f = 0; f < nF; ++f) {
+                FrontIndex& fi = fidx[f];
                 const auto& ring = committed[f];
-                ringMid[f].clear();
-                if (ring.size() < 2) { ringGrid[f].build(nullptr, 0, 0.0); continue; }
-                ringMid[f].reserve(ring.size());
+                fi.ringMid.clear();
+                fi.ringHalfMax = 0.0;
+                fi.ringExtent = Bounds2D{};
+                if (ring.size() < 2) { fi.ringMids.build(nullptr, 0, 0.0); continue; }
+                fi.ringMid.reserve(ring.size());
                 for (std::size_t i = 0; i < ring.size(); ++i) {
                     const Point2D& p = ring[i];
                     const Point2D& q = ring[(i + 1) % ring.size()];
-                    ringMid[f].push_back((p + q) * 0.5);
-                    ringHalfMax[f] = std::max(ringHalfMax[f], (q - p).length() * 0.5);
-                    ringBox[f].add(p);
+                    fi.ringMid.push_back((p + q) * 0.5);
+                    fi.ringHalfMax = std::max(fi.ringHalfMax, (q - p).length() * 0.5);
+                    fi.ringExtent.add(p);
                 }
-                ringGrid[f].build(ringMid[f].data(), ringMid[f].size(), ringHalfMax[f] * 2.0);
+                fi.ringMids.build(fi.ringMid.data(), fi.ringMid.size(), fi.ringHalfMax * 2.0);
             }
             for (int fA = 0; fA < nF; ++fA) {
                 for (int fB = 0; fB < nF; ++fB) {
@@ -1182,7 +1170,7 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                     if (candA.size() < 2 || ringB.size() < 2) continue;
                     // Segments that cross have overlapping extents, so a pair of
                     // fronts whose boxes miss each other cannot produce one.
-                    if (!candBox[fA].overlaps(ringBox[fB], 0.0)) continue;
+                    if (!fidx[fA].candExtent.overlaps(fidx[fB].ringExtent, 0.0)) continue;
                     for (size_t i1 = 0; i1 + 1 < candA.size(); ++i1) {
                         if (candA[i1].parentNodeId == candA[i1 + 1].parentNodeId)
                             continue;           // a fan's own rays, not a front segment
@@ -1193,9 +1181,9 @@ double BoundaryLayerGenerator::generate(const std::vector<std::vector<int>>& all
                         // that joins the last node back to the first. `ringMid`
                         // carries one midpoint per ring node for exactly that
                         // reason -- index i2 IS the segment (i2, (i2+1) % n).
-                        const Point2D mA = (a + b) * 0.5;
-                        const double rq = (b - a).length() * 0.5 + ringHalfMax[fB];
-                        ringGrid[fB].forEachNear(mA, rq, [&](int i2) {
+                        const Point2D midA = (a + b) * 0.5;
+                        const double queryRadius = (b - a).length() * 0.5 + fidx[fB].ringHalfMax;
+                        fidx[fB].ringMids.forEachNear(midA, queryRadius, [&](int i2) {
                             size_t j2 = ((size_t)i2 + 1) % ringB.size();
                             if (!segmentsIntersect(a, b, ringB[i2], ringB[j2]))
                                 return true;

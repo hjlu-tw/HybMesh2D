@@ -44,6 +44,29 @@
 // candidate, a ring segment — rather than a copy this class would have to keep
 // in step. Buffers are reused across `build` calls, so one instance hoisted out
 // of the layer loop allocates once per run rather than once per layer.
+// THE ONE-CELL VERSION OF THE SAME PRUNING: an axis-aligned extent, for
+// rejecting a whole pair of point sets before either is walked. It lives here
+// rather than inside its caller because it is the same idea as the grid at the
+// coarsest possible resolution, and because `BoundaryLayer::generate()` is a
+// function nothing should be added to.
+struct Bounds2D {
+    double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    bool empty = true;
+    void add(Point2D p) {
+        if (empty) { x0 = x1 = p.x; y0 = y1 = p.y; empty = false; return; }
+        x0 = std::min(x0, p.x); x1 = std::max(x1, p.x);
+        y0 = std::min(y0, p.y); y1 = std::max(y1, p.y);
+    }
+    // Inclusive, and padded on THIS extent only: it reports false only when no
+    // point of one set can be within `pad` of any point of the other, so a
+    // rejection can never drop something the inner loop would have found.
+    bool overlaps(const Bounds2D& o, double pad) const {
+        return !empty && !o.empty
+            && x0 - pad <= o.x1 && o.x0 <= x1 + pad
+            && y0 - pad <= o.y1 && o.y0 <= y1 + pad;
+    }
+};
+
 class SpatialGrid {
 public:
     // Index `pts[0..n)`. Safe on n == 0, on coincident points, and on a cloud
@@ -111,10 +134,11 @@ public:
         }
     }
 
+    // BOTH ACCESSORS BELOW EXIST FOR THE GATE and have no production caller.
+    // `cells()` is what the growth loop in `build` bounds -- an unbounded grid
+    // is slower than the scan it replaces rather than wrong, so no caller may
+    // branch on it -- and `size()` is how an empty cloud is asserted to say so.
     std::size_t size() const { return m_count; }
-    // The allocated cell count. Exposed for the gate alone: it is what the
-    // growth loop in `build` bounds, and an unbounded grid is slower than
-    // the scan it replaces rather than wrong, so nothing else can see it.
     std::size_t cells() const { return (std::size_t)m_nx * (std::size_t)m_ny; }
 
 private:
