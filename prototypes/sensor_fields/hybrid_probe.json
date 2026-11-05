@@ -1,0 +1,48 @@
+{
+  "pipeline_version": 1,
+  "name": "hybrid_sensor_probe",
+  "cad": {
+    "input_file": "examples/geometries/naca0012.dat",
+    "is_closed": true,
+    "skip": true
+  },
+  "mesh": {
+    "domain_x_min": -10.0,
+    "domain_x_max": 19.0,
+    "domain_y_min": -10.0,
+    "domain_y_max": 10.0,
+    "surface_mesh_size": 0.02,
+    "auto_surface_size": true,
+    "farfield_mesh_size": 0.5,
+    "farfield_growth_rate": 0.2,
+    "bl_initial_thickness": 0.001,
+    "bl_growth_rate": 1.2,
+    "bl_layers": 8,
+    "gmsh_algorithm": 6,
+    "gmsh_optimize": 1,
+    "bc_geom": "wall",
+    "bc_xmin": "inlet",
+    "bc_xmax": "outlet",
+    "bc_ymin": "outlet",
+    "bc_ymax": "outlet"
+  },
+  "solver": {
+    "case_name": "hybrid_sensor_probe",
+    "preset": "Laminar NS (subsonic, steady)",
+    "fs_mach": 0.2,
+    "fs_tinf": 288,
+    "fs_unit_re": 200,
+    "fs_flow_angle": 0.0,
+    "cfl": 0.6,
+    "num_half_iter": 50000,
+    "print_convg_per_niter": 500,
+    "print_sol_per_niter": 50000,
+    "dump_zone_per_niter": 50000
+  },
+  "results": {
+    "variable": "M",
+    "cmap": "jet",
+    "save_png": "prototypes/sensor_fields/hybrid_probe_M.png",
+    "mesh_overlay": false
+  }
+}
