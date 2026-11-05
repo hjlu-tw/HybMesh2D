@@ -1,0 +1,38 @@
+# =============================================================================
+# GridPro's aerofoil blocking, reproduced on this repo's own aerofoil.
+#
+#   python3 docs/research/gridpro-blocking-method/make_topology.py
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_airfoil.dat
+#
+# A RESEARCH HARNESS, not a shipped case: it lives beside
+# docs/research/gridpro-blocking-method.md rather than in config/, nothing in
+# examples/ or config/ refers to it, and no gate covers it.
+#
+# What it demonstrates, and what section 6 of that note argues:
+#   * the far field needs NO GEOMETRY FILE -- all six outer sides are analytic
+#     arcs (`curve`), their spans derived from their own corners;
+#   * GridPro's three "internal surfaces" at the sharp trailing edge are RADII
+#     of that circle, because its centre IS the trailing edge;
+#   * four blocks meet at the trailing edge, each with a corner near 90 deg,
+#     which is GridPro's equal-bisection rule and nothing else.
+# =============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_airfoil.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- the circle is declared, not drawn.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing rather than a safety net: the six
+# far-field arcs carry no binding (an analytic curve has no sidecar to read a
+# condition off), so this is where their condition comes from. The aerofoil's
+# two sides are bound and take 'wall' off their own sidecar.
+BC_GEOM farfield
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_airfoil/mesh_gridpro_airfoil.vtk
