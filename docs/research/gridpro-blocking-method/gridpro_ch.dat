@@ -1,0 +1,55 @@
+# =============================================================================
+# A C/H TOPOLOGY for a single aerofoil: a C-ring around the body AND ITS WAKE,
+# opening downstream onto a RECTANGULAR far field. 24 blocks.
+#
+#   python3 docs/research/gridpro-blocking-method/make_ch.py
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch.dat
+#
+# A RESEARCH HARNESS, not a shipped case: it lives beside
+# docs/research/gridpro-blocking-method.md (section 13) rather than in config/,
+# nothing in examples/ or config/ refers to it, and no gate covers it.
+#
+# WHY IT EXISTS. Section 12a read GridPro's own fig6 and found its single-body
+# far field is not a radial fan against a circle: the lines wrap the nose in a
+# C and then run PARALLEL AND STREAMWISE, the wake leaves the trailing edge as
+# a straight band, and the outer boundary is a RECTANGLE. Section 12b put a
+# rectangle on the O-ring family and measured it much WORSE, because a ring is
+# a ring. Section 12e said what it would take instead -- this file -- and this
+# is it.
+#
+# It does NOT supersede gridpro_rings.dat beside it. That one is the O-ring
+# family sections 9-11 measure against GridPro's own tutorial circle; this one
+# is the arrangement its FIGURES show. Section 13e measures the difference: the
+# C/H is better on mean non-orthogonality and on size grading, the O-ring on
+# the worst corner and on holding the far-field spacing.
+#
+# THE WAKE IS ONE CUT, WALKED TWICE. The xi walk runs from the outlet BELOW the
+# wake, forward along it to the trailing edge, round the body, and back along
+# the wake to the outlet ABOVE it, so every wake edge is met twice and is ONE
+# edge both times. The trailing edge is one node on five edges, where four
+# blocks meet.
+# =============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_ch.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- the rectangle is declared, corner by corner.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing: the far-field and outlet edges
+# carry no binding, so this is where their condition comes from. The aerofoil's
+# sides are bound and take 'wall' off their own sidecar. A real case would want
+# inlet / outlet / farfield told apart, which needs a far-field geometry file.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family (section 8g); five is
+# where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_ch/mesh_gridpro_ch.vtk

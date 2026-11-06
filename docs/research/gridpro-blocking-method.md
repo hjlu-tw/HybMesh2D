@@ -114,6 +114,13 @@ entry 2 named `sp.gridpro.com/docs/WS_10.0_Tutorials.zip` as unreachable, and th
 > O-fan against a circle. `--box` reaches the rectangle and measures much worse (89.2° against
 > 48.1°), the nested-box H field that would fix it FOLDS for a reason that is arithmetic, and
 > what it would really take is a different topology document.
+>
+> **§13 then BUILT that document.** A C/H topology, 24 blocks, and it is the best mesh in this
+> note on mean non-orthogonality (**4.30°** against the O-ring's 7.14°) and on size grading
+> (**7.8** against 14.1), with the far field a rectangle the grid is aligned to. Five defects
+> found on the way are in §13c, including one where **GridPro's own equal-bisection rule
+> cannot be used** — its trailing-edge ray lands behind the next station's and the radials
+> cross.
 
 | GridPro | this repo |
 |---|---|
@@ -910,6 +917,7 @@ GridPro-derived numbers are **derived at build time and not transcribed**:
 | **A — the minimum** | `make_topology.py` | `gridpro_airfoil.json` | `gridpro_airfoil.dat` |
 | **B — the reproduction** | `make_tworing.py` | `gridpro_tworing.json` | `gridpro_tworing.dat` |
 | **C — §9 and §10, added later** | `make_rings.py` | `gridpro_rings.json` | `gridpro_rings.dat` |
+| **D — §13, the C/H** | `make_ch.py` | `gridpro_ch.json` | `gridpro_ch.dat` |
 
 ```bash
 python3 docs/research/gridpro-blocking-method/make_tworing.py        # --split K, --blend W
@@ -1656,6 +1664,130 @@ shows the box costing.
 better than anything else in this note; **the far field does not match and this note did not
 get it to.** What is in the tree is the measurement of why, and `--box` is the runnable record
 of the half that is reachable.
+
+---
+
+## 13. The C/H topology, built
+
+§12e said what matching GridPro's far field would take and called it "a piece of work rather
+than an edit". This is that work. `make_ch.py` + `gridpro_ch.json` + `gridpro_ch.dat`,
+**24 blocks**, and it is the best mesh in this note on two of the six columns. 2026-11-06.
+
+### 13a. The shape **[I]**, from §12a's **[V]** reading of fig6
+
+A C-ring around the body **and its wake**. The xi walk runs from the outlet BELOW the wake,
+forward along it to the trailing edge, round the lower surface to the nose, back along the
+upper surface to the trailing edge, and out along the wake to the outlet ABOVE it. **Every
+wake edge is met twice and is ONE edge both times** — that is what makes it a cut and not two
+coincident walls — and the trailing edge is one node on five edges where four blocks meet.
+The eta lines run from that C out to a RECTANGLE (`x ∈ [-2, 7]`, `y ∈ [±3]`).
+
+Nothing wraps round the front, so the lines leaving the nose point **at the inlet** and the
+lines leaving the wake point at the top and bottom. That is §12a's fig6, and it is a property
+of the topology rather than of any tuning.
+
+```
+cells=18432 inverted=0 nonortho_max=54.793 nonortho_mean=4.304
+quad_midline_ratio_median=2.648 p95=24.393  adjacent_area_ratio_max=7.813
+wall first cell: 0.09% worst on the BODY, 5.95% worst counting the far-field edges
+```
+
+### 13b. The map that makes it streamwise: a station's own NORMAL, cast **[V]**
+
+Where a body station's far-field point goes decides everything, and three laws were tried:
+
+| the far-field point of a body station is... | result |
+|---|---|
+| its share of the far-field C by ARC LENGTH | mid-chord lands opposite **x = -1.89**, so every grid line leaving the body swings forward to reach it: **18.2°** mean with straight radials, and a set of near-concentric arcs with curved ones |
+| where its own outward NORMAL arrives | mid-chord's normal is vertical, so it lands on the top or bottom at the **same x** — streamwise by construction — and the nose, whose normals fan through 180°, sweeps the whole corner. **4.3°** mean |
+| (a monotone cubic through four anchors) | written, then made unreachable by the row above and **deleted** rather than left in |
+
+**[I]** And a consequence worth stating: with this map the chord from a body station to its
+far-field point is ALREADY along the normal, so §10c's "arc that leaves perpendicular"
+degenerates to the chord and `--chord-radials` produces the same mesh. The curvature machinery
+is still there and is simply not needed here.
+
+### 13c. FIVE defects found while building it, each with its measurement **[V]**
+
+Recorded because every one of them produced a mesh that looked plausible and was not, and
+because four are properties of the C shape rather than of this code.
+
+1. **The walk had the lower surface's stations in REVERSE** — it went from the trailing edge
+   to the station nearest the NOSE and back. **4042 of 17280 cells inverted.** The fix was to
+   record what lies between two walk entries WHEN THE WALK IS BUILT instead of deducing it
+   from the two corner names afterwards.
+2. **The arc-length map**, 13b's first row. 18.2° mean.
+3. **GridPro's equal bisection CANNOT be used at the trailing edge here.** Its lower ray leaves
+   at -85.866° and lands on the rectangle at **x = 1.2170**, while the normal of the very next
+   station on the lower surface lands at **x = 1.2425** — BEHIND it — so the two radials cross
+   and the map refuses. The bisection ray is *steeper* than the surface normal it sits beside,
+   and on a thin trailing edge that is enough. What is used instead is the surface's own
+   one-sided normal, which makes the four sectors there **90.0 / 81.7 / 81.7 / 90.0** degrees
+   rather than 85.87 each. **[I]** This is the first thing in this note that GridPro's own
+   rule and a C-grid disagree about, and the disagreement is small but real.
+4. **Equal arc-length body stations.** With the normal map, the last stretch before the nose
+   faced a far-field stretch **36 times its own length**: 12 inverted and a worst adjacent area
+   ratio of **2132**. The law that fits is **equal increments of the surface NORMAL's own
+   direction** — which is also what puts the stations where the surface turns. Area ratio
+   2132 → 432.
+5. **The first wake station has to be DERIVED from the trailing-edge radial.** That radial
+   leaves along the surface normal and lands a little aft of the trailing edge; a wake station
+   closer in than that lands in FRONT of it and the two pinch. Measured: they landed **0.013
+   apart** and four cells inverted between them. Putting the first station at half as far again
+   as that landing fixes it by construction. Area ratio 432 → 198.
+6. **The cut's clustering has to turn round with it.** The wake is one edge walked twice in
+   opposite senses, so the far-field edge facing it the second time must carry the MIRRORED
+   spacing; otherwise its fine end sits opposite the inner edge's coarse one, the block's two
+   xi sides cluster against each other and the fill twists. Measured: **two inverted cells just
+   aft of the trailing edge and a 177.894° corner between them.** Area ratio 198 → **7.8**, and
+   the last inverted cells gone.
+
+**[I]** Defects 5 and 6 are both the trailing edge, and both are the price of the cut: it is
+the one place where two different parts of the walk have to agree about the same geometry.
+
+### 13d. The figures **[V]**
+
+`gridpro_ch_full.png` and `gridpro_ch_te.png`, rendered as QUADS for §11a's reason. The
+downstream half is a streamwise lattice, the upstream half points at the inlet, the wake is a
+thin band along `y = 0`, and the far field is a rectangle the grid is aligned to — which is
+what §12a set out to reproduce.
+
+### 13e. Against everything before it **[V]**
+
+| | §8: 14 blk | §10: 58 blk, 3 rings | §11: 38 blk, 2 rings | §13: 24 blk, C/H |
+|---|---|---|---|---|
+| cells | 17408 | 17408 | 17408 | 18432 |
+| inverted | 0 | 0 | 0 | 0 |
+| worst non-orthogonality | 59.856° | 55.277° | **48.095°** | 54.793° |
+| mean non-orthogonality | 12.307° | 9.552° | 7.137° | **4.304°** |
+| cell shape, median | 2.751 | 2.801 | 2.818 | **2.648** |
+| worst adjacent area ratio | 11.713 | 12.565 | 14.149 | **7.813** |
+| worst wall first cell, BODY only | 0.01% | 0.01% | 0.01% | 0.09% |
+| worst wall first cell, ALL wall edges | **0.0139%** | 0.0111% | 0.106% | 5.95% |
+| far field | D of the tutorial's circle | circle | circle | **rectangle** |
+
+**The cell counts are not equal** — 18432 against 17408, 5.9% more — because the C/H's station
+law is derived rather than dialled, and the nearest settings either side came out at 17088
+(worse grading) and 21504 (better). The columns are still worth reading: a 6% cell difference
+does not move a mean from 7.1° to 4.3° or an area ratio from 14.1 to 7.8.
+
+**[I]** So the C/H wins the two columns that describe the FIELD — mean non-orthogonality and
+size grading — by a wide margin, and loses the two that describe the BOUNDARIES: its worst
+corner is 6.7° behind §11's, and it holds the far-field spacing far less well, because its
+outer boundary is a rectangle whose four corners the control function has to turn through.
+**The BODY's own first cell is held by all four** — the run prints 0.01% for the three ring
+cases and 0.09% here, all of them measured off the bound aerofoil edges only, which is the
+figure a viscous solve cares about; the "all wall edges" row is dominated by the far field,
+which no case is asked to resolve.
+**For a viscous solve on this body the C/H is the one to use, and that is the first time in
+this note the answer has not been the O-ring.**
+
+### 13f. What is still not GridPro's **[I]**
+
+§10b, and only §10b: its curvature is a converged elliptic solve and this repo's smoother
+diverges at sweep 13, so every line here is placed by a declaration rather than solved for.
+Everything else §§9-12 listed as different — the far field's shape, the streamwise lattice, the
+wake band, the block count being in the right range — is now reproduced.
 
 ---
 
