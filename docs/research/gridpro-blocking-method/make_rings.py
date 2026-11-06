@@ -52,6 +52,8 @@ N_OUT_TOTAL = 24                # intervals from ring 1 out to the circle, in al
 N_WAKE = 17                     # nodes along the trailing-edge fan's angular side
 
 FAR_C = None
+BOX = False                     # a RECTANGULAR far field instead of the circle
+BOX_XU, BOX_XD, BOX_Y = 3.0, 6.0, 3.0
 BLEND, TAIL, FREE, FREE_WRAP = 0.5, True, False, False
 CURVED = True                   # radials as arcs rather than chords
 SMOOTH = True                   # ... and chained C1 instead of per-ring normal
@@ -209,6 +211,34 @@ def arc_exit_tangent(cv, p, q):
     if cv.get("sweep", "ccw") == "ccw":
         return (-ry / n, rx / n)
     return (ry / n, -rx / n)
+
+
+def box_point(deg):
+    """Where the ray from the far-field centre at ``deg`` meets the BOX.
+
+    GridPro's two single-body figures do NOT put a radial fan out to a circle:
+    their far field is a RECTANGLE and the grid becomes a streamwise-aligned
+    lattice against it -- horizontal lines upstream and above, a straight wake
+    band downstream. A ring that IS the rectangle produces that by itself: its
+    "circumferential" lines are nested boxes, so near the top they are
+    horizontal and near the outlet they are vertical.
+    """
+    r = math.radians(deg)
+    cx, cy = math.cos(r), math.sin(r)
+    xs = (BOX_XD if cx > 0 else BOX_XU) / abs(cx) if abs(cx) > 1e-12 else 1e30
+    ys = BOX_Y / abs(cy) if abs(cy) > 1e-12 else 1e30
+    t = min(xs, ys)
+    return (FAR_C[0] + t * cx, FAR_C[1] + t * cy)
+
+
+def far_point(deg):
+    return box_point(deg) if BOX else on_circle_pt(deg)
+
+
+def box_corner_angles():
+    """The four corner directions of the box, as angles about its centre."""
+    return [math.degrees(math.atan2(sy * BOX_Y, sx * (BOX_XD if sx > 0 else BOX_XU)))
+            for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
 
 
 def ell_tangent(g, deg):
@@ -398,7 +428,29 @@ def build(split, nrings, nrays):
         hi = anchor[walk[b % nwalk]] + (360.0 if b >= nwalk else 0.0)
         for j in range(b - a):
             far[walk[(a + j) % nwalk]] = lo + (hi - lo) * j / (b - a)
-    for key in list(far):
+    if BOX:
+        # THE BOX'S FOUR CORNERS MUST BE STATIONS, or the ring side spanning one
+        # is a chord that chamfers it off. Rather than add stations -- which the
+        # wall layer could not pair with a body stretch -- the four nearest
+        # existing ones are PINNED to the corner directions and the rest spread
+        # evenly between all eight anchors.
+        for ca in box_corner_angles():
+            free = [k for k in walk if k not in anchor]
+            best = min(free, key=lambda k: abs((far[k] - ca + 180.0) % 360.0 - 180.0))
+            anchor[best] = ca + 360.0 * round((far[best] - ca) / 360.0)
+        idx = [i for i, k in enumerate(walk) if k in anchor]
+        for a, b in zip(idx, idx[1:] + [idx[0] + nwalk]):
+            lo = anchor[walk[a]]
+            hi = anchor[walk[b % nwalk]] + (360.0 if b >= nwalk else 0.0)
+            for j in range(b - a):
+                far[walk[(a + j) % nwalk]] = lo + (hi - lo) * j / (b - a)
+    # ... and then BLENDED toward where the ring's own outward normal lands.
+    # ONLY ON THE CIRCLE. With a box the blend is measured against a boundary
+    # that is not there, and it reorders the stations: it moved one of them
+    # past its two neighbours, crossing their radials, and the run came back
+    # with 216 inverted cells. On a box the even share between anchors is also
+    # the right answer, because a box side wants its stations spread along it.
+    for key in (() if BOX else list(far)):
         if key in anchor:
             continue
         q = hit_circle(ell_point(g1, nom[key]), ell_normal(g1, nom[key]))
@@ -447,11 +499,27 @@ def build(split, nrings, nrays):
             rhs = (po[0] - pw[0], po[1] - pw[1])
             u = (rhs[0] * (-n2[1]) - rhs[1] * (-n2[0])) / det
             tail[key] = (pw[0] + u * n1[0], pw[1] + u * n1[1])
+    def ring_pt(k, st):
+        if k == 1 and st in tail:
+            return tail[st]
+        if not BOX:
+            return ell_point(ring_geom(k, nrings), par[k][st])
+        if k == 1:
+            return ell_point(g1, nom[st])
+        if k == nrings:
+            return far_point(far[st])
+        # Between the wrap and the box, blended geometrically. NOT a nested box
+        # with an axis-aligned mapping, which is what a Cartesian H field would
+        # need and which section 12 records as attempted and abandoned: the
+        # inner box has to clear the wrap ellipse upstream AND keep the far
+        # field's aspect, and on this body those two cannot both hold -- the box
+        # cuts inside the ellipse ahead of the nose and the layer folds.
+        w = (3.0 ** (k - 1) - 1.0) / (3.0 ** (nrings - 1) - 1.0)
+        a, b = ring_pt(1, st), far_point(far[st])
+        return (a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w)
     for k in range(1, nrings + 1):
-        g = ring_geom(k, nrings)
         for s in walk:
-            p = tail[s] if (k == 1 and s in tail) else ell_point(g, par[k][s])
-            t.free("R%d_%s" % (k, s), p)
+            t.free("R%d_%s" % (k, s), ring_pt(k, s))
 
     # ---- the radials ------------------------------------------------------
     # Layer 0 is the WALL layer and every one of its radials clusters at the
@@ -509,11 +577,15 @@ def build(split, nrings, nrays):
             # normalized distribution. DERIVED, not tuned.
             for k in range(1, nrings + 1):
                 g = ring_geom(k, nrings)
-                rl = ell_arc(g, par[k][ka], par[k][kb])
+                rl = ell_arc(g, par[k][ka], par[k][kb]) if not BOX else \
+                    math.hypot(*(x - y for x, y in
+                                 zip(t.pos["R%d_%s" % (k, kb)],
+                                     t.pos["R%d_%s" % (k, ka)])))
                 t.edge("c%d_%s_%d" % (k, side, i), "R%d_%s" % (k, ka),
                        "R%d_%s" % (k, kb),
                        "wall" if k == nrings else "interface",
-                       curve=None if _free(k, nrings) else curve_of(g),
+                       curve=None if (_free(k, nrings) or (BOX and k > 1))
+                       else curve_of(g),
                        spacing={q: v * rl / blen for q, v in sp.items()})
 
     surface(up_body, 0, seg_up, "up")
@@ -527,7 +599,7 @@ def build(split, nrings, nrays):
     for nm, lo, hi, mid, ringend in fan:
         for k in range(1, nrings + 1):
             g = ring_geom(k, nrings)
-            cv = None if _free(k, nrings) else curve_of(g)
+            cv = None if (_free(k, nrings) or (BOX and k > 1)) else curve_of(g)
             if k == 1 and TAIL:
                 # THE TAIL IS THE RING'S OWN CURVE CONTINUED, not a chord.
                 # Each of its two sides leaves ring 1 along the ELLIPSE's own
@@ -571,7 +643,7 @@ def build(split, nrings, nrays):
 
 
 def main():
-    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH
+    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH, BOX
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", type=int, default=8,
                     help="body sides per surface; 2K sectors around the body")
@@ -589,6 +661,12 @@ def main():
     ap.add_argument("--no-tail", action="store_true",
                     help="put the two tail corners ON ring 1 instead -- the "
                          "placement section 8e rejected, kept re-runnable")
+    ap.add_argument("--box", action="store_true",
+                    help="a RECTANGULAR far field, with the rings morphing from "
+                         "the wrap ellipse out to it, instead of GridPro's "
+                         "tutorial circle. This is what its two single-body "
+                         "FIGURES show: a streamwise-aligned lattice against a "
+                         "rectangle, not a radial fan against a circle.")
     ap.add_argument("--ring-normal-radials", action="store_true",
                     help="launch EVERY layer's radial along its own ring's "
                          "normal, which kinks the partition at each ring. The "
@@ -619,6 +697,7 @@ def main():
     FREE_WRAP = args.free_wrap
     CURVED, CURVED_TAIL = not args.chord_radials, not args.chord_tail
     SMOOTH = not args.ring_normal_radials
+    BOX = args.box
     PER_LAYER = args.per_layer
     if args.rings < 2 or args.split < 1:
         raise SystemExit("--rings must be >= 2 and --split >= 1")

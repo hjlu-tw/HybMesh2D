@@ -108,6 +108,12 @@ entry 2 named `sp.gridpro.com/docs/WS_10.0_Tutorials.zip` as unreachable, and th
 > two), and §10's arcs kinked at every ring crossing. The shipped case is now **38 blocks,
 > 2 rings x 16 sectors**, which is both the arrangement the figure shows and the best mesh
 > here on both non-orthogonality columns.
+>
+> **§12 is where this stops, with a NEGATIVE result.** GridPro's single-body far field is a
+> C/H arrangement — a straight wake band and a Cartesian lattice against a RECTANGLE — not an
+> O-fan against a circle. `--box` reaches the rectangle and measures much worse (89.2° against
+> 48.1°), the nested-box H field that would fix it FOLDS for a reason that is arithmetic, and
+> what it would really take is a different topology document.
 
 | GridPro | this repo |
 |---|---|
@@ -1548,6 +1554,108 @@ than refining them.
    reports `diverged=1` at sweep 13 and folds cells if forced past it, so every curve in this
    reproduction is DECLARED from a tangency condition rather than solved for. That is the one
    difference no amount of re-blocking closes.
+
+---
+
+## 12. The far field, and a NEGATIVE result
+
+§11 fixed the near-body blocking; the maintainer's next observation is that the far field
+still looks nothing like GridPro's. It does not, the reason is structural, and after building
+the thing that would fix it I could not make it work. This section is that attempt.
+2026-11-06.
+
+### 12a. What GridPro's far field actually is **[V]**, read off fig6
+
+`fig6.webp`'s top panel, zoomed into its two halves:
+
+- **Upstream and above/below**: the grid lines wrap the nose in a C and then run **parallel
+  and streamwise** — horizontal lines ahead of the leading edge and over the body, with the
+  vertical family crossing them. Not a fan.
+- **Downstream**: the lines leaving the trailing edge run **horizontally** in a straight wake
+  band, with a lattice of blocks above and below it.
+- **The outer boundary is a RECTANGLE**, and the grid becomes a Cartesian lattice aligned with
+  it.
+
+**[I]** So GridPro's single-body far field is a **C/H** arrangement: a body-conforming ring,
+a straight wake band, and Cartesian H blocks filling the rest out to a rectangle. Everything
+§§9-11 built is O-rings fanning out to a circle. That is not a difference of curvature or of
+block count; it is a different topology family.
+
+### 12b. `--box`: a rectangular far field, built and measured **[V]**
+
+The cheap half is reachable: `--box` replaces GridPro's tutorial circle with a rectangle
+(`x ∈ [-2, 7]`, `y ∈ [±3]` about the trailing edge) and morphs the rings out to it. The four
+corners of the box have to BE stations, or the ring side spanning one chamfers it off, so the
+four nearest stations are pinned to the corner directions and the rest re-spread between all
+eight anchors.
+
+It runs, and the downstream half does become a streamwise band. The rest does not:
+
+| `--split 8 --rings 2`, 17408 cells | circle (shipped) | `--box` |
+|---|---|---|
+| inverted | 0 | 0 |
+| worst non-orthogonality | **48.095°** | 89.236° |
+| mean non-orthogonality | **7.137°** | 16.602° |
+| worst wall first cell | 0.106% | **0.020%** |
+| worst wall grid-line angle | **5.97°** | 43.84° |
+| worst adjacent area ratio | **14.149** | 24.191 |
+
+**[I]** The upstream half stays a radial fan, because a ring is a ring: nothing about naming
+the outer boundary a rectangle makes the lines ahead of the nose horizontal. `--box` is kept
+as the record of that, not as a default.
+
+### 12c. ONE BUG FOUND ON THE WAY, worth recording **[V]**
+
+The first `--box` run came back with **216 inverted cells**. The cause was not the box: the
+step that BLENDS a station's far-field angle toward where the wrap's own normal lands was
+still measuring against the **circle**, which with a box is a boundary that is not there. It
+moved one station (`u3`) past two of its neighbours — 90.63, 99.62, 108.41, **135.00**, 125.40,
+133.81, 142.74 round the walk — so their radials crossed. On a box the even share between
+anchors is also the right answer, and skipping the blend there fixed it.
+
+**[I]** The shape of this is one this repo has seen before: a step that is correct for one
+boundary silently applied to another. It cost nothing to find only because the mesher counts
+inverted cells and refuses.
+
+### 12d. AND THE FIX FOR 12a WAS ATTEMPTED AND ABANDONED **[V]**
+
+A Cartesian H field needs the outer rings to be **nested BOXES joined AXIS-ALIGNED** —
+vertical lines above the box, horizontal lines beside it — rather than a ray from a centre.
+That was built: a box family growing geometrically, with each station keeping its side and
+its coordinate along that side on every box.
+
+**It folds, and the reason is arithmetic rather than a coding slip.** The innermost box has to
+clear the wrap ellipse, which reaches `x = -0.4`; measured from the far field's centre at the
+trailing edge that needs at least **0.47 of the far box's upstream extent**, while the
+downstream and vertical directions need only 0.07 and 0.10. A box family that keeps the far
+field's aspect therefore cannot be small anywhere, and at the sizes that are small enough
+downstream it **cuts inside the wrap ellipse ahead of the nose** — the ring-1-to-ring-2 layer
+inverts. Measured: **376 inverted cells at three rings, 228 at four.** The code was removed and
+the comment where the blend now sits says why.
+
+**[I]** The escape is to drop the homothety — let each box have its own aspect — but then the
+four corner DIRECTIONS differ from box to box, and a station pinned to a corner on one is not
+on a corner of the next, which is the thing 12b needed corners for. The two requirements are
+in direct conflict in this construction.
+
+### 12e. What it would actually take **[I]**
+
+A C/H topology document: a C-ring around the body **and its wake**, a straight wake band to the
+outlet, and Cartesian H blocks filling the rest to a rectangle. That is not a knob on this
+generator — the walk, the station mapping and the block list are all different — and it is a
+piece of work rather than an edit.
+
+It is also not unexplored ground here. `docs/research/multi-element-airfoil-blocking.md`
+records this group building exactly that shape for a **two-element** section — "two 8-block
+O-rings, each wrapped to an AXIS-ALIGNED RECTANGULAR box embedded in a Cartesian H grid" — with
+**0 inverted cells but a neighbouring-cell area ratio reaching 23×**. So the construction is
+known to be reachable in this repo, and known to cost on the quantity §12b's table already
+shows the box costing.
+
+**The honest summary of §§9-12**: the near-body blocking now matches GridPro's and measures
+better than anything else in this note; **the far field does not match and this note did not
+get it to.** What is in the tree is the measurement of why, and `--box` is the runnable record
+of the half that is reachable.
 
 ---
 
