@@ -101,6 +101,13 @@ entry 2 named `sp.gridpro.com/docs/WS_10.0_Tutorials.zip` as unreachable, and th
 > existence here (§10b: the smoother diverges at sweep 13 and folds cells at 20), so it is
 > DERIVED — and the result is the best mesh in this note, the only one the wall-control
 > function holds everywhere without clipping.
+>
+> **§11 is the correction to all of that.** Three causes were found for the partition still
+> not looking like GridPro's, and two are mine: every figure was the TRIANGLE-split export
+> against GridPro's quads, §9a MISREAD fig5 (its outer field is ONE layer of sectors, not
+> two), and §10's arcs kinked at every ring crossing. The shipped case is now **38 blocks,
+> 2 rings x 16 sectors**, which is both the arrangement the figure shows and the best mesh
+> here on both non-orthogonality columns.
 
 | GridPro | this repo |
 |---|---|
@@ -1140,6 +1147,10 @@ fetched 2026-11-06):
   of roughly **sixteen petal-shaped blocks**, then an outer ring of about the same number
   reaching the far field. It reads as **concentric rings × many circumferential sectors**, and
   that is the arrangement this section reproduces.
+  > **THE "OUTER RING" CLAUSE IS WRONG, AND §11b CORRECTS IT.** Zoomed into the figure's
+  > upper-right quadrant, those outer colour bands are **azimuthally** adjacent and each one
+  > spans the whole radial extent, so there is **no concentric seam** in the outer field at
+  > all. §9's three rings put two seams there that GridPro has none of.
 
 **[I]** Neither is the tutorial's case and neither is a single aerofoil in a circle, so nothing
 here overrides §3. What they add is the SHAPE of the refinement: both are subdivided in BOTH
@@ -1377,7 +1388,8 @@ which no other case in this note manages.
 
 ### 10d. The shipped case, restated **[V]**
 
-`make_rings.py` with its defaults — `--split 8 --rings 3`, curved radials, curved tail:
+`make_rings.py --split 8 --rings 3 --ring-normal-radials` — named by flag rather than as
+"the defaults", because §11 moves them:
 
 ```
 cells=17408 inverted=0 nonortho_max=55.277 nonortho_mean=9.552
@@ -1385,7 +1397,7 @@ wall_first_cell_worst_rel=0.000111  quad_midline_ratio_median=2.801 p95=13.058
 adjacent_area_ratio_max=12.565      smoother: 5 of 5 sweeps, diverged=0, clipped=0
 ```
 
-Figures `gridpro_rings_full.png` and `gridpro_rings_te.png` are this mesh.
+**§11 supersedes this as the shipped case**, and the two figures are §11's mesh, not this one.
 
 ### 10e. Against everything before it
 
@@ -1416,6 +1428,126 @@ the solution of an elliptic system over the whole field, so its boundaries are s
 ellipse tangent where the tail joins the ring — and leave the far end of each to the Coons
 fill. That is a cheaper object than what GridPro ships, it is derived rather than drawn, and
 10b is the measurement of why the expensive one is not available here.
+
+---
+
+## 11. Why it still did not look like GridPro, and what was actually wrong
+
+The maintainer's verdict on §10 was that the partition curves are drawn nothing like
+GridPro's. Putting the two pictures side by side found **three** causes. Two of them are mine
+and one of them is not a mesh property at all. 2026-11-06.
+
+### 11a. The first cause was the RENDERING, not the mesh **[V]**
+
+GridPro's figures are **quad** grids. Every figure this note had produced was the
+**triangle-split** export — `MB_SPLIT_QUADS 1`, which is what the solver needs and what the
+shipped config carries — so the whole picture was criss-crossed with diagonals that have no
+counterpart in GridPro's and that dominate its texture. On top of that
+`tools/scripts/view_mesh_vtk.py` draws block seams **heavy**, while in GridPro's figures a
+block boundary is an ordinary grid line and only the colour says where it is.
+
+Re-rendering the SAME mesh with `MB_SPLIT_QUADS 0` is most of the difference, and it costs
+nothing:
+
+```bash
+sed 's/^MB_SPLIT_QUADS 1/MB_SPLIT_QUADS 0/' \
+    docs/research/gridpro-blocking-method/gridpro_rings.dat > /tmp/q.dat
+./run.sh -conf /tmp/q.dat
+```
+
+**The two committed figures are now that view** — the same case, exported as quads purely so it
+is comparable with GridPro's. **[I]** Worth stating as a method point rather than a footnote:
+three sections of this note compared a triangulated picture against a quad one and read the
+difference as being about blocking.
+
+### 11b. The second cause was a MISREADING of fig5, in §9a **[V]**
+
+§9a says fig5 is "a dense rosette of small blocks on the bodies, then a ring of roughly
+sixteen petal-shaped blocks, then **an outer ring of about the same number reaching the far
+field**". Zoomed into its upper-right quadrant, that last clause is wrong. The colour bands in
+the outer field — red, orange, green, brown — are **azimuthally** adjacent, and each one spans
+the whole radial extent from the near-body rosette out to the outer boundary. **There is no
+concentric seam cutting across them.** What fig5 shows is a dense near-body rosette plus
+**ONE** layer of sectors.
+
+So §9's three rings put **two** concentric seams into the field where GridPro has none, and
+those seams are the most visible structure in the picture. §9c had already measured that more
+rings cost mean non-orthogonality; the figure says the same about the shape. Both point at
+**two rings**, which is now the default.
+
+**[I]** And a second thing the zoom settles: adjacent blocks in GridPro's outer field carry
+visibly **different grid-line directions** — radial in one, nearly horizontal in its
+neighbour. Its grid is not one global smooth curvilinear family that blocks are merely
+coloured regions of; the blocks really do have their own local orientation, as here.
+
+### 11c. The third cause was a real defect in §10's construction **[V]**
+
+§10c launched **every layer's** radial along **its own ring's** normal. Two consecutive layers
+therefore start and end with unrelated tangents, so the partition has a **KINK at every ring
+crossing** — visible in §10's figures as a corner on what should be one curve, and the
+opposite of GridPro's, which run smoothly from the body to the far field.
+
+The fix is one line and it is still derived: **chain the arcs C1** — each layer leaves along
+the tangent the layer inside it arrived with (`arc_exit_tangent`). `--ring-normal-radials`
+puts the kinked version back, which is what keeps §10's table re-runnable. At three rings,
+where there is something to chain:
+
+| `--split 8 --rings 3` | worst non-orth | mean non-orth | worst wall cell | worst area jump |
+|---|---|---|---|---|
+| per-ring normal (§10) | 55.277 | **9.552** | 0.0111% | 12.565 |
+| C1 chained | **54.339** | 10.754 | 0.0111% | **10.513** |
+
+**[I]** Not a clean numerical win — the worst corner and the size grading improve, the mean
+gets worse by 1.2° — and it is kept for the SHAPE rather than for the table. At two rings
+there is only one layer to chain and the worst corner is identical either way (48.095).
+
+### 11d. The shipped case, after all three **[V]**
+
+`make_rings.py` with its defaults is now **`--split 8 --rings 2`, curved radials chained C1,
+curved tail**: **38 blocks, 56 corners, 94 edges**.
+
+```
+cells=17408 inverted=0 nonortho_max=48.095 nonortho_mean=7.137
+wall_first_cell_worst_rel=0.001058  quad_midline_ratio_median=2.818 p95=14.107
+adjacent_area_ratio_max=14.149      worst wall grid-line angle 5.965 deg
+```
+
+What the curves buy at this arrangement, with `--chord-radials --chord-tail` as the control:
+
+| `--split 8 --rings 2` | worst non-orth | mean non-orth | worst wall cell | worst wall angle |
+|---|---|---|---|---|
+| both chords | 60.688 | **6.767** | **0.059%** | 16.355° |
+| curved, C1 (shipped) | **48.095** | 7.137 | 0.106% | **5.965°** |
+
+### 11e. Everything side by side, and the verdict changes again **[V]**
+
+All at 17408 cells, 5 sweeps:
+
+| | §8: 14 blocks | §9: 58, chords, 3 rings | §10: 58, curved, 3 rings | §11: 38, curved, 2 rings |
+|---|---|---|---|---|
+| worst non-orthogonality | 59.856° | 63.195° | 55.277° | **48.095°** |
+| mean non-orthogonality | 12.307° | 9.298° | 9.552° | **7.137°** |
+| cell shape, median | **2.751** | 2.737 | 2.801 | 2.818 |
+| worst wall first cell | 0.0139% | 0.142% | **0.0111%** | 0.106% |
+| worst wall grid-line angle | 4.68° | 15.31° | **none** | 5.97° |
+| worst adjacent area ratio | **11.713** | 12.744 | 12.565 | 14.149 |
+
+**[I]** The arrangement that matches the figure is also the best on both non-orthogonality
+columns and the worst on the size-jump one. **§9e's and §10e's verdicts were each written
+against a blocking with two seams GridPro does not have**, so this row supersedes them rather
+than refining them.
+
+### 11f. What is STILL different, and it is now only two things
+
+1. **DENSITY.** GridPro's fig5 outer field carries several times the radial resolution of this
+   17408-cell budget, which is why its cells look uniform where the big outer blocks here look
+   empty. That is a node count, not a blocking — `N_AROUND`, `N_WALL` and `N_OUT_TOTAL` in
+   `make_rings.py` — and every table in §§9-11 holds the budget fixed on purpose so that the
+   blocking is what is being compared.
+2. **§10b, unchanged.** GridPro's curvature is a converged elliptic solve; here the smoother
+   reports `diverged=1` at sweep 13 and folds cells if forced past it, so every curve in this
+   reproduction is DECLARED from a tangency condition rather than solved for. That is the one
+   difference no amount of re-blocking closes.
 
 ---
 

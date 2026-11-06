@@ -1,6 +1,11 @@
 # =============================================================================
 # GridPro's aerofoil blocking refined the way its OWN FIGURES arrange it:
-# THREE CONCENTRIC RINGS x SIXTEEN CIRCUMFERENTIAL SECTORS, 58 blocks.
+# TWO CONCENTRIC RINGS x SIXTEEN CIRCUMFERENTIAL SECTORS, 38 blocks.
+#
+# TWO rings, not three, and that is a correction: section 9a read fig5 as having
+# an outer ring of sectors beyond the first. Zoomed, its outer colour bands are
+# AZIMUTHALLY adjacent and each spans the whole radial extent -- there is no
+# concentric seam out there at all. Section 11b.
 #
 #   python3 docs/research/gridpro-blocking-method/make_rings.py
 #   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_rings.dat
@@ -28,6 +33,16 @@
 # with every interior line left free the smoother reports diverged=1 at sweep 13
 # and folds six cells if forced to 20, which section 10b measures. Put either
 # back with --chord-radials / --chord-tail.
+#
+# AND THEY ARE CHAINED C1: each layer's arc leaves along the tangent the layer
+# inside it arrived with, so a station's radials are ONE curve from the body to
+# the far field rather than a stack of arcs with a kink at every ring crossing,
+# which is what section 10 shipped. --ring-normal-radials puts the kink back.
+#
+# FOR A FIGURE COMPARABLE WITH GRIDPRO'S, RE-EXPORT AS QUADS. GridPro's
+# published grids are quad; this file carries MB_SPLIT_QUADS 1 because that is
+# what the solver needs, and the triangle diagonals dominate the picture. The
+# two committed figures are this same case re-run with MB_SPLIT_QUADS 0.
 # =============================================================================
 
 MESH_MODE 1

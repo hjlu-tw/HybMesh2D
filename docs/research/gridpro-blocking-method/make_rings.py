@@ -53,7 +53,8 @@ N_WAKE = 17                     # nodes along the trailing-edge fan's angular si
 
 FAR_C = None
 BLEND, TAIL, FREE, FREE_WRAP = 0.5, True, False, False
-CURVED = True                   # radials as arcs leaving their ring normally
+CURVED = True                   # radials as arcs rather than chords
+SMOOTH = True                   # ... and chained C1 instead of per-ring normal
 CURVED_TAIL = True              # the tail as the ring's own curve continued
 PER_LAYER = 0                   # radial intervals PER ring layer; 0 = share N_OUT_TOTAL
 
@@ -186,6 +187,28 @@ def _free(k, nrings):
     if k >= nrings:
         return False                 # the far field is the domain boundary
     return (FREE and k > 1) or (FREE_WRAP and k >= 1)
+
+
+def arc_exit_tangent(cv, p, q):
+    """The unit tangent at ``q`` of the edge ``p -> q`` declared with ``cv``.
+
+    This is what makes a station's radials ONE SMOOTH CURVE instead of a stack
+    of arcs with a kink at every ring: the next layer is built to LEAVE along
+    the tangent the previous layer ARRIVED with, so the chain is C1 by
+    construction. Launching every layer along its own ring's normal instead --
+    which is what shipped first -- guarantees a kink unless the two happen to
+    agree, and section 11 shows what that looked like.
+    """
+    if cv is None:
+        d = (q[0] - p[0], q[1] - p[1])
+        n = math.hypot(*d)
+        return (d[0] / n, d[1] / n)
+    c = cv["centre"]
+    rx, ry = q[0] - c[0], q[1] - c[1]
+    n = math.hypot(rx, ry)
+    if cv.get("sweep", "ccw") == "ccw":
+        return (-ry / n, rx / n)
+    return (ry / n, -rx / n)
 
 
 def ell_tangent(g, deg):
@@ -445,14 +468,24 @@ def build(split, nrings, nrays):
             + ["l%d" % k for k in range(split - 1)]:
         t.edge("r0_" + cid, cid, "R1_" + cid, "interface", spacing=wall)
     nout = PER_LAYER if PER_LAYER else max(1, N_OUT_TOTAL // max(1, nrings - 1))
+    # The chain is walked OUTWARD per station so each layer can be launched
+    # along the tangent the one inside it arrived with (see arc_exit_tangent).
+    tin = {}
+    for st in walk:
+        inner = "te" if st in ray_ids else (st if st in rd else None)
+        if inner is not None:
+            tin[st] = arc_exit_tangent(None, t.pos[inner], t.pos["R1_" + st])
     for k in range(1, nrings):
         g = ring_geom(k, nrings)
         for i, st in enumerate(walk):
             a, b = "R%d_%s" % (k, st), "R%d_%s" % (k + 1, st)
             cv = None
             if CURVED and not (k == 1 and st in tail):
-                cv = arc_tangent_at(t.pos[a], ell_normal(g, par[k][st]),
-                                    t.pos[b])
+                lead = tin[st] if (SMOOTH and st in tin) \
+                    else ell_normal(g, par[k][st])
+                cv = arc_tangent_at(t.pos[a], lead, t.pos[b])
+            if st in tin:
+                tin[st] = arc_exit_tangent(cv, t.pos[a], t.pos[b])
             t.edge("r%d_%s" % (k, st), a, b, "interface",
                    count=(nout + 1) if i == 0 else None, curve=cv)
 
@@ -538,12 +571,15 @@ def build(split, nrings, nrays):
 
 
 def main():
-    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL
+    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", type=int, default=8,
                     help="body sides per surface; 2K sectors around the body")
-    ap.add_argument("--rings", type=int, default=3,
-                    help="concentric rings: 2 is make_tworing.py's shape")
+    ap.add_argument("--rings", type=int, default=2,
+                    help="concentric rings. TWO is what GridPro's own fig5 "
+                         "shows once it is zoomed: a dense near-body rosette "
+                         "and ONE layer of sectors spanning out to the far "
+                         "field, with no concentric seam cutting across them.")
     ap.add_argument("--te-rays", type=int, default=3,
                     help="internal surfaces at the trailing edge; must be ODD "
                          "so one of them is the wake. 3 is the tutorial's.")
@@ -553,6 +589,12 @@ def main():
     ap.add_argument("--no-tail", action="store_true",
                     help="put the two tail corners ON ring 1 instead -- the "
                          "placement section 8e rejected, kept re-runnable")
+    ap.add_argument("--ring-normal-radials", action="store_true",
+                    help="launch EVERY layer's radial along its own ring's "
+                         "normal, which kinks the partition at each ring. The "
+                         "default chains them C1 -- a layer leaves along the "
+                         "tangent the one inside it arrived with -- so the "
+                         "partition is ONE curve from body to far field.")
     ap.add_argument("--chord-radials", action="store_true",
                     help="outer radials as STRAIGHT CHORDS between their two "
                          "corners. The default is the arc that leaves the "
@@ -576,6 +618,7 @@ def main():
     BLEND, TAIL, FREE = args.blend, not args.no_tail, args.free_rings
     FREE_WRAP = args.free_wrap
     CURVED, CURVED_TAIL = not args.chord_radials, not args.chord_tail
+    SMOOTH = not args.ring_normal_radials
     PER_LAYER = args.per_layer
     if args.rings < 2 or args.split < 1:
         raise SystemExit("--rings must be >= 2 and --split >= 1")
