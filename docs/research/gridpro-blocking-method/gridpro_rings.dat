@@ -1,0 +1,47 @@
+# =============================================================================
+# GridPro's aerofoil blocking refined the way its OWN FIGURES arrange it:
+# THREE CONCENTRIC RINGS x SIXTEEN CIRCUMFERENTIAL SECTORS, 58 blocks.
+#
+#   python3 docs/research/gridpro-blocking-method/make_rings.py
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_rings.dat
+#
+# A RESEARCH HARNESS, not a shipped case: it lives beside
+# docs/research/gridpro-blocking-method.md (section 9) rather than in config/,
+# nothing in examples/ or config/ refers to it, and no gate covers it.
+#
+# It does NOT supersede gridpro_tworing.dat beside it. That one is the 14-block
+# case section 8 measures, which is the tutorial's own block count; this one is
+# the arrangement the two single-body figures in 'Grid Generation: an Art or
+# Science?' show -- concentric rings by many sectors -- and section 9e measures
+# what the difference costs. It is better in the field and worse at the wall.
+#
+# Everything structural is still GridPro's: a far-field CIRCLE of radius 3
+# centred ON THE TRAILING EDGE, so the three internal surfaces radiating from
+# the trailing edge are RADII of it, and those three BISECT THE EXTERIOR ANGLE
+# EQUALLY. Section 9d is why there are three and not five.
+# =============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_rings.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- every ring, the circle included, is declared.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing rather than a safety net: the outer
+# ring's arcs carry no binding (an analytic curve has no sidecar to read a
+# condition off), so this is where their condition comes from. The aerofoil's
+# two sides are bound and take 'wall' off their own sidecar.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family -- section 8g measured
+# it stopping at sweep 7 and reporting diverged=1 -- so the cap is five, which
+# is where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_rings/mesh_gridpro_rings.vtk

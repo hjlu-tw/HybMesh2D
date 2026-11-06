@@ -90,6 +90,11 @@ entry 2 named `sp.gridpro.com/docs/WS_10.0_Tutorials.zip` as unreachable, and th
 > "about nine" — with 0 inverted cells and the wall first cell held to 0.014% of what the
 > declaration asks for. Two of the rules this note recovered from GridPro's manual bit from
 > the inside while it was being built, and §8e is what they cost.
+>
+> **And then refined the way the post's own FIGURES arrange it — §9.** N concentric rings by
+> 2K sectors, up to **58 blocks** at the same 17408 cells. More SECTORS is free and works;
+> more RINGS looks far more like the figures and measures worse here. §9d is a result about
+> GridPro's own rule: equal bisection CAPS the trailing-edge fan at three on a thin section.
 
 | GridPro | this repo |
 |---|---|
@@ -885,6 +890,7 @@ GridPro-derived numbers are **derived at build time and not transcribed**:
 |---|---|---|---|
 | **A — the minimum** | `make_topology.py` | `gridpro_airfoil.json` | `gridpro_airfoil.dat` |
 | **B — the reproduction** | `make_tworing.py` | `gridpro_tworing.json` | `gridpro_tworing.dat` |
+| **C — §9, added later** | `make_rings.py` | `gridpro_rings.json` | `gridpro_rings.dat` |
 
 ```bash
 python3 docs/research/gridpro-blocking-method/make_tworing.py        # --split K, --blend W
@@ -1094,6 +1100,176 @@ and produces the worst mesh of the six, so "it did not report divergence" is not
 5. **A solver run.** Neither case was taken through `getPGrid`/`unicones`. Gate 1 (it meshes,
    0 inverted) is all that is claimed; `.claude/rules/mesher-multiblock.md` records that gate
    2 is the one that has bitten on a C-grid that passed gate 1.
+
+---
+
+## 9. More blocks, the way the post's own FIGURES arrange them
+
+§8 refined circumferentially only, because `make_tworing.py` hard-codes two rings. The
+maintainer then asked whether **more blocks would make it more like GridPro's**, pointing at
+the pictures in *Grid Generation: an Art or Science?* rather than at its text. They do, and
+they do not, and the split between the two is the whole of this section. 2026-11-06.
+
+### 9a. A correction to §7 item 1 **[V]**
+
+§7 says that post "does not describe the blocking workflow" and that its only mechanism
+sentence in 3832 words is the one about a coarse overlaid wireframe. **That is true of its
+TEXT and it is not true of the page.** Its figures are GridPro meshes with the blocks coloured
+in, and two of them are the clearest statement of the arrangement anywhere in either post. I
+had read `<img alt>` strings for that post; I had not downloaded and looked at its images,
+which is a different act, and §2b did it for the *other* post only.
+
+The two that bear on a single body (both `media.gridpro.com/wp-content/uploads/2017/09/`,
+fetched 2026-11-06):
+
+- **`fig6.webp`**, alt "Airfoil with Icing, Multi-Block Structured grid using GridPro". Six
+  panels; the top one is a whole block-coloured mesh round a thin section. **Read off the
+  image:** a very thin ring hugging the surface, cut into **about ten blocks chordwise per
+  side** and into **two or three layers radially**; outside it a second band of thicker
+  blocks cut the same way; outside that a coarse field; a **dense rosette of small blocks at
+  the leading edge** and another **fan at the trailing edge**. The bottom two panels are the
+  wireframes that produced it.
+- **`fig5.webp`**, alt "Structured Multi-block grid for MDA-3 Element Configuration using
+  GridPro". **Read off the image:** a dense rosette of small blocks on the bodies, then a ring
+  of roughly **sixteen petal-shaped blocks**, then an outer ring of about the same number
+  reaching the far field. It reads as **concentric rings × many circumferential sectors**, and
+  that is the arrangement this section reproduces.
+
+**[I]** Neither is the tutorial's case and neither is a single aerofoil in a circle, so nothing
+here overrides §3. What they add is the SHAPE of the refinement: both are subdivided in BOTH
+directions, and §8 only had one of them.
+
+### 9b. `make_rings.py` — N concentric rings × 2K sectors
+
+A third generator beside the other two; `make_tworing.py` is not superseded, it is the case
+§8 measures and it is unchanged.
+
+```bash
+python3 docs/research/gridpro-blocking-method/make_rings.py \
+    [--split K] [--rings N] [--te-rays R] [--blend W] [--per-layer M] [--free-rings]
+./run.sh -conf docs/research/gridpro-blocking-method/gridpro_rings.dat
+```
+
+Ring 1 is the wrap and ring N is GridPro's circle **exactly**; the ones between morph from one
+to the other with the centre moving linearly and the two semi-axes **geometrically**, so the
+rings grow the way a boundary layer does instead of jumping from a thin wrap to a fat blob.
+The walk round a ring is **a sort by each station's own parameter on ring 1**, not a hand-built
+list, which is what lets the ray count and the sector count move independently — and it doubles
+as the check in 9d.
+
+The shipped case is `--split 8 --rings 3`: **58 blocks, 76 corners, 134 edges**, figures
+`gridpro_rings_full.png` and `gridpro_rings_te.png`.
+
+```
+cells=17408 inverted=0 nonortho_max=63.195 nonortho_mean=9.298
+wall_first_cell_worst_rel=0.001423  quad_midline_ratio_median=2.737 p95=13.093
+adjacent_area_ratio_max=12.744
+```
+
+### 9c. The answer, and it is not "yes"
+
+Every row below is at the SAME NODE BUDGET — 17408 cells, 5 sweeps, `--blend 0.5` — so what
+changes is the BLOCKING and nothing else. **[V]**
+
+| rings | sectors | blocks | worst non-orth | mean non-orth | worst wall cell | worst area jump |
+|---|---|---|---|---|---|---|
+| 2 | 4 | 14 | 60.69 | 12.47 | 0.059% | 10.41 |
+| 2 | 8 | 22 | 60.69 | 8.47 | 0.059% | 10.41 |
+| 2 | 12 | 30 | 60.69 | 7.29 | 0.059% | 10.56 |
+| 2 | 16 | 38 | 60.69 | **6.77** | 0.059% | 13.01 |
+| 3 | 4 | 22 | 63.19 | 15.23 | 0.142% | 8.03 |
+| 3 | 8 | 34 | 63.19 | 11.02 | 0.142% | 8.80 |
+| 3 | 12 | 46 | 63.19 | 9.82 | 0.142% | 10.37 |
+| 3 | 16 | **58** | 63.19 | 9.30 | 0.142% | 12.74 |
+| 4 | 4 | 30 | 59.86 | 15.78 | 0.172% | **7.74** |
+| 4 | 8 | 46 | 57.59 | 11.57 | 0.172% | 8.79 |
+| 4 | 12 | 62 | 56.89 | 10.37 | 0.172% | 10.37 |
+| 4 | 16 | 78 | **56.29** | 9.84 | 0.172% | 12.73 |
+
+Three things fall out, and they point in different directions:
+
+1. **More SECTORS is the one that works.** Along any row the mean non-orthogonality falls
+   monotonically — 12.47 → 6.77 at two rings — for no extra cells. This is §8f's result
+   again, and it is GridPro's own advice (§1b, §2c) measured.
+2. **More RINGS buys SIZE GRADING and costs ANGLE.** Down any column the worst adjacent area
+   ratio improves (10.41 → 8.03 → 7.74 at four sectors) while the mean non-orthogonality gets
+   WORSE (12.47 → 15.23 → 15.78). **[I]** Each extra ring is one more curve the grid is
+   required to pass through, and ours are CHOSEN (a geometric ellipse morph) rather than
+   solved, so every one of them is a constraint the field did not ask for.
+3. **Neither moves the worst corner much.** It stays between 56 and 63 everywhere, because it
+   is §8e's valence-3 node at the ring's tail — a property of the topology, which subdividing
+   that topology does not touch.
+
+**And paying for the extra rings in NODES does not rescue them** (12 radial intervals in each
+layer rather than one budget shared over them, 12 sectors): **[V]**
+
+| rings | blocks | cells | worst non-orth | mean non-orth | worst area jump |
+|---|---|---|---|---|---|
+| 2 | 30 | 12800 | 47.92 | **8.13** | 26.22 |
+| 3 | 46 | 17408 | 63.19 | 9.82 | **10.37** |
+| 4 | 62 | 22016 | 53.75 | 10.38 | 10.45 |
+
+The mean still gets worse; what the extra rings genuinely fix is the size jump, which at two
+rings and this radial count is **26.2** and at three is **10.4**.
+
+**One explanation was tested and REFUTED, so it is not offered.** A declared shape is FROZEN by
+the Winslow smoother (`.claude/rules/mesher-smoothing.md`), so the obvious reading is that each
+intermediate ring pins a whole circle of nodes. `--free-rings` drops the `curve` on rings
+2..N-1 and leaves them straight chords between the same corners, which the smoother may move.
+It makes the mean **worse**, not better — 9.82 → 10.16 at three rings, 10.37 → 10.91 at four,
+and the wall figure worse in both. **[I]** What both variants still pin is the ring's CORNERS,
+and nothing in this repo can relax a corner (§6b item 2); that is where the cost must sit, but
+this note has not isolated it and does not claim to have.
+
+### 9d. A NEW result about GridPro's own rule: equal bisection CAPS the trailing-edge fan
+
+`fig6` shows a fan of more than three links at the trailing edge, so `--te-rays` was built to
+divide the exterior angle into more than four sectors. **On a thin section it does not fit, and
+the generator now refuses it by name rather than failing three functions later as a missing
+edge.** **[V]**
+
+```
+--te-rays 5 does not fit this body: dividing its 343.463 deg exterior angle equally puts
+a ray at 114.488 deg, which lands on the ring INTERLEAVED with the body's own stations
+```
+
+**[I]** The arithmetic is the whole argument: the exterior fluid angle at a sharp trailing edge
+is nearly 360°, so **n** rays make sectors of about **360/(n+1)**. At n = 3 that is 86° and
+every ray points aft. At n = 5 it is 57° and the outermost pair point at ±114° — back OVER the
+body — so their landings on the wrap interleave with the body's own normals and the region
+between two interleaved stations is not a block. **So the tutorial's THREE is not a modest
+choice: on a section like this it is the largest number equal bisection admits**, and §3c's
+"it should bisect the angle equally at the sharp feature" and §1e's valence table are two
+statements of one constraint. A fan of six or eight links at a trailing edge is therefore
+either a blunt trailing edge, or rays placed unequally, or links that are not all rays — the
+figure cannot distinguish them and this note does not.
+
+### 9e. What the 58-block case costs against the 14-block one
+
+Both at 17408 cells, 5 sweeps: **[V]**
+
+| | §8's 14 blocks | §9's 58 blocks |
+|---|---|---|
+| mean non-orthogonality | 12.307° | **9.298°** |
+| worst non-orthogonality | **59.856°** | 63.195° |
+| cell shape, median / p95 | 2.751 / 13.815 | **2.737 / 13.093** |
+| worst wall first cell | **0.014%** | 0.142% |
+| worst wall grid-line angle | **4.68°** | 15.31° |
+| worst adjacent area ratio | **11.713** | 12.744 |
+
+**[I]** So the picture that looks most like GridPro's is better in the field and worse at the
+wall, and for a viscous solve the wall columns are the ones that decide. **The honest answer to
+"would more blocks be more like GridPro's mesh" is: more SECTORS, yes, and they are free; more
+RINGS, it looks much more like the figures and measures worse here, for a reason that is
+GridPro's capability and not its blocking** — its rings are where its relaxation puts them, and
+ours are where we put them.
+
+**A DISCREPANCY, NAMED RATHER THAN SMOOTHED OVER.** At `--rings 2 --split 2` this generator
+declares the same 14-block shape as `make_tworing.py` with the same counts, and does not
+produce the same mesh: 60.69° / 0.059% here against 59.856° / 0.014% there. I checked the node
+counts, the ring geometry, the tail construction, the blend and the arc declarations and they
+agree; I did not localise it, and nothing in §9 rests on the two being identical. §8's figures
+remain `make_tworing.py`'s and §9's remain this one's.
 
 ---
 
