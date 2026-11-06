@@ -51,7 +51,10 @@ from make_rings import (read_body, arc_table, at_fraction, te_rays,   # noqa: E4
 BODY = "examples/geometries/naca0012_cgrid.dat"
 BODY_NAME = "naca0012_cgrid.dat"
 
-XI, XO, YF = -2.0, 7.0, 3.0     # the far-field rectangle, in chords
+XI, XO, YF = -10.0, 20.0, 10.0  # the far-field rectangle, in chords -- the
+                                # SAME extent as the shipped C-grid case's D,
+                                # because at Re 200 a 9 x 6 box cuts through the
+                                # viscous region and the solve stalls (13g)
 DS_SURF = 0.005                 # the shipped C-grid's surface clustering
 WAKE_GROWTH = 1.9
 CURVED = True                   # radials as the arc that leaves perpendicular               # how fast the wake's own stations spread aft
@@ -413,10 +416,14 @@ def main():
     ap.add_argument("--chord-radials", action="store_true",
                     help="radials as straight chords between their two corners "
                          "instead of the arc that leaves perpendicular")
+    ap.add_argument("--domain", nargs=3, type=float, metavar=("XI", "XO", "YF"),
+                    help="the far-field rectangle, in chords")
     ap.add_argument("--out", default="gridpro_ch.json")
     args = ap.parse_args()
-    global CURVED
+    global CURVED, XI, XO, YF
     CURVED = not args.chord_radials
+    if args.domain:
+        XI, XO, YF = args.domain
     te, rays, sector, blen, topo = build(args.split, args.wake)
     nb = len(topo["blocks"])
     hdr = [

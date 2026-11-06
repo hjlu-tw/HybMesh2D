@@ -23,6 +23,16 @@
 # C/H is better on mean non-orthogonality and on size grading, the O-ring on
 # the worst corner and on holding the far-field spacing.
 #
+# THE DOMAIN IS 30 x 20 CHORDS, the same extent as the shipped C-grid case's D,
+# and that is a MEASUREMENT not a default: at Re 200 a 9 x 6 box cuts through
+# the viscous region and the solve's residual sits four times higher (section
+# 14c). make_ch.py --domain XI XO YF moves it; section 13e carries both.
+#
+# GATE 2 HAS BEEN RUN ON THIS MESH and it does NOT NaN -- 10000 iterations,
+# exit 0, nothing non-finite, against the shipped C-grid as a control. Its
+# residual does stall about 30x above that control's floor. Reproduce with
+#   ./run_pipeline.sh docs/research/gridpro-blocking-method/gridpro_ch_demo.json
+#
 # THE WAKE IS ONE CUT, WALKED TWICE. The xi walk runs from the outlet BELOW the
 # wake, forward along it to the trailing edge, round the body, and back along
 # the wake to the outlet ABOVE it, so every wake edge is met twice and is ONE
