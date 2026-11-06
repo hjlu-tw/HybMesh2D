@@ -19,6 +19,15 @@
 # centred ON THE TRAILING EDGE, so the three internal surfaces radiating from
 # the trailing edge are RADII of it, and those three BISECT THE EXTERIOR ANGLE
 # EQUALLY. Section 9d is why there are three and not five.
+#
+# AND THE BLOCK BOUNDARIES ARE CURVES, which is section 10. Every outer radial
+# is the arc that leaves its inner ring along that ring's own normal, and the
+# trailing-edge tail is the ring's own curve continued rather than a box of
+# chords -- both DERIVED, each being the unique arc through two points with a
+# prescribed tangent at one of them. They cannot be relaxed into existence here:
+# with every interior line left free the smoother reports diverged=1 at sweep 13
+# and folds six cells if forced to 20, which section 10b measures. Put either
+# back with --chord-radials / --chord-tail.
 # =============================================================================
 
 MESH_MODE 1

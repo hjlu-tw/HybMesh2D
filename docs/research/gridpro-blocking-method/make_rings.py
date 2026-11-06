@@ -52,7 +52,9 @@ N_OUT_TOTAL = 24                # intervals from ring 1 out to the circle, in al
 N_WAKE = 17                     # nodes along the trailing-edge fan's angular side
 
 FAR_C = None
-BLEND, TAIL, FREE = 0.5, True, False
+BLEND, TAIL, FREE, FREE_WRAP = 0.5, True, False, False
+CURVED = True                   # radials as arcs leaving their ring normally
+CURVED_TAIL = True              # the tail as the ring's own curve continued
 PER_LAYER = 0                   # radial intervals PER ring layer; 0 = share N_OUT_TOTAL
 
 
@@ -173,10 +175,58 @@ def _free(k, nrings):
     the Winslow smoother (`.claude/rules/mesher-smoothing.md`), so every
     intermediate ring declared as an ellipse pins a whole circle of interior
     nodes that GridPro's own relaxation would be free to move. ``--free-rings``
-    drops the declaration on rings 2 .. N-1 so the measurement can be made
-    rather than argued. Ring 1 (the wrap, which holds the wall layer) and ring
-    N (the far field) always keep theirs."""
-    return FREE and 1 < k < nrings
+    drops the declaration on rings 2 .. N-1 and ``--free-wrap`` on ring 1 as
+    well, so the measurement can be made rather than argued. Ring N is the
+    domain boundary and always keeps its declaration.
+
+    A freed ring starts life as the POLYGON of straight chords between its own
+    corners and is then free to be relaxed into whatever shape the elliptic
+    solve wants -- which is the nearest this repo gets to GridPro's own
+    "straight links in, curved block boundaries out"."""
+    if k >= nrings:
+        return False                 # the far field is the domain boundary
+    return (FREE and k > 1) or (FREE_WRAP and k >= 1)
+
+
+def ell_tangent(g, deg):
+    """The ellipse's own COUNTER-CLOCKWISE unit tangent at parameter ``deg``."""
+    c, a, b = g
+    r = math.radians(deg)
+    tx, ty = -a * math.sin(r), b * math.cos(r)
+    n = math.hypot(tx, ty)
+    return (tx / n, ty / n)
+
+
+def arc_tangent_at(p, tdir, q):
+    """The `curve` for an edge ``p -> q`` that LEAVES ``p`` along ``tdir``.
+
+    A circular arc through two points with a prescribed tangent at one of them
+    is unique, so this is DERIVED and not a chosen curvature: the centre sits on
+    the normal at ``p``, at ``r = |d|^2 / (2 d.n)``. When ``q`` already lies
+    along ``tdir`` the radius runs away and the honest answer is the straight
+    chord, which is what ``None`` asks for.
+
+    This is the only way a block boundary can be CURVED in this repo. GridPro
+    gets its curved boundaries from a converged elliptic solve over straight
+    wireframe links (section 1a); here a boundary is either a straight chord, a
+    declared shape, or whatever the smoother leaves it -- and section 10
+    measures that the smoother diverges long before it curves anything.
+    """
+    d = (q[0] - p[0], q[1] - p[1])
+    n = (-tdir[1], tdir[0])
+    dn = d[0] * n[0] + d[1] * n[1]
+    dd = d[0] * d[0] + d[1] * d[1]
+    if abs(dn) < 1e-12 or dd == 0.0:
+        return None
+    r = dd / (2.0 * dn)
+    c = (p[0] + r * n[0], p[1] + r * n[1])
+    if abs(r) > 1e4 * math.sqrt(dd):
+        return None                     # indistinguishable from the chord
+    a0 = math.atan2(p[1] - c[1], p[0] - c[0])
+    a1 = math.atan2(q[1] - c[1], q[0] - c[0])
+    ccw = (a1 - a0) % (2 * math.pi) <= math.pi
+    return {"kind": "arc", "centre": [c[0], c[1]], "r": abs(r),
+            "sweep": "ccw" if ccw else "cw"}
 
 
 def curve_of(g):
@@ -396,9 +446,15 @@ def build(split, nrings, nrays):
         t.edge("r0_" + cid, cid, "R1_" + cid, "interface", spacing=wall)
     nout = PER_LAYER if PER_LAYER else max(1, N_OUT_TOTAL // max(1, nrings - 1))
     for k in range(1, nrings):
-        for i, s in enumerate(walk):
-            t.edge("r%d_%s" % (k, s), "R%d_%s" % (k, s), "R%d_%s" % (k + 1, s),
-                   "interface", count=(nout + 1) if i == 0 else None)
+        g = ring_geom(k, nrings)
+        for i, st in enumerate(walk):
+            a, b = "R%d_%s" % (k, st), "R%d_%s" % (k + 1, st)
+            cv = None
+            if CURVED and not (k == 1 and st in tail):
+                cv = arc_tangent_at(t.pos[a], ell_normal(g, par[k][st]),
+                                    t.pos[b])
+            t.edge("r%d_%s" % (k, st), a, b, "interface",
+                   count=(nout + 1) if i == 0 else None, curve=cv)
 
     # ---- the body sides, and the arc on every ring facing them -----------
     nb = N_AROUND // (2 * split)
@@ -433,14 +489,30 @@ def build(split, nrings, nrays):
     # ---- the trailing-edge fan's own arc on every ring -------------------
     fan = []
     for j, mid in enumerate(tail_ids):
-        fan += [("f%d_i" % j, ray_ids[j + 1], mid), ("f%d_o" % j, mid, ray_ids[j])]
-    for nm, lo, hi in fan:
+        fan += [("f%d_i" % j, ray_ids[j + 1], mid, mid, ray_ids[j + 1]),
+                ("f%d_o" % j, mid, ray_ids[j], mid, ray_ids[j])]
+    for nm, lo, hi, mid, ringend in fan:
         for k in range(1, nrings + 1):
             g = ring_geom(k, nrings)
-            straight = (k == 1 and TAIL) or _free(k, nrings)
+            cv = None if _free(k, nrings) else curve_of(g)
+            if k == 1 and TAIL:
+                # THE TAIL IS THE RING'S OWN CURVE CONTINUED, not a chord.
+                # Each of its two sides leaves ring 1 along the ELLIPSE's own
+                # tangent and ends at the tail corner, so the ring stays smooth
+                # where the tail joins it and the only corner left is the one
+                # the wedge needs for its fourth side. Straight chords were
+                # what shipped first; section 10 measures what the curve buys.
+                cv = None
+                if CURVED_TAIL:
+                    pe = ell_point(g, nom[ringend])
+                    tg = ell_tangent(g, nom[ringend])
+                    if ringend == hi:            # the edge runs INTO the ring
+                        tg = (-tg[0], -tg[1])
+                    cv = arc_tangent_at(pe, tg, tail[mid])
+                    if cv and ringend == hi:     # ... so it is declared reversed
+                        cv["sweep"] = "cw" if cv["sweep"] == "ccw" else "ccw"
             t.edge("c%d_%s" % (k, nm), "R%d_%s" % (k, lo), "R%d_%s" % (k, hi),
-                   "wall" if k == nrings else "interface",
-                   curve=None if straight else curve_of(g))
+                   "wall" if k == nrings else "interface", curve=cv)
 
     # ---- the blocks -------------------------------------------------------
     for i in range(split):                       # the wall layer
@@ -466,7 +538,7 @@ def build(split, nrings, nrays):
 
 
 def main():
-    global BLEND, TAIL, FREE, PER_LAYER
+    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", type=int, default=8,
                     help="body sides per surface; 2K sectors around the body")
@@ -481,6 +553,17 @@ def main():
     ap.add_argument("--no-tail", action="store_true",
                     help="put the two tail corners ON ring 1 instead -- the "
                          "placement section 8e rejected, kept re-runnable")
+    ap.add_argument("--chord-radials", action="store_true",
+                    help="outer radials as STRAIGHT CHORDS between their two "
+                         "corners. The default is the arc that leaves the "
+                         "inner ring along that ring's own normal; section 10 "
+                         "measures what the chord costs.")
+    ap.add_argument("--chord-tail", action="store_true",
+                    help="the trailing-edge tail as two STRAIGHT CHORDS. The "
+                         "default is the ring's own curve continued -- each "
+                         "side leaves ring 1 along the ellipse's tangent.")
+    ap.add_argument("--free-wrap", action="store_true",
+                    help="as --free-rings, and free ring 1 (the wrap) too")
     ap.add_argument("--per-layer", type=int, default=0,
                     help="radial intervals in EACH ring layer; the default "
                          "shares one budget over them, so more rings cost "
@@ -491,6 +574,8 @@ def main():
     ap.add_argument("--out", default="gridpro_rings.json")
     args = ap.parse_args()
     BLEND, TAIL, FREE = args.blend, not args.no_tail, args.free_rings
+    FREE_WRAP = args.free_wrap
+    CURVED, CURVED_TAIL = not args.chord_radials, not args.chord_tail
     PER_LAYER = args.per_layer
     if args.rings < 2 or args.split < 1:
         raise SystemExit("--rings must be >= 2 and --split >= 1")

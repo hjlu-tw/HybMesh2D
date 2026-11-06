@@ -95,6 +95,12 @@ entry 2 named `sp.gridpro.com/docs/WS_10.0_Tutorials.zip` as unreachable, and th
 > 2K sectors, up to **58 blocks** at the same 17408 cells. More SECTORS is free and works;
 > more RINGS looks far more like the figures and measures worse here. §9d is a result about
 > GridPro's own rule: equal bisection CAPS the trailing-edge fan at three on a thin section.
+>
+> **And then the block BOUNDARIES were made curves — §10**, which is what GridPro's figures
+> show and what §9 still had as straight chords. The curvature cannot be relaxed into
+> existence here (§10b: the smoother diverges at sweep 13 and folds cells at 20), so it is
+> DERIVED — and the result is the best mesh in this note, the only one the wall-control
+> function holds everywhere without clipping.
 
 | GridPro | this repo |
 |---|---|
@@ -890,7 +896,7 @@ GridPro-derived numbers are **derived at build time and not transcribed**:
 |---|---|---|---|
 | **A — the minimum** | `make_topology.py` | `gridpro_airfoil.json` | `gridpro_airfoil.dat` |
 | **B — the reproduction** | `make_tworing.py` | `gridpro_tworing.json` | `gridpro_tworing.dat` |
-| **C — §9, added later** | `make_rings.py` | `gridpro_rings.json` | `gridpro_rings.dat` |
+| **C — §9 and §10, added later** | `make_rings.py` | `gridpro_rings.json` | `gridpro_rings.dat` |
 
 ```bash
 python3 docs/research/gridpro-blocking-method/make_tworing.py        # --split K, --blend W
@@ -1166,6 +1172,12 @@ wall_first_cell_worst_rel=0.001423  quad_midline_ratio_median=2.737 p95=13.093
 adjacent_area_ratio_max=12.744
 ```
 
+> **THOSE ARE THE NUMBERS OF THE VERSION WITH STRAIGHT BLOCK BOUNDARIES, AND THE SHIPPED FILE
+> IS NO LONGER IT.** Every table in §9 was measured with the radials and the trailing-edge tail
+> as straight chords, which is what `--chord-radials --chord-tail` still produces, so §9's
+> comparisons remain internally consistent and re-runnable. §10 then made those boundaries
+> CURVES and that is what `gridpro_rings.json` now holds; §10c carries its figures.
+
 ### 9c. The answer, and it is not "yes"
 
 Every row below is at the SAME NODE BUDGET — 17408 cells, 5 sweeps, `--blend 0.5` — so what
@@ -1257,6 +1269,10 @@ Both at 17408 cells, 5 sweeps: **[V]**
 | worst wall grid-line angle | **4.68°** | 15.31° |
 | worst adjacent area ratio | **11.713** | 12.744 |
 
+Both columns are the STRAIGHT-BOUNDARY versions, which is what makes this a comparison of
+BLOCKING alone; §10e redoes the right-hand one with curved boundaries and it changes the
+verdict on the wall rows.
+
 **[I]** So the picture that looks most like GridPro's is better in the field and worse at the
 wall, and for a viscous solve the wall columns are the ones that decide. **The honest answer to
 "would more blocks be more like GridPro's mesh" is: more SECTORS, yes, and they are free; more
@@ -1270,6 +1286,136 @@ produce the same mesh: 60.69° / 0.059% here against 59.856° / 0.014% there. I 
 counts, the ring geometry, the tail construction, the blend and the arc declarations and they
 agree; I did not localise it, and nothing in §9 rests on the two being identical. §8's figures
 remain `make_tworing.py`'s and §9's remain this one's.
+
+---
+
+## 10. The block boundaries themselves are CURVES
+
+The maintainer's next observation, and it is correct: in §9's mesh the trailing edge was
+handled by rounding off one sharp corner while the block boundary itself stayed a straight
+polyline, and in the far field the block boundaries were straight radial lines — while
+GridPro's, in every figure in either post, are **curves all the way**. 2026-11-06.
+
+### 10a. What was actually straight, measured **[V]**
+
+Of the shipped §9 document's **98 interior lines**, **36 carried a declared shape** (ring 1's
+and ring 2's arcs) and were therefore FROZEN by the smoother, and **62 were free** — every
+radial, and the four chords of the trailing-edge tail. The run says so itself:
+
+```
+Movable nodes : 8268 of 8848, of which 1074 on a shared edge (walls, declared corners and
+any interior line WITH A DECLARED SHAPE — one that FOLLOWS a curve or IS one — are frozen)
+```
+
+**[I]** So the straightness was not a freeze. A free interior line in this repo starts as the
+straight chord between its two corners and is whatever the smoother leaves it — and at the
+five sweeps this family runs, it leaves it straight.
+
+### 10b. GridPro's curves are a CONVERGED SOLVE, and this repo cannot run one here **[V]**
+
+§1a's golden rule is "straight links in, curved block boundaries out": in GridPro the
+curvature is the OUTPUT of the elliptic solve, not an input. The equivalent experiment here is
+to declare nothing — `--free-wrap --chord-radials --chord-tail` drops the `curve` on every
+interior ring and every other edge, leaving **0 of 98 interior lines frozen**, so every block
+boundary is free to be relaxed into whatever shape the solve wants — and then let it run
+(verified against the cap-5 row before this was written):
+
+| `MB_SMOOTH_ITERS` | 0 | 5 | 20 | 50 | 100 | 200 | 400 |
+|---|---|---|---|---|---|---|---|
+| sweeps actually run | 0 | 5 | 20 | 13 | 13 | 13 | 13 |
+| diverged | no | no | no | **yes** | yes | yes | yes |
+| inverted cells | 0 | 0 | **6** | 0 | 0 | 0 | 0 |
+| worst non-orthogonality | 60.99 | 61.96 | 83.29 | 89.08 | 89.08 | 89.08 | 89.08 |
+| mean | 10.65 | 9.96 | 9.54 | 9.67 | 9.67 | 9.67 | 9.67 |
+| worst adjacent area ratio | 13.04 | 11.85 | **80.27** | 12.35 | 12.35 | 12.35 | 12.35 |
+
+**The solve never gets far enough to curve anything**: it reports `diverged=1` at sweep 13, and
+forced to 20 it folds six cells. **[I]** This is §6b item 2 — no corner relaxation — arriving
+as a measurement rather than a stated absence, and it is the sharpest single thing this whole
+note has to say about the difference between the two tools. GridPro's curved block boundaries
+are not a drawing style; they are what a converged elliptic solve over a free wireframe
+produces, and the reproduction cannot have them by that route.
+
+### 10c. So the curve is DERIVED instead, and both constructions are unique
+
+Two one-line constructions, each determined by its own data rather than chosen, which is the
+only honest way to put a curve into a declaration here:
+
+- **A RADIAL is the arc through its two corners that LEAVES ITS INNER RING ALONG THAT RING'S
+  OWN NORMAL.** A circular arc through two points with a prescribed tangent at one of them is
+  unique: the centre sits on the normal at that end, at `r = |d|² / (2 d·n)`
+  (`arc_tangent_at` in `make_rings.py`). It is the orthogonality condition at the inner end
+  written as a shape — the one the straight chord was violating.
+- **THE TRAILING-EDGE TAIL IS THE RING'S OWN CURVE CONTINUED.** Each of its two sides leaves
+  ring 1 along the **ellipse's own tangent** there, so the ring is smooth where the tail joins
+  it and the only corner left is the one the wedge needs for its fourth side (§8e). §9's
+  version was two straight chords meeting in a box behind the trailing edge.
+
+**One of the four tail sides comes back STRAIGHT, and that is derived rather than an
+exception.** The side leaving the wake's own landing is asked to leave along the ellipse's
+tangent at its rightmost point, which is vertical — and its tail corner sits vertically above
+it, so the unique arc through the two is the straight line, `arc_tangent_at` returns no curve,
+and the chord is the answer. **[I]**
+
+Both are DEFAULTS now; `--chord-radials` and `--chord-tail` put either back, which is what
+makes the table below a measurement. All four rows: `--split 8 --rings 3`, 17408 cells,
+5 sweeps. **[V]**
+
+| | worst non-orth | mean non-orth | worst wall cell | worst wall angle | worst area jump |
+|---|---|---|---|---|---|
+| both chords (§9's version) | 63.195 | **9.298** | 0.142% | 15.31° | 12.744 |
+| curved tail only | 56.611 | 9.232 | 0.142% | 15.31° | 12.744 |
+| curved radials only | 63.483 | 9.594 | 0.014% | 4.74° | 12.565 |
+| **both curved (shipped)** | **55.277** | 9.552 | **0.011%** | **none reported** | **12.565** |
+
+The two do different jobs and neither substitutes for the other: **the tail buys the worst
+corner** (63.195 → 56.611 on its own) and **the radials buy the wall** (0.142% → 0.014%, and
+the worst wall grid-line angle 15.31° → 4.74°). Together the run reports **no wall-control
+warning at all and `clipped=0`** — the control function holds the declared first-cell height
+and the 90 degrees at every wall edge without once asking for a push the kernel cannot take,
+which no other case in this note manages.
+
+### 10d. The shipped case, restated **[V]**
+
+`make_rings.py` with its defaults — `--split 8 --rings 3`, curved radials, curved tail:
+
+```
+cells=17408 inverted=0 nonortho_max=55.277 nonortho_mean=9.552
+wall_first_cell_worst_rel=0.000111  quad_midline_ratio_median=2.801 p95=13.058
+adjacent_area_ratio_max=12.565      smoother: 5 of 5 sweeps, diverged=0, clipped=0
+```
+
+Figures `gridpro_rings_full.png` and `gridpro_rings_te.png` are this mesh.
+
+### 10e. Against everything before it
+
+All at 17408 cells and 5 sweeps, so the columns differ in BLOCKING and in BOUNDARY SHAPE and
+in nothing else: **[V]**
+
+| | §8: 14 blocks | §9: 58 blocks, chords | §10: 58 blocks, curves |
+|---|---|---|---|
+| worst non-orthogonality | 59.856° | 63.195° | **55.277°** |
+| mean non-orthogonality | 12.307° | 9.298° | 9.552° |
+| cell shape, median / p95 | 2.751 / 13.815 | 2.737 / **13.093** | 2.801 / 13.058 |
+| worst wall first cell | 0.0139% | 0.142% | **0.0111%** |
+| worst wall grid-line angle | 4.68° | 15.31° | **none reported** |
+| worst adjacent area ratio | **11.713** | 12.744 | 12.565 |
+
+**[I]** The curved version is the best mesh in this note on four of the six rows and is the
+only one with no wall-control warning; it loses the area-ratio row to §8's much coarser
+blocking and the mean by a quarter of a degree to §9's. §9e said the arrangement that looks
+most like GridPro's was "better in the field and worse at the wall"; **with the boundaries
+curved, the wall half of that verdict is gone.**
+
+### 10f. What is still NOT GridPro's, and it is the same thing as always
+
+**[I]** A curve here is fixed by ONE tangency condition at ONE end of ONE edge. GridPro's is
+the solution of an elliptic system over the whole field, so its boundaries are smooth at
+**both** ends of every edge and consistent across every block at once. The two constructions in
+10c buy the ends that matter most — the ring-normal at the inner end of each radial, the
+ellipse tangent where the tail joins the ring — and leave the far end of each to the Coons
+fill. That is a cheaper object than what GridPro ships, it is derived rather than drawn, and
+10b is the measurement of why the expensive one is not available here.
 
 ---
 
