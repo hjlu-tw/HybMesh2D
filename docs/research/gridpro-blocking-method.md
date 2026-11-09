@@ -2865,6 +2865,85 @@ at rather than for reading off.
 
 ---
 
+## 26. Three observations from the maintainer, measured
+
+Raised against `vs_fig6_side_by_side.png`: (1) the wake region is not like GridPro's; (2) the
+blocks carry a curvature in the direction NORMAL to the geometry that looks bolted on; (3) the
+aspect ratios look very large — is that good? All three are measurable and all three are right,
+and they turn out to be **one** finding seen from three sides.
+
+### 26a. The wake IS different, and it is where everything bad lives **[V]**
+
+`fig6`'s trailing edge, zoomed: a full **rosette centred ON the trailing-edge point** — radials
+fanning into every downstream direction with concentric arcs crossing them, the wake being one
+direction within that fan rather than a band. Mine: the wall-layer blocks hand over across a
+single vertical seam at the TE to two wake blocks, and the wake continues as an **H
+continuation**. There is no rosette; the TE is one corner where four blocks meet (§13c's `cut`).
+
+And the wake is where the mesh is worst. Of the worst 1% of quads by cell-shape (midline) ratio,
+**145 of 145 — 100% — are in the wake strip**, at x = 1.34…2.47, |y| < 0.05. The single worst is
+282.4 at (+2.4713, −0.0010). **[V]**
+
+### 26b. The normal-direction curvature is real, and it is NOT the smoother **[V]**
+
+`docs/research/gridpro-blocking-method/normal_turning.png` (`plot_normal_turning.py`). Every grid
+line leaving the body perpendicular to it is followed out to the far field and its accumulated
+turning summed:
+
+| | median | p95 | max |
+|---|--------|-----|-----|
+| §25's C/H (rectangular far field) | **14.3°** | 87.6° | **130.5°** |
+| this repo's shipped C-grid (concentric C arc) | **1.8°** | 2.7° | **2.8°** |
+
+A line that turns 130° on its way out is not following anything, which is what "bolted on" picks
+up. Three things the measurement settles: **[V]**
+
+1. **It is not the smoother.** At `MB_SMOOTH_ITERS 0` the cell-shape max is 285.1 against 282.4 at
+   5 and 278.7 at 20, and non-orthogonality is **worse** unsmoothed (53.0° against 48.4°). The
+   curvature is there at generation; the smoother slightly reduces it.
+2. **It is not at the wall.** The first cross-wall edge leaves along the true surface normal to
+   within a median of **0.27°** (p95 2.98°, max 7.66°, and the max is at the nose, x < 0.005).
+   The shipped C-grid is far worse there — median **7.84°**, max 31.38°. So mine starts better
+   and accumulates worse.
+3. **It is the far field's SHAPE.** The shipped C-grid's outer boundary is an arc CONCENTRIC with
+   the body, so a radial leaving the wall is still a radial when it arrives — 1.8°. A rectangle is
+   not concentric with anything, so between a round nose and a straight inlet the direction has to
+   turn, and the turning has to go somewhere. The worst lines are at the nose (feet at
+   x = 0.005…0.08), which is §16's leading-edge clustering seen as curvature. **[I]** on the
+   causal attribution; **[V]** on both measurements it rests on.
+
+### 26c. The aspect ratios ARE large — and that is not, by itself, the problem **[V]**
+
+Cell-shape (midline) ratio, split by the quality report's own wall-band / bulk line:
+
+| | wall band p95 / max | bulk p95 / max |
+|---|---------------------|----------------|
+| §25's C/H, 20 per side | 21.1 / 50.9 | 87.1 / **282.4** |
+| §17's C/H, 16 per side | 22.9 / 49.4 | 87.1 / **282.4** |
+| this repo's shipped C-grid | **523.3 / 3145.7** | 103.8 / 898.9 |
+
+Two things fall out. **A large ratio in the wall band is intentional** — boundary-layer cells are
+deliberately long and thin — and the shipped C-grid, which beats every mesh in this note on every
+angle metric and converges best, runs at **3145.7** there, 62× mine. So "the aspect ratio is
+large" is not a defect on its own. In the BULK mine is 282.4 against the shipped case's 898.9, so
+mine is the milder of the two there as well.
+
+**And raising the split did nothing to them.** §17 at 16 per side and §25 at 20 have the same bulk
+p95 and the same bulk max **to six decimal places** — 87.143754 and 282.387906. The worst-shaped
+cells are in a part of the mesh the chordwise split does not reach: the wake. **[V]**
+
+### 26d. The three are one finding **[I]**
+
+The wake's blocking (26a), the normal-direction turning (26b) and the worst aspect ratios (26c)
+all sit in the same two places — **the wake, and the far field's shape** — and none of them is in
+the surface blocking that §21 and §25 were spent on. §19c had already measured the far field's
+shape as the expensive choice (the same C/H in a rectangle: max 42.9° → 57.8°, jump 4.55 → 10.2);
+these are three independent routes to the same conclusion, and the one thing not yet tried is the
+one the measurements keep pointing at: **a far-field boundary concentric with the body, and a
+trailing-edge rosette instead of an H continuation.**
+
+---
+
 ## Sources
 
 Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTML):
