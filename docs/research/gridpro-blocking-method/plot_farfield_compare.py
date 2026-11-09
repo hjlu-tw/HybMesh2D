@@ -144,9 +144,8 @@ for i, (pts, segs, ls, rest) in enumerate(data):
     a.text(0.0, 1.135, lab, transform=a.transAxes, color=INK, fontsize=12.5, va="bottom")
     a.text(0.0, 1.075, ext, transform=a.transAxes, color=col, fontsize=10.4, va="bottom")
     a.text(0.0, 1.016, sub, transform=a.transAxes, color=SEC, fontsize=9.5, va="bottom")
-    a.text(0.016, 0.025, size + "\n" + met, transform=a.transAxes,
-           color=SEC, fontsize=9.3, va="bottom", family="monospace",
-           bbox=dict(fc="#fcfcfb", ec=GRID, lw=0.6, pad=4.5))
+    a.text(0.0, -0.045, size + "\n" + met, transform=a.transAxes,
+           color=SEC, fontsize=9.6, va="top", family="monospace", linespacing=1.55)
 
 fig.text(0.034, 0.952, "遠場分區對照 — 四種遠場，同一個 NACA 0012", color=INK, fontsize=20, va="bottom")
 fig.text(0.034, 0.916,
