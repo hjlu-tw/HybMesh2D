@@ -2730,6 +2730,60 @@ on both halves of it — the rule is quoted in §3 and the crossings are measure
 
 ---
 
+## 24. GridPro's mesh beside the MOST SIMILAR one of mine
+
+`docs/research/gridpro-blocking-method/vs_fig6_matched.png` (`plot_vs_fig6_matched.py`) — the
+matched-scale comparison offered in §18e and not delivered until now.
+
+### 24a. Which pair is "most similar", and a correction to §20a **[V]**
+
+Not `fig5` against the O-ring. **`fig5`'s alt text is "Structured Multi-block grid for MDA-3
+Element Configuration"** — a THREE-ELEMENT aerofoil, and this repo has no multi-element case at
+all. Zoomed, the pixels corroborate it: the main element is one pale blob at x 571–656 and there
+is a SECOND, separate pale element behind it at x 684–697.
+
+**That retracts two things in §20a.** "The only 2-D aerofoil far-field blocking in either
+article: ONE BODY at the centre" is wrong on the body count. And the 100 px chord it set the
+scale with was the main element's 86 px plus what I called "a second pale fragment … probably the
+trailing edge behind a grid line" — it is the second ELEMENT. With the main element's own 86 px,
+`fig5`'s panel is **x ∈ [−7.2, +7.4], y ∈ [−3.9, +4.5]** rather than ±6.4/±3.9. §20b's reading 1
+is unaffected in direction and strengthened in size: `fig5` shows about 2.4× my whole O-ring
+domain, not 2×. The far-field *blocking pattern* comparison in §§20–22 stands — an O-fan in the
+far field does not depend on the body count — but it is not a like-for-like geometry, and §22's
+table did not say so. **[V]**
+
+**`fig6`'s alt text is "Airfoil with Icing, Multi-Block Structured grid using GridPro"** — one
+body, and §17 was built with it as the target. That is the only pair in this note that is the
+same KIND of geometry with the same intent on both sides. **[V]**
+
+### 24b. The window, measured **[V]**
+
+`fig6`'s top panel: the body is one pale blob **999 px long and 85 px thick** in a 1261 × 720
+panel, so the panel spans **1.26 chords** — `x ∈ [−0.08, +1.18]`, `y ∈ [−0.38, +0.34]`. It is a
+near-body view and cannot support any far-field claim, which is what §18e found from the other
+direction when §17 and §18 came out indistinguishable in it. The 85/999 also makes **GridPro's
+section 8.5% thick against NACA 0012's 12%** — measured, ice horn included. **[V]**
+
+### 24c. The seven differences at one scale
+
+| # | item | GridPro (`fig6`) | §17's C/H | status | evidence |
+|---|------|------------------|-----------|--------|----------|
+| 1 | the body itself | iced section, horn at the nose | clean NACA 0012 | **different** | the vendor's alt text; 8.5% thick against 12%, measured |
+| 2 | thin body-hugging rings | 2–3, each cut chordwise | 3 (`--layers 3`) | **adopted** | §17b; §17 was built against `fig6` |
+| 3 | surface blocks per side | ~15–20 in this window | 5–6 | **short of it** | §18e, read off the figure; NOT quantified (§23a) |
+| 4 | rings continue round the nose | yes | yes | **same** | §17f |
+| 5 | overall density | visibly denser | 25984 cells | **short of it** | §17f/§18e appearance; no usable density measurement (§23a) |
+| 6 | the trailing edge | a fan of more than three links | one `cut` edge shared by both wake blocks | **different strategy** | §3's `fig6` reading vs §13c; both mesh, the shapes differ |
+| 7 | cells per block | the tutorial reports 329 (`fig6` has no figure of its own) | 217 | **past it** | §23b |
+
+Three of the seven differences are now things the FIGURE shows rather than things I assert: the
+body shape, the ring count, and the trailing edge. Two — rows 3 and 5 — remain appearance,
+because §23a's three attempts to count blocks or density off an image all failed their controls.
+Row 1 is a geometry difference rather than a blocking difference, and nothing in this note ever
+set out to match an iced section. **[I]**
+
+---
+
 ## Sources
 
 Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTML):
