@@ -2662,6 +2662,74 @@ refuses.
 
 ---
 
+## 23. Block COUNT and block STRATEGY, compared
+
+`docs/research/gridpro-blocking-method/vs_fig5_counts.png` (`plot_counts.py`).
+
+### 23a. The count: one vendor number, and one that cannot be had **[V]**
+
+**Stated by GridPro: 14 blocks / 4608 cells**, read off its own tutorial dialog (§L2, and the
+run report in §3: 0 folds, worst skew 0.255576, max aspect ratio 2.58781).
+
+**`fig5`'s block count is not recoverable from the image.** Three methods, each checked rather
+than trusted, and all three failed:
+
+| method | on `fig5` | the check that killed it |
+|--------|-----------|--------------------------|
+| colour runs round a circle | 21, 15, 7, 11, 11, 18 at r = 1.25…3.33 | internal: a count that swings 3× with the sampling radius is not a count |
+| line crossings round a circle | 127 / 170 / 174 / 159 at r = 1.5…3.0 | CONTROL: my own mesh, true answer `N_AROUND` = **96**, came back 157 / 204 / 163 / 110 |
+| connected colour blobs, dilated | 315 at r ≥ 0.8, 249 at r ≥ 1.2 | CONTROL: my own mesh, true answer **38 blocks**, came back **96** |
+
+None of those nine numbers is quoted anywhere as a property of GridPro's mesh. The note already
+recorded the same limit for Figure 24 in §3 ("I could not count the blocks reliably off Figure
+24"); this section is that limit re-established on `fig5` with the methods written down. **[V]**
+
+### 23b. What IS comparable: cells per block **[V]**
+
+The vendor's own stated rule — "the answer to a badly shaped region is MORE BLOCKS, not more
+nodes" (§3) — has a number attached to it, and that number survives where the block count does
+not, because it only needs each mesh's own totals:
+
+| case | blocks | cells | cells/block |
+|------|--------|-------|-------------|
+| this repo's shipped C-grid | 4 | 11520 | 2880 |
+| §8, my reproduction of the tutorial | 14 | 17408 | 1243 |
+| §13 C/H, one layer | 24 | 18240 | 760 |
+| §21 O-ring restyled to `fig5` | 38 | 18528 | 488 |
+| §11 O-ring | 38 | 17408 | 458 |
+| **GridPro's own tutorial** | **14** | **4608** | **329** |
+| §17 C/H, three layers (fig6-shaped) | 120 | 25984 | 217 |
+| §18 C/H + H outer field | 160 | 33408 | 209 |
+
+Three readings: **[V]**
+
+1. **At GridPro's own block count I used 3.8× the cells** — 14 blocks either way, 1243 against
+   329. The reproduction matched the blocking and not the philosophy.
+2. **The O-ring family sits at 458–488**, between the two: more block-led than my own C-grid,
+   less than GridPro.
+3. **§17 and §18 went PAST GridPro**, at 217 and 209. The fig6-shaped C/H is more block-led
+   than the vendor's own tutorial case — and §15 and §16 measured what that bought and what it
+   cost, so this is the axis those sections were moving along without naming it. **[I]**
+
+### 23c. The strategy, and why it is not a style difference **[V]**
+
+| | GridPro | this repo, `MESH_MODE 1` |
+|---|---|---|
+| where a corner sits | a GUESS; DBC relaxes it onto the surface | a DECLARATION; **nothing moves it** |
+| a badly shaped region | add more blocks (stated rule) | the same, but adding them must pass a refusal first |
+| the trailing edge | equal bisection of the exterior angle, 3 internal surfaces | the same rule, with the angles DERIVED from this repo's own aerofoil tangents |
+| node counts | a point-wise distribution per edge | `count` is a SEED on an equivalence class; opposite sides follow |
+| the smoother | relaxation moves corners and interfaces | declared shapes are FROZEN; only plain interfaces move |
+
+**The last row is the root of every refusal in §§9, 10 and 21.** GridPro's corners get out of each
+other's way, so equal bisection keeps working as the ray count rises. Nothing here gets out of the
+way, so the same rule pushes the radials into crossing at `--te-rays 5` (§21c), and the same
+incompatibility appeared in §10's C/H from the other side. The rule was transcribed correctly;
+what does not transfer is the relaxation that makes it safe. **[I]** on the causal claim, **[V]**
+on both halves of it — the rule is quoted in §3 and the crossings are measured in §21c.
+
+---
+
 ## Sources
 
 Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTML):
