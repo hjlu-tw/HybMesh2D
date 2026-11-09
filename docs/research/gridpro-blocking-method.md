@@ -2616,6 +2616,52 @@ not touch is the fan, which is where both extremes live. **[V]**
 
 ---
 
+## 22. The difference inventory, with the evidence each row rests on
+
+`docs/research/gridpro-blocking-method/vs_fig5_differences.png`
+(`plot_differences.py`). `fig5` and §21's restyled O-ring at one window, with the seven
+differences and, for each, **what kind of evidence it rests on** — because two of this note's
+readings have now been quoted with more confidence than their evidence carried (§18d, §20b).
+
+| # | item | GridPro (`fig5`) | this O-ring | status | evidence |
+|---|------|------------------|-------------|--------|----------|
+| 1 | fineness of the trailing-edge fan | fine; every sector narrow | four wedges of 85.87° | **REFUSED** | §21c: `--te-rays` 5/7/9 → 816/1810/2616 inverted cells; the radials cross on the far circle |
+| 2 | are the sector angles even | roughly even all the way round | a dozen narrow ones bunched at the nose | **ADOPTED** | §21a: mean 7.137° → 5.958°, max 48.095° → 47.550°, cells +6.4% |
+| 3 | shape of the radial lines | curve as they go out | near-straight after leaving the normal | **not done** | appearance only. `CURVED` is already an arc here, too slight to see. Not quantified |
+| 4 | far-field reach | the panel alone reaches ±6.4 chords, and is a crop | circle r = 3, the tutorial's own | **changeable, at a cost** | §19c: the same C/H in a rectangle goes max 42.9° → 57.8°, jump 4.55 → 10.2 |
+| 5 | number of concentric rings | no concentric seam visible when zoomed — one outer layer | 2 rings (body ring + one) | **same** | §11b's correction; §21a measured 3 and 4 rings at max 54.3 / 62.0 |
+| 6 | far-field cell size | looks roughly uniform | grows outward | **not done** | appearance only. §21d: the 14.149 jump is at r = 0.44 from the TE, not out there |
+| 7 | the body-hugging ring (Wrap) | present, and stated in the vendor's own text | present; ring 1 is it | **same** | §3's Wrap step; both have one |
+
+### 22a. TWO image measurements that FAILED, named so the table is not over-read **[V]**
+
+Neither number appears in the table, and both were attempts to quantify a row:
+
+1. **`fig5`'s sector count** (row 2). Counting colour runs round a circle after a median filter to
+   remove the grid lines gave 21, 15, 7, 11, 11, 18 at r = 1.25 … 3.33 chords. A count that
+   depends that strongly on where it is taken is not a measurement.
+2. **Mesh density** (an attempt at rows 1 and 2 together). Counting line crossings round a circle
+   gave 127/170/174/159 at r = 1.5/2.0/2.5/3.0 on `fig5`. Run as a CONTROL on my own mesh, whose
+   true answer is `N_AROUND` = **96**, the same detector returned 157/204/163/110 — it
+   over-counts about 2×, because a circle grazes the circumferential lines and registers each as
+   a crossing. The control is what killed the number; without it, "GridPro has ~170 lines around
+   the body against my 96" is a sentence this note would now contain, and it would be false.
+
+A third quantity was attempted and abandoned the same way: radial spacing along rays, which the
+same detector reports between 0.04 and 0.35 chords on neighbouring bands of the same ray, because
+it cannot tell a radial line from the circumferential one crossing it. **[V]**
+
+### 22b. What the inventory says overall **[I]**
+
+Of the seven, three already agreed, one was adopted and measured, one is refused with the cost of
+ignoring it measured, and two remain as appearance with no number behind them. The two that
+remain are rows 3 and 6 — the curvature of the radials and far-field cell uniformity — and both
+are cosmetic in the sense that §21d established: this mesh's worst corner and worst area jump
+both live at the trailing-edge fan, which is row 1, the one thing the body's own exterior angle
+refuses.
+
+---
+
 ## Sources
 
 Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTML):
