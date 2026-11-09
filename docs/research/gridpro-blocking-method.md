@@ -2831,7 +2831,28 @@ trends (1.953 / 3.494) and costs another degree at the inlet. **[V]**
 Cells per block falls 217 → **202**, so §23b's reading 3 holds a little harder: this case is now
 further past GridPro's own tutorial ratio of 329. **[V]**
 
-### 25c. The figure now carries its own proof **[V]**
+### 25c. GATE 2: the 20-per-side case through the solver **[V]**
+
+`run_pipeline.sh` on the same chain as §17's, 9000 half-iterations: **exit 0, zero NaN**, contour
+written. The NaN check itself needed fixing first — `grep -ci nan` matched
+`grid/cad/mesh.provena`**nan**`ce.json`, a substring hit in a path, so the count is word-bounded
+now. Worst-of-row from `unicones.enorm.cli`, against §17's run at matched iterations:
+
+| iteration | 16 per side (§17) | 20 per side (§25) |
+|-----------|-------------------|-------------------|
+| 5000 | 1.384e-05 | 5.111e-06 |
+| 6000 | 1.073e-05 | 5.392e-06 |
+| 7000 | 4.798e-06 | 4.449e-06 |
+| 8000 | 7.296e-06 | 6.266e-06 |
+
+**This ranks nothing.** Both sit in the same few-e-06 band and NEITHER is monotone — §25's is
+lower at all four matched iterations, but it oscillates by 40% between them, which is the
+signature of a solve that has not arrived rather than one that has arrived lower. The claim gate 2
+supports is the one it was set up for: the extra four blocks per side do not break the solve. §17's
+run printed through 9000 and this one's last printed row is 8000, both from the same
+`num_half_iter`; the run exited 0 and nothing was chased there. **[V]**
+
+### 25d. The figure now carries its own proof **[V]**
 
 `vs_fig6_matched.png` draws every block-to-block seam heavy, so the per-side count is countable
 off the image instead of asserted. Verified as a control: 21 heavy seams along the upper surface
