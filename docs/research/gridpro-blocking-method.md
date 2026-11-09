@@ -1701,14 +1701,15 @@ lines leaving the wake point at the top and bottom. That is §12a's fig6, and it
 of the topology rather than of any tuning.
 
 ```
-cells=18432 inverted=0 nonortho_max=54.793 nonortho_mean=4.304
-quad_midline_ratio_median=2.648 p95=24.393  adjacent_area_ratio_max=7.813
-wall first cell: 0.09% worst on the BODY, 5.95% worst counting the far-field edges
+cells=18240 inverted=0 nonortho_max=44.735 nonortho_mean=4.503
+quad_midline_ratio_median=2.721 p95=26.753  adjacent_area_ratio_max=3.026
+wall first cell: 0.09% worst on the BODY, 3.32% worst counting the far-field edges
 ```
 
-At `--domain -10 20 10` the same document measures **61.529 / 3.908 / 3.505 / 14.180**: the
-mean improves, everything else gets worse, and that is the trade a domain the solve can
-actually use costs on this body. Both rows are in §13e's table.
+At `--domain -10 20 10` the same document measures **39.578 / 4.203 / 3.594 / 4.556**. Both
+rows are in §13e's table. **These are §15's numbers**, after the trailing-edge fan's first wake
+station was pushed aft; before that they were 54.793 / 4.304 / 2.648 / 7.813 and
+61.529 / 3.908 / 3.505 / 14.180.
 
 ### 13b. The map that makes it streamwise: a station's own NORMAL, cast **[V]**
 
@@ -1777,30 +1778,30 @@ what §12a set out to reproduce.
 | | **the repo's OWN C-grid** | §8: 14 blk | §10: 58 blk, 3 rings | §11: 38 blk, 2 rings | §13: C/H, DEFAULT 9×6 | §13: C/H, `--domain -10 20 10` |
 |---|---|---|---|---|---|---|
 | blocks | **4** | 14 | 58 | 38 | 24 | 24 |
-| cells | 11520 | 17408 | 17408 | 17408 | 18432 | 18432 |
+| cells | 11520 | 17408 | 17408 | 17408 | 18240 | 18240 |
 | inverted | 0 | 0 | 0 | 0 | 0 | 0 |
-| worst non-orthogonality | **31.382°** | 59.856° | 55.277° | 48.095° | 54.793° | 61.529° |
-| mean non-orthogonality | 4.340° | 12.307° | 9.552° | 7.137° | 4.304° | **3.908°** |
-| cell shape, median | 4.791 | 2.751 | 2.801 | 2.818 | **2.648** | 3.505 |
-| cell shape, p95 | 148.672 | 13.815 | 13.093 | 14.107 | **24.393** | 53.608 |
-| worst adjacent area ratio | **1.484** | 11.713 | 12.565 | 14.149 | 7.813 | 14.180 |
+| worst non-orthogonality | **31.382°** | 59.856° | 55.277° | 48.095° | 44.735° | 39.578° |
+| mean non-orthogonality | 4.340° | 12.307° | 9.552° | 7.137° | 4.503° | **4.203°** |
+| cell shape, median | 4.791 | 2.751 | 2.801 | 2.818 | **2.721** | 3.594 |
+| cell shape, p95 | 148.672 | **13.815** | 13.093 | 14.107 | 26.753 | 58.356 |
+| worst adjacent area ratio | **1.484** | 11.713 | 12.565 | 14.149 | 3.026 | 4.556 |
 | worst wall first cell, BODY only | 0.05% | 0.01% | 0.01% | **0.01%** | 0.09% | 0.09% |
-| worst wall first cell, ALL wall edges | 0.0846% | **0.0139%** | 0.0111% | 0.106% | 5.95% | 16.11% |
+| worst wall first cell, ALL wall edges | 0.0846% | **0.0139%** | 0.0111% | 0.106% | 3.32% | 16.11% |
 | far-field extent, chords | 30 × 20 | 30 × 20 | 6 × 6 | 6 × 6 | 9 × 6 | 30 × 20 |
 | far field | D of a circle | D of a circle | circle | circle | **rectangle** | **rectangle** |
 
 **THE FIRST COLUMN IS `config/multiblock_cgrid.dat`, THE CASE THIS REPO ALREADY SHIPS**, and
 it was missing from every version of this table until §14's solver run needed it as a control.
-It is four blocks, 11520 cells, and it **beats everything in this note on the worst corner and
-on size grading** — 31.4° and 1.48 against the best of mine, 48.1° and 7.8. It is quoted at
+It is four blocks, 11520 cells, and it still **beats everything in this note on the worst
+corner and on size grading** — 31.4° and 1.48 against the C/H's 39.6° and 3.0. It is quoted at
 5 sweeps like the rest of the table; at its own shipped default of 20 it reads 29.895° /
 3.821° / 2.276.
 
 **[I]** So the honest ranking is not the one the preceding sections were building toward. What
-the C/H does win, and wins decisively, is **cell shape**: median 2.648 against 4.791 and p95
-24.4 against 148.7 — the shipped case has a long tail of very stretched cells that none of the
-subdivided blockings here have. On the two non-orthogonality columns it is level with it on
-the mean and 23° behind on the worst corner.
+the C/H does win is **cell shape at the median** — 2.721 against 4.791, and the shipped case's
+p95 of 148.7 is a long tail of very stretched cells that none of the subdivided blockings here
+have. It is level on the mean and 8° behind on the worst corner. **§15 is where that 8°
+went**, and it is not the block count.
 
 **The two C/H columns are the same document at two domain sizes**, and the LEFT one is the
 default — it is the fair comparison with §§9-11, whose far field is the tutorial's r = 3 circle.
@@ -1879,11 +1880,14 @@ because "the solver runs" is only worth quoting against something.
 
 ### 14b. The NaN question, answered **[V]**
 
-| | C/H, 9 × 6 (default) | C/H, 30 × 20 | control: shipped C-grid |
-|---|---|---|---|
-| 100 iterations | exit 0, no NaN | exit 0, no NaN | exit 0, no NaN |
-| 2000 iterations | exit 0, no NaN | exit 0, no NaN | exit 0, no NaN |
-| **10000 iterations** | **exit 0, no NaN** | **exit 0, no NaN** (159.6 s) | exit 0, no NaN (128.7 s) |
+| | C/H, 9 × 6 (shipped) | C/H, 9 × 6 before §15b | C/H, 30 × 20 | control: shipped C-grid |
+|---|---|---|---|---|
+| 100 iterations | — | exit 0, no NaN | exit 0, no NaN | exit 0, no NaN |
+| 2000 iterations | — | exit 0, no NaN | exit 0, no NaN | exit 0, no NaN |
+| **10000 iterations** | **exit 0, no NaN** | **exit 0, no NaN** | **exit 0, no NaN** (159.6 s) | exit 0, no NaN (128.7 s) |
+
+**Four runs, four passes.** The mesh changed under §15b after the first three, so gate 2 was
+re-run on the shipped one rather than inherited.
 
 **ONE FALSE POSITIVE, RECORDED SO IT IS NOT RE-FOUND.** `work/tWall_values.dat.cli` contains
 the literal `NAN` in both runs — three fields of its third row. It is a property of that output
@@ -1896,19 +1900,25 @@ are clean in both.
 
 Worst-of-row from `unicones.enorm.cli`, 10000 iterations, all three runs:
 
-| iteration | 1000 | 2000 | 3000 | 4000 | 5000 | 6000 | 7000 | 8000 | 9000 |
-|---|---|---|---|---|---|---|---|---|---|
-| C/H, 9 × 6 (default) | 1.44e-04 | 1.55e-04 | 1.61e-04 | 1.80e-04 | 1.68e-04 | 1.39e-04 | 8.59e-05 | 1.28e-04 | 7.85e-05 |
-| C/H, 30 × 20 | 4.71e-05 | 1.13e-04 | 1.13e-04 | 8.96e-05 | 5.50e-05 | 9.34e-05 | 1.14e-04 | 6.23e-05 | 1.01e-04 |
-| control (C-grid, 30 × 20) | 5.26e-05 | 8.59e-06 | 4.11e-06 | 4.05e-06 | 4.11e-06 | 1.61e-06 | 5.38e-06 | 3.00e-06 | 2.91e-06 |
+| iteration | 1000 | 2000 | 3000 | 4000 | 5000 | 6000 | 7000 | 8000 | 9000 | median |
+|---|---|---|---|---|---|---|---|---|---|---|
+| C/H, 9 × 6, **shipped** | 1.46e-04 | 1.30e-04 | 1.41e-04 | 1.78e-04 | 1.65e-04 | 1.04e-04 | 1.23e-04 | 1.10e-04 | 9.04e-05 | 1.30e-04 |
+| C/H, 9 × 6, before §15b | 1.44e-04 | 1.55e-04 | 1.61e-04 | 1.80e-04 | 1.68e-04 | 1.39e-04 | 8.59e-05 | 1.28e-04 | 7.85e-05 | 1.44e-04 |
+| C/H, 30 × 20, before §15b | 4.71e-05 | 1.13e-04 | 1.13e-04 | 8.96e-05 | 5.50e-05 | 9.34e-05 | 1.14e-04 | 6.23e-05 | 1.01e-04 | 9.34e-05 |
+| control (C-grid, 30 × 20) | 5.26e-05 | 8.59e-06 | 4.11e-06 | 4.05e-06 | 4.11e-06 | 1.61e-06 | 5.38e-06 | 3.00e-06 | 2.91e-06 | **4.11e-06** |
 
-The control descends two orders and holds. **Both C/H runs stop descending after about a
-thousand iterations and then oscillate in a band.** Neither diverges — the bands are flat over
-9000 iterations — and nothing goes non-finite in either.
+The control descends two orders and holds. **Every C/H run stops descending after about a
+thousand iterations and then oscillates in a band.** None diverges — the bands are flat over
+9000 iterations — and nothing goes non-finite in any of them. The C/H sits **32×** above the
+control's floor as shipped, and **23×** on the big domain.
 
-Medians over those nine samples: **1.44e-04** (9 × 6), **9.34e-05** (30 × 20), **4.11e-06**
-(control). So the C/H sits **35×** above the control's floor on the default domain and
-**23×** on the big one.
+> **AND §15b's MESH FIX BARELY MOVED IT, WHICH IS THE MOST USEFUL ROW IN THIS TABLE.** That
+> change took the worst corner from **54.79° to 44.74°** and the worst adjacent area ratio
+> from **7.81 to 3.03** — and the residual's median went from 1.44e-04 to 1.30e-04, **10%**.
+> **[I]** So whatever the solve is reacting to, it is not the worst corner and not the size
+> grading; those were the two obvious suspects and both are now ruled out by measurement
+> rather than by argument. What is left unexplained is most of the 32×, and this note does
+> not explain it.
 
 > **A FIGURE I GOT WRONG, CORRECTED HERE RATHER THAN QUIETLY REPLACED.** An earlier draft of
 > this section said the domain was worth "a factor of four", from comparing a **2e-04** sample
@@ -1918,12 +1928,11 @@ Medians over those nine samples: **1.44e-04** (9 × 6), **9.34e-05** (30 × 20),
 > 10000 iterations the medians give **1.54×**, not 4×. The domain helps; it helps a third as
 > much as the first look suggested.
 
-**[I]** So the domain is part of it and not most of it. The rest is the mesh, and the control
-says which way: its worst corner is **29.9°** against the C/H's 54.8° / 61.5° and its worst
-adjacent area ratio **2.28** against 7.8 / 14.2, on two thirds of the cells. This note has not
-isolated which of those the solver is reacting to. **It is not claimed that the C/H is a
-better mesh for this solve — on this evidence it is a worse one.** What is claimed is the
-gate: it runs, at both domain sizes, without going non-finite.
+**[I]** So the domain is worth 1.5× and §15b's mesh fix 1.1×, and together they do not
+approach the 32×. **It is not claimed that the C/H is a better mesh for this solve — on this
+evidence it is a worse one**, and it is not claimed that this note knows why. What is claimed
+is the gate: it runs, at both domain sizes and both versions of the mesh, without going
+non-finite.
 
 **[I]** What is left is the mesh. The C/H's worst corner is 61.5° against the shipped C-grid's
 29.9°, and its worst adjacent area ratio 14.2; those are the obvious suspects, and this note
@@ -1940,6 +1949,96 @@ What is claimed is the gate: it runs.
   would repeat the mistake it recorded.
 - **Nothing is committed from the runs.** The solver output lives under `results/solver/` like
   every other run; what is in the tree is the pipeline script that reproduces it.
+
+---
+
+## 15. Why the repo's FOUR-block C-grid beats the 24-block one
+
+The question §13e's new first column raises. The answer is not the block count, and the way
+to tell is to stop comparing one number per mesh and ask WHERE each one's worst corner is.
+2026-11-09.
+
+### 15a. The two worst corners are in different places, for different reasons **[V]**
+
+Both at 5 sweeps, both read off the quad export:
+
+| | C/H, 24 blocks | shipped C-grid, 4 blocks |
+|---|---|---|
+| worst corner | 54.79° at **(1.408, ±2.792)** | 31.38° at **(0.013, ±0.020)** |
+| what is there | the trailing-edge fan reaching the top and bottom boundary | **the leading edge itself** |
+
+Worst corner BY REGION, same two meshes:
+
+| region | C/H | shipped |
+|---|---|---|
+| within 0.1 of the leading edge | **10.01°** | 31.38° |
+| within 0.1 of the trailing edge | 21.82° | **8.22°** |
+| the body band (`\|y\| < 0.5`, `0 < x < 1.2`) | 39.61° | **31.38°** |
+| the far field (`\|y\| > 2.5`) | 54.79° | **5.72°** |
+
+**[V]** **At the leading edge the C/H is three times better** — 10.0° against 31.4° — and the
+leading edge is where the shipped case's own worst corner is. The extra blocks and §13b's
+equal-normal-turn station law did exactly what they were meant to. The C/H loses overall in
+ONE region: the far field.
+
+### 15b. The far-field defect was MINE, and pushing on it proved it **[V]**
+
+The worst corner sat where the trailing-edge fan meets the top and bottom boundary. §13c
+defect 5 already had the first wake station derived from the trailing-edge radial's landing,
+at `f = 1.5` times it — enough to stop the two radials CROSSING, not enough to stop the block
+between them tapering into the boundary. Its far side is its body side minus that landing, so
+its taper ratio is `(f - 1) / f` while every other wake block's is 1.
+
+Pushing `f` is the test, and a localisation is not a cause until it is:
+
+| `f` | worst corner | where | worst area ratio |
+|---|---|---|---|
+| 1.5 | 54.793° | (1.408, -2.792), the fan | 7.813 |
+| 2.5 | 46.481° | the same point | 3.846 |
+| **4.0** | **44.735°** | **(-2.000, 2.007), the INLET** | **3.026** |
+| 6.0 | 44.735° | the same inlet point | 2.946 |
+
+**The worst corner moves somewhere else and then stops responding** — identical at `f = 4` and
+`f = 6`. That is the confirmation: the fan's taper WAS the 54.79°, and `f = 4` (taper ratio
+0.75) is where it stops being what decides. **That is the criterion the shipped generator
+uses** — pushed until it is no longer binding, not tuned to a target.
+
+What it bought, on the default domain: worst corner **54.793 → 44.735**, worst area ratio
+**7.813 → 3.026**, the body band **39.61° → 20.89°**, the trailing-edge neighbourhood
+**21.82° → 13.29°**, and the far-field wall spacing 5.95% → 3.32%, against mean
+**4.304 → 4.503** and cell-shape p95 24.4 → 26.8. On `--domain -10 20 10` the worst corner
+goes **61.529 → 39.578** and the area ratio **14.180 → 4.556**.
+
+### 15c. What is LEFT is the far field's own corners **[I]**
+
+At `f = 4` the worst corner is **44.735° at (-2.000, 2.007)** — on the INLET, a third of the
+way from the rectangle's top-left corner. The shipped case cannot have that corner: **its far
+field is a smooth D** — straight top and bottom, a nose semicircle, an outlet plane — with no
+90° turn anywhere. Mine is a rectangle with four.
+
+This repo has measured the same thing once before. §12b put a rectangular far field on the
+O-ring family and the worst corner went **48.095° → 89.236°** for no other change. A rectangle
+is expensive here, and it is in the C/H because §12a's reading of fig6 says GridPro's is one.
+
+**[I]** So the three-way answer to "why is the four-block one better":
+
+1. **Not the blocks.** Region by region the C/H is better at the leading edge and in the body
+   band after §15b, which is most of what a viscous solve resolves.
+2. **One defect of mine**, the trailing-edge fan's taper, worth 10° of worst corner and 2.6×
+   of area ratio — found, fixed, and the fix is in the tree.
+3. **One difference of KIND**: a rectangular far field against a smooth D. That is not a
+   defect, it is what §12a set out to reproduce, and §12b has already measured what it costs.
+
+**And §14c is the sting in it**: §15b's fix, which is a real improvement on every mesh metric
+that moved, changed the solver's residual by **10%**. The worst corner and the size grading
+were the two obvious explanations for the stall and the measurement rules both out. Whatever
+separates these two meshes in the solve, this note has not found it.
+
+**And a fourth thing that is not a defect either**: the shipped case spends 11520 cells on
+30 × 20 chords, so its far-field cells are enormous and very stretched — cell-shape p95
+**148.7** against the C/H's 26.8. Stretched cells aligned with a smooth boundary have
+excellent ANGLES and terrible ASPECT. The two meshes are good at different things, and the
+single "worst non-orthogonality" number was never going to say so.
 
 ---
 

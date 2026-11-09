@@ -233,7 +233,16 @@ def build(split, wake_n):
     wend = ray_to_rect(te, a_wake)
     n_lo = at_fraction(seg_lo, 1.0)[1]
     te_land = ray_to_rect(te, math.degrees(math.atan2(n_lo[1], n_lo[0])))
-    x1 = te[0] + 1.5 * abs(te_land[0] - te[0])
+    # HOW FAR AFT: the first wake block's far side is its body side MINUS that
+    # landing, so its taper ratio is (f - 1) / f and the other wake blocks' is
+    # 1. At f = 1.5 the ratio is 0.33 and the block tapers 3:1 into the
+    # boundary; that corner WAS this mesh's worst, at 54.79 deg. f = 4 puts the
+    # ratio at 0.75, and is where the defect stops being the binding one -- the
+    # worst corner moves to the far-field rectangle's own corner region and
+    # stops responding (44.74 deg at f = 4 and at f = 6 alike). That is the
+    # criterion: pushed until it is no longer what decides, not tuned to a
+    # number. Section 15.
+    x1 = te[0] + 4.0 * abs(te_land[0] - te[0])
     g = WAKE_GROWTH
     span = wend[0] - x1
     wake_pt = [te] + [(x1 + span * (g ** j - 1.0) / (g ** (wake_n - 1) - 1.0), te[1])
