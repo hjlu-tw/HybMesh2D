@@ -26,16 +26,20 @@ def lines_with_turning(path):
             adj.setdefault(a, set()).add(b); adj.setdefault(b, set()).add(a)
             own.setdefault((min(a,b), max(a,b)), []).append(ci)
     bnd = [e for e, o in own.items() if len(o) == 1]
+    bnodes = {v for e in bnd for v in e}
     body = [e for e in bnd if all(-0.05 <= pts[v][0] <= 1.05 and abs(pts[v][1]) < 0.12 for v in e)]
     bodynodes = {v for e in body for v in e}
-    out = []
+    outer = bnodes - bodynodes
+    out, bad = [], 0
     for f in sorted(bodynodes):
         cands = [v for v in adj[f] if v not in bodynodes]
         if not cands: continue
         cur, prev = min(cands, key=lambda v: np.linalg.norm(pts[v]-pts[f])), f
         d = pts[cur]-pts[prev]; d = d/np.linalg.norm(d)
-        poly, total, n = [pts[prev], pts[cur]], 0.0, 0
-        while n < 400:
+        poly, total, n, done = [pts[prev], pts[cur]], 0.0, 0, False
+        while n < 600:
+            if cur in outer:
+                done = True; break
             nxt = [v for v in adj[cur] if v != prev]
             if not nxt: break
             best, bd = None, -2
@@ -48,17 +52,23 @@ def lines_with_turning(path):
             e = pts[best]-pts[cur]; e = e/np.linalg.norm(e)
             total += math.degrees(math.acos(max(-1, min(1, float(np.dot(e, d))))))
             poly.append(pts[best]); d, prev, cur, n = e, cur, best, n+1
-        out.append((np.array(poly), total))
-    return pts, out, body
+        if done:
+            out.append((np.array(poly), total))
+        else:
+            bad += 1
+    return pts, out, body, bad
 
-CASES = [(sys.argv[1], "本次 §25 的 C/H（遠場是矩形）", (-0.25, 1.6, -0.75, 0.75)),
-         (sys.argv[2], "本倉庫 shipped C-grid（遠場是同心 C 形弧）", (-0.25, 1.6, -0.75, 0.75))]
-fig = plt.figure(figsize=(14.6, 8.4), facecolor="#fcfcfb")
-norm = Normalize(0, 130)
+WIN = (-0.25, 1.6, -0.75, 0.75)
+CASES = [(sys.argv[1], "§25：貼體 3 層", WIN),
+         (sys.argv[2], "§27：貼體 2 層（唯一的改動）", WIN),
+         (sys.argv[3], "本倉庫 shipped C-grid（貼體 0 層）", WIN)]
+fig = plt.figure(figsize=(15.6, 7.6), facecolor="#fcfcfb")
+norm = Normalize(0, 85)
+CTRL = []
 cm = plt.get_cmap("inferno_r")
 for i, (path, title, win) in enumerate(CASES):
-    ax = fig.add_axes([0.028 + i*0.487, 0.115, 0.455, 0.655]); ax.set_facecolor("#fcfcfb")
-    pts, lines, body = lines_with_turning(path)
+    ax = fig.add_axes([0.024 + i*0.325, 0.168, 0.303, 0.585]); ax.set_facecolor("#fcfcfb")
+    pts, lines, body, bad = lines_with_turning(path)
     segs, cols = [], []
     for poly, tot in lines:
         for a in range(len(poly)-1):
@@ -71,21 +81,25 @@ for i, (path, title, win) in enumerate(CASES):
     ax.set_xticks([]); ax.set_yticks([])
     for s in ax.spines.values(): s.set_color(GRID)
     ax.text(0.0, 1.075, title, transform=ax.transAxes, color=INK, fontsize=13.5, va="bottom")
-    ax.text(0.0, 1.018, "每條線的總轉角：中位數 %.1f°、p95 %.1f°、最大 %.1f°"
+    ax.text(0.0, 1.018, "中位數 %.1f°、p95 %.1f°、最大 %.1f°"
             % (np.median(t), np.percentile(t, 95), t.max()),
             transform=ax.transAxes, color=SEC, fontsize=11, va="bottom")
+    CTRL.append("%d/%d" % (len(lines), len(lines) + bad))
 
-cax = fig.add_axes([0.30, 0.062, 0.40, 0.016])
+cax = fig.add_axes([0.32, 0.098, 0.36, 0.015])
 cb = fig.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cm), cax=cax, orientation="horizontal")
 cb.set_label("一條垂直於物面的格線，從物面走到外邊界的總轉角（度）", color=SEC, fontsize=10.6)
 cb.ax.tick_params(colors=MUT, labelsize=9); cb.outline.set_edgecolor(GRID)
+fig.text(0.024, 0.022, "對照：三張圖裡抵達外邊界的線數 / 總線數 = " + "、".join(CTRL)
+         + "。沒有任何一條線在途中失聯或繞回去，這是先前版本缺的那個檢查。",
+         color=MUT, fontsize=10.2, va="bottom")
 
-fig.text(0.028, 0.930, "「垂直於幾何的曲度」— 量出來了", color=INK, fontsize=21, va="bottom")
+fig.text(0.024, 0.925, "「垂直於幾何的曲度」— 是第三層貼體環造成的", color=INK, fontsize=21, va="bottom")
 for i, ln in enumerate([
-    "把每條從物面出發、垂直於物面的格線一路追到外邊界，累計它轉了幾度。左圖最糟的線轉了 130.5°，右圖最糟的只有 2.8°。",
-    "原因是遠場的「形狀」，不是平滑器：MB_SMOOTH_ITERS 設 0 時最大轉角幾乎不變（且非正交反而更差，53.0° 對 48.4°）。",
-    "右圖的遠場是跟物體同心的 C 形弧，所以一條徑向線從頭到尾都還是徑向；左圖要從圓鼻端接到直的入口邊界，方向非得轉過去不可。",
+    "把每條從物面垂直出發的格線一路追到外邊界、累計它轉了幾度。走法會在抵達外邊界時停止 — 先前版本沒有這個停止條件，它會轉上外邊界繼續走，把 6.9° 算成 14.3°、82.2° 算成 130.5°（§26b 已標記更正）。",
+    "試過而被否證的兩個原因：遠場的「形狀」（O-ring 的遠場就是圓，反而轉最多，中位數 37.7°）、以及計算域大小（9×6 放大到 40×20，中位數 6.9°→7.5°，p95 完全不變）。",
+    "真正的原因是貼體環的層數：1 層 0.5°、2 層 1.2°、3 層 6.9°（中位數）。§17 選 3 層是因為 fig6 看起來有「兩到三層」；這個幾何只撐得住兩層。",
 ]):
-    fig.text(0.028, 0.890 - i*0.0255, ln, color=SEC, fontsize=10.8, va="bottom")
-fig.savefig(sys.argv[3], dpi=100, facecolor="#fcfcfb")
-print("wrote", sys.argv[3])
+    fig.text(0.024, 0.886 - i*0.0255, ln, color=SEC, fontsize=10.6, va="bottom")
+fig.savefig(sys.argv[4], dpi=100, facecolor="#fcfcfb")
+print("wrote", sys.argv[4])

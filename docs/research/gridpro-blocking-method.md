@@ -2890,12 +2890,21 @@ And the wake is where the mesh is worst. Of the worst 1% of quads by cell-shape 
 line leaving the body perpendicular to it is followed out to the far field and its accumulated
 turning summed:
 
+> **THE FIGURES IN THIS SUBSECTION WERE WRONG AND §27 REPLACES THEM.** The walk had no
+> termination condition: on reaching the outer boundary it turned onto that boundary and kept
+> going, so the totals include turning that is not in any grid line. The corrected walk stops at
+> the outer boundary and reports how many lines fail to reach it; the C/H's real figures are
+> **median 6.9°, p95 34.2°, max 82.2°**, not 14.3 / 87.6 / 130.5. The shipped C-grid's 1.8 / 2.7 /
+> 2.8 are unchanged, because nothing there ever got near the cap. **Reading 3 below is also
+> wrong** — see §27a. What survives is reading 1 and reading 2, and the direction of the
+> comparison. Kept rather than rewritten, as §60's specimen rule asks.
+
 | | median | p95 | max |
 |---|--------|-----|-----|
-| §25's C/H (rectangular far field) | **14.3°** | 87.6° | **130.5°** |
+| §25's C/H (rectangular far field) | ~~14.3°~~ **6.9°** | ~~87.6°~~ **34.2°** | ~~130.5°~~ **82.2°** |
 | this repo's shipped C-grid (concentric C arc) | **1.8°** | 2.7° | **2.8°** |
 
-A line that turns 130° on its way out is not following anything, which is what "bolted on" picks
+A line that turns 82° on its way out is not following anything, which is what "bolted on" picks
 up. Three things the measurement settles: **[V]**
 
 1. **It is not the smoother.** At `MB_SMOOTH_ITERS 0` the cell-shape max is 285.1 against 282.4 at
@@ -2905,12 +2914,11 @@ up. Three things the measurement settles: **[V]**
    within a median of **0.27°** (p95 2.98°, max 7.66°, and the max is at the nose, x < 0.005).
    The shipped C-grid is far worse there — median **7.84°**, max 31.38°. So mine starts better
    and accumulates worse.
-3. **It is the far field's SHAPE.** The shipped C-grid's outer boundary is an arc CONCENTRIC with
-   the body, so a radial leaving the wall is still a radial when it arrives — 1.8°. A rectangle is
-   not concentric with anything, so between a round nose and a straight inlet the direction has to
-   turn, and the turning has to go somewhere. The worst lines are at the nose (feet at
-   x = 0.005…0.08), which is §16's leading-edge clustering seen as curvature. **[I]** on the
-   causal attribution; **[V]** on both measurements it rests on.
+3. ~~**It is the far field's SHAPE.**~~ **WRONG — §27a.** Two predictions this made were tested
+   and both failed: the O-ring, whose far field IS a circle, turns the MOST of any case measured
+   (median 37.7°), and enlarging the C/H's rectangle from 9×6 to 40×20 changes nothing
+   (6.9 → 7.5 median, p95 identical at 34.2). The cause is the **third body-hugging layer ring**;
+   §27a has the sweep.
 
 ### 26c. The aspect ratios ARE large — and that is not, by itself, the problem **[V]**
 
@@ -2934,13 +2942,99 @@ cells are in a part of the mesh the chordwise split does not reach: the wake. **
 
 ### 26d. The three are one finding **[I]**
 
-The wake's blocking (26a), the normal-direction turning (26b) and the worst aspect ratios (26c)
-all sit in the same two places — **the wake, and the far field's shape** — and none of them is in
-the surface blocking that §21 and §25 were spent on. §19c had already measured the far field's
-shape as the expensive choice (the same C/H in a rectangle: max 42.9° → 57.8°, jump 4.55 → 10.2);
-these are three independent routes to the same conclusion, and the one thing not yet tried is the
-one the measurements keep pointing at: **a far-field boundary concentric with the body, and a
-trailing-edge rosette instead of an H continuation.**
+The wake's blocking (26a) and the worst aspect ratios (26c) sit in the same place — **the wake**
+— and neither is in the surface blocking that §21 and §25 were spent on. The normal-direction
+turning (26b) turned out to belong somewhere else entirely, and this paragraph's conclusion —
+that a concentric far-field boundary was the thing to try next — **was built on the reading §27a
+disproves**. What was actually tried, and what it cost, is §27.
+
+---
+
+## 27. The fix, and the two causes that were wrong first
+
+§26d said the thing to try next was a concentric far-field boundary and a trailing-edge rosette.
+Both halves of that came from a reading that does not survive measurement. This section replaces
+it.
+
+### 27a. The measurement was wrong, then two causes were wrong **[V]**
+
+**The walk had no stop condition.** On reaching the outer boundary it turned onto that boundary
+and kept walking, so the totals included turning that is in no grid line. The corrected walk
+terminates at the outer boundary and REPORTS how many lines fail to reach it — 0 of 192, 0 of 192
+and 0 of 96 across the three cases, which is the control the first version had none of. The C/H's
+real figures are **6.9 / 34.2 / 82.2** where §26b published 14.3 / 87.6 / 130.5. The shipped
+C-grid's 1.8 / 2.7 / 2.8 are unchanged because nothing there came near the cap, which is exactly
+why the error survived a plausibility check.
+
+**Then the cause in §26b reading 3 — the far field's shape — made two predictions and both
+failed:** **[V]**
+
+| test | prediction if the far field's shape is the cause | measured |
+|------|--------------------------------------------------|----------|
+| the O-ring, whose far field IS a circle | low turning | **37.7° median** — the WORST of every case measured |
+| enlarge the C/H's rectangle 9×6 → 20×10 → 40×20 | turning falls toward the C-grid's 1.8° | 6.9 → 7.4 → **7.5°**, and p95 identical at 34.2 all three times |
+
+**The cause is the number of body-hugging LAYER RINGS**, and it is not linear: **[V]**
+
+| layers | median | p95 | max |
+|--------|--------|-----|-----|
+| 1 | **0.5°** | 7.2° | 17.2° |
+| 2 | 1.2° | 8.1° | 12.0° |
+| 3 | **6.9°** | **34.2°** | **82.2°** |
+
+At one and two layers the lines are straighter than the shipped C-grid's 1.8° median. The third
+ring is where it appears. `--layer-growth` softens it but does not remove it (at 3 layers: 5.0 →
+6.9°, 3.0 → 6.0°, 2.0 → 4.8°, 8.0 → 7.7°), so it is the ring's presence, not its thickness.
+
+§17 chose three because `fig6` shows "two or three" thin rings. **The geometry supports two.**
+
+### 27b. The case **[V]**
+
+`gridpro_ch_straight.{json,dat}` — `make_ch.py --layers 2 --split 20 --turn-blend 0.8 --wake 8`.
+
+| | §25 (3 layers) | §27 (2 layers) |
+|---|----------------|----------------|
+| blocks | 144 | **112** |
+| cells (split) | 29120 | 21600 |
+| inverted | 0 | 0 |
+| wall-normal turning, median / max | 6.9° / 82.2° | **1.2° / 12.0°** |
+| non-orthogonality max | **48.372°** | 49.177° |
+| non-orthogonality mean | 2.066° | **2.030°** |
+| cell-shape max | 282.388 | 282.537 |
+
+Turning falls **5.8× at the median and 6.8× at the worst**, for 0.8° on the worst corner and 32
+fewer blocks. Everything else is within noise.
+
+### 27c. The trailing-edge rosette was NOT built, and why **[I]**
+
+Inside a C/H the wake is a `cut` by construction — the C-ring wraps the body AND its wake (§13).
+A rosette means the C-ring stops at the trailing edge and a fan takes over, which is not a
+modification of the C/H: it **is** the O-ring topology, which this note already has and which
+measures worse on the very thing the rosette was proposed to fix — **37.7° median turning**
+against the C/H's 6.9 — as well as on every angle metric (§19c: 48.095° against 42.873°).
+
+What was tried instead is the cheap part of `fig6`'s wake appearance: subdividing the wake
+streamwise, `--wake` 4 → 6 → 8 → 10. It buys the mean (2.102 → 2.087 → 2.030 → 2.002) and
+**nothing else** — the worst corner is identical to six decimals at all four, and the wake's cell
+shape moves 282.553 → 282.534. The shipped case takes `--wake 8`. **[V]**
+
+### 27d. The aspect ratio: intrinsic, not a defect **[V]**
+
+§26c's answer stands and `--wake` confirms it from a second direction: four extra wake blocks do
+not move the wake's cell-shape ratio at all. That ratio is set by carrying a `BL_INITIAL_THICKNESS`
+0.001 first cell down a C-grid wake, and the repo's shipped C-grid — which converges best of
+anything in this note — runs **3145.7** in its wall band and 898.9 in its bulk, against this
+case's 50.9 and 282.5. Reducing it means coarsening the wake, which costs wake resolution. It is
+what a wake with a y+≈1 first cell costs, not something to fix.
+
+### 27e. A defect found while shipping this **[V]**
+
+`gridpro_ch_fig6_s20.dat` (§25, already committed) carried
+`OUTPUT_FILENAME results/meshes/gridpro_ch_fig6/mesh.vtk` — §17's directory. The `sed` that was
+supposed to re-point it matched a filename that file does not contain, so the replacement silently
+did nothing. §25's measurements are unaffected (they are read from the quality line on stdout, not
+from the file), but running that case overwrote §17's mesh. Fixed, §17's output regenerated, and
+all nine research `.dat` files audited: each now writes somewhere distinct.
 
 ---
 

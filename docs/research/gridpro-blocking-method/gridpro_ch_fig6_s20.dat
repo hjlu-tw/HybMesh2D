@@ -91,4 +91,4 @@ BC_GEOM farfield
 MB_SMOOTH_ITERS 5
 
 EXPORT_VTK 1
-OUTPUT_FILENAME results/meshes/gridpro_ch_fig6/mesh.vtk
+OUTPUT_FILENAME results/meshes/gridpro_ch_fig6_s20/mesh_gridpro_ch_fig6_s20.vtk
