@@ -2357,7 +2357,11 @@ is what §§8-11 used and what §13 moved away from.
 At fig6's own window the three are directly comparable, and:
 
 1. **fig6 subdivides the surface far more**: its thin rings carry roughly 15-20 blocks per side
-   within this window, against 5-6 in mine.
+   within this window, against 5-6 in mine. **[THE 5-6 IS WRONG — §25a.** §17's topology already
+   carries 32 wall-bound edges over 32 distinct blocks, i.e. **16 per side**, which is inside the
+   band this line says it is short of. The 5-6 was an eyeball count off `near_body_compare.png`,
+   whose window shows only part of the chord. The fig6 side of the claim is unmeasured either
+   way.**]**
 2. **its rings are thinner and there are more of them** — several very thin strips where mine
    has two or three thicker ones.
 3. **it is denser** throughout.
@@ -2770,7 +2774,7 @@ section 8.5% thick against NACA 0012's 12%** — measured, ice horn included. **
 |---|------|------------------|-----------|--------|----------|
 | 1 | the body itself | iced section, horn at the nose | clean NACA 0012 | **different** | the vendor's alt text; 8.5% thick against 12%, measured |
 | 2 | thin body-hugging rings | 2–3, each cut chordwise | 3 (`--layers 3`) | **adopted** | §17b; §17 was built against `fig6` |
-| 3 | surface blocks per side | ~15–20 in this window | 5–6 | **short of it** | §18e, read off the figure; NOT quantified (§23a) |
+| 3 | surface blocks per side | ~15–20 in this window | **20** (was 16, and never 5–6 — §25a) | **inside the band** | §25: 40 wall edges over 40 blocks, and 21 seams counted back off the figure |
 | 4 | rings continue round the nose | yes | yes | **same** | §17f |
 | 5 | overall density | visibly denser | 25984 cells | **short of it** | §17f/§18e appearance; no usable density measurement (§23a) |
 | 6 | the trailing edge | a fan of more than three links | one `cut` edge shared by both wake blocks | **different strategy** | §3's `fig6` reading vs §13c; both mesh, the shapes differ |
@@ -2781,6 +2785,58 @@ body shape, the ring count, and the trailing edge. Two — rows 3 and 5 — rema
 because §23a's three attempts to count blocks or density off an image all failed their controls.
 Row 1 is a geometry difference rather than a blocking difference, and nothing in this note ever
 set out to match an iced section. **[I]**
+
+---
+
+## 25. Twenty blocks per surface — and the number that sent me there was mine
+
+The instruction was to raise the surface blocks per side into `fig6`'s 15–20 band and redo the
+comparison. Checking the current value first showed the band was **already met**, by a number this
+note had got wrong twice.
+
+### 25a. §17 was at 16 per side, not 5–6 **[V]**
+
+`gridpro_ch_fig6.json` carries **32 wall-bound edges over 32 distinct blocks — 16 per surface**,
+which is `--split 16` doing exactly what it says. §18e wrote "5–6 in mine" and §24c row 3 repeated
+it; both are wrong. The miscount came from eyeballing `near_body_compare.png`, whose window shows
+only part of the chord, so only part of the blocks were in frame.
+
+Checked a second way, against the figure rather than the file: counting colour runs along a line
+adjacent to the upper surface in the matched-scale panel gives **16** at the row nearest the body
+(and 20 and 22 further out, where the second and third ring layers come into the line). The figure
+was showing 16 all along. **[V]**
+
+### 25b. The case at 20 per side, and what the extra four cost **[V]**
+
+`gridpro_ch_fig6_s20.{json,dat}`, from `make_ch.py --layers 3 --split 20 --turn-blend 0.8`.
+Swept across the band:
+
+| per side | blocks | cells (quads) | inverted | max | mean | area jump |
+|----------|--------|---------------|----------|-----|------|-----------|
+| 16 (§17) | 120 | 12992 | 0 | **42.873** | 2.090 | 4.553 |
+| 18 | 132 | 13776 | 0 | 48.225 | 2.095 | 4.053 |
+| **20 (§25)** | **144** | **14560** | **0** | **48.372** | **2.066** | **4.089** |
+| 24 | 168 | 16128 | 0 | 49.420 | 1.953 | 3.494 |
+
+**The worst corner gets worse and it is not on the body.** Localised: at 16 it sits at
+(−2.0000, +1.7853) and at 20 at (−1.9560, −2.3908) — both at the **upstream far-field corner**,
+3.5–3.8 chords from the trailing edge. §17e already predicted this in as many words: raising the
+split sends "more radials fanning to the inlet". The step is 5.3° between 16 and 18 and then flat,
+so it is the first few extra radials reaching the inlet that cost, not each one. **[V]**
+
+What the extra four buy is small and real: mean 2.090 → 2.066 and area jump 4.553 → 4.089, with
+the jump's own worst pair also at the inlet rather than on the body. Going on to 24 continues both
+trends (1.953 / 3.494) and costs another degree at the inlet. **[V]**
+
+Cells per block falls 217 → **202**, so §23b's reading 3 holds a little harder: this case is now
+further past GridPro's own tutorial ratio of 329. **[V]**
+
+### 25c. The figure now carries its own proof **[V]**
+
+`vs_fig6_matched.png` draws every block-to-block seam heavy, so the per-side count is countable
+off the image instead of asserted. Verified as a control: 21 heavy seams along the upper surface
+at the row nearest the body — 20 blocks plus both ends — against the topology's 40 wall edges over
+40 blocks. That is the check §18e's claim never had. **[V]**
 
 ---
 

@@ -31,25 +31,25 @@ def read(p):
 ROWS = [
     ("1", "物體本身", "結冰翼型，前緣有冰角（alt 文字寫明）",
      "乾淨的 NACA 0012", "不同", NO,
-     "alt：“Airfoil with Icing”；量到它厚 8.5%，NACA 0012 是 12%。幾何差異，非分區差異"),
+     "alt：“Airfoil with Icing”；量到厚 8.5%，NACA 0012 為 12%。幾何差異"),
     ("2", "貼體薄環的層數", "2–3 層，各自沿弦向切塊",
      "3 層（--layers 3）", "已照做", OK,
      "§17b；§17 就是以 fig6 為目標建的"),
     ("3", "每側表面的塊數", "此視窗內每側約 15–20 塊",
-     "每側 5–6 塊", "未達", PART,
-     "§18e 讀自對照圖；沒有量化（§23a 三種數法都沒過對照組）"),
+     "每側 20 塊", "已進入該區間", OK,
+     "§25：拓樸 40 條 wall 邊 / 40 塊。§18e 讀圖未量化；§17 本就已是 16，非 5–6"),
     ("4", "環往前繞過鼻端", "是，薄環連續繞過前緣",
      "是", "一致", OK,
      "§17f"),
     ("5", "整體密度", "明顯更密",
-     "25984 cell", "未達", PART,
+     "29120 cell", "未達", PART,
      "§17f、§18e 的外觀讀數；密度沒有可用的量測（§23a）"),
     ("6", "尾緣", "多於三條連線的扇",
      "一條 cut 邊，上下尾流塊共用", "不同策略", PART,
      "§3 的 fig6 讀數 vs §13c；兩者都能網格化，形狀不同"),
     ("7", "每塊的 cell 數", "tutorial 報 329（fig6 自己沒有數字）",
-     "217", "已超過", OK,
-     "§23b：§17 比廠商自己的 tutorial 更倚賴分區"),
+     "202", "已超過", OK,
+     "§23b/§25：29120 cell / 144 塊。比廠商自己的 tutorial 更倚賴分區"),
 ]
 
 fig = plt.figure(figsize=(15.4, 11.4), facecolor="#fcfcfb")
@@ -58,8 +58,8 @@ ax2 = fig.add_axes([0.513, 0.455, 0.456, 0.335])
 for ax, kind, t1, t2 in (
         (ax1, "gp", "GridPro — fig6 上圖（Airfoil with Icing），原圖未裁",
          "量到：弦長 999 px、厚 85 px（8.5%）。整張只有 1.26 弦長寬 — 近場圖，不是遠場圖"),
-        (ax2, "me", "本次 §17 — 以 fig6 為目標建的 C/H，120 塊 / 25984 cell",
-         "裁到左圖「同一個」視窗：x ∈ [−0.08, +1.18]、y ∈ [−0.38, +0.34] 弦長")):
+        (ax2, "me", "本次 §25 — 每側 20 塊的版本，144 塊 / 29120 cell",
+         "同一個視窗。黑色粗線＝區塊邊界，可直接數：上下表面各 20 段")):
     ax.set_facecolor("#fcfcfb")
     if kind == "gp":
         ax.imshow(img, extent=EXT, origin="upper", interpolation="lanczos")
@@ -71,12 +71,16 @@ for ax, kind, t1, t2 in (
         for b in sorted(by):
             ax.add_collection(PatchCollection(by[b], facecolor=BC[b % 8],
                                               edgecolor="none", alpha=0.95, zorder=1))
-        e = set()
-        for c in cells:
+        own = {}
+        for ci, c in enumerate(cells):
             for i in range(len(c)):
-                k = (c[i], c[(i+1) % len(c)]); e.add((min(k), max(k)))
-        ax.add_collection(LineCollection([[pts[a], pts[b]] for a, b in e],
+                k = (c[i], c[(i+1) % len(c)]); k = (min(k), max(k))
+                own.setdefault(k, []).append(blk[ci])
+        ax.add_collection(LineCollection([[pts[a], pts[b]] for a, b in own],
                                         colors="#33393f", linewidths=0.3, zorder=2))
+        seam = [[pts[a], pts[b]] for (a, b), o in own.items()
+                if len(o) == 1 or o[0] != o[-1]]
+        ax.add_collection(LineCollection(seam, colors="#0b0b0b", linewidths=1.5, zorder=3))
     ax.set_aspect("equal"); ax.set_xlim(WIN[0], WIN[1]); ax.set_ylim(WIN[2], WIN[3])
     ax.set_xticks([]); ax.set_yticks([])
     for s in ax.spines.values(): s.set_color(GRID)
@@ -85,7 +89,7 @@ for ax, kind, t1, t2 in (
 
 tb = fig.add_axes([0.031, 0.030, 0.938, 0.355]); tb.axis("off")
 COL = [0.000, 0.022, 0.155, 0.360, 0.520, 0.625]
-for c, hh in zip(COL, ["", "項目", "GridPro（fig6）", "本次 §17 的 C/H", "狀態", "證據"]):
+for c, hh in zip(COL, ["", "項目", "GridPro（fig6）", "本次 §25（每側 20）", "狀態", "證據"]):
     tb.text(c, 0.955, hh, transform=tb.transAxes, color=MUT, fontsize=10.6, va="bottom")
 tb.plot([0, 1], [0.940, 0.940], transform=tb.transAxes, color=GRID, lw=1.0, clip_on=False)
 for r, (num, item, gp, me, st, col, ev) in enumerate(ROWS):
@@ -103,9 +107,9 @@ for r, (num, item, gp, me, st, col, ev) in enumerate(ROWS):
 fig.text(0.031, 0.955, "GridPro 的網格，和我最像的那一份，放在同一個比例尺上",
          color=INK, fontsize=21, va="bottom")
 for i, ln in enumerate([
-    "「最像」是 fig6 配 §17，不是 fig5 配 O-ring：fig5 的 alt 文字是 “MDA-3 Element Configuration”，是三段翼，而我沒有任何多段翼案例 — 放大也看得到主翼後面另有一片。",
-    "fig6 的 alt 是 “Airfoil with Icing”，單一物體，而 §17 本來就是以它為目標建的。所以這一對是唯一「同一類幾何、同一個目標」的配對。",
-    "附帶更正：§20a 說 fig5「中央一個物體」是錯的，而我拿來定標的 100 px 裡，那個「尾端碎片」其實是後面那一片 — 主翼弦長是 86 px，fig5 的視窗因此是 ±7.4 而非 ±6.4 弦長（方向不變，只是更寬）。",
+    "「最像」是 fig6 配 §17/§25，不是 fig5 配 O-ring：fig5 的 alt 是 “MDA-3 Element Configuration”，三段翼，我沒有多段翼案例（§24a）。",
+    "這一版把每側表面塊數提到 20，也就是 §24c 第 3 列那個 15–20 區間的上緣。右圖的黑色粗線就是區塊邊界，可以自己數。",
+    "更正：§18e 與 §24c 原本寫我「每側 5–6 塊」，那是錯的 — §17 的拓樸本來就有每側 16 塊（32 條 wall 邊 / 32 塊），已在區間內。見 §25a。",
 ]):
     fig.text(0.031, 0.918 - i * 0.0235, ln, color=SEC, fontsize=10.5, va="bottom")
 fig.savefig(OUT, dpi=96, facecolor="#fcfcfb")
