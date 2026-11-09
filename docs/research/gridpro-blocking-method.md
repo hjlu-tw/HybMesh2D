@@ -929,6 +929,7 @@ GridPro-derived numbers are **derived at build time and not transcribed**:
 | **A — the minimum** | `make_topology.py` | `gridpro_airfoil.json` | `gridpro_airfoil.dat` |
 | **B — the reproduction** | `make_tworing.py` | `gridpro_tworing.json` | `gridpro_tworing.dat` |
 | **C — §9 and §10, added later** | `make_rings.py` | `gridpro_rings.json` | `gridpro_rings.dat` |
+| **— §16's chart** | `plot_residuals.py` | `residual_compare.png` | — |
 | **D — §13, the C/H** | `make_ch.py` | `gridpro_ch.json` | `gridpro_ch.dat` |
 
 ```bash
@@ -2109,6 +2110,18 @@ that turned out to be worth 1.1×, 2× and 1×.
 
 **At `w = 0.6` the C/H reaches 8.85e-07, below the shipped C-grid's own floor at either
 domain.**
+
+### 16c-bis. The two figures **[V]**
+
+**`nose_compare.png`** — the same leading edge under the three station laws, quad export, same
+window. The left panel is what `w = 1.0` does: a dozen blocks crammed into a few per cent of
+chord, because that is where the normal turns. The middle and right panels are `w = 0.6` and
+the shipped C-grid, which look like each other. Under each panel: the smallest cell, the
+leading-edge angle, and what the residual did.
+
+**`residual_compare.png`** — the four residual histories of 16c on one log axis, drawn by
+`plot_residuals.py` beside it. One line stays flat; three descend. The flat one is the mesh
+with the 3.9e-07 cell.
 
 ### 16d. And the trade is exactly §15a's leading-edge win, bought back **[V]**
 
