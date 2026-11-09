@@ -25,6 +25,16 @@
 #       --arc-out --arc-out-blend 0.5 --out gridpro_ch_arcout.json
 #   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch_arcout.dat
 #
+# THE BLEND VALUE IS A CHOICE, NOT A MATCH. Converted to pixels at fig6's own
+# scale, the sagitta inside the only window it publishes is 0.03 px for the
+# straight case and 0.86 px here -- a sub-pixel difference on a compressed image
+# whose grid lines are 2 px wide. fig5 contains the whole line but at 86 px per
+# chord (1.5 px here) and is a different geometry. So any blend from 0 to 1
+# looks identical in every vendor image; 0.5 was picked because it is visible in
+# THIS repo's rendering. Section 28e. gridpro_ch_straight.dat beside this one is
+# the defensible default: better non-orthogonality, and the difference this file
+# buys cannot be seen in any source.
+#
 # A RESEARCH HARNESS, not a shipped case.
 #
 MESH_MODE 1

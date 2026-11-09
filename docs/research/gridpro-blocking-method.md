@@ -3150,7 +3150,39 @@ mean **does not show up in the solve at all** at this cell count. §25c's caveat
 neither is converged; what this supports is the narrow claim that the change is not paid for
 here. **[V]**
 
-### 28e. The appearance agrees; the provenance does not **[I]**
+### 28e. IS THE BLEND THE SAME AS GRIDPRO'S? No — and no vendor image can tell **[V]**
+
+The blend was picked because the arcs are visible in MY rendering. Asked whether it matches
+GridPro's, the answer is measurable, and it is no.
+
+Each line's **sagitta** — its greatest departure from the straight chord — converted to pixels at
+each vendor image's own scale:
+
+| | full line | inside `fig6`'s window, at 999 px/chord | whole line, at `fig5`'s 86 px/chord |
+|---|-----------|----------------------------------------|--------------------------------------|
+| blend 0 (straight) | 0.0002 chord | **0.03 px** median | 0.02 px |
+| blend 0.5 (shipped) | 0.0178 chord | **0.86 px** median, 2.30 p95 | 1.5 px median, 6.4 p95 |
+| blend 1.0 | 0.0355 chord | 1.74 px median | 3.1 px median, 12.8 p95 |
+
+**Neither figure can resolve the difference.** `fig6` has the resolution — 999 px per chord — but
+its panel spans only 1.26 chords (§24b), so it contains about 12% of each line's length and the
+straight and blended cases differ there by **0.83 px at the median**, under one pixel on a
+compressed image whose grid lines are about 2 px wide. `fig5` contains the whole line but at 86 px
+per chord, where blend 0.5 is 1.5 px at the median — and `fig5` is the three-element configuration
+(§24a), a different geometry.
+
+So: **the shape of the change is right and its magnitude is unfalsifiable from these sources.** Any
+blend between 0 and 1 would look identical in the only windows GridPro published. The value 0.5 is
+a choice, and it is recorded as a choice rather than as a match. The one thing measurement does
+settle is the direction: at blend 0 the turning stops at the wall (§28a), and GridPro's does not —
+that reading survives even though the amount cannot be checked. **[V]** on every number here;
+**[I]** on the reading of `fig6` that the direction rests on.
+
+This also means §27's case, not this one, is the defensible default: it has the better
+non-orthogonality (1.840° against 2.980°) and the difference this case buys cannot be seen in any
+source. Both ship; neither supersedes the other.
+
+### 28f. The appearance agrees; the provenance does not **[I]**
 
 GridPro's arcs are what a converged elliptic solve leaves over straight wireframe links (§1a).
 Here the arc is **declared** — a circular arc through two fixed corners with a prescribed tangent
