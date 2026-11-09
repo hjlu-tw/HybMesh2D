@@ -931,6 +931,7 @@ GridPro-derived numbers are **derived at build time and not transcribed**:
 | **C — §9 and §10, added later** | `make_rings.py` | `gridpro_rings.json` | `gridpro_rings.dat` |
 | **— §16's chart** | `plot_residuals.py` | `residual_compare.png` | — |
 | **D — §13, the C/H** | `make_ch.py` | `gridpro_ch.json` | `gridpro_ch.dat` |
+| **E — §17, fig6 as the target** | `make_ch.py --layers 3 --split 16 --turn-blend 0.8` | `gridpro_ch_fig6.json` | `gridpro_ch_fig6.dat` |
 
 ```bash
 python3 docs/research/gridpro-blocking-method/make_tworing.py        # --split K, --blend W
@@ -2150,6 +2151,113 @@ for ANGLES silently sets the smallest cell, and the smallest cell is what the so
 Nothing in `HYBMESH_MB_QUALITY` reports it — the cell-shape figure is a RATIO and the
 area-jump figure is between NEIGHBOURS, so a uniformly tiny region scores well on both.
 §16a's first four rows are what reading only those metrics costs.
+
+---
+
+## 17. fig6 as the target, built
+
+§13's C/H got the TOPOLOGY FAMILY right and §11 got the far field right, but put side by side
+with `fig6.webp` the two still do not look alike, and the maintainer said so. This section
+takes that figure as the target. 2026-11-09.
+
+`make_ch.py --layers 3 --split 16 --turn-blend 0.8`, shipped as
+`gridpro_ch_fig6.{json,dat}`: **120 blocks**, 25984 cells, 0 inverted, and it **converges**.
+
+### 17a. What was missing, read off the figure **[V]**
+
+Three things, and only the third is about block count:
+
+1. **A thin ring HUGGING the body**, cut into blocks chordwise — fig6 has two or three of them
+   before the field opens out. §13 had ONE layer: every block ran from the aerofoil straight
+   to the far field. **§12a had already recorded "two or three layers radially" and §13 did
+   not build it.**
+2. **The nose fan**, which §13 has.
+3. **Density** — fig6 is subdivided far more finely, both ways.
+
+### 17b. The rings go at a constant DISTANCE, not a constant fraction **[V]**
+
+`--layers L` puts `L - 1` rings between the body and the rectangle. Placing them at a constant
+fraction of each radial is the obvious thing and is wrong here: these radials run **2.0 chords
+at the nose to 6.0 down the wake**, so a fixed fraction makes a band three times thicker at one
+end than the other — not a ring hugging anything. Measured, at three layers:
+
+| rings placed at | worst non-orth | mean | worst area ratio |
+|---|---|---|---|
+| a constant FRACTION of the radial | 59.189° | 5.481° | 9.020 |
+| a constant DISTANCE (0.05, 0.25 chords) | 55.369° | 3.885° | 13.749 |
+| ... and with 17c's seams matched | **44.982°** | **2.902°** | **3.494** |
+
+### 17c. Each layer's first cell is the previous layer's LAST **[V]**
+
+Three rings means three radial segments per station, and left to themselves their cells come
+out at **0.002 / 0.013 / 0.17** — the seams are 6× and 14× jumps in cell size. The fix is the
+idiom `.claude/rules/mesher-multiblock.md` records for the shipped two-ring O-grid: **"the
+outer ring's `ds_start` IS the inner ring's last interval"**. `layer_last_interval` estimates
+that trailing cell by solving for the geometric ratio that fills the span, and hands it to the
+layer outside as its leading one.
+
+Worth **13.749 → 3.494** on the area ratio and **3.885° → 2.902°** on the mean. DERIVED: change a
+layer's thickness or its node count and the one outside follows.
+
+**[I]** And one thing that looked like a defect and is not: the rings visibly bulge between
+stations in the render. That is the smoother relaxing them — they are plain interfaces with no
+declared shape, so it may. At **0 sweeps the worst area ratio is 19.809**, against 13.749 at
+five. The bulge is the smoother equalising cell sizes, not spoiling them.
+
+### 17d. The nose: stations by COUNT, not by clustering **[V]**
+
+§16 found that getting nose resolution by CLUSTERING (`--turn-blend 1.0`) makes the smallest
+cell 3.9e-07 and stalls the solve. The three-layer mesh reproduced that independently — at
+`--turn-blend 1.0` its smallest cell is **3.907e-07** and its residual stalls at **1.42e-04**,
+the same as §13's single layer. So §16's finding is not an artefact of one blocking.
+
+But relaxing to `0.6` **also takes the nose fan away** — fewer stations near the nose, so fewer
+radials fanning to the inlet, and the picture stops looking like fig6. The way out is not to
+tune the clustering: it is to **buy the nose with SECTORS**.
+
+| `--split` | `--turn-blend` | blocks | worst non-orth | mean | smallest cell |
+|---|---|---|---|---|---|
+| 8 | 1.0 | 72 | 44.982° | 2.902° | 3.907e-07 (stalls) |
+| 12 | 0.6 | 96 | 50.283° | 2.062° | 1.639e-06 |
+| 16 | 0.6 | 120 | 54.704° | 1.882° | 1.846e-06 |
+| **16** | **0.8** | **120** | **42.873°** | 2.090° | **1.630e-06** |
+| 20 | 0.6 | 144 | 47.801° | **1.733°** | 1.963e-06 |
+
+`--split 16 --turn-blend 0.8` is shipped: the best worst-corner of the set, and a smallest cell
+above §16c's threshold.
+
+### 17e. Where it stands **[V]**
+
+All at 5 sweeps, the 9 × 6 box, #57's operating point:
+
+| | the repo's C-grid | §13: C/H, 1 layer | **§17: C/H, 3 layers** |
+|---|---|---|---|
+| blocks | 4 | 24 | **120** |
+| cells | 11520 | 18240 | 25984 |
+| inverted | 0 | 0 | 0 |
+| worst non-orthogonality | **31.383°** | 44.735° | 42.873° |
+| mean non-orthogonality | 4.340° | 4.503° | **2.090°** |
+| cell shape, median / p95 | 4.791 / 148.672 | **2.721 / 26.753** | 4.152 / 87.144 |
+| worst adjacent area ratio | **1.484** | 3.026 | 4.553 |
+| worst wall first cell, BODY | 0.05% | 0.09% | **0.01%** |
+| smallest cell | 2.3e-06 | 3.9e-07 | 1.6e-06 |
+| residual at 9000 iterations | **2.91e-06** | 9.04e-05 (stalls) | 6.50e-06 |
+
+**[I]** It is the best mean non-orthogonality in this note by a wide margin, holds the wall an
+order better than either, and **converges** — which §13's does not. It still loses the worst
+corner and the size grading to the repo's own four blocks, and its cell-shape tail is long
+because the thin rings are high-aspect by construction, exactly as fig6's are.
+
+### 17f. The figures, and how close it is **[I]**
+
+`vs_fig6.png` is the two side by side, `gridpro_ch_fig6_full.png` and `_te.png` are the mesh
+alone. What now matches: the thin rings hugging the body and the wake, cut into blocks
+chordwise; the fan at the nose; the straight wake band; the rectangular far field with a
+streamwise lattice against it; and a block count in the same range.
+
+What still does not: **fig6 is denser**, and its rings continue forward around the nose as
+rings, where mine hands the nose region to the fan instead. Neither is a topology difference
+any more — they are node counts and where the fan starts.
 
 ---
 

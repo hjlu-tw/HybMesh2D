@@ -62,10 +62,16 @@ XI, XO, YF = -2.0, 7.0, 3.0
 DS_SURF = 0.005                 # the shipped C-grid's surface clustering
 WAKE_GROWTH = 1.9
 CURVED = True                   # radials as the arc that leaves perpendicular
+LAYERS = 1                      # radial layers from the body out to the far field
+LAYER_GROWTH = 5.0              # how fast those bands thicken outward
+WALL_BAND = 0.05                # the innermost band's thickness, in chords
+BL_FIRST = 0.001                # BL_INITIAL_THICKNESS, as the .dat declares it
 TURN_BLEND = 1.0                # 1 = equal normal turn, 0 = equal arc length               # how fast the wake's own stations spread aft
 N_RADIAL = 49                   # nodes from the body/wake out to the far field
 N_SURF = 40                   # intervals along ONE surface
 N_WAKE = 34                   # intervals along the wake, per side
+N_WALL_LAYER = 25             # nodes across the innermost layer, when LAYERS > 1
+N_OUTER_LAYER = 17            # ... and across each layer outside it
 
 
 # -- the far-field C, as one arc-length-parametrised polyline ---------------
@@ -205,6 +211,39 @@ def by_normal_turn(poly, n):
         u = 0.0 if d == 0 else (target - ang[i]) / d
         out.append(fr[i] + (fr[i + 1] - fr[i]) * u)
     return out
+
+
+def layer_last_interval(span, n_nodes, first):
+    """The last interval of a ``span`` filled by ``n_nodes`` whose first is
+    ``first``, assuming geometric growth -- the estimate used to hand one
+    layer's trailing cell size to the next as its leading one."""
+    m = max(1, n_nodes - 1)
+    if first <= 0 or first * m >= span:
+        return span / m
+    lo, hi = 1.0 + 1e-12, 4.0
+    for _ in range(80):                       # solve first*(G^m - 1)/(G-1) = span
+        g = 0.5 * (lo + hi)
+        if first * (g ** m - 1.0) / (g - 1.0) < span:
+            lo = g
+        else:
+            hi = g
+    g = 0.5 * (lo + hi)
+    return first * g ** (m - 1)
+
+
+def layer_fracs(n):
+    """``n + 1`` fractions 0 .. 1 down each radial, growing GEOMETRICALLY.
+
+    ``n = 1`` is the single layer sections 13-16 measure and returns [0, 1]
+    exactly, so that case is untouched. Past that, the first fraction is small
+    and the band it makes HUGS THE BODY -- which is what GridPro's fig6 has and
+    section 13 did not: a thin surface ring cut into blocks chordwise, then
+    further rings outward. Section 17.
+    """
+    if n == 1:
+        return [0.0, 1.0]
+    g = LAYER_GROWTH
+    return [0.0] + [(g ** k - 1.0) / (g ** n - 1.0) for k in range(1, n + 1)]
 
 
 def node(cid):
@@ -357,6 +396,28 @@ def build(split, wake_n):
     # ---- the radials, one per walk entry ---------------------------------
     # The two at the very ends lie ON the outlet plane and are the only ones
     # that bound a single block, so they are the only walls among them.
+    # ---- the intermediate rings, if there is more than one layer ---------
+    fr_l = layer_fracs(LAYERS)
+    def lay(k, i):
+        """The corner id of walk entry ``i`` on layer ``k`` (0 = the body)."""
+        if k == 0:
+            return node(walk[i][0])
+        return "F%d" % i if k == LAYERS else "L%d_%d" % (k, i)
+    # AT A CONSTANT DISTANCE FROM THE BODY, NOT A CONSTANT FRACTION OF THE
+    # RADIAL. The radials here run from 2.0 chords at the nose to 6.0 down the
+    # wake, so a fixed fraction makes a band three times thicker at one end
+    # than the other -- not a ring hugging the body, which is what fig6 has.
+    # Measured with the fraction: worst corner 59.2 deg and a worst area ratio
+    # of 9.0 at three layers, against 44.7 and 3.0 for the single layer.
+    for k in range(1, LAYERS):
+        d = WALL_BAND * LAYER_GROWTH ** (k - 1)
+        for i in range(len(walk)):
+            a, b = t.pos[node(walk[i][0])], t.pos["F%d" % i]
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            f = min(d / L, 0.6)
+            t.free(lay(k, i), (a[0] + (b[0] - a[0]) * f,
+                               a[1] + (b[1] - a[1]) * f))
+
     for i, (wid, _) in enumerate(walk):
         cid = node(wid)
         last = (i == 0 or i == len(walk) - 1)
@@ -372,9 +433,37 @@ def build(split, wake_n):
             d = (0.0, -1.0) if i < te_lo_i else (0.0, 1.0)
             if not cid.startswith("wk"):
                 d = normals[wid]
-            cv = arc_tangent_at(t.pos[cid], d, t.pos["F%d" % i])
-        t.edge("r%d" % i, cid, "F%d" % i, "wall" if last else "interface",
-               count=N_RADIAL if i == 0 else None, spacing=sp, curve=cv)
+            cv = arc_tangent_at(t.pos[cid], d, t.pos[lay(1, i)])
+        # One radial edge PER LAYER. Only the innermost carries the wall
+        # clustering; the ones outside it are uniform, and each layer is its own
+        # equivalence class so each needs its own seed.
+        # EACH LAYER'S FIRST CELL IS THE PREVIOUS LAYER'S LAST, which is what
+        # makes a ring seam invisible as a jump in cell size -- the idiom
+        # `.claude/rules/mesher-multiblock.md` records for the shipped two-ring
+        # O-grid ("the outer ring's ds_start IS the inner ring's last
+        # interval"). DERIVED: change a layer's thickness or its node count and
+        # the one outside it follows. Without it the three layers' radial cells
+        # here are 0.002 / 0.013 / 0.17 and the seams are 6x and 14x jumps.
+        rad_len = math.hypot(t.pos["F%d" % i][0] - t.pos[cid][0],
+                             t.pos["F%d" % i][1] - t.pos[cid][1])
+        prev_last = None
+        for k in range(LAYERS):
+            n0 = N_RADIAL if LAYERS == 1 else (N_WALL_LAYER if k == 0 else
+                                               N_OUTER_LAYER)
+            spk = sp if k == 0 else ({"ds_start": prev_last} if prev_last else None)
+            t.edge("r%d_%d" % (k, i), lay(k, i), lay(k + 1, i),
+                   "wall" if last else "interface",   # every layer of the
+                   # end radials lies ON the outlet plane, so every one of them
+                   # bounds a single block
+                   count=n0 if i == 0 else None,
+                   spacing=spk,
+                   curve=cv if k == 0 else None)
+            if LAYERS > 1:
+                span = rad_len * (fr_l[k + 1] - fr_l[k]) if False else \
+                    math.hypot(t.pos[lay(k + 1, i)][0] - t.pos[lay(k, i)][0],
+                               t.pos[lay(k + 1, i)][1] - t.pos[lay(k, i)][1])
+                first = BL_FIRST if k == 0 else prev_last
+                prev_last = layer_last_interval(span, n0, first)
 
     # ---- the xi edges, on the body/wake line and on the far field --------
     body_len = arc_table(seg_up)[1]
@@ -419,11 +508,19 @@ def build(split, wake_n):
         # the trailing edge and a 177.9 degree corner between them.
         flip = decl != (a, b)
         swap = {"ds_start": "ds_end", "ds_end": "ds_start"}
-        osp = {(swap[k] if flip else k): v * ratio for k, v in
+        osp0 = {(swap[k] if flip else k): v for k, v in
                (t.edges[[e["id"] for e in t.edges].index(inner)]
                 .get("spacing", {}) or {}).items()}
-        t.edge("f%d" % i, "F%d" % i, "F%d" % (i + 1), "wall", spacing=osp)
-        t.block("b%d" % i, [a, b, "F%d" % (i + 1), "F%d" % i])
+        # One ring edge per layer above the body, and one block per layer.
+        for k in range(1, LAYERS + 1):
+            w = fr_l[k]
+            t.edge("c%d_%d" % (k, i), lay(k, i), lay(k, i + 1),
+                   "wall" if k == LAYERS else "interface",
+                   spacing={q: v * (1.0 + (ratio - 1.0) * w)
+                            for q, v in osp0.items()} if osp0 else None)
+        for k in range(LAYERS):
+            t.block("b%d_%d" % (k, i),
+                    [lay(k, i), lay(k, i + 1), lay(k + 1, i + 1), lay(k + 1, i)])
 
     return te, rays, sector, body_len, \
         {"format_version": 1, "corners": t.corners, "edges": t.edges,
@@ -439,6 +536,15 @@ def main():
     ap.add_argument("--chord-radials", action="store_true",
                     help="radials as straight chords between their two corners "
                          "instead of the arc that leaves perpendicular")
+    ap.add_argument("--layers", type=int, default=1,
+                    help="radial layers from the body out to the far field. 1 "
+                         "is the single layer sections 13-16 measure; 3 is "
+                         "GridPro's fig6 shape, a thin ring hugging the body "
+                         "and further rings outward.")
+    ap.add_argument("--wall-band", type=float, default=0.05,
+                    help="thickness of the innermost ring, in chords; the ones "
+                         "outside it grow by --layer-growth from it")
+    ap.add_argument("--layer-growth", type=float, default=5.0)
     ap.add_argument("--turn-blend", type=float, default=1.0,
                     help="1 = stations at equal increments of the surface "
                          "normal (the default), 0 = at equal arc length")
@@ -446,9 +552,11 @@ def main():
                     help="the far-field rectangle, in chords")
     ap.add_argument("--out", default="gridpro_ch.json")
     args = ap.parse_args()
-    global CURVED, XI, XO, YF, TURN_BLEND
+    global CURVED, XI, XO, YF, TURN_BLEND, LAYERS, WALL_BAND, LAYER_GROWTH
     CURVED = not args.chord_radials
     TURN_BLEND = args.turn_blend
+    LAYERS = args.layers
+    WALL_BAND, LAYER_GROWTH = args.wall_band, args.layer_growth
     if args.domain:
         XI, XO, YF = args.domain
     te, rays, sector, blen, topo = build(args.split, args.wake)
