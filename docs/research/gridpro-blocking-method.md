@@ -2366,6 +2366,89 @@ At fig6's own window the three are directly comparable, and:
 
 ---
 
+## 19. The far field, compared — a comparison with no vendor side
+
+### 19a. There is no vendor far field for an aerofoil **[V]**
+
+§18d had just retracted §12a's "GridPro's far field is a rectangle", because that reading came
+off a crop. So before drawing a far-field comparison the first question is whether **any** image
+on either page contains an outer boundary at all.
+
+Measured, on all six mesh images from the two pages: for each of the four edges, the mean and
+standard deviation of a thin strip along it. A bounded mesh photographed on a white page has
+**bright, low-variance** edge strips; a crop has mesh running off every side, so every strip
+carries edges and its variance stays high.
+
+| image | edge mean L R T B | edge std L R T B |
+|-------|-------------------|------------------|
+| `fig5.png` | 0.63 0.36 0.67 0.51 | 0.144 0.266 0.150 0.284 |
+| `fig6.png` | 0.56 0.47 0.63 0.67 | 0.158 0.251 0.124 0.253 |
+| `image17_GP.png` | 0.93 0.77 0.99 0.55 | 0.126 0.399 0.105 0.459 |
+| `image18_GP.png` | 0.90 0.72 0.92 0.67 | 0.135 0.380 0.134 0.372 |
+| `image15_GP.png` | 0.54 0.55 0.43 0.46 | 0.217 0.361 0.152 0.417 |
+| `feature.png` | 0.12 0.27 0.17 0.33 | 0.206 0.409 0.233 0.444 |
+
+No strip in the table is a uniform background: the lowest standard deviation anywhere is 0.105.
+**Every one of the six is a crop.** **[V]**
+
+Two honesty notes on that verdict. First, `image17_GP.png` is the weakest reading in the set —
+its left and top strips are both bright and the two lowest-variance strips in the table
+(0.93/0.126 and 0.99/0.105), which is the *bounded* signature, and it does visually appear to
+have a closed outer arch. Its right and bottom do not, and it carries an inset panel in a corner,
+which puts mesh on an edge that would otherwise be empty — so the per-edge test cannot resolve
+it. Second, and decisively for this section: **`image17_GP.png` is a three-blade wind turbine,
+not an aerofoil**, so even read the other way it is not a far field for the case being
+reproduced here.
+
+My first pass at this test had the logic **backwards** — it looked for a *dark* rim, where a mesh
+on a white page has a *bright* one — and would have called every image bounded. The table above
+is the redone test. **[V]**
+
+### 19b. The only far field any source STATES **[V]**
+
+One, and it is text rather than an image: the tutorial's own
+`a circle of radius 3 units with center 1 0` (§3a). That is the circle §8/§10/§11 were built on.
+Everything else about a GridPro far field in this note is either inference from a crop or
+retracted (§12a, §18d).
+
+### 19c. The four-way comparison, measured
+
+`docs/research/gridpro-blocking-method/farfield_compare.png`
+(regenerate: `python3 docs/research/gridpro-blocking-method/plot_farfield_compare.py <out.png>`).
+Top left, the four outer boundaries on one scale; top right, the table below; bottom, each mesh
+at its own extent, all four windows cut to the same aspect ratio so the panels align.
+
+All four at `BL_INITIAL_THICKNESS 0.001` and `MB_SMOOTH_ITERS 5`, the same normalisation §15's
+table used: **[V]**
+
+| far field | blocks | cells | max | mean | area jump |
+|-----------|--------|-------|-----|------|-----------|
+| C arc, 30 × 20 (`config/multiblock_cgrid.dat`) | 4 | 5760 | **31.382** | 4.340 | **1.484** |
+| rectangle, 9 × 6 (§13/§17) | 120 | 12992 | 42.873 | **2.090** | 4.553 |
+| circle, r = 3 @ (1,0) (§8–11, the tutorial's own) | 38 | 8704 | 48.095 | 7.137 | 14.149 |
+| H box, 9 × 6 (§18) | 160 | 16704 | 57.754 | 4.866 | 10.172 |
+
+The shipped C-grid's **own** default is `MB_SMOOTH_ITERS 20`, not 5; at 20 it measures
+max 29.895, mean 3.821, jump 2.276 — better angles, worse area jump. The figure states this
+rather than leaving "shipped" to be read as the as-shipped config. **[V]**
+
+### 19d. What it says
+
+1. **The smallest far field is not the best one.** The tutorial's own circle, r = 3, is the
+   worst of the four on every column — max 48.1°, mean 7.14°, area jump 14.1. The best is the
+   **largest**, 30 × 20, and it gets there with 4 blocks and 5760 cells. **[V]**
+2. **Changing the far field's SHAPE costs more than changing the block count.** The same C/H
+   topology, same body, same spacing laws, rectangle → H box: max 42.873 → 57.754, area jump
+   4.553 → 10.172, for 40 more blocks. **[V]** That is the same direction and roughly the same
+   size as §12b's measurement on the O-ring family (48.095 → 89.236), so it is a property of
+   putting straight far-field segments where the body's own rays want to land, not of one
+   topology. **[I]**
+3. **The one column the fine blocking wins is the mean.** 2.090° against the C arc's 4.340°,
+   which is §16's finding seen from the far-field side: the fine blocking buys interior
+   smoothness and pays for it at the corners where its many declared edges meet. **[V]**
+
+---
+
 ## Sources
 
 Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTML):
