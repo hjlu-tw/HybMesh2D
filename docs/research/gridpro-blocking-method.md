@@ -2990,20 +2990,24 @@ ring is where it appears. `--layer-growth` softens it but does not remove it (at
 
 ### 27b. The case **[V]**
 
-`gridpro_ch_straight.{json,dat}` — `make_ch.py --layers 2 --split 20 --turn-blend 0.8 --wake 8`.
+`gridpro_ch_straight.{json,dat}` — `make_ch.py --layers 2 --split 32 --turn-blend 0.8 --wake 8`.
+The split is 32 rather than 20 so the **cell count matches §25's**, 28640 against 29120, which is
+what lets the two be compared at all (§27f).
 
 | | §25 (3 layers) | §27 (2 layers) |
 |---|----------------|----------------|
-| blocks | 144 | **112** |
-| cells (split) | 29120 | 21600 |
+| blocks | 144 | 176 |
+| cells (split) | 29120 | 28640 |
 | inverted | 0 | 0 |
-| wall-normal turning, median / max | 6.9° / 82.2° | **1.2° / 12.0°** |
-| non-orthogonality max | **48.372°** | 49.177° |
-| non-orthogonality mean | 2.066° | **2.030°** |
-| cell-shape max | 282.388 | 282.537 |
+| **wall-normal turning, median / p95 / max** | 6.9° / 34.2° / 82.2° | **0.4° / 4.9° / 10.9°** |
+| non-orthogonality max | **48.372°** | 50.062° |
+| non-orthogonality mean | 2.066° | **1.840°** |
 
-Turning falls **5.8× at the median and 6.8× at the worst**, for 0.8° on the worst corner and 32
-fewer blocks. Everything else is within noise.
+Turning falls **17× at the median and 7.5× at the worst**, and the result is straighter than this
+repo's own shipped C-grid at the median (0.4° against 1.8°). The cost is 1.7° on the worst corner,
+which §25 established sits at the upstream far-field corner rather than on the body. The mean
+improves to 1.840°, the best of any C/H in this note. At 20 per surface the same change gives
+1.2° / 8.1° / 12.0° over 112 blocks and 21600 cells; 32 was chosen for the cell match.
 
 ### 27c. The trailing-edge rosette was NOT built, and why **[I]**
 
@@ -3026,6 +3030,32 @@ not move the wake's cell-shape ratio at all. That ratio is set by carrying a `BL
 anything in this note — runs **3145.7** in its wall band and 898.9 in its bulk, against this
 case's 50.9 and 282.5. Reducing it means coarsening the wake, which costs wake resolution. It is
 what a wake with a y+≈1 first cell costs, not something to fix.
+
+### 27f. GATE 2, and the control that was needed to read it **[V]**
+
+Both variants pass — exit 0, zero NaN. The first reading was misleading:
+
+| iteration | §25, 3 layers, 29120 cells | 2 layers, **21600** cells | 2 layers, **28640** cells |
+|-----------|---------------------------|---------------------------|---------------------------|
+| 5000 | 5.111e-06 | 2.129e-05 | 5.170e-06 |
+| 6000 | 5.392e-06 | 1.816e-05 | **3.264e-06** |
+| 7000 | 4.449e-06 | 2.882e-05 | **3.260e-06** |
+| 8000 | 6.266e-06 | 1.306e-05 | **2.565e-06** |
+
+At 20 per surface the straightened case sits **3–6× above** §25 at every matched iteration, which
+reads as "straightening costs convergence". It is not: that variant also has **26% fewer cells**.
+With the cell count matched the straightened case is level at 5000 and **1.7–2.4× below** at
+6000–8000 — so the penalty was the cell count and the straightening is free.
+
+One further thing the middle column makes visible: **the matched case is the only history in this
+note that descends monotonically** (5.17 → 3.26 → 3.26 → 2.57), where §17's, §25's and the
+21600-cell variant's all oscillate by tens of percent. Four points is not a convergence proof and
+this still does not rank meshes — §25c's caveat applies unchanged — but it is the first case here
+that does not oscillate. **[I]** on reading anything into that; **[V]** on the four numbers.
+
+The run was executed under the case name `gridpro_ch_straight32`, before the split-32 variant was
+promoted to be *the* straight case; its residual file is
+`results/solver/gridpro_ch_straight32/work/unicones.enorm.cli`.
 
 ### 27e. A defect found while shipping this **[V]**
 

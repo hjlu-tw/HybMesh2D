@@ -1,7 +1,8 @@
 # =============================================================================
 # The fig6-shaped C/H with the WALL-NORMAL LINES STRAIGHTENED: TWO body-hugging
-# layers instead of three, 20 chordwise blocks per surface, 8 wake stretches.
-# 112 blocks.
+# layers instead of three, 32 chordwise blocks per surface, 8 wake stretches — the count that
+# matches section 25's CELL count (28640 against 29120), so the two can be
+# compared without the cell count confounding it. 176 blocks.
 #
 # WHY TWO LAYERS. The maintainer read an imposed-looking curvature in the
 # direction normal to the body off vs_fig6_side_by_side.png. Measured, section
@@ -10,10 +11,13 @@
 # 1.2 and 12.0 at two -- and 0.5 and 17.2 at one. The third ring is where it
 # appears; the far field's shape and the domain size were both tested and are
 # NOT the cause. Section 17 chose three because fig6 shows "two or three"; the
-# geometry supports two.
+# geometry supports two. THIS case, at 32 per surface, measures 0.4 / 4.9 / 10.9
+# -- straighter than the repo's own shipped C-grid (1.8 / 2.7 / 2.8 median/p95/
+# max) at the median, and it converges: at matched cell count its residual is
+# the only one in this note that descends monotonically (section 27f).
 #
 #   python3 docs/research/gridpro-blocking-method/make_ch.py \
-#       --layers 2 --split 20 --turn-blend 0.8 --wake 8 \
+#       --layers 2 --split 32 --turn-blend 0.8 --wake 8 \
 #       --out gridpro_ch_straight.json
 #   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch_straight.dat
 #

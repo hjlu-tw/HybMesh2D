@@ -59,9 +59,9 @@ def lines_with_turning(path):
     return pts, out, body, bad
 
 WIN = (-0.25, 1.6, -0.75, 0.75)
-CASES = [(sys.argv[1], "§25：貼體 3 層", WIN),
-         (sys.argv[2], "§27：貼體 2 層（唯一的改動）", WIN),
-         (sys.argv[3], "本倉庫 shipped C-grid（貼體 0 層）", WIN)]
+CASES = [(sys.argv[1], "§25：貼體 3 層（29120 cell）", WIN),
+         (sys.argv[2], "§27：貼體 2 層（28640 cell）", WIN),
+         (sys.argv[3], "shipped C-grid（貼體 0 層，5760 cell）", WIN)]
 fig = plt.figure(figsize=(15.6, 7.6), facecolor="#fcfcfb")
 norm = Normalize(0, 85)
 CTRL = []
@@ -98,7 +98,7 @@ fig.text(0.024, 0.925, "「垂直於幾何的曲度」— 是第三層貼體環�
 for i, ln in enumerate([
     "把每條從物面垂直出發的格線一路追到外邊界、累計它轉了幾度。走法會在抵達外邊界時停止 — 先前版本沒有這個停止條件，它會轉上外邊界繼續走，把 6.9° 算成 14.3°、82.2° 算成 130.5°（§26b 已標記更正）。",
     "試過而被否證的兩個原因：遠場的「形狀」（O-ring 的遠場就是圓，反而轉最多，中位數 37.7°）、以及計算域大小（9×6 放大到 40×20，中位數 6.9°→7.5°，p95 完全不變）。",
-    "真正的原因是貼體環的層數：1 層 0.5°、2 層 1.2°、3 層 6.9°（中位數）。§17 選 3 層是因為 fig6 看起來有「兩到三層」；這個幾何只撐得住兩層。",
+    "真正的原因是貼體環的層數：1 層 0.5°、2 層 1.2°、3 層 6.9°（中位數，皆在每側 20 塊下量）。§17 選 3 層是因為 fig6 看起來有「兩到三層」；這個幾何只撐得住兩層。",
 ]):
     fig.text(0.024, 0.886 - i*0.0255, ln, color=SEC, fontsize=10.6, va="bottom")
 fig.savefig(sys.argv[4], dpi=100, facecolor="#fcfcfb")
