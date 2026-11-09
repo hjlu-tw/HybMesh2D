@@ -23,15 +23,23 @@
 # C/H is better on mean non-orthogonality and on size grading, the O-ring on
 # the worst corner and on holding the far-field spacing.
 #
-# THE DOMAIN IS 30 x 20 CHORDS, the same extent as the shipped C-grid case's D,
-# and that is a MEASUREMENT not a default: at Re 200 a 9 x 6 box cuts through
-# the viscous region and the solve's residual sits four times higher (section
-# 14c). make_ch.py --domain XI XO YF moves it; section 13e carries both.
+# THE DOMAIN IS 9 x 6 CHORDS, and that is a COMPARISON choice, not the right
+# size to solve on. It is closest to what the O-ring cases of sections 9-11
+# have -- GridPro's tutorial circle of radius 3 -- so section 13e's mesh
+# comparison is made at a comparable domain. Section 14c measured what it costs
+# the SOLVE: at Re 200 a 9 x 6 box cuts through the viscous region and its
+# residual band's median sits 1.5x above the one at the shipped C-grid case's
+# own 30 x 20 (1.44e-04 against 9.34e-05 over 10000 iterations).
 #
-# GATE 2 HAS BEEN RUN ON THIS MESH and it does NOT NaN -- 10000 iterations,
-# exit 0, nothing non-finite, against the shipped C-grid as a control. Its
-# residual does stall about 30x above that control's floor. Reproduce with
+#   python3 docs/research/gridpro-blocking-method/make_ch.py --domain -10 20 10
+#
+# is that one, and section 13e carries both meshes' numbers.
+#
+# GATE 2 HAS BEEN RUN and it does NOT NaN -- 10000 iterations at both domain
+# sizes, exit 0, nothing non-finite, against the shipped C-grid as a control.
+# The residual does stall above that control's floor. Reproduce with
 #   ./run_pipeline.sh docs/research/gridpro-blocking-method/gridpro_ch_demo.json
+# which runs whatever gridpro_ch.json currently holds.
 #
 # THE WAKE IS ONE CUT, WALKED TWICE. The xi walk runs from the outlet BELOW the
 # wake, forward along it to the trailing edge, round the body, and back along

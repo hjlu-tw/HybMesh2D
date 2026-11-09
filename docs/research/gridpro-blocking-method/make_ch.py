@@ -51,10 +51,14 @@ from make_rings import (read_body, arc_table, at_fraction, te_rays,   # noqa: E4
 BODY = "examples/geometries/naca0012_cgrid.dat"
 BODY_NAME = "naca0012_cgrid.dat"
 
-XI, XO, YF = -10.0, 20.0, 10.0  # the far-field rectangle, in chords -- the
-                                # SAME extent as the shipped C-grid case's D,
-                                # because at Re 200 a 9 x 6 box cuts through the
-                                # viscous region and the solve stalls (13g)
+# The far-field rectangle, in chords. 9 x 6 is the DEFAULT because it is the
+# extent the O-ring cases of sections 9-11 are closest to -- their far field is
+# GridPro's tutorial circle of radius 3 -- so section 13e's comparison is at a
+# comparable domain. It is NOT the right size to solve on: section 14c measured
+# that at Re 200 it cuts through the viscous region and the residual sits four
+# times higher than at the shipped C-grid case's own 30 x 20. For a solver run
+# pass --domain -10 20 10, which is what section 14's figures were taken at.
+XI, XO, YF = -2.0, 7.0, 3.0
 DS_SURF = 0.005                 # the shipped C-grid's surface clustering
 WAKE_GROWTH = 1.9
 CURVED = True                   # radials as the arc that leaves perpendicular               # how fast the wake's own stations spread aft
@@ -450,7 +454,7 @@ def main():
         "// two trailing-edge tangents -- which is what fixes where the two",
         "// trailing-edge radials land on the rectangle.",
         "//",
-        "// OURS: the body, the domain (x %g .. %g, y +-%g in chords), every node"
+        "// OURS: the body, the domain (x %g .. %g, y +-%g in chords -- see --domain,"
         % (XI, XO, YF),
         "// count, and the fact that every block boundary here is a straight chord",
         "// or a bound polyline rather than a converged elliptic solve (10b).",

@@ -125,8 +125,11 @@ entry 2 named `sp.gridpro.com/docs/WS_10.0_Tutorials.zip` as unreachable, and th
 > **§14 then put it through the SOLVER — gate 2, the one that bit on this repo's C-grid.** It
 > does **not NaN**: 10000 iterations, exit 0, nothing non-finite, against the shipped C-grid
 > run identically as a control. Its residual does STALL about 30× above the control's floor,
-> and half of that was the domain being too small at Re 200 — measured, 2e-04 at 9×6 chords
-> against 5e-05 at 30×20.
+> at both domain sizes. Its residual STALLS 23-35× above the control's floor, and the control
+> is **the repo's own four-block C-grid, which §13e now shows is the better mesh** — 31.4°
+> worst corner against the best 48.1° built here, at two thirds of the cells. §§9-13 are a
+> reproduction of GridPro's ARRANGEMENT and a record of what each step cost; they are not a
+> better grid for this body.
 
 | GridPro | this repo |
 |---|---|
@@ -1686,24 +1689,26 @@ forward along it to the trailing edge, round the lower surface to the nose, back
 upper surface to the trailing edge, and out along the wake to the outlet ABOVE it. **Every
 wake edge is met twice and is ONE edge both times** — that is what makes it a cut and not two
 coincident walls — and the trailing edge is one node on five edges where four blocks meet.
-The eta lines run from that C out to a RECTANGLE. **Its extent is `x ∈ [-10, 20]`,
-`y ∈ [±10]`, the SAME as the shipped C-grid case's D**, and that is not cosmetic: §14 ran the
-solver on both sizes and a 9 × 6 box at Re 200 cuts through the viscous region and stalls the
-residual four times higher. `--domain XI XO YF` moves it.
+The eta lines run from that C out to a RECTANGLE. **The DEFAULT extent is `x ∈ [-2, 7]`,
+`y ∈ [±3]`** — 9 × 6 chords — because that is closest to what the O-ring cases of §§9-11 have
+(GridPro's tutorial circle of radius 3), so §13e's comparison is made at a comparable domain.
+**It is not the size to solve on**, and §14c is the measurement: at Re 200 it cuts through the
+viscous region and its residual band sits **1.5×** above the one at the shipped C-grid case's
+own 30 × 20. `--domain -10 20 10` is that one. Both have been run through the solver.
 
 Nothing wraps round the front, so the lines leaving the nose point **at the inlet** and the
 lines leaving the wake point at the top and bottom. That is §12a's fig6, and it is a property
 of the topology rather than of any tuning.
 
 ```
-cells=18432 inverted=0 nonortho_max=61.529 nonortho_mean=3.908
-quad_midline_ratio_median=3.505 p95=53.608  adjacent_area_ratio_max=14.180
-wall first cell: 0.09% worst on the BODY, 15.72% worst counting the far-field edges
+cells=18432 inverted=0 nonortho_max=54.793 nonortho_mean=4.304
+quad_midline_ratio_median=2.648 p95=24.393  adjacent_area_ratio_max=7.813
+wall first cell: 0.09% worst on the BODY, 5.95% worst counting the far-field edges
 ```
 
-At the 9 × 6 box §13c was developed on — `--domain -2 7 3`, the extent the O-ring cases' own
-far field is closest to — the same document measures **54.793 / 4.304 / 2.648 / 7.813**, which
-is the row §13e compares with. Both are in the table there.
+At `--domain -10 20 10` the same document measures **61.529 / 3.908 / 3.505 / 14.180**: the
+mean improves, everything else gets worse, and that is the trade a domain the solve can
+actually use costs on this body. Both rows are in §13e's table.
 
 ### 13b. The map that makes it streamwise: a station's own NORMAL, cast **[V]**
 
@@ -1760,47 +1765,71 @@ the one place where two different parts of the walk have to agree about the same
 
 ### 13d. The figures **[V]**
 
-`gridpro_ch_full.png` (the whole 30 × 20 domain) and `gridpro_ch_te.png` (the body and the
-near wake), rendered as QUADS for §11a's reason. `gridpro_ch_M.png` is §14's Mach field. The
+`gridpro_ch_full.png` (the whole 9 × 6 default domain) and `gridpro_ch_te.png` (the body and
+the near wake), rendered as QUADS for §11a's reason. `gridpro_ch_M.png` is a Mach field from
+§14, taken on this same default domain. The
 downstream half is a streamwise lattice, the upstream half points at the inlet, the wake is a
 thin band along `y = 0`, and the far field is a rectangle the grid is aligned to — which is
 what §12a set out to reproduce.
 
 ### 13e. Against everything before it **[V]**
 
-| | §8: 14 blk | §10: 58 blk, 3 rings | §11: 38 blk, 2 rings | §13: C/H, 9×6 box | §13: C/H, SHIPPED 30×20 |
-|---|---|---|---|---|---|
-| cells | 17408 | 17408 | 17408 | 18432 | 18432 |
-| inverted | 0 | 0 | 0 | 0 | 0 |
-| worst non-orthogonality | 59.856° | 55.277° | **48.095°** | 54.793° | 61.529° |
-| mean non-orthogonality | 12.307° | 9.552° | 7.137° | 4.304° | **3.908°** |
-| cell shape, median | 2.751 | 2.801 | 2.818 | **2.648** | 3.505 |
-| worst adjacent area ratio | 11.713 | 12.565 | 14.149 | **7.813** | 14.180 |
-| worst wall first cell, BODY only | 0.01% | 0.01% | 0.01% | 0.09% | 0.09% |
-| worst wall first cell, ALL wall edges | **0.0139%** | 0.0111% | 0.106% | 5.95% | 15.72% |
-| far-field extent, chords | 30 × 20 | 6 × 6 | 6 × 6 | 9 × 6 | 30 × 20 |
-| far field | D of a circle | circle | circle | **rectangle** | **rectangle** |
+| | **the repo's OWN C-grid** | §8: 14 blk | §10: 58 blk, 3 rings | §11: 38 blk, 2 rings | §13: C/H, DEFAULT 9×6 | §13: C/H, `--domain -10 20 10` |
+|---|---|---|---|---|---|---|
+| blocks | **4** | 14 | 58 | 38 | 24 | 24 |
+| cells | 11520 | 17408 | 17408 | 17408 | 18432 | 18432 |
+| inverted | 0 | 0 | 0 | 0 | 0 | 0 |
+| worst non-orthogonality | **31.382°** | 59.856° | 55.277° | 48.095° | 54.793° | 61.529° |
+| mean non-orthogonality | 4.340° | 12.307° | 9.552° | 7.137° | 4.304° | **3.908°** |
+| cell shape, median | 4.791 | 2.751 | 2.801 | 2.818 | **2.648** | 3.505 |
+| cell shape, p95 | 148.672 | 13.815 | 13.093 | 14.107 | **24.393** | 53.608 |
+| worst adjacent area ratio | **1.484** | 11.713 | 12.565 | 14.149 | 7.813 | 14.180 |
+| worst wall first cell, BODY only | 0.05% | 0.01% | 0.01% | **0.01%** | 0.09% | 0.09% |
+| worst wall first cell, ALL wall edges | 0.0846% | **0.0139%** | 0.0111% | 0.106% | 5.95% | 16.11% |
+| far-field extent, chords | 30 × 20 | 30 × 20 | 6 × 6 | 6 × 6 | 9 × 6 | 30 × 20 |
+| far field | D of a circle | D of a circle | circle | circle | **rectangle** | **rectangle** |
 
-**The two C/H columns are the same document at two domain sizes**, and only the right-hand one
-is shipped — §14 is why. The middle one is the fair comparison with §§9-11, whose far field is
-the tutorial's r = 3 circle; the §8 column's own far field is already 30 × 20, so it is the
-right-hand C/H column that is comparable with IT.
+**THE FIRST COLUMN IS `config/multiblock_cgrid.dat`, THE CASE THIS REPO ALREADY SHIPS**, and
+it was missing from every version of this table until §14's solver run needed it as a control.
+It is four blocks, 11520 cells, and it **beats everything in this note on the worst corner and
+on size grading** — 31.4° and 1.48 against the best of mine, 48.1° and 7.8. It is quoted at
+5 sweeps like the rest of the table; at its own shipped default of 20 it reads 29.895° /
+3.821° / 2.276.
+
+**[I]** So the honest ranking is not the one the preceding sections were building toward. What
+the C/H does win, and wins decisively, is **cell shape**: median 2.648 against 4.791 and p95
+24.4 against 148.7 — the shipped case has a long tail of very stretched cells that none of the
+subdivided blockings here have. On the two non-orthogonality columns it is level with it on
+the mean and 23° behind on the worst corner.
+
+**The two C/H columns are the same document at two domain sizes**, and the LEFT one is the
+default — it is the fair comparison with §§9-11, whose far field is the tutorial's r = 3 circle.
+The §8 and shipped columns' far field is already 30 × 20, so it is the right-hand C/H column
+that is comparable with THEM. **Neither is "the" answer**: §14c shows the big domain is the
+better one to solve on, and the table shows it is the worse mesh on four of the six metrics.
+The cell counts are not equal either — 11520, 17408 and 18432 — and no column here is a
+controlled experiment against another; they are six documents measured the same way.
+
+**Every "all wall edges" figure here is AFTER smoothing**, read off `HYBMESH_MB_QUALITY`
+rather than the `_BEFORE` line beside it — the two differ by 3× on this case (5.95% against
+16.88%), and an earlier draft of this table mixed them.
 
 **The cell counts are not equal** — 18432 against 17408, 5.9% more — because the C/H's station
 law is derived rather than dialled, and the nearest settings either side came out at 17088
 (worse grading) and 21504 (better). The columns are still worth reading: a 6% cell difference
 does not move a mean from 7.1° to 4.3° or an area ratio from 14.1 to 7.8.
 
-**[I]** So the C/H wins the two columns that describe the FIELD — mean non-orthogonality and
-size grading — by a wide margin, and loses the two that describe the BOUNDARIES: its worst
-corner is 6.7° behind §11's, and it holds the far-field spacing far less well, because its
-outer boundary is a rectangle whose four corners the control function has to turn through.
-**The BODY's own first cell is held by all four** — the run prints 0.01% for the three ring
-cases and 0.09% here, all of them measured off the bound aerofoil edges only, which is the
-figure a viscous solve cares about; the "all wall edges" row is dominated by the far field,
-which no case is asked to resolve.
-**For a viscous solve on this body the C/H is the one to use, and that is the first time in
-this note the answer has not been the O-ring.**
+**[I]** Against the O-ring family the C/H wins the mean by a wide margin and cell shape
+outright, and loses the far-field spacing — its outer boundary is a rectangle whose four
+corners the control function has to turn through. **The BODY's own first cell is held by all
+of them**: 0.01% for the ring cases, 0.05% for the shipped one, 0.09% here, all measured off
+the bound aerofoil edges only, which is the figure a viscous solve cares about; the "all wall
+edges" row is dominated by the far field, which no case is asked to resolve.
+
+**What this note does NOT support is "use the C/H".** The repo's own four-block C-grid is
+better on the worst corner and on size grading than anything built here, at two thirds of the
+cells. What §§9-13 establish is a reproduction of GridPro's ARRANGEMENT and what each step of
+it cost — not a better mesh for this body.
 
 ### 13f. What is still not GridPro's **[I]**
 
@@ -1813,7 +1842,11 @@ wake band, the block count being in the right range — is now reproduced.
 
 ## 14. GATE 2: the C/H through the solver
 
-§13 is gate 1 — it meshes, 0 inverted. `.claude/rules/mesher-multiblock.md` records that on
+§13 is gate 1 — it meshes, 0 inverted. **And setting this run up is what put the repo's own
+shipped C-grid into §13e's table, where it changes the verdict**: it was only ever here as the
+control, and it is the better mesh.
+
+ `.claude/rules/mesher-multiblock.md` records that on
 this repo's C-grid **gate 2 is the one that bit**: zero inverted cells on the first run of the
 shipped declaration, and the solver then went to NaN in 40 iterations. So the C/H was run.
 2026-11-06.
@@ -1823,7 +1856,9 @@ solution, the residual history or the surface quantities.
 
 ### 14a. How it was run **[V]**
 
-`docs/research/gridpro-blocking-method/gridpro_ch_demo.json` through `./run_pipeline.sh`, at
+`docs/research/gridpro-blocking-method/gridpro_ch_demo.json` through `./run_pipeline.sh` — it
+meshes whatever `gridpro_ch.json` currently holds, so the big-domain run is
+`make_ch.py --domain -10 20 10` first — at
 **#57's own operating point** — laminar NS, M 0.2, Re 200, zero incidence, `cfl 0.6`,
 `constant_cfl`. The headless runner derives the `.bc.def` from the mesh's own patches (#91),
 so nothing was hand-edited:
@@ -1844,11 +1879,11 @@ because "the solver runs" is only worth quoting against something.
 
 ### 14b. The NaN question, answered **[V]**
 
-| | C/H (24 blocks) | control: shipped C-grid |
-|---|---|---|
-| 100 iterations | exit 0, no NaN | exit 0, no NaN |
-| 2000 iterations | exit 0, no NaN | exit 0, no NaN |
-| **10000 iterations** | **exit 0, no NaN** (159.6 s) | exit 0, no NaN (128.7 s) |
+| | C/H, 9 × 6 (default) | C/H, 30 × 20 | control: shipped C-grid |
+|---|---|---|---|
+| 100 iterations | exit 0, no NaN | exit 0, no NaN | exit 0, no NaN |
+| 2000 iterations | exit 0, no NaN | exit 0, no NaN | exit 0, no NaN |
+| **10000 iterations** | **exit 0, no NaN** | **exit 0, no NaN** (159.6 s) | exit 0, no NaN (128.7 s) |
 
 **ONE FALSE POSITIVE, RECORDED SO IT IS NOT RE-FOUND.** `work/tWall_values.dat.cli` contains
 the literal `NAN` in both runs — three fields of its third row. It is a property of that output
@@ -1857,24 +1892,38 @@ file and not of either solve; **the control has it too**, and the control is the
 (`xtecp_sol_allz.dat.cli`, `unicones.enorm.cli`, `vsurface_qty.dat.cli`, `binDumpZ.dat.cli`)
 are clean in both.
 
-### 14c. BUT THE RESIDUAL STALLS, and the domain was half of why **[V]**
+### 14c. BUT THE RESIDUAL STALLS **[V]**
 
-Worst-of-row from `unicones.enorm.cli`, 10000 iterations:
+Worst-of-row from `unicones.enorm.cli`, 10000 iterations, all three runs:
 
-| iteration | 1000 | 2000 | 4000 | 6000 | 8000 | 9000 |
-|---|---|---|---|---|---|---|
-| C/H | 4.71e-05 | 1.13e-04 | 8.96e-05 | 9.34e-05 | 6.23e-05 | 1.01e-04 |
-| control | 5.26e-05 | 8.59e-06 | 4.05e-06 | 1.61e-06 | 3.00e-06 | 2.91e-06 |
+| iteration | 1000 | 2000 | 3000 | 4000 | 5000 | 6000 | 7000 | 8000 | 9000 |
+|---|---|---|---|---|---|---|---|---|---|
+| C/H, 9 × 6 (default) | 1.44e-04 | 1.55e-04 | 1.61e-04 | 1.80e-04 | 1.68e-04 | 1.39e-04 | 8.59e-05 | 1.28e-04 | 7.85e-05 |
+| C/H, 30 × 20 | 4.71e-05 | 1.13e-04 | 1.13e-04 | 8.96e-05 | 5.50e-05 | 9.34e-05 | 1.14e-04 | 6.23e-05 | 1.01e-04 |
+| control (C-grid, 30 × 20) | 5.26e-05 | 8.59e-06 | 4.11e-06 | 4.05e-06 | 4.11e-06 | 1.61e-06 | 5.38e-06 | 3.00e-06 | 2.91e-06 |
 
-The control descends two orders and holds. **The C/H stops descending after about a thousand
-iterations and then oscillates in a band**, roughly 30× above the control's floor. It is not
-diverging — the band is flat over 9000 iterations — and nothing goes non-finite.
+The control descends two orders and holds. **Both C/H runs stop descending after about a
+thousand iterations and then oscillate in a band.** Neither diverges — the bands are flat over
+9000 iterations — and nothing goes non-finite in either.
 
-**Half of it was the domain, and that is a measurement.** The first C/H shipped a `9 × 6`
-chord box. At Re 200 that cuts through the viscous region, and the residual sat at **2e-04**.
-Opening it to the shipped C-grid's own `30 × 20` took it to **5e-05** — a factor of four — for
-no change to the blocking. That is why §13a's domain is what it is, and why §13e carries both
-columns.
+Medians over those nine samples: **1.44e-04** (9 × 6), **9.34e-05** (30 × 20), **4.11e-06**
+(control). So the C/H sits **35×** above the control's floor on the default domain and
+**23×** on the big one.
+
+> **A FIGURE I GOT WRONG, CORRECTED HERE RATHER THAN QUIETLY REPLACED.** An earlier draft of
+> this section said the domain was worth "a factor of four", from comparing a **2e-04** sample
+> on the small domain against a **5e-05** sample on the big one. Those are two single points in
+> two OSCILLATING bands, picked at different iterations — exactly the comparison
+> `docs/research/hermite-wall-normal-fill.md` records as worthless for ranking. Over the whole
+> 10000 iterations the medians give **1.54×**, not 4×. The domain helps; it helps a third as
+> much as the first look suggested.
+
+**[I]** So the domain is part of it and not most of it. The rest is the mesh, and the control
+says which way: its worst corner is **29.9°** against the C/H's 54.8° / 61.5° and its worst
+adjacent area ratio **2.28** against 7.8 / 14.2, on two thirds of the cells. This note has not
+isolated which of those the solver is reacting to. **It is not claimed that the C/H is a
+better mesh for this solve — on this evidence it is a worse one.** What is claimed is the
+gate: it runs, at both domain sizes, without going non-finite.
 
 **[I]** What is left is the mesh. The C/H's worst corner is 61.5° against the shipped C-grid's
 29.9°, and its worst adjacent area ratio 14.2; those are the obvious suspects, and this note
