@@ -3133,7 +3133,24 @@ The turning now continues outward instead of stopping at the wall, which is the 
 **It costs non-orthogonality mean, 1.840° → 2.980° at the shipped blend**, roughly linearly in the
 blend. §27's case is kept beside it unchanged, because that is a choice and not an improvement.
 
-### 28d. The appearance agrees; the provenance does not **[I]**
+### 28d. GATE 2: the curvature costs nothing in the solve **[V]**
+
+Exit 0, zero NaN, and against §27's case at matched cell count (both 28640):
+
+| iteration | §27, straight | §28, arc blend 0.5 |
+|-----------|---------------|--------------------|
+| 5000 | 5.170e-06 | 5.734e-06 |
+| 6000 | 3.264e-06 | 3.716e-06 |
+| 7000 | 3.260e-06 | **3.060e-06** |
+| 8000 | 2.565e-06 | **2.473e-06** |
+
+Within 11% at every point, crossing over twice, and **both descend monotonically** — the only two
+histories in this note that do. So the 1.840° → 2.980° the curvature costs in non-orthogonality
+mean **does not show up in the solve at all** at this cell count. §25c's caveat still applies and
+neither is converged; what this supports is the narrow claim that the change is not paid for
+here. **[V]**
+
+### 28e. The appearance agrees; the provenance does not **[I]**
 
 GridPro's arcs are what a converged elliptic solve leaves over straight wireframe links (§1a).
 Here the arc is **declared** — a circular arc through two fixed corners with a prescribed tangent
