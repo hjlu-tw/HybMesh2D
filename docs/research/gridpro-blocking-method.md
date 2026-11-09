@@ -2852,12 +2852,16 @@ supports is the one it was set up for: the extra four blocks per side do not bre
 run printed through 9000 and this one's last printed row is 8000, both from the same
 `num_half_iter`; the run exited 0 and nothing was chased there. **[V]**
 
-### 25d. The figure now carries its own proof **[V]**
+### 25d. The figures now carry their own proof **[V]**
 
 `vs_fig6_matched.png` draws every block-to-block seam heavy, so the per-side count is countable
 off the image instead of asserted. Verified as a control: 21 heavy seams along the upper surface
 at the row nearest the body — 20 blocks plus both ends — against the topology's 40 wall edges over
 40 blocks. That is the check §18e's claim never had. **[V]**
+
+`vs_fig6_side_by_side.png` (`plot_side_by_side.py`) is the same pair with the difference table
+stripped out and both panels filling the page width — the two meshes and nothing else, for looking
+at rather than for reading off.
 
 ---
 
