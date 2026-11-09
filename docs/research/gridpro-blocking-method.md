@@ -2449,6 +2449,63 @@ rather than leaving "shipped" to be read as the as-shipped config. **[V]**
 
 ---
 
+## 20. The far field, compared AGAINST GridPro
+
+§19 compared four far fields of my own, because no page image shows an outer *boundary*. That
+answered a narrower question than the one asked. A boundary is not needed to compare the
+far-field **blocking pattern** — only a region, and `fig5`'s top panel is one.
+
+### 20a. Which image, and at what scale **[V]**
+
+Of the six mesh images, three are 3-D (`image15_GP`, `image17_GP`, `image18_GP` — nacelle,
+turbine, turbine) and `fig6` and the centre of `feature.png` are near-body views of a
+multi-element aerofoil. **`fig5`'s top panel is the only 2-D aerofoil far-field blocking in
+either article**: one body at the centre, block-coloured, rings crossed by radial sectors, mesh
+running off all four edges.
+
+The scale had to be measured off the image. The body renders as a pale region; its largest
+connected pale component is **86 px** long (x 571–656), with a second pale fragment at x 684–697
+that is probably the trailing edge behind a grid line, which would make it **127 px**. Taking
+100 px and carrying ±15%, with the body's centre at (621, 388) in the 1260 × 716 panel, the
+panel's window is
+
+**x ∈ [−6.2, +6.4], y ∈ [−3.3, +3.9]** chords — about 12.6 × 7.2 chords. **[V]**
+
+### 20b. The comparison **[V]**
+
+`docs/research/gridpro-blocking-method/vs_fig5_farfield.png`
+(regenerate: `python3 docs/research/gridpro-blocking-method/plot_vs_fig5.py <fig5_top.png>
+results/meshes/<rings mesh>.vtk <out.png>`; the source image is not committed, see the Sources
+note). Top row, the same on-screen chord length; bottom row, GridPro cropped to my own window.
+The counterpart is §11's O-ring case — 2 concentric rings × 16 circumferential sectors, 38 blocks
+— because that is the family `fig5` shows.
+
+1. **Range. `fig5` already *shows* about twice my whole domain.** My O-ring far field is the
+   tutorial's circle, r = 3 about (1,0): 6 × 6 chords in all. `fig5`'s panel is 12.6 × 7.2 and
+   **is itself a crop** (§19a), so its real boundary is further out again. The top row is that
+   statement as a picture: GridPro fills the frame; mine occupies the middle of it. **[V]**
+2. **Sector width. GridPro's sectors are many and roughly EVEN in angular width all the way
+   round. Mine are not** — four wide wedges (two downstream, two upstream, ~60° each) and twelve
+   narrow ones bunched at the leading edge. **[V]** No sector *count* is claimed for `fig5`: an
+   automated count of colour runs round a circle, after a median filter to remove the grid lines,
+   bounced between 7 and 21 depending on radius, which is not a measurement. **[V]**
+3. **Radial lines. GridPro's curve; mine are straight rays.** Its sector boundaries fan and bend
+   as they go out; mine leave the body on a normal and keep going. **[V]**
+4. **Cell size in the far field. GridPro's stays roughly constant out there; mine grows.** In
+   `fig5`'s outer half the grid is nearly uniform; my outer ring's cells are much larger than its
+   inner ones. That is exactly §19c's `adjacent_area_ratio_max` = **14.149**, the worst of the
+   four far fields I built, seen as a picture rather than a number. **[I]** on the attribution of
+   GridPro's uniformity to a deliberate choice; **[V]** on both appearances.
+
+### 20c. What this does NOT say
+
+`fig5` is a crop with no scale bar, no axis, and a body whose length can only be measured to
+±15%. Every quantity in 20a is derived from that one measurement. Nothing here establishes where
+GridPro's outer boundary is, only that it is **beyond** the 6.4 chords the panel reaches — which
+is still enough to settle the one comparison that was asked for, since my own stops at 3. **[V]**
+
+---
+
 ## Sources
 
 Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTML):
@@ -2457,7 +2514,9 @@ Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTM
   https://gridpro.com/blog/the-art-and-science-of-meshing-airfoil/
 - Krishnamurthy, R., *Is Grid Generation an Art or Science?*, GridPro blog, 17 September 2017 —
   https://gridpro.com/blog/grid-generation-an-art-or-science/
-- Figure images, read visually: `media.gridpro.com/wp-content/uploads/2017/11/f12.webp`,
+- Figure images, read visually (not committed to this repo — the composite figures in
+  `docs/research/gridpro-blocking-method/` quote crops of them, and `plot_vs_fig5.py`
+  takes the source path as an argument): `media.gridpro.com/wp-content/uploads/2017/11/f12.webp`,
   `.../2017/10/img10.webp`, `.../2017/10/img12.webp`, `.../2017/11/img11_1.webp`,
   `.../2017/10/img6.webp`.
 
