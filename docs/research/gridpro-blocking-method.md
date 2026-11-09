@@ -932,6 +932,7 @@ GridPro-derived numbers are **derived at build time and not transcribed**:
 | **— §16's chart** | `plot_residuals.py` | `residual_compare.png` | — |
 | **D — §13, the C/H** | `make_ch.py` | `gridpro_ch.json` | `gridpro_ch.dat` |
 | **E — §17, fig6 as the target** | `make_ch.py --layers 3 --split 16 --turn-blend 0.8` | `gridpro_ch_fig6.json` | `gridpro_ch_fig6.dat` |
+| **F — §18, with an H outer field** | `make_ch.py --layers 4 --split 16 --turn-blend 0.8 --h-outer --box -0.8 1.0` | `gridpro_ch_h.json` | `gridpro_ch_h.dat` |
 
 ```bash
 python3 docs/research/gridpro-blocking-method/make_tworing.py        # --split K, --blend W
@@ -1595,8 +1596,17 @@ the thing that would fix it I could not make it work. This section is that attem
   vertical family crossing them. Not a fan.
 - **Downstream**: the lines leaving the trailing edge run **horizontally** in a straight wake
   band, with a lattice of blocks above and below it.
-- **The outer boundary is a RECTANGLE**, and the grid becomes a Cartesian lattice aligned with
-  it.
+- ~~**The outer boundary is a RECTANGLE**, and the grid becomes a Cartesian lattice aligned
+  with it.~~
+
+> **THAT LAST CLAIM IS WRONG AND §18d RETRACTS IT.** fig6's panel does not show an outer
+> boundary, because **it does not reach one**. Measured off the panel itself: the body's chord
+> is 555 px of its 701, so it covers about `x ∈ [-0.10, 1.16]`, `y ∈ [-0.37, 0.35]` CHORDS, and
+> the grid runs off all four edges (edge luminance 0.56-0.81, no closed dark boundary
+> anywhere). It is a NEAR-BODY view. What this section read as "a Cartesian lattice against a
+> rectangle" is the near-body grid, which is streamwise there for the ordinary reason. **The
+> only far field any source in this note states is the tutorial's own "circle of radius 3 units
+> with center 1 0" (§3a), quoted from GridPro's text.**
 
 **[I]** So GridPro's single-body far field is a **C/H** arrangement: a body-conforming ring,
 a straight wake band, and Cartesian H blocks filling the rest out to a rectangle. Everything
@@ -2258,6 +2268,101 @@ streamwise lattice against it; and a block count in the same range.
 What still does not: **fig6 is denser**, and its rings continue forward around the nose as
 rings, where mine hands the nose region to the fan instead. Neither is a topology difference
 any more — they are node counts and where the fan starts.
+
+---
+
+## 18. The H outer field, built — and the premise it was built on
+
+§17f left one structural difference against fig6: GridPro's outer region looked like a
+Cartesian lattice and mine was the C-wrap's own fan. The maintainer asked for that to be
+tried. It was, it works, it costs — and then measuring fig6 properly showed the difference was
+never there to begin with. Both halves are below, in that order, because that is the order
+they happened in. 2026-11-09.
+
+### 18a. It builds, and §12d's blocker does not apply **[V]**
+
+`--h-outer` makes the second-to-last ring a BOX **open at the outlet** — the same C shape the
+far field is — and the step from it to the far field **axis-aligned**: top and bottom straight
+out at the same x, the inlet side straight forward, the two corners to the far field's own
+corners. `gridpro_ch_h.{json,dat}`, **160 blocks**, 0 inverted.
+
+**§12d failed at this on the O-ring family and this does not, for a nameable reason.** There
+the inner box had to clear a CLOSED ellipse upstream while keeping the far field's aspect, and
+at the sizes that were small enough downstream it cut inside the ellipse. Here the inner object
+is a thin band hugging the body, and **the box is open downstream**, so there is no downstream
+extent to match. The conflict is gone.
+
+`gridpro_ch_h_full.png` is it: vertical lines above and below the box, horizontal ones ahead of
+it, and the two corner wedges.
+
+### 18b. ONE BUG, because the bands and the box have to agree **[V]**
+
+The body-conforming bands grow geometrically, `0.05 × 5^(k-1)`, so at five layers the third sits
+at **1.25** against a box at **1.0** — outside it. The band crosses the box and the layer folds:
+**727 inverted cells at five layers, 453 at six.** With a box the bands now run geometrically
+from `WALL_BAND` up to **half the box's own inset** instead, which fits by construction. Every
+layer count from 4 to 7 then meshes at 0 inverted, and the four-layer worst corner improves
+**59.432° → 57.754°**.
+
+### 18c. And it costs, on every column **[V]**
+
+| | §17: fan outer field | §18: H outer field |
+|---|---|---|
+| blocks | 120 | 160 |
+| cells | 25984 | 33408 |
+| inverted | 0 | 0 |
+| worst non-orthogonality | **42.873°** | 57.754° |
+| mean non-orthogonality | **2.090°** | 4.866° |
+| worst adjacent area ratio | **4.553** | 10.172 |
+| smallest cell | 1.63e-06 | 1.64e-06 |
+| residual at 9000 iterations | **6.50e-06** | 1.17e-05 |
+
+The worst corner sits on the box's own inlet side, at `(-0.80, ±0.726)`, and **four levers do
+not move it**: a bigger box trades it for the mean (at `(-1.6, 2.0)`: mean 3.136° but worst
+79.838°); carrying the inlet side straight forward so the upstream lines are truly parallel
+makes it **worse** (71-89°, because the corner wedges then skew instead); more sectors make it
+worse (16 → 24 takes it 59° → 77°); and more rings do nothing (max stays 57-60° from four
+layers to seven), **because the crowding is AZIMUTHAL — 32 stations carried onto a short box
+perimeter — and subdividing radially cannot reach it.**
+
+**[I]** This is §12b's measurement again, one layer in: a rectangle is expensive on this path.
+There it cost the O-ring family 48.095° → 89.236° as a far-field boundary; here it costs the
+C/H 42.873° → 57.754° as an interior ring.
+
+### 18d. THEN THE PREMISE TURNED OUT TO BE WRONG **[V]**
+
+§12a read "the outer boundary is a RECTANGLE" off fig6's top panel. That panel **does not
+contain an outer boundary**. Measured: the body's chord is **555 px** of the panel's 701, so it
+covers roughly `x ∈ [-0.10, 1.16]` and `y ∈ [-0.37, 0.35]` chords, and the grid **runs off all
+four edges** — edge luminance 0.556 / 0.596 / 0.645 / 0.811, with no closed dark boundary. Its
+other four panels are two leading-edge zooms (the icing horn is visible in both) and two
+wireframes. **None of the six shows a far field.**
+
+So the rectangle was my inference from a crop, and the only far field any source here states is
+the tutorial's **circle of radius 3 about the trailing edge** (§3a, GridPro's own words) — which
+is what §§8-11 used and what §13 moved away from.
+
+**[I]** What this does and does not invalidate:
+
+- **The measurements all stand.** A rectangle really is expensive here (§12b, 18c); the H field
+  really is buildable (18a); §16's smallest-cell finding is untouched; §17's rings and seam
+  matching are untouched and are supported by fig6, which **does** show the near body.
+- **The motive for §§12b, 12d, 13's rectangle, 17's rectangle and 18 does not.** They were
+  aimed at a far field no source describes.
+- **`near_body_compare.png` is the only comparison fig6 supports**, and it is in the tree:
+  fig6 against §17 and §18 at fig6's own measured extent.
+
+### 18e. What that comparison actually says **[V]**, read off the figure
+
+At fig6's own window the three are directly comparable, and:
+
+1. **fig6 subdivides the surface far more**: its thin rings carry roughly 15-20 blocks per side
+   within this window, against 5-6 in mine.
+2. **its rings are thinner and there are more of them** — several very thin strips where mine
+   has two or three thicker ones.
+3. **it is denser** throughout.
+4. **§17 and §18 are nearly indistinguishable in this window.** The whole difference between
+   them is outside it. **[I]** So the figure that motivated §18 cannot adjudicate §18.
 
 ---
 

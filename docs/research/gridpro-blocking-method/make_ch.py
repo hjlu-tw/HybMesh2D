@@ -66,6 +66,9 @@ LAYERS = 1                      # radial layers from the body out to the far fie
 LAYER_GROWTH = 5.0              # how fast those bands thicken outward
 WALL_BAND = 0.05                # the innermost band's thickness, in chords
 BL_FIRST = 0.001                # BL_INITIAL_THICKNESS, as the .dat declares it
+H_OUTER = False                 # a Cartesian H lattice outside an inner box
+BOX_L, BOX_Y = -0.8, 1.0        # that box: open at the outlet, in chords
+H_STRETCH = True                # spread the inlet side over the whole far inlet
 TURN_BLEND = 1.0                # 1 = equal normal turn, 0 = equal arc length               # how fast the wake's own stations spread aft
 N_RADIAL = 49                   # nodes from the body/wake out to the far field
 N_SURF = 40                   # intervals along ONE surface
@@ -111,6 +114,46 @@ def path_s_of(poly, s_tab, p):
             if off < 1e-7:
                 return s_tab[i] + t * L
     raise SystemExit("point %s is not on the far-field path" % (p,))
+
+
+def ray_to_boxc(p, deg):
+    """Where the ray from ``p`` at ``deg`` meets the INNER BOX -- a rectangle
+    OPEN AT THE OUTLET, the same C shape the far field is.
+
+    This is what section 12d could not build on the O-ring family: there the
+    inner box had to clear a CLOSED ellipse upstream while keeping the far
+    field's aspect, and the two could not both hold. Here the inner object is a
+    thin band hugging the body, and the box is open downstream, so there is no
+    downstream extent to match and the conflict is gone. Section 18.
+    """
+    r = math.radians(deg)
+    cx, cy = math.cos(r), math.sin(r)
+    ts = []
+    if cx < -1e-12:
+        ts.append((BOX_L - p[0]) / cx)
+    if abs(cy) > 1e-12:
+        ts.append(((BOX_Y if cy > 0 else -BOX_Y) - p[1]) / cy)
+    t = min([x for x in ts if x > 1e-12] or [0.0])
+    return (p[0] + t * cx, p[1] + t * cy)
+
+
+def boxc_to_far(q):
+    """A point on the inner box, projected AXIS-ALIGNED onto the far field.
+
+    Top and bottom go straight out at the same x; the inlet side goes straight
+    forward at the same y; the two corners go to the far field's own corners.
+    That is what makes the outer region a CARTESIAN LATTICE -- vertical lines
+    above the box, horizontal ones ahead of it -- instead of the fan a radial
+    mapping leaves, which is the one structural difference section 17f still
+    had against fig6.
+    """
+    on_left = abs(q[0] - BOX_L) < 1e-9
+    on_top = abs(abs(q[1]) - BOX_Y) < 1e-9
+    if on_left and on_top:
+        return (XI, YF if q[1] > 0 else -YF)
+    if on_left:
+        return (XI, q[1] * (YF / BOX_Y) if H_STRETCH else q[1])
+    return (q[0], YF if q[1] > 0 else -YF)
 
 
 def ray_to_rect(p, deg):
@@ -374,6 +417,24 @@ def build(split, wake_n):
         if a == "normal":
             p, n = t.pos[node(cid)], normals[cid]
             walk[i] = (cid, ray_to_rect(p, math.degrees(math.atan2(n[1], n[0]))))
+    if H_OUTER:
+        # TWO STAGES instead of one. A station's direction is cast onto the
+        # INNER BOX, and its far-field point is that box point projected
+        # AXIS-ALIGNED. Every station, including the ones already anchored --
+        # the trailing-edge rays and the nose radial land on the box too.
+        boxpt = {}
+        for i, (cid, a) in enumerate(walk):
+            p = t.pos[node(cid)]
+            if cid.startswith("wk"):
+                d = -90.0 if i < te_lo_i else 90.0
+            elif cid in normals:
+                n = normals[cid]
+                d = math.degrees(math.atan2(n[1], n[0]))
+            else:
+                q = a if isinstance(a, tuple) else t.pos[node(cid)]
+                d = math.degrees(math.atan2(q[1] - p[1], q[0] - p[0]))
+            boxpt[i] = ray_to_boxc(p, d)
+            walk[i] = (cid, boxc_to_far(boxpt[i]))
     anchor = {i: path_s_of(fp, fs, a) for i, (_, a) in enumerate(walk)
               if a is not None}
     anchor[0] = 0.0
@@ -410,7 +471,23 @@ def build(split, wake_n):
     # Measured with the fraction: worst corner 59.2 deg and a worst area ratio
     # of 9.0 at three layers, against 44.7 and 3.0 for the single layer.
     for k in range(1, LAYERS):
-        d = WALL_BAND * LAYER_GROWTH ** (k - 1)
+        if H_OUTER and k == LAYERS - 1:
+            for i in range(len(walk)):          # this ring IS the inner box
+                t.free(lay(k, i), boxpt[i])
+            continue
+        if H_OUTER:
+            # THE BANDS MUST ALL FIT INSIDE THE BOX, or one of them crosses it
+            # and the layer folds -- measured, 727 inverted cells at five
+            # layers, because the geometric growth put the third band at 1.25
+            # against a box at 1.0. So when there is a box the bands run
+            # geometrically from WALL_BAND up to HALF the box's own inset
+            # rather than by a fixed ratio.
+            nb = LAYERS - 2                   # bands, excluding body and box
+            top = 0.5 * min(abs(BOX_L), BOX_Y)
+            d = WALL_BAND if nb <= 1 else \
+                WALL_BAND * (top / WALL_BAND) ** ((k - 1) / (nb - 1))
+        else:
+            d = WALL_BAND * LAYER_GROWTH ** (k - 1)
         for i in range(len(walk)):
             a, b = t.pos[node(walk[i][0])], t.pos["F%d" % i]
             L = math.hypot(b[0] - a[0], b[1] - a[1])
@@ -541,6 +618,18 @@ def main():
                          "is the single layer sections 13-16 measure; 3 is "
                          "GridPro's fig6 shape, a thin ring hugging the body "
                          "and further rings outward.")
+    ap.add_argument("--h-outer", action="store_true",
+                    help="make the outermost region a CARTESIAN H lattice: the "
+                         "second-to-last ring becomes a box open at the outlet "
+                         "and the step beyond it is axis-aligned. Needs "
+                         "--layers 4 or more to keep two body-conforming rings.")
+    ap.add_argument("--h-parallel", action="store_true",
+                    help="with --h-outer, carry the box's inlet side STRAIGHT "
+                         "forward at the same y, so the lines ahead of it are "
+                         "parallel as fig6's are, instead of fanning out to "
+                         "cover the whole far inlet")
+    ap.add_argument("--box", nargs=2, type=float, metavar=("XLEFT", "YHALF"),
+                    default=None, help="that box's extents, in chords")
     ap.add_argument("--wall-band", type=float, default=0.05,
                     help="thickness of the innermost ring, in chords; the ones "
                          "outside it grow by --layer-growth from it")
@@ -553,10 +642,16 @@ def main():
     ap.add_argument("--out", default="gridpro_ch.json")
     args = ap.parse_args()
     global CURVED, XI, XO, YF, TURN_BLEND, LAYERS, WALL_BAND, LAYER_GROWTH
+    global H_OUTER, BOX_L, BOX_Y
     CURVED = not args.chord_radials
     TURN_BLEND = args.turn_blend
     LAYERS = args.layers
     WALL_BAND, LAYER_GROWTH = args.wall_band, args.layer_growth
+    global H_STRETCH
+    H_OUTER = args.h_outer
+    H_STRETCH = not args.h_parallel
+    if args.box:
+        BOX_L, BOX_Y = args.box
     if args.domain:
         XI, XO, YF = args.domain
     te, rays, sector, blen, topo = build(args.split, args.wake)
