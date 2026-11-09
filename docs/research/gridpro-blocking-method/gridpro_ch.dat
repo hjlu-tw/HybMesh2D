@@ -35,6 +35,14 @@
 #
 # is that one, and section 13e carries both meshes' numbers.
 #
+# FOR A SOLVE, REGENERATE WITH --turn-blend 0.6. The default station law puts
+# the stations at equal increments of the surface NORMAL, which clusters the
+# nose hard and makes the smallest cell in the mesh 3.9e-07 -- six times smaller
+# than the shipped C-grid's, and small enough that the pseudo-time iteration
+# stalls at 9.0e-05 instead of converging. At 0.6 the smallest cell is 2.2e-06
+# and the residual reaches 8.9e-07, below the shipped case's own floor. It costs
+# the leading-edge angle, 10.0 deg -> 30.3 deg. Section 16 is the measurement.
+#
 # GATE 2 HAS BEEN RUN and it does NOT NaN -- 10000 iterations at both domain
 # sizes, exit 0, nothing non-finite, against the shipped C-grid as a control.
 # The residual does stall above that control's floor. Reproduce with

@@ -61,7 +61,8 @@ BODY_NAME = "naca0012_cgrid.dat"
 XI, XO, YF = -2.0, 7.0, 3.0
 DS_SURF = 0.005                 # the shipped C-grid's surface clustering
 WAKE_GROWTH = 1.9
-CURVED = True                   # radials as the arc that leaves perpendicular               # how fast the wake's own stations spread aft
+CURVED = True                   # radials as the arc that leaves perpendicular
+TURN_BLEND = 1.0                # 1 = equal normal turn, 0 = equal arc length               # how fast the wake's own stations spread aft
 N_RADIAL = 49                   # nodes from the body/wake out to the far field
 N_SURF = 40                   # intervals along ONE surface
 N_WAKE = 34                   # intervals along the wake, per side
@@ -295,8 +296,17 @@ def build(split, wake_n):
     normals["le"] = (-1.0, 0.0)
     normals["te_lo"] = at_fraction(seg_lo, 1.0)[1]
     normals["te_up"] = at_fraction(seg_up, 0.0)[1]
-    fu = by_normal_turn(seg_up, split)          # te -> le along seg 0
-    fl = by_normal_turn(seg_lo, split)          # le -> te along seg 1
+    # TURN_BLEND 1 is equal increments of the surface normal; 0 is equal arc
+    # length; in between is the lerp. The law decides how hard the nose is
+    # clustered, which decides the smallest cell in the mesh -- section 16.
+    def mix(poly):
+        t = by_normal_turn(poly, split)
+        if TURN_BLEND == 1.0:
+            return t          # BIT FOR BIT, not e + (t - e) * 1.0, which is not
+        e = [k / split for k in range(1, split)]
+        return [e[i] + (t[i] - e[i]) * TURN_BLEND for i in range(split - 1)]
+    fu = mix(seg_up)                            # te -> le along seg 0
+    fl = mix(seg_lo)                            # le -> te along seg 1
     tpar = {}
     for i in range(1, split):
         pu, nu = at_fraction(seg_up, fu[i - 1])
@@ -429,12 +439,16 @@ def main():
     ap.add_argument("--chord-radials", action="store_true",
                     help="radials as straight chords between their two corners "
                          "instead of the arc that leaves perpendicular")
+    ap.add_argument("--turn-blend", type=float, default=1.0,
+                    help="1 = stations at equal increments of the surface "
+                         "normal (the default), 0 = at equal arc length")
     ap.add_argument("--domain", nargs=3, type=float, metavar=("XI", "XO", "YF"),
                     help="the far-field rectangle, in chords")
     ap.add_argument("--out", default="gridpro_ch.json")
     args = ap.parse_args()
-    global CURVED, XI, XO, YF
+    global CURVED, XI, XO, YF, TURN_BLEND
     CURVED = not args.chord_radials
+    TURN_BLEND = args.turn_blend
     if args.domain:
         XI, XO, YF = args.domain
     te, rays, sector, blen, topo = build(args.split, args.wake)

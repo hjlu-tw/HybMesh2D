@@ -125,7 +125,10 @@ entry 2 named `sp.gridpro.com/docs/WS_10.0_Tutorials.zip` as unreachable, and th
 > **§14 then put it through the SOLVER — gate 2, the one that bit on this repo's C-grid.** It
 > does **not NaN**: 10000 iterations, exit 0, nothing non-finite, against the shipped C-grid
 > run identically as a control. Its residual does STALL about 30× above the control's floor,
-> at both domain sizes. Its residual STALLS 23-35× above the control's floor, and the control
+> at both domain sizes. Its residual STALLS 23-35× above the control's floor — **§16 finds
+> out why, and it is the leading-edge clustering: `--turn-blend 0.6` takes it to 8.85e-07,
+> below the shipped case's own floor, at the cost of the 10° leading-edge angle §15a was
+> pleased about.** The control
 > is **the repo's own four-block C-grid, which §13e now shows is the better mesh** — 31.4°
 > worst corner against the best 48.1° built here, at two thirds of the cells. §§9-13 are a
 > reproduction of GridPro's ARRANGEMENT and a record of what each step cost; they are not a
@@ -1917,8 +1920,9 @@ control's floor as shipped, and **23×** on the big domain.
 > from **7.81 to 3.03** — and the residual's median went from 1.44e-04 to 1.30e-04, **10%**.
 > **[I]** So whatever the solve is reacting to, it is not the worst corner and not the size
 > grading; those were the two obvious suspects and both are now ruled out by measurement
-> rather than by argument. What is left unexplained is most of the 32×, and this note does
-> not explain it.
+> rather than by argument. What is left unexplained is most of the 32×. **§16 explains it**:
+> it is the leading-edge clustering, worth 147× on its own, while the domain is worth 2× and
+> the cell count 1×.
 
 > **A FIGURE I GOT WRONG, CORRECTED HERE RATHER THAN QUIETLY REPLACED.** An earlier draft of
 > this section said the domain was worth "a factor of four", from comparing a **2e-04** sample
@@ -1928,11 +1932,12 @@ control's floor as shipped, and **23×** on the big domain.
 > 10000 iterations the medians give **1.54×**, not 4×. The domain helps; it helps a third as
 > much as the first look suggested.
 
-**[I]** So the domain is worth 1.5× and §15b's mesh fix 1.1×, and together they do not
-approach the 32×. **It is not claimed that the C/H is a better mesh for this solve — on this
-evidence it is a worse one**, and it is not claimed that this note knows why. What is claimed
-is the gate: it runs, at both domain sizes and both versions of the mesh, without going
-non-finite.
+**[I]** So the domain is worth 1.5× as measured here — **2× when §16a measures it properly,
+on the SHIPPED C-grid moved between domains rather than on two versions of mine** — and
+§15b's mesh fix 1.1×. **§16 has the rest of the 32×, and it is one thing.** As shipped the
+C/H is the worse mesh for this solve; at §16's `--turn-blend 0.6` it converges further than
+the case this repo ships. What is claimed here is the gate: it runs, at both domain sizes and
+every version of the mesh tried, without going non-finite.
 
 **[I]** What is left is the mesh. The C/H's worst corner is 61.5° against the shipped C-grid's
 29.9°, and its worst adjacent area ratio 14.2; those are the obvious suspects, and this note
@@ -1978,7 +1983,9 @@ Worst corner BY REGION, same two meshes:
 
 **[V]** **At the leading edge the C/H is three times better** — 10.0° against 31.4° — and the
 leading edge is where the shipped case's own worst corner is. The extra blocks and §13b's
-equal-normal-turn station law did exactly what they were meant to. The C/H loses overall in
+equal-normal-turn station law did exactly what they were meant to. **§16d is what that 10°
+cost**, which this section did not know when it was written: the same law makes the smallest
+cell in the mesh six times smaller, and that is what stalls the solve. The C/H loses overall in
 ONE region: the far field.
 
 ### 15b. The far-field defect was MINE, and pushing on it proved it **[V]**
@@ -2039,6 +2046,97 @@ separates these two meshes in the solve, this note has not found it.
 **148.7** against the C/H's 26.8. Stretched cells aligned with a smooth boundary have
 excellent ANGLES and terrible ASPECT. The two meshes are good at different things, and the
 single "worst non-orthogonality" number was never going to say so.
+
+---
+
+## 16. What the 32× actually was
+
+§14c left the C/H's residual stalling **32×** above the shipped C-grid's floor with the two
+obvious explanations ruled out. This section chases it, and the answer is none of the things
+§§13-15 were about. 2026-11-09.
+
+**It is the LEADING-EDGE CLUSTERING — §13b's own station law — and the trade is 20 degrees of
+leading-edge non-orthogonality against two orders of residual.**
+
+### 16a. Five suspects, eliminated one at a time **[V]**
+
+Every row is an experiment, not an argument. All at #57's operating point, 10000 iterations.
+
+| suspect | how it was tested | worth |
+|---|---|---|
+| the residual column is per-ZONE, so a 24-block max beats a 4-block max | counted the non-trivial columns: **30 of 30 in both**, and the max is column 2 in every row of both | **nothing** — the comparison is like for like |
+| the worst corner and the size grading | §15b's fix: 54.79° → 44.74°, area ratio 7.81 → 3.03 | **1.1×** |
+| the domain | the SHIPPED C-grid rebuilt on the C/H's own 9 × 6 box — same topology, same 4 blocks, same 11520 cells, mesh quality unmoved (33.4° / 4.75° / 1.39) | **2×** (4.11e-06 → 8.28e-06) |
+| the cell count | that control REFINED to 18000 cells on the same 9 × 6 box, matching the C/H's 18240 | **1×** — it still reaches 4.73e-06 |
+| **the smallest cell** | `--turn-blend`, which relaxes §13b's station law from equal normal turn toward equal arc | **147×** |
+
+**[I]** The third and fourth rows are the ones worth having done. Both were plausible, both
+are standard explanations for a slow steady solve, and both are worth nothing here — and the
+only way to know was to move the CONTROL onto my domain and my cell count rather than move my
+mesh toward its.
+
+### 16b. The smallest cell is in the SAME PLACE in both, and six times smaller in mine **[V]**
+
+| | C/H (blend 1.0) | control, 9 × 6, 18000 cells |
+|---|---|---|
+| smallest cell, area | **3.905e-07** | 2.334e-06 |
+| ... its side | 6.25e-04 | 1.53e-03 |
+| where it is | **(0.001, -0.006)** | (-0.001, 0.002) |
+
+Both are **at the leading edge**. The wall-normal height is the same `BL_INITIAL_THICKNESS` of
+1e-3 in both, so what differs is the CHORDWISE spacing there — and that is §13b's law. Equal
+increments of the surface normal put the stations where the surface turns, and on an aerofoil
+nose the normal sweeps through 180° in a few per cent of chord.
+
+### 16c. Relaxing it is the whole of the 32× **[V]**
+
+`--turn-blend w` interpolates the station fractions between equal arc length (`w = 0`) and
+equal normal turn (`w = 1`, §13b's law and the default).
+
+| `w` | smallest cell | residual at 9000 | shape of the history |
+|---|---|---|---|
+| **1.0** (default) | 3.905e-07 | **9.04e-05** | stalls after ~1000, flat band |
+| 0.6 | 2.220e-06 | **8.85e-07** | descends monotonically, still falling |
+| 0.0 | 2.249e-06 | 1.88e-06 | descends monotonically |
+| — control, 9×6, 18000 cells | 2.334e-06 | 6.63e-06 | descends, plateaus near 3e-06 |
+| — control, 9×6, 11520 cells | 2.417e-06 | 8.28e-06 | descends, plateaus near 6e-06 |
+
+**Every mesh whose smallest cell is about 2.2e-06 converges; the one at 3.9e-07 does not**, and
+that is the only property in this table that sorts it. **[I]** It is the expected behaviour of
+a pseudo-time steady iteration with local time stepping — the smallest cell sets the smallest
+local step — but this note measured it, and measured it only after assuming three other things
+that turned out to be worth 1.1×, 2× and 1×.
+
+**At `w = 0.6` the C/H reaches 8.85e-07, below the shipped C-grid's own floor at either
+domain.**
+
+### 16d. And the trade is exactly §15a's leading-edge win, bought back **[V]**
+
+| | `w = 1.0` (shipped) | `w = 0.6` |
+|---|---|---|
+| worst corner within 0.1 of the LEADING EDGE | **10.01°** | 30.30° |
+| mean non-orthogonality | 4.503° | **3.144°** |
+| worst non-orthogonality | **44.735°** | 52.197° |
+| worst adjacent area ratio | **3.026** | 6.665 |
+| cells | 18240 | 16128 |
+| residual at 9000 iterations | 9.04e-05 | **8.85e-07** |
+
+**[I]** §15a presented the leading edge as where the extra blocks and the station law simply
+WON — 10.0° against the shipped case's 31.4°. They did not win it for free. Relaxing the law
+gives that 20° straight back (30.30°, which is the shipped case's 31.4° to within a degree)
+and buys two orders of residual. **The 10° and the stall are one decision seen from two ends.**
+
+### 16e. What is shipped, and what to use **[I]**
+
+**The default is still `w = 1.0`**, so every figure in §§13-15 stands as measured and this
+section invalidates none of them. **For a solve, pass `--turn-blend 0.6`** — it is the only
+version of this mesh that converges, and it converges further than the case this repo ships.
+
+The general statement, which is the part worth keeping: **on this path a station law chosen
+for ANGLES silently sets the smallest cell, and the smallest cell is what the solver feels.**
+Nothing in `HYBMESH_MB_QUALITY` reports it — the cell-shape figure is a RATIO and the
+area-jump figure is between NEIGHBOURS, so a uniformly tiny region scores well on both.
+§16a's first four rows are what reading only those metrics costs.
 
 ---
 
