@@ -46,7 +46,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 sys.path.insert(0, HERE)
 from make_rings import (read_body, arc_table, at_fraction, te_rays,   # noqa: E402
-                        arc_tangent_at)
+                        arc_tangent_at, arc_exit_tangent)
 
 BODY = "examples/geometries/naca0012_cgrid.dat"
 BODY_NAME = "naca0012_cgrid.dat"
@@ -62,6 +62,9 @@ XI, XO, YF = -2.0, 7.0, 3.0
 DS_SURF = 0.005                 # the shipped C-grid's surface clustering
 WAKE_GROWTH = 1.9
 CURVED = True                   # radials as the arc that leaves perpendicular
+ARC_OUT = False                 # ... and KEEP curving on the layers outside it
+ARC_OUT_W = 1.0                 # how far toward perpendicular-at-the-far-field
+ARC_OUT_C = (0.25, 0.0)         # the centre those arcs aim radially out from
 LAYERS = 1                      # radial layers from the body out to the far field
 LAYER_GROWTH = 5.0              # how fast those bands thicken outward
 WALL_BAND = 0.05                # the innermost band's thickness, in chords
@@ -296,6 +299,74 @@ def node(cid):
     return "te" if cid.startswith("te") else cid
 
 
+def rect_outward(q, tol=1e-6):
+    """The outward unit normal of the RECTANGULAR far field at a point on it."""
+    best, d = (0.0, 1.0), abs(q[1] - YF)
+    for cand, dist in (((0.0, -1.0), abs(q[1] + YF)),
+                       ((-1.0, 0.0), abs(q[0] - XI)),
+                       ((1.0, 0.0), abs(q[0] - XO))):
+        if dist < d:
+            best, d = cand, dist
+    return best
+
+
+def arc_perp_at_far(p_inner, p_outer):
+    """The `curve` for an edge ``p_inner -> p_outer`` that ARRIVES at the far
+    field PERPENDICULAR to it.
+
+    ``arc_tangent_at`` prescribes the tangent at the edge's START; this
+    prescribes it at the END, by building the same arc from the other end and
+    reversing the sweep. It is what gives the outer layer a visible curvature
+    instead of a chord: the line leaves the body along the body's normal, and
+    arrives at the rectangle along the rectangle's.
+
+    THIS IS NOT GRIDPRO'S MECHANISM and the difference is recorded rather than
+    glossed: GridPro's arcs are what a converged elliptic solve leaves over
+    straight wireframe links (section 1a), and section 10 -- confirmed again in
+    section 28 by sweeping MB_SMOOTH_ITERS to 60 and folding 1000 cells -- shows
+    this repo's smoother diverges long before it curves anything. So the same
+    APPEARANCE is reached by declaring the arc. The shape agrees; the provenance
+    does not.
+    """
+    # SMOOTHLY VARYING, not the rectangle's own normal. A rectangle has corners,
+    # so "perpendicular to the far field" is DISCONTINUOUS across them: two
+    # neighbouring radials off the nose land one on the inlet and one on the top,
+    # get target tangents 90 degrees apart, and their arcs bend opposite ways and
+    # cross. Measured: 16 inverted cells at a blend of only 0.15, in exactly two
+    # mirrored blocks at x = -0.27, |y| = 0.47 -- the nose (section 28c). Aiming
+    # the arc radially OUTWARD FROM A CENTRE near the body instead varies
+    # smoothly everywhere and is what "perpendicular to a circle" would give,
+    # which is the far field GridPro's own tutorial text states (section 3a).
+    rx, ry = p_outer[0] - ARC_OUT_C[0], p_outer[1] - ARC_OUT_C[1]
+    rn = math.hypot(rx, ry)
+    if rn == 0.0:
+        return None
+    outward = (rx / rn, ry / rn)
+    # BLENDED, because the full 90 degrees does not fit. Arriving exactly
+    # perpendicular to the top of the rectangle means arriving vertically, and a
+    # line that left the nose horizontally cannot do that through one arc
+    # between two fixed corners without looping: measured at w = 1.0, 112
+    # inverted cells and the worst corner 50.06 -> 73.08 (section 28c). The
+    # blend is between the chord (w = 0, the old straight edge) and that
+    # perpendicular, and the shipped value is the largest that still meshes.
+    ch = (p_inner[0] - p_outer[0], p_inner[1] - p_outer[1])
+    n = math.hypot(*ch)
+    if n == 0.0:
+        return None
+    ch = (ch[0] / n, ch[1] / n)
+    tgt = (ch[0] * (1.0 - ARC_OUT_W) - outward[0] * ARC_OUT_W,
+           ch[1] * (1.0 - ARC_OUT_W) - outward[1] * ARC_OUT_W)
+    m = math.hypot(*tgt)
+    if m < 1e-12:
+        return None
+    cv = arc_tangent_at(p_outer, (tgt[0] / m, tgt[1] / m), p_inner)
+    if cv is None:
+        return None
+    cv = dict(cv)
+    cv["sweep"] = "cw" if cv.get("sweep", "ccw") == "ccw" else "ccw"
+    return cv
+
+
 def build(split, wake_n):
     pts, seg_up, seg_lo = read_body(os.path.join(ROOT, BODY))
     te, rays, sector = te_rays(pts, 3)
@@ -524,17 +595,52 @@ def build(split, wake_n):
         rad_len = math.hypot(t.pos["F%d" % i][0] - t.pos[cid][0],
                              t.pos["F%d" % i][1] - t.pos[cid][1])
         prev_last = None
+        # WHERE THE OUTER LAYERS' CURVATURE COMES FROM. Only layer 0 carried an
+        # arc; every layer outside it was a straight CHORD, and that is visible
+        # in the measurement rather than inferred: following each wall-normal
+        # line out and splitting its turning into quarters of its own length
+        # gives 0.34 / 0.00 / 0.00 / 0.01 degrees -- all of it against the wall,
+        # then dead straight (section 28). The maintainer read GridPro's fig6 the
+        # other way round: perpendicular NEAR the body, arcs further out.
+        #
+        # --arc-out continues the arc outward instead, each layer launched along
+        # the tangent the one inside it ARRIVED with, so the chain is C1 across
+        # every ring seam. The smoother cannot do this: a declared edge is
+        # FROZEN, so the block interiors are transfinite between frozen sides --
+        # measured, MB_SMOOTH_ITERS 0/5/20 move the first quarter 0.00 -> 0.34 ->
+        # 1.26 and leave the other three at zero, and 60 folds the mesh (1000
+        # inverted cells).
+        tin = None
+        if cv is not None:
+            tin = arc_exit_tangent(cv, t.pos[lay(0, i)], t.pos[lay(1, i)])
         for k in range(LAYERS):
             n0 = N_RADIAL if LAYERS == 1 else (N_WALL_LAYER if k == 0 else
                                                N_OUTER_LAYER)
             spk = sp if k == 0 else ({"ds_start": prev_last} if prev_last else None)
+            if k == 0:
+                cvk = cv
+            elif ARC_OUT and k == LAYERS - 1 and not last:
+                # The OUTERMOST layer arrives perpendicular to the far field.
+                # C1-continuing the inner arc instead was implemented first and
+                # is INERT: layer 0's arc over a 0.05-chord wall band is already
+                # within 1e-4 of its own chord, so continuing its tangent
+                # produces a radius `arc_tangent_at` rejects as
+                # "indistinguishable from the chord" -- measured, byte-identical
+                # output and an unchanged turning profile (section 28b).
+                cvk = arc_perp_at_far(t.pos[lay(k, i)], t.pos[lay(k + 1, i)])
+            elif ARC_OUT and tin is not None:
+                cvk = arc_tangent_at(t.pos[lay(k, i)], tin, t.pos[lay(k + 1, i)])
+            else:
+                cvk = None
             t.edge("r%d_%d" % (k, i), lay(k, i), lay(k + 1, i),
                    "wall" if last else "interface",   # every layer of the
                    # end radials lies ON the outlet plane, so every one of them
                    # bounds a single block
                    count=n0 if i == 0 else None,
                    spacing=spk,
-                   curve=cv if k == 0 else None)
+                   curve=cvk)
+            if cvk is not None:
+                tin = arc_exit_tangent(cvk, t.pos[lay(k, i)], t.pos[lay(k + 1, i)])
             if LAYERS > 1:
                 span = rad_len * (fr_l[k + 1] - fr_l[k]) if False else \
                     math.hypot(t.pos[lay(k + 1, i)][0] - t.pos[lay(k, i)][0],
@@ -610,6 +716,15 @@ def main():
                     help="body stretches per surface")
     ap.add_argument("--wake", type=int, default=4,
                     help="stretches along the wake, each side of the cut")
+    ap.add_argument("--arc-out", action="store_true",
+                    help="keep the radial CURVING on the layers outside the "
+                         "first, each launched along the tangent the one inside "
+                         "it arrived with -- perpendicular at the body, arcs "
+                         "further out, which is how fig6 reads (section 28)")
+    ap.add_argument("--arc-out-blend", type=float, default=1.0,
+                    help="how far --arc-out aims toward perpendicular at the "
+                         "far field: 0 is the straight chord it replaces, 1 is "
+                         "fully perpendicular and does not mesh (section 28c)")
     ap.add_argument("--chord-radials", action="store_true",
                     help="radials as straight chords between their two corners "
                          "instead of the arc that leaves perpendicular")
@@ -641,9 +756,11 @@ def main():
                     help="the far-field rectangle, in chords")
     ap.add_argument("--out", default="gridpro_ch.json")
     args = ap.parse_args()
-    global CURVED, XI, XO, YF, TURN_BLEND, LAYERS, WALL_BAND, LAYER_GROWTH
+    global CURVED, XI, XO, YF, TURN_BLEND, LAYERS, WALL_BAND, LAYER_GROWTH, ARC_OUT, ARC_OUT_W
     global H_OUTER, BOX_L, BOX_Y
     CURVED = not args.chord_radials
+    ARC_OUT = args.arc_out
+    ARC_OUT_W = args.arc_out_blend
     TURN_BLEND = args.turn_blend
     LAYERS = args.layers
     WALL_BAND, LAYER_GROWTH = args.wall_band, args.layer_growth

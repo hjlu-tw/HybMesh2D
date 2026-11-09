@@ -3068,6 +3068,86 @@ all nine research `.dat` files audited: each now writes somewhere distinct.
 
 ---
 
+## 28. Perpendicular at the body, arcs further out — built
+
+Two observations against the straightened figure: (1) the wake region still is not GridPro's, and
+(2) the odd curvature is gone, so the next step toward `fig6` is that **GridPro's lines are
+perpendicular NEAR the geometry and then curve into arcs further out**.
+
+(1) is unchanged and §27c holds: inside a C/H the wake is a `cut` by construction, so a
+trailing-edge rosette is not a modification of this topology, it is the O-ring topology, which
+measures 37.7° median turning against 6.9°. Nothing in this section touches it.
+
+(2) is built: `gridpro_ch_arcout.{json,dat}`, figure `arc_outward.png`, measurement script
+`measure_turning_profile.py`.
+
+### 28a. The profile, which is what the observation is about **[V]**
+
+Total turning (§27) cannot see this; WHERE along the line it happens can. Splitting each
+wall-normal line's turning into four quarters of its own arc length, medians in degrees:
+
+| | wall→25% | 25–50% | 50–75% | 75%→outer |
+|---|----------|--------|--------|-----------|
+| §27, 2 layers | 0.34 | **0.00** | **0.00** | 0.01 |
+| §25, 3 layers | 6.65 | 0.01 | 0.00 | 0.02 |
+| this repo's shipped C-grid | 1.79 | 0.01 | 0.01 | 0.01 |
+
+**Every mesh in this note turns only against the wall and then runs dead straight** — the opposite
+of the reading. The cause is one line of the generator: `curve=cv if k == 0 else None`. Only the
+innermost layer's radial was declared as an arc; every layer outside it was a straight chord.
+
+### 28b. Two mechanisms that did NOT work **[V]**
+
+1. **The smoother.** `MB_SMOOTH_ITERS` 0 / 5 / 20 moves the first quarter 0.00 → 0.34 → 1.26 and
+   leaves the other three at zero; **60 folds the mesh** (1000 inverted cells, cell-shape max
+   12462) and 150 still folds 52. It adds turning against the wall, never outward. This is
+   `arc_tangent_at`'s own docstring restated by measurement — "the smoother diverges long before
+   it curves anything" — and §10 had already found it from another direction.
+2. **C1-continuing the inner arc outward.** Implemented first, and **inert**: byte-identical
+   output and an unchanged profile. Layer 0's arc over a 0.05-chord wall band is within 1e-4 of
+   its own chord, so continuing its tangent asks `arc_tangent_at` for a radius it correctly
+   rejects as indistinguishable from a straight line. Faithful, and useless.
+
+### 28c. The mechanism that worked, and the one failure that located it **[V]**
+
+Declare the OUTER radial as an arc arriving perpendicular to the far field. First version aimed at
+**the rectangle's own normal** and folded: 112 inverted at full strength, and still **16 inverted
+at a blend of only 0.15**. Localised: exactly two mirrored blocks at x = −0.27, |y| = 0.47 — the
+nose. A rectangle has CORNERS, so "perpendicular to the far field" is discontinuous across them;
+two neighbouring radials off the nose land one on the inlet and one on the top, take target
+tangents 90° apart, and their arcs bend opposite ways and cross.
+
+Aiming instead **radially outward from a centre near the body** (0.25, 0) varies smoothly
+everywhere — which is what perpendicular-to-a-circle would give, and a circle is the far field
+GridPro's own tutorial text states (§3a). That meshes at every blend:
+
+| blend | inverted | non-ortho max | non-ortho mean | wall→25% / 25–50% / 50–75% / 75%→outer |
+|-------|----------|---------------|----------------|----------------------------------------|
+| 0 (§27) | 0 | **50.062** | **1.840** | 0.34 / 0.00 / 0.00 / 0.01 |
+| 0.25 | 0 | 52.233 | 2.352 | 1.14 / 0.37 / 0.25 / 0.29 |
+| **0.5 (shipped)** | **0** | 51.655 | 2.980 | **2.22 / 0.74 / 0.50 / 0.59** |
+| 0.75 | 0 | 51.077 | 3.685 | 3.31 / 1.11 / 0.74 / 0.87 |
+| 1.0 | 0 | 57.925 | 4.388 | 4.41 / 1.49 / 1.00 / 1.12 |
+
+The turning now continues outward instead of stopping at the wall, which is the shape asked for.
+**It costs non-orthogonality mean, 1.840° → 2.980° at the shipped blend**, roughly linearly in the
+blend. §27's case is kept beside it unchanged, because that is a choice and not an improvement.
+
+### 28d. The appearance agrees; the provenance does not **[I]**
+
+GridPro's arcs are what a converged elliptic solve leaves over straight wireframe links (§1a).
+Here the arc is **declared** — a circular arc through two fixed corners with a prescribed tangent
+at one end. The shape matches what `fig6` shows; the mechanism does not, and §28b measures why the
+matching mechanism is unavailable rather than asserting it. A reader taking this case as evidence
+that the two tools do the same thing would be wrong in a way this note can now name.
+
+One further limit worth stating: `arc_outward.png` is drawn at x ∈ [−1.6, 3.4], y ∈ [±1.6]
+because that is where the arcs live, and **`fig6`'s own panel is 1.26 chords wide** (§24b) — so the
+figure that prompted this cannot show the region the change acts on. The appearance claim rests on
+reading `fig6`'s near-body quarter and extrapolating. **[I]**
+
+---
+
 ## Sources
 
 Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTML):

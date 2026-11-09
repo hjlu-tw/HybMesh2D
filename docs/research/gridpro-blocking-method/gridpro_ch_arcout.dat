@@ -1,0 +1,52 @@
+# =============================================================================
+# Section 27's straightened C/H with the OUTER LAYER'S RADIALS CURVED: 2 layers,
+# 32 chordwise blocks per surface, 8 wake stretches, and the outer radial
+# declared as an arc that bends outward instead of running as a straight chord.
+# 176 blocks, 28640 cells, 0 inverted.
+#
+# WHY. The maintainer read fig6 as perpendicular NEAR the body and curving into
+# arcs further out, and section 28's profile measurement says this repo's meshes
+# do the opposite: splitting each wall-normal line's turning into quarters of its
+# own length gives 0.34 / 0.00 / 0.00 / 0.01 degrees for section 27, all of it
+# against the wall and then dead straight. At blend 0.5 it is 2.22 / 0.74 / 0.50
+# / 0.59 -- the turning continues outward, which is the shape asked for.
+#
+# WHAT IT COSTS: non-orthogonality MEAN 1.840 -> 2.980 deg, worst corner
+# 50.06 -> 51.65. Section 27's case is kept unchanged beside this one because
+# that trade is a choice, not an improvement.
+#
+# NOT GRIDPRO'S MECHANISM. Its arcs are what a converged elliptic solve leaves
+# over straight wireframe links; here the arc is DECLARED. Section 28 records
+# that the smoother was tried and cannot do it -- it adds turning only against
+# the wall and folds 1000 cells at 60 iterations.
+#
+#   python3 docs/research/gridpro-blocking-method/make_ch.py \
+#       --layers 2 --split 32 --turn-blend 0.8 --wake 8 \
+#       --arc-out --arc-out-blend 0.5 --out gridpro_ch_arcout.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch_arcout.dat
+#
+# A RESEARCH HARNESS, not a shipped case.
+#
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_ch_arcout.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- the rectangle is declared, corner by corner.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing: the far-field and outlet edges
+# carry no binding, so this is where their condition comes from. The aerofoil's
+# sides are bound and take 'wall' off their own sidecar. A real case would want
+# inlet / outlet / farfield told apart, which needs a far-field geometry file.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family (section 8g); five is
+# where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_ch_arcout/mesh_gridpro_ch_arcout.vtk
