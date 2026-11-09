@@ -1,0 +1,47 @@
+# =============================================================================
+# The same TWO RINGS x SIXTEEN SECTORS, re-partitioned THE WAY FIG5 ARRANGES ITS
+# SECTORS: by EQUAL ANGLE on ring 1 rather than equal arc length on the body,
+# with each stretch's node count following its own length. 38 blocks.
+#
+# Section 20b measured the difference against fig5 and this is the half of it
+# that could be adopted: GridPro's sectors are roughly even in angular width all
+# the way round, where equal-arc stations bunch a dozen narrow ones at the nose.
+# The OTHER half -- fig5's sectors are ALL narrow, with no four wide wedges --
+# needs a finer trailing-edge fan, and --te-rays 5 is REFUSED on this body: the
+# rays then reach the far circle ahead of the body stations behind them and the
+# radials cross. Section 21c, with the measured cost of ignoring it.
+#
+#   python3 docs/research/gridpro-blocking-method/make_rings.py \
+#       --even-sectors --prop-nodes body --out gridpro_rings_even.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_rings_even.dat
+#
+# A RESEARCH HARNESS, not a shipped case, exactly as gridpro_rings.dat beside it
+# says of itself: nothing in config/ or examples/ refers to it and no gate
+# covers it. It does NOT supersede gridpro_rings.dat -- that one is the case
+# sections 9 and 11 measure, and section 21 compares this against it.
+# =============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_rings_even.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- every ring, the circle included, is declared.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing rather than a safety net: the outer
+# ring's arcs carry no binding (an analytic curve has no sidecar to read a
+# condition off), so this is where their condition comes from. The aerofoil's
+# two sides are bound and take 'wall' off their own sidecar.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family -- section 8g measured
+# it stopping at sweep 7 and reporting diverged=1 -- so the cap is five, which
+# is where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_rings_even/mesh_gridpro_rings_even.vtk

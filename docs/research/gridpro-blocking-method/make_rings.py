@@ -59,6 +59,10 @@ CURVED = True                   # radials as arcs rather than chords
 SMOOTH = True                   # ... and chained C1 instead of per-ring normal
 CURVED_TAIL = True              # the tail as the ring's own curve continued
 PER_LAYER = 0                   # radial intervals PER ring layer; 0 = share N_OUT_TOTAL
+EVEN_SECTORS = False            # body stations placed by EQUAL ANGLE on ring 1
+RING_LIN = False                # ring semi-axes grow LINEARLY, not geometrically
+PROP_NODES = ""                 # "body" | "far" | "mean": per-stretch node counts
+                                # proportioned by that length instead of uniform
 
 
 # -- the body --------------------------------------------------------------
@@ -122,6 +126,17 @@ def ring_geom(k, nrings):
     t = 0.0 if nrings == 1 else (k - 1) / (nrings - 1)
     c = (WRAP_C[0] + (FAR_C[0] - WRAP_C[0]) * t,
          WRAP_C[1] + (FAR_C[1] - WRAP_C[1]) * t)
+    if RING_LIN:
+        # LINEAR growth, which is what keeps the far-field CELL SIZE roughly
+        # constant: the circumference grows like r, so a radial step that also
+        # grows like r (geometric) makes the outer cells grow in BOTH
+        # directions at once. Section 20b measured that as the one place the
+        # O-ring loses to fig5 on appearance, and section 19c as
+        # adjacent_area_ratio_max = 14.149. Equal radial steps plus equal
+        # interval counts per layer is the fix; the rings are then no longer a
+        # boundary-layer-like family, which is the trade.
+        return (c, WRAP_A + (FAR_R - WRAP_A) * t,
+                WRAP_B + (FAR_R - WRAP_B) * t)
     return c, WRAP_A * (FAR_R / WRAP_A) ** t, WRAP_B * (FAR_R / WRAP_B) ** t
 
 
@@ -341,6 +356,93 @@ class Topo(object):
         raise SystemExit("no edge between %s and %s" % (a, b))
 
 
+def land(g1, poly, f):
+    """Ring 1's own parameter, in degrees, where the body's outward NORMAL at
+    arc fraction ``f`` lands."""
+    q, d = at_fraction(poly, f)
+    return ell_param(g1, hit_ellipse(g1, q, d))
+
+
+def sector_fracs(split, g1, seg_up, seg_lo, rd, ray_ids, base, n=2001):
+    """The body arc fractions the circumferential stations sit at.
+
+    DEFAULT -- equal normalized ARC LENGTH, which is what sections 9-11 built.
+    Section 20b measured that against ``fig5``: it leaves the trailing-edge
+    fan's four wide sectors beside a dozen narrow ones bunched at the nose,
+    where GridPro's are roughly EVEN in angular width all the way round.
+
+    ``--even-sectors`` -- equal ANGLE ON RING 1. The station is no longer picked
+    on the body and followed outward; a target angle is picked on the ring and
+    the body fraction that LANDS there is solved for. Each circumferential block
+    then subtends the same angle, which is the thing fig5 shows.
+
+    The inversion is a table lookup on a monotone sample, and MONOTONICITY IS
+    ASSERTED rather than assumed: the walk elsewhere in this file is a sort by
+    this very parameter, so a surface whose landings doubled back would not fail
+    here -- it would silently reorder the walk and produce blocks with no edge.
+    """
+    equal = [k / split for k in range(1, split)]
+    if not EVEN_SECTORS:
+        return equal, equal
+
+    def unwrapped(poly):
+        ts = [k / (n - 1) for k in range(n)]
+        raw = [(land(g1, poly, t) - base) % 360.0 for t in ts]
+        out = [raw[0]]
+        for v in raw[1:]:
+            while v - out[-1] > 180.0:
+                v -= 360.0
+            while out[-1] - v > 180.0:
+                v += 360.0
+            out.append(v)
+        return ts, out
+
+    def invert(ts, vals, target):
+        rising = vals[-1] > vals[0]
+        for i in range(len(vals) - 1):
+            a, b = vals[i], vals[i + 1]
+            if (a <= target <= b) if rising else (b <= target <= a):
+                w = 0.0 if b == a else (target - a) / (b - a)
+                return ts[i] + w * (ts[i + 1] - ts[i])
+        return None
+
+    out = []
+    for poly, akey, bkey in ((seg_up, ray_ids[0], "le"),
+                             (seg_lo, "le", ray_ids[-1])):
+        ts, vals = unwrapped(poly)
+        d = [vals[i + 1] - vals[i] for i in range(len(vals) - 1)]
+        if not (all(x >= -1e-9 for x in d) or all(x <= 1e-9 for x in d)):
+            raise SystemExit(
+                "REFUSED: the body's normal landings on ring 1 are not monotone "
+                "along one surface, so equal-angle stations cannot be solved "
+                "for and the walk's sort would silently reorder. Reduce "
+                "--rings (ring 1 grows with it) or drop --even-sectors.")
+        span = [vals[0], vals[-1]]
+        for key, j in ((akey, 0), (bkey, 1)):
+            v = (ell_param(g1, hit_ellipse(g1, *rd[key])) - base) % 360.0
+            while v - span[j] > 180.0:
+                v -= 360.0
+            while span[j] - v > 180.0:
+                v += 360.0
+            span[j] = v
+        fr = []
+        for k in range(1, split):
+            tgt = span[0] + (span[1] - span[0]) * k / split
+            f = invert(ts, vals, tgt)
+            if f is None:
+                raise SystemExit(
+                    "REFUSED: equal-angle station %d of %d on one surface falls "
+                    "outside the angular span its own end corners reach "
+                    "(%.2f deg), so no body fraction lands there. The two end "
+                    "corners are the trailing-edge ray and the nose; a ray fan "
+                    "wide enough to overlap the body's own landings is section "
+                    "9's refusal, reached from the other side."
+                    % (k, split, abs(span[1] - span[0])))
+            fr.append(min(max(f, 1e-6), 1.0 - 1e-6))
+        out.append(fr)
+    return out[0], out[1]
+
+
 def build(split, nrings, nrays):
     global FAR_C
     pts, seg_up, seg_lo = read_body(os.path.join(ROOT, BODY))
@@ -351,7 +453,6 @@ def build(split, nrings, nrays):
     t = Topo()
 
     # ---- the body corners ------------------------------------------------
-    fr = [k / split for k in range(1, split)]
     t.onbody("te", 0, 0.0, te)
     t.onbody("le", 1, 0.0, at_fraction(seg_lo, 0.0)[0])
     rd = {}
@@ -359,12 +460,17 @@ def build(split, nrings, nrays):
     for k, a in enumerate(rays):
         rd[ray_ids[k]] = (te, (math.cos(math.radians(a)),
                                math.sin(math.radians(a))))
-    for k, f in enumerate(fr):
-        for seg, poly, nm in ((0, seg_up, "u%d" % k), (1, seg_lo, "l%d" % k)):
+    rd["le"] = (t.pos["le"], (-1.0, 0.0))
+    wake_dir = (math.cos(math.radians(rays[wake_i])),
+                math.sin(math.radians(rays[wake_i])))
+    fr_up, fr_lo = sector_fracs(split, g1, seg_up, seg_lo, rd, ray_ids,
+                                ell_param(g1, hit_ellipse(g1, te, wake_dir)))
+    for k in range(split - 1):
+        for f, seg, poly, nm in ((fr_up[k], 0, seg_up, "u%d" % k),
+                                 (fr_lo[k], 1, seg_lo, "l%d" % k)):
             p, n = at_fraction(poly, f)
             t.onbody(nm, seg, f, p)
             rd[nm] = (p, n)
-    rd["le"] = (t.pos["le"], (-1.0, 0.0))
 
     # ---- ring 1: where the body's own outward NORMAL arrives -------------
     nom = {}
@@ -461,6 +567,42 @@ def build(split, nrings, nrays):
             nat += 360.0
         far[key] = far[key] + BLEND * (nat - far[key])
 
+    # ---- DO THE RADIALS CROSS ON THEIR WAY OUT? --------------------------
+    # The walk's sort proves the stations are ordered on RING 1. It proves
+    # nothing about the FAR CIRCLE, which each station reaches by its own
+    # outward cast -- and the two orders can differ. A trailing-edge ray lands
+    # on the circle at its OWN angle, and equal bisection pushes that angle out
+    # as the ray count rises: at five rays ray 0 is at 114.488 deg while the
+    # first body station behind it lands at about 108, so the ray's radial
+    # overtakes the station's and the two cross. Measured consequence: the
+    # cyclic walk's far-circle steps then sum to 1042 deg instead of 360, two
+    # ring blocks are declared across the overtake and come out whole-block
+    # inverted -- 816 cells of 14384 at five rays, 1810 at seven, 2616 at nine.
+    #
+    # THE SORT CANNOT SEE THIS and neither can a body-crossing test: the rays do
+    # not cross the body, they cross EACH OTHER'S NEIGHBOURS. That was a wrong
+    # guess, written and measured to fire on nothing before this replaced it.
+    # The same incompatibility between equal bisection and a normal-cast far
+    # map is in section 10's C/H, reached from the other side.
+    tot = sum((far[walk[(i + 1) % nwalk]] - far[walk[i]]) % 360.0
+              for i in range(nwalk))
+    if tot > 360.0 + 1e-6:
+        worst = max(range(nwalk),
+                    key=lambda i: (far[walk[(i + 1) % nwalk]] - far[walk[i]]) % 360.0)
+        a, b = walk[worst], walk[(worst + 1) % nwalk]
+        raise SystemExit(
+            "REFUSED: the radials CROSS between ring 1 and the far circle. The "
+            "stations are ordered on ring 1 but not on the circle: '%s' lands "
+            "there at %.3f deg and '%s', which follows it, at %.3f -- so going "
+            "from one to the next sweeps %.1f deg the wrong way round, and the "
+            "walk's steps sum to %.1f deg instead of 360. Equal bisection of a "
+            "%.1f-degree exterior angle does this as soon as --te-rays rises "
+            "past 3, because a ray reaches the circle at its own angle while "
+            "the body station behind it reaches it by a normal. 3 is what this "
+            "body supports."
+            % (a, far[a] % 360.0, b, far[b] % 360.0,
+               (far[b] - far[a]) % 360.0, tot, (len(ray_ids) + 1) * sector))
+
     # ---- every ring's parameter at every station -------------------------
     # Unwrapped monotonically along the walk, so interpolating between ring 1's
     # parameter and the circle's angle can never reorder the stations.
@@ -530,8 +672,15 @@ def build(split, nrings, nrays):
             t.edge("r0_" + rid, "te", "R1_" + rid, "cut", count=N_WAKE,
                    spacing={"ds_start": DS_SURF})
         else:
+            # EVERY non-wake ray carries the seed, not just the first. With
+            # three rays the fan's arcs all reach ray 0's class, so one seed
+            # was enough; with five or more they split into classes that ray 0
+            # does not reach, and the mesher refuses by name ("no edge in a
+            # group of 5 structurally linked edge(s) declares a 'count'").
+            # Seeding all of them with the SAME value leaves the three-ray mesh
+            # coordinate-identical -- verified, section 21b.
             t.edge("r0_" + rid, "te", "R1_" + rid, "interface",
-                   count=N_WALL if k == 0 else None, spacing=wall)
+                   count=N_WALL, spacing=wall)
     for cid in ["le"] + ["u%d" % k for k in range(split - 1)] \
             + ["l%d" % k for k in range(split - 1)]:
         t.edge("r0_" + cid, cid, "R1_" + cid, "interface", spacing=wall)
@@ -559,7 +708,39 @@ def build(split, nrings, nrays):
 
     # ---- the body sides, and the arc on every ring facing them -----------
     nb = N_AROUND // (2 * split)
-    def surface(bodylist, seg, poly, side):
+
+    # ---- how many intervals each circumferential stretch gets -------------
+    # UNIFORM by default, which is what every section up to 20 built and is
+    # right while the stretches are equal in arc. Under --even-sectors they are
+    # NOT: equal angle on ring 1 makes some stretches several times longer than
+    # others, and a uniform count then puts a 15x cell-area jump across the
+    # radial between two neighbouring sectors -- measured, and worse than the
+    # 14.1 it was meant to fix. So the count can follow the stretch instead.
+    def stretch_lengths(measure):
+        out = {}
+        for side, bodylist, poly, fracs in (
+                ("up", up_body, seg_up, [0.0] + list(fr_up) + [1.0]),
+                ("lo", lo_body, seg_lo, [0.0] + list(fr_lo) + [1.0])):
+            stot = arc_table(poly)[1]
+            for i in range(split):
+                a, b = bodylist[i], bodylist[i + 1]
+                ka = ray_ids[0] if a == "te" else a
+                kb = ray_ids[-1] if b == "te" else b
+                lb = (fracs[i + 1] - fracs[i]) * stot
+                lf = ell_arc(ring_geom(nrings, nrings),
+                             par[nrings][ka], par[nrings][kb])
+                out[(side, i)] = {"body": lb, "far": lf,
+                                  "mean": math.sqrt(lb * lf)}[measure]
+        return out
+
+    if PROP_NODES:
+        L = stretch_lengths(PROP_NODES)
+        tot = sum(L.values())
+        cnt = {k: max(2, int(round(N_AROUND * v / tot))) for k, v in L.items()}
+    else:
+        cnt = {(sd, i): nb for sd in ("up", "lo") for i in range(split)}
+
+    def surface(bodylist, seg, poly, side, fracs):
         for i in range(split):
             a, b = bodylist[i], bodylist[i + 1]
             ka = ray_ids[0] if a == "te" else a
@@ -569,8 +750,13 @@ def build(split, nrings, nrays):
                 sp["ds_start"] = DS_SURF
             if b in ("te", "le"):
                 sp["ds_end"] = DS_SURF
-            blen = arc_table(poly)[1] / split
-            t.edge("af_%s_%d" % (side, i), a, b, "wall", count=nb + 1,
+            # The stretch's OWN arc length, not the surface's divided by the
+            # stretch count: under --even-sectors the stretches are no longer
+            # equal in arc, and a shared 1/split here would scale every ring's
+            # clustering by a length that stretch does not have.
+            stot = arc_table(poly)[1]
+            blen = (fracs[i + 1] - fracs[i]) * stot
+            t.edge("af_%s_%d" % (side, i), a, b, "wall", count=cnt[(side, i)] + 1,
                    binding={"geom": BODY_NAME, "seg": seg}, spacing=sp)
             # Every ring's arc carries the body stretch's clustering SCALED by
             # its own arc length, so the whole radial family shares one
@@ -588,8 +774,8 @@ def build(split, nrings, nrays):
                        else curve_of(g),
                        spacing={q: v * rl / blen for q, v in sp.items()})
 
-    surface(up_body, 0, seg_up, "up")
-    surface(lo_body, 1, seg_lo, "lo")
+    surface(up_body, 0, seg_up, "up", [0.0] + list(fr_up) + [1.0])
+    surface(lo_body, 1, seg_lo, "lo", [0.0] + list(fr_lo) + [1.0])
 
     # ---- the trailing-edge fan's own arc on every ring -------------------
     fan = []
@@ -643,7 +829,7 @@ def build(split, nrings, nrays):
 
 
 def main():
-    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH, BOX
+    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH, BOX, EVEN_SECTORS, RING_LIN, PROP_NODES
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", type=int, default=8,
                     help="body sides per surface; 2K sectors around the body")
@@ -691,6 +877,19 @@ def main():
     ap.add_argument("--free-rings", action="store_true",
                     help="declare rings 2..N-1 as straight chords, so the "
                          "smoother may move them -- see _free()")
+    ap.add_argument("--prop-nodes", choices=("body", "far", "mean"), default="",
+                    help="proportion each circumferential stretch's node count "
+                         "by that length instead of giving every stretch the "
+                         "same -- needed once --even-sectors makes the "
+                         "stretches unequal (section 21)")
+    ap.add_argument("--even-sectors", action="store_true",
+                    help="place the circumferential stations by EQUAL ANGLE on "
+                         "ring 1 instead of equal arc length on the body -- "
+                         "which is how fig5 arranges its sectors (section 20b)")
+    ap.add_argument("--linear-rings", action="store_true",
+                    help="grow the ring semi-axes LINEARLY rather than "
+                         "geometrically, so the far-field cell size stays "
+                         "roughly constant instead of growing outward")
     ap.add_argument("--out", default="gridpro_rings.json")
     args = ap.parse_args()
     BLEND, TAIL, FREE = args.blend, not args.no_tail, args.free_rings
@@ -699,6 +898,8 @@ def main():
     SMOOTH = not args.ring_normal_radials
     BOX = args.box
     PER_LAYER = args.per_layer
+    EVEN_SECTORS, RING_LIN = args.even_sectors, args.linear_rings
+    PROP_NODES = args.prop_nodes
     if args.rings < 2 or args.split < 1:
         raise SystemExit("--rings must be >= 2 and --split >= 1")
     if args.te_rays < 3 or args.te_rays % 2 == 0:
