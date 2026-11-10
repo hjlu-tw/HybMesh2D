@@ -494,6 +494,13 @@ through the diagonal edges between.
 **The first two this repo already does.** Corners on the body are `on_geometry` corners, and
 stacked rows are `--layers`; §7d ships three of them.
 
+> **§10 RETRACTS THE CONCLUSION BELOW.** The format does NOT forbid a terminating row; my test
+> used the wrong construction. A row terminates at a **valence-3 corner** — three blocks sharing
+> one point — and there every edge is still a side of exactly two blocks, so nothing in the
+> format is violated. Built, 144 quads, 0 inverted (§10). The refusal quoted below is real and
+> its reading is correct; what was wrong is concluding from it that the capability is absent.
+> Kept rather than rewritten, like §60's specimen in the other note.
+
 **The third it cannot do, and that is the one that makes the method worth having.** To terminate a
 row, one block's side must be shared with TWO blocks on the other side. In this topology a block
 is `[south, east, north, west]` — **one edge per side** — and an `interface` must be a side of
@@ -517,6 +524,62 @@ it.** **[I]** on tying the three together; **[V]** on each separately.
 A caveat on scope: this says nothing about whether the format COULD be extended — only that as it
 stands, one edge per side is what blocks it. That is a design question for the repo, not a reading
 of GridPro.
+
+
+---
+
+## 10. Learning to draw it — the terminating row, built
+
+"學著畫畫看". Figure `terminating_row.png`, topology `terminating_row.json`, generator
+`make_terminating_row.py`. **144 quads, 0 inverted.** And it retracts §9.
+
+### 10a. §9's conclusion was wrong, and the error was in my construction **[V]**
+
+§9 concluded the format forbids a block row from terminating. It does not. My test had the big
+block's west side spanning BOTH left blocks' east sides — one edge covering two — which is
+correctly refused and is simply not how it is done.
+
+Zooming the icing frame further shows the actual construction: **valence-3 nodes**, three edges
+meeting at a point. At such a node three blocks share one corner, and each of the three edges
+leaving it is a side of exactly two of them — **the rule §9 quoted is never broken**.
+
+Checked in two steps, each 0 inverted: **[V]**
+
+| test | result |
+|------|--------|
+| a hexagon split into three quads by spokes to alternate vertices — the minimal valence-3 node | **384 cells, 0 inverted** |
+| a wall strip with TWO rows on the left and ONE block on the right, meeting at a valence-3 corner | **144 quads, 0 inverted**, max 51.7°, mean 16.4° |
+
+The second is the thing itself: an extra near-wall row that stops in the middle of the wall.
+
+### 10b. What it cost to make it hold **[V]**
+
+A single valence-3 termination **has to open steeply**. Sweeping the height the extra row's outer
+edge reaches at the transition, against a layer thickness of 0.6:
+
+| outer edge reaches | inverted |
+|--------------------|----------|
+| 0.70 | 3 |
+| 0.80 | 3 |
+| 0.90 | 2 |
+| 1.00 | 2 |
+| **1.10** | **0** |
+
+So the transition must open to nearly **twice the layer thickness** before it stops folding; a
+flat one does not work. GridPro's frame spreads its transition over several diagonal edges rather
+than one, which is presumably why — **[I]**, read off the frame.
+
+### 10c. What this does and does not change
+
+**It changes §9's verdict**: the near-wall method is learnable in full, not half. The mechanism
+exists in this format and is now built and shipped as a minimal case.
+
+**It does not yet change §6f.** That measured the ICED AEROFOIL case getting worse as blocks were
+added (8 → 25 → 99 inverted), and the cause named there was the far-field map, not the block
+grammar. Nothing in this section was run on an aerofoil; the strip above is flat and has no far
+field. Whether a valence-3 nest actually fixes §6f is **untested**, and §10 does not claim it. The
+honest statement is that the construction this repo was said to lack turns out to exist, and the
+obvious next step — putting one into `make_ch.py`'s near-wall layers — has not been taken.
 
 
 ---
