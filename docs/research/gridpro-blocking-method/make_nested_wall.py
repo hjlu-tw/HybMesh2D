@@ -19,6 +19,10 @@ import argparse
 import json
 import math
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from make_rings import arc_tangent_at                    # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -55,6 +59,12 @@ def main():
     ap.add_argument("--far-r", type=float, default=3.0)
     ap.add_argument("--band", type=float, default=0.35,
                     help="where the nested ring sits, as a fraction of the gap")
+    ap.add_argument("--wall-ds", type=float, default=0.0,
+                    help="first cell height at the wall; 0 leaves the radial "
+                         "uniform, which is what the section 11 demonstrator did")
+    ap.add_argument("--perp", action="store_true",
+                    help="radials leave the body PERPENDICULAR, as an arc "
+                         "through their two corners")
     ap.add_argument("--out", default="nested_wall.json")
     args = ap.parse_args()
 
@@ -77,7 +87,9 @@ def main():
                 body[i][1] + (far[i][1] - body[i][1]) * args.band)
 
     C, E, B = [], [], []
-    def corner(cid, xy): C.append({"id": cid, "kind": "free", "xy": list(xy)})
+    pos = {}
+    def corner(cid, xy):
+        C.append({"id": cid, "kind": "free", "xy": list(xy)}); pos[cid] = tuple(xy)
     def edge(eid, u, v, kind="interface", **kw):
         d = {"id": eid, "corners": [u, v], "kind": kind}
         d.update({k: v2 for k, v2 in kw.items() if v2 is not None})
@@ -114,15 +126,38 @@ def main():
         edge("fs%d" % k, "f%d" % u, "f%d" % v, "wall")
     fe = {u: "fs%d" % k for k, (u, v) in enumerate(far_edges)}
 
-    # radials
+    # radials. The WALL clustering and the PERPENDICULAR launch are what turn
+    # the section 11 demonstrator into a mesh worth looking at; both are the
+    # same mechanisms make_ch.py uses, reached through the same declarations.
+    def nrm(i):
+        a, b = body[(i - 1) % N], body[(i + 1) % N]
+        tx, ty = b[0] - a[0], b[1] - a[1]
+        m = math.hypot(tx, ty)
+        return (ty / m, -tx / m)
+
+    def radial(eid, i, u, v, **kw):
+        sp = {"wall_ends": "start", "ds_start": args.wall_ds} if args.wall_ds else {}
+        cv = arc_tangent_at(pos[u], nrm(i), pos[v]) if args.perp else None
+        if sp: kw["spacing"] = sp
+        if cv: kw["curve"] = cv
+        edge(eid, u, v, **kw)
+
     for i in range(N):
         if i in skip:
-            edge("r%d" % i, "b%d" % i, "x%d" % i, count=(5 if i == nest[0] else None))
+            # NO seed here. The transition block's west is a full radial and
+            # its east is this short one, so they are OPPOSITE sides of one
+            # block and therefore the same equivalence class: body->X and
+            # body->far carry the same node count whether that is wanted or
+            # not. Seeding both is refused ("two different node counts for
+            # edges that are structurally forced to carry one"), which is how
+            # this was found.
+            radial("r%d" % i, i, "b%d" % i, "x%d" % i)
         elif i == nest[1]:
-            edge("r%d" % i, "b%d" % i, "x%d" % i)
+            radial("r%d" % i, i, "b%d" % i, "x%d" % i)
             edge("ru%d" % i, "x%d" % i, "f%d" % i)
         else:
-            edge("r%d" % i, "b%d" % i, "f%d" % i)
+            radial("r%d" % i, i, "b%d" % i, "f%d" % i,
+                   **({"count": 25} if i == 0 else {}))
     for i, j in ((nest[0], nest[1]), (nest[1], nest[2])):
         edge("xs%d" % i, "x%d" % i, "x%d" % j)
     edge("tL", "f%d" % ((nest[0] - 1) % N), "x%d" % nest[0])      # left diagonal

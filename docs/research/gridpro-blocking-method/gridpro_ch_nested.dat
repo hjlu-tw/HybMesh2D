@@ -1,0 +1,60 @@
+# =============================================================================
+# Section 27's C/H with a LOCALLY NESTED ROW spliced into its outer layer.
+# 162 blocks, 28704 cells, 0 inverted.
+#
+# This is the videos' method put into a mesh worth having, rather than into the
+# purpose-made demonstrator of section 11 (24 stations, straight radials, no
+# clustering, max 89.6 / mean 30.5). make_ch.py is NOT touched -- the nest is
+# spliced into its OUTPUT by nest_into.py -- so the eight cases beside this one
+# cannot regress, and the wall clustering, the curvature and the far field are
+# all section 27's.
+#
+# THE NEST IS IN THE OUTER LAYER, not against the wall, and that is structural
+# rather than a preference: each termination station's corner on the ring ABOVE
+# must be omitted (section 11a), and in the outermost layer that ring is the FAR
+# FIELD, where the two circumferential edges either side merge into one and
+# nothing propagates further. Put it in the wall layer and the omission has to
+# be merged through every layer outside it.
+#
+# WHAT IT COSTS, against the same case without the nest:
+#   inverted      0          ->  0
+#   non-ortho max 50.062 deg ->  89.87      <-- ONE near-degenerate corner
+#   non-ortho mean 1.840 deg ->  3.25
+#   wall first cell          ->  unchanged, 0.0276
+# The max is at the left transition block, at (0.036, -0.971), and it does NOT
+# move: measured at --band 0.15/0.30/0.45 it is 89.98/89.92/89.87, so it is the
+# transition itself and not where the nested ring sits. Grading the two end
+# stations back toward the far field was tried as the fix and is WORSE --
+# --taper 0.3/0.5/0.7 gives 7/13/26 inverted cells.
+#
+#   python3 docs/research/gridpro-blocking-method/make_ch.py \
+#       --layers 2 --split 32 --turn-blend 0.8 --wake 8 --out base.json
+#   python3 docs/research/gridpro-blocking-method/nest_into.py base.json \
+#       --at 20 --band 0.30 --out gridpro_ch_nested.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch_nested.dat
+#
+# A RESEARCH HARNESS, not a shipped case.
+#
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_ch_nested.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- the rectangle is declared, corner by corner.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing: the far-field and outlet edges
+# carry no binding, so this is where their condition comes from. The aerofoil's
+# sides are bound and take 'wall' off their own sidecar. A real case would want
+# inlet / outlet / farfield told apart, which needs a far-field geometry file.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family (section 8g); five is
+# where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_ch_nested/mesh_gridpro_ch_nested.vtk

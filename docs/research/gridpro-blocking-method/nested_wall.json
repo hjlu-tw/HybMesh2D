@@ -793,7 +793,21 @@
     "b0",
     "f0"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "count": 25,
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.2130724236894928,
+     0.15832635882042753
+    ],
+    "r": 1.3083372712133303,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r1",
@@ -801,7 +815,20 @@
     "b1",
     "f1"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.1789163956926525,
+     0.13689906999118504
+    ],
+    "r": 1.3567755206058347,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r2",
@@ -809,7 +836,20 @@
     "b2",
     "f2"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.1526267255408893,
+     0.11711279520451176
+    ],
+    "r": 1.4134289145405592,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r3",
@@ -817,7 +857,20 @@
     "b3",
     "f3"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.155160264495831,
+     0.099016094484839
+    ],
+    "r": 1.4991400454712798,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r4",
@@ -825,7 +878,20 @@
     "b4",
     "f4"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.3651717077213545,
+     0.09352704603895778
+    ],
+    "r": 1.7928962819112848,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r5",
@@ -833,7 +899,20 @@
     "b5",
     "f5"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -7.253813395372537,
+     -0.5283101538013173
+    ],
+    "r": 7.761411204721545,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r6",
@@ -841,7 +920,20 @@
     "b6",
     "f6"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -1.2585222284301765,
+     -0.122352021023594
+    ],
+    "r": 1.6679604347090096,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r7",
@@ -849,7 +941,20 @@
     "b7",
     "f7"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -1.157860549273485,
+     -0.07202438223768813
+    ],
+    "r": 1.4811467656082342,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r8",
@@ -857,7 +962,20 @@
     "b8",
     "f8"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -1.1733702294321584,
+     -0.008332516108331502
+    ],
+    "r": 1.4125490919108146,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r9",
@@ -865,7 +983,20 @@
     "b9",
     "f9"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -1.2100353080338455,
+     0.09432716007592835
+    ],
+    "r": 1.3715242353479555,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r10",
@@ -873,7 +1004,20 @@
     "b10",
     "f10"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -1.2642331505690165,
+     0.42666683723641896
+    ],
+    "r": 1.413318345565436,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r11",
@@ -881,7 +1025,11 @@
     "b11",
     "f11"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   }
   },
   {
    "id": "r12",
@@ -890,7 +1038,19 @@
     "x12"
    ],
    "kind": "interface",
-   "count": 5
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -0.13051005567642535,
+     -0.02937209396832864
+    ],
+    "r": 0.21199775183481517,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r13",
@@ -898,7 +1058,20 @@
     "b13",
     "x13"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -0.05105700937297125,
+     0.03156439769982551
+    ],
+    "r": 0.20572863530219337,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "ru13",
@@ -914,7 +1087,20 @@
     "b14",
     "x14"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     0.02652188147162715,
+     0.051454601114887664
+    ],
+    "r": 0.21188236378662226,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r15",
@@ -922,7 +1108,20 @@
     "b15",
     "f15"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -1.1578605492734848,
+     0.0720243822376885
+    ],
+    "r": 1.4811467656082342,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r16",
@@ -930,7 +1129,20 @@
     "b16",
     "f16"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -1.2585222284301785,
+     0.12235202102359427
+    ],
+    "r": 1.667960434709012,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r17",
@@ -938,7 +1150,20 @@
     "b17",
     "f17"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     -7.253813395372897,
+     0.5283101538013402
+    ],
+    "r": 7.761411204721907,
+    "sweep": "ccw"
+   }
   },
   {
    "id": "r18",
@@ -946,7 +1171,20 @@
     "b18",
     "f18"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.365171707721352,
+     -0.09352704603895773
+    ],
+    "r": 1.7928962819112813,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r19",
@@ -954,7 +1192,20 @@
     "b19",
     "f19"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.155160264495831,
+     -0.09901609448483908
+    ],
+    "r": 1.4991400454712793,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r20",
@@ -962,7 +1213,20 @@
     "b20",
     "f20"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.1526267255408893,
+     -0.11711279520451184
+    ],
+    "r": 1.4134289145405587,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r21",
@@ -970,7 +1234,20 @@
     "b21",
     "f21"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.178916395692653,
+     -0.13689906999118523
+    ],
+    "r": 1.3567755206058345,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r22",
@@ -978,7 +1255,20 @@
     "b22",
     "f22"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   },
+   "curve": {
+    "kind": "arc",
+    "centre": [
+     2.213072423689493,
+     -0.15832635882042762
+    ],
+    "r": 1.3083372712133303,
+    "sweep": "cw"
+   }
   },
   {
    "id": "r23",
@@ -986,7 +1276,11 @@
     "b23",
     "f23"
    ],
-   "kind": "interface"
+   "kind": "interface",
+   "spacing": {
+    "wall_ends": "start",
+    "ds_start": 0.0005
+   }
   },
   {
    "id": "xs12",

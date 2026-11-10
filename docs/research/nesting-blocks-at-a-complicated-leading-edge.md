@@ -635,6 +635,75 @@ it.
 
 ---
 
+## 12. Into a GOOD mesh — gate 1 passes, gate 2 does not
+
+§11 built the nest on a purpose-made ring whose mesh was poor by construction. This puts it into
+§27's C/H, which is the best mesh in this work, and the result is a clear negative.
+
+`gridpro_ch_nested.{json,dat}`, spliced by `nest_into.py`. **make_ch.py is not touched** — the
+nest is spliced into its OUTPUT — so the eight cases beside it cannot regress and the wall
+clustering, curvature and far field are all §27's.
+
+### 12a. The nest goes in the OUTER layer, and that is structural **[V]**
+
+§11a's rule is that each termination station's corner on the ring ABOVE must be omitted. In the
+outermost layer that ring is the **far field**, where the two circumferential edges either side
+merge into one and nothing propagates further — there is nothing outside it. Put the nest against
+the wall instead and the omission must be merged through every layer outside it.
+
+### 12b. Gate 1 passes, and it looks like a good mesh **[V]**
+
+| | §27, no nest | §12, nested |
+|---|--------------|-------------|
+| blocks | 176 | 162 (+6 spliced, −20 merged) |
+| cells | 28640 | 28704 |
+| inverted | 0 | **0** |
+| non-orthogonality mean | 1.840° | 3.250° |
+| wall first cell | 0.0276 | **0.0276, unchanged** |
+| non-orthogonality max | 50.062° | **89.918°** |
+
+### 12c. GATE 2 FAILS **[V]**
+
+`run_pipeline.sh` on the same chain every other case here uses: **32 NaN in the error norms, and
+the solve prints two iteration headers before dying.** Not a marginal result and not a
+substring false positive — the matches are `eL2 error norm for int. region = NAN NAN NAN NAN`,
+word-bounded.
+
+So the mesh has **zero inverted cells, a respectable mean, an untouched wall spacing — and the
+solver cannot run on it.** Gate 1 is not gate 2, and this is the sharpest example of that in the
+whole note.
+
+### 12d. The bad corner is the transition, and two fixes failed **[V]**
+
+The 89.9° sits in the **left transition block at (0.036, −0.971)** and it does not move:
+
+| where the nested ring sits | non-ortho max | inverted |
+|----------------------------|---------------|----------|
+| band 0.15 | 89.984 | 0 |
+| band 0.30 | 89.918 | 0 |
+| band 0.45 | 89.869 | 0 |
+| band 0.60 | 89.726 | 4 |
+| band 0.80 | 89.570 | 7 |
+
+So it is the transition itself, not the depth. **Grading the two end stations back toward the far
+field** — the obvious fix, and what GridPro's frame appears to do by spreading each transition
+over several diagonals — makes it **worse**: `--taper` 0.3 / 0.5 / 0.7 gives **7 / 13 / 26**
+inverted cells.
+
+### 12e. Where that leaves the question **[I]**
+
+Asked to produce a good mesh with this method, I have not. Every route tried costs something the
+measurements catch: adding blocks at an iced nose made it worse (§6f), the nest cannot be made
+thin (§11b), and spliced into the best mesh here it passes gate 1 and fails gate 2 (§12c).
+
+That is three independent negative results, which is itself the strongest reason to think **the
+benefit is real and I am not measuring the thing it buys** — the maintainer's own question. What
+GridPro states the method is for is being researched separately; this section deliberately does
+not guess at it.
+
+
+---
+
 ## Sources
 
 Primary, read by me:
