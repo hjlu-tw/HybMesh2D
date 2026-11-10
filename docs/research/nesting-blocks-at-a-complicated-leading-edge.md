@@ -704,6 +704,83 @@ not guess at it.
 
 ---
 
+## 13. The benefit was never on my instrument — and here it is
+
+`docs/research/why-local-nesting.md` answers the maintainer's question from primary sources, and
+the answer makes §§6–12 legible. Summarised here with the one measurement it let me finally make.
+
+### 13a. What the method is claimed to buy, in the vendor's own words **[V]**
+
+GridPro's *WS GUI Manual* v1.0 §4.8.2 — in the same Internet Archive capture this work has been
+citing all along, in a section nobody here had read:
+
+> "Nest is very useful when you are handling geometries with **large-scale differences**…
+> Conventional meshing techniques on geometries with scale differences create grids with **large
+> aspect ratio especially near the smaller features**… **The refinement near the geometry is
+> necessary, but limiting because refinement propagates to the far field.** This limitation can be
+> overcome by using nesting. It helps to increase number of grid points near the geometry of
+> concentration locally, with one to one connectivity, **without increasing the points
+> elsewhere**."
+
+**The claim is denominated in CELLS and ASPECT RATIO.** §6f held `--split` fixed and counted
+inverted cells. §11 counted inverted cells, mean 30.5° and max 89.6°. §12 counted inverted cells
+and non-orthogonality. **None of those is cells-at-a-required-resolution and none is aspect
+ratio. The claim was never on the instrument**, which is what §12e guessed and could not show.
+
+And no source claims nesting improves folds or orthogonality: GridPro attributes unfolding to its
+**relaxer**, not to the nest. So the quantity §6f reported was never the nest's job.
+
+### 13b. Measured, on the right instrument, at last **[V]**
+
+Cell-shape (midline) ratio in a disc of radius 0.8 about the nest, §27's C/H against §12's
+spliced one — the same mesh but for the nest:
+
+| | cells in the disc | median | p95 | max |
+|---|-------------------|--------|-----|-----|
+| no nest | 859 | **24.955** | 60.337 | 273.601 |
+| nested | 959 | **17.258** | 53.605 | 274.914 |
+
+**Median aspect ratio falls 31% where the nest is, for 64 more cells in the whole mesh** — 28640
+→ 28704, **+0.2%**. Globally the p95 is unchanged to six decimals (81.554689 both), because the
+worst-shaped cells are in the wake and the nest does not reach them.
+
+That is the claimed benefit, reproduced: **better aspect ratio locally, bought without paying for
+it elsewhere.** It is the first positive result in this chain, and it only appeared once the
+measurement matched the claim.
+
+### 13c. It is still not a usable mesh, and the literature says why **[V]**
+
+§12c stands: 32 NaN, gate 2 fails. The research names the mechanism independently. Tchon,
+Dompierre & Camarero (IMR11, 2002), cited by GridPro's own IMR12 paper:
+
+> "the corner configurations located at the extremities of the layers degrade mesh quality. **This
+> phenomenon is even more acute when several layers terminate at the same location.**"
+
+— which is §12d's 89.9° corner, predicted. Their named remedies are quadtree-style balancing and,
+twice, **thicker layers**. And the nest's own ratio law is **1:3ⁿ per level**, GridPro's worked
+example using **five** levels: so **a nest is a BAND, and §11/§12 built a single level — the
+thinnest and weakest member of the family.** §11b measured that from the other side when it could
+not make the nest thin.
+
+### 13d. Where this leaves it
+
+**The method does what it says.** My three negative results were measuring something it never
+claimed, and the one time I measured what it does claim, it delivered.
+
+**I still have not produced a usable nested mesh**, and the next step is now named rather than
+guessed: more levels and thicker bands, with the transition corner — not the nest — as the thing
+to fix. What this work has is the construction (§10), it on an aerofoil (§11), it in a good mesh
+(§12), the benefit measured (§13b), and a gate-2 failure localised to one corner the literature
+predicts (§12d, §13c).
+
+One honest counterweight, from the research rather than from me: **NASA Glenn's published practice
+for iced aerofoils is not nesting** — it is a thick wrap-around plus overset coupling, which buys
+the no-propagation property from the solver instead. **[V]** So the method is one answer to this
+problem, not the answer.
+
+
+---
+
 ## Sources
 
 Primary, read by me:
