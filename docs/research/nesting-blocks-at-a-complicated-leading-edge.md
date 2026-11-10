@@ -584,6 +584,57 @@ obvious next step — putting one into `make_ch.py`'s near-wall layers — has n
 
 ---
 
+## 11. On an aerofoil — the nest, built
+
+§10c named the untaken step: put a valence-3 nest into an actual aerofoil mesh. Done.
+`nested_wall.json`, generator `make_nested_wall.py`, figure `nested_wall.png`. **26 blocks, 648
+quads, 0 inverted.** A 24-station O-ring round the NACA 0012 with a far-field circle at r = 3,
+and an extra near-wall row that exists over three stations and terminates at a valence-3 corner at
+each end.
+
+### 11a. The step that makes it conformal **[V]**
+
+**At each termination station the FAR-FIELD corner must be OMITTED.** Keep it and the three edges
+around that point enclose a triangular region no quad can fill. Four arrangements were worked
+through and the other three all left that triangle somewhere; this is the one that closes.
+
+Three refusals were hit and each named its own cause, which is how the arrangement was found:
+a `count: null` written instead of omitted; **every station pair being its own circumferential
+class** — a block's opposite sides are (body, far) and (radial, radial), so the radials chain
+round the ring as one class and the circumferential ones do not chain at all, needing one seed
+each; and the ring winding clockwise, because the shipped polyline runs over the upper surface
+first.
+
+### 11b. The measured limit: the nest cannot be THIN **[V]**
+
+Sweeping where the nested ring sits, as a fraction of the body-to-far-field gap:
+
+| band | inverted |
+|------|----------|
+| 0.02 | 9 |
+| 0.04 | 7 |
+| 0.06 | 2 |
+| 0.10 | 2 |
+| **0.15** | **0** |
+
+This is §10b's constraint again on a ring instead of a strip: **a single valence-3 termination
+cannot support a thin nest.** So the construction exists, but at one termination per end it does
+not yet reach boundary-layer thickness — and GridPro's frame spreads each transition over several
+diagonal edges rather than one, which is the obvious thing to try next and was not tried here.
+**[I]** on that being the reason; **[V]** on the sweep.
+
+### 11c. What this is and is not
+
+It is a **topology demonstrator**: 24 stations, straight radials from the body to a circle, no
+clustering and no curvature, so the quality is poor — max 89.6°, mean 30.5°. **It shows that the
+construction holds on an aerofoil, not that it produces a usable mesh.** Nothing here has been put
+into `make_ch.py`, and §6f — the iced case getting worse as blocks were added — is still
+unaddressed, because the cause named there was the far-field map and this section did not touch
+it.
+
+
+---
+
 ## Sources
 
 Primary, read by me:
