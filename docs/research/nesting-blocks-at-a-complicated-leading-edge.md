@@ -367,8 +367,9 @@ The iced case above was asked for and then set aside; this is the other half, an
 the C-grid video actually shows. Added 2026-11-10. Everything here is **[V]**.
 
 **Target: 57 blocks / 3648 cells**, the C-grid video's own status bar (§2). **Built:
-`gridpro_ch_video.{json,dat}` — 56 blocks, 3638 quads, 0 inverted, non-orthogonality max 58.5°,
-mean 3.81°.** Figure `video_scale_cgrid.png`. The cell count is 0.3% from theirs.
+`gridpro_ch_video.{json,dat}` — 56 blocks, 3692 quads, 0 inverted, non-orthogonality max
+52.3°, mean 3.10°.** Figures `video_scale_cgrid.png` and `vs_video_frame.png`. The cell count
+is 1.2% from theirs, and §7d is why the blocking is 2 layers × 8 and not 1 × 22.
 
 ### 7a. 56 and not 57, and it is structural
 
@@ -395,6 +396,33 @@ Caught because the number was exactly twice the swept one.
 dialog legible on the same frame belongs to a different tutorial — its own File Name field points
 at a Y-exhaust directory. So 58.5° / 3.81° are reported against nothing, and no GridPro skew is
 quoted beside them.
+
+### 7d. Is it like the video's mesh? Matching the COUNT did not match the BLOCKING **[V]**
+
+`vs_video_frame.png` puts the video's own frame and the case at one window —
+x ∈ [−0.38, +2.00], y ∈ [−0.47, +0.63] chords, derived by measuring the aerofoil in the frame at
+**406 px chord and 48 px thick, t/c = 0.118**, which is NACA 0012 and confirms the frame is to
+scale. Unlike `fig6` (§28e of the other note), this frame has both the extent and the resolution
+to show block structure, so the comparison is real.
+
+**The first version matched both numbers and looked nothing like it.** 56 blocks as
+`--layers 1 --split 22` is twenty-two chordwise slivers per surface, each running the entire
+radial span. GridPro's frame shows the opposite: the nose wrapped in **concentric bands**, with
+only about five or six chordwise cuts crossing the whole view.
+
+**Spending the same 56 blocks as `--layers 2 --split 8` is closer AND better on every measure:**
+
+| | blocks | cells | inverted | non-ortho max | mean |
+|---|--------|-------|----------|---------------|------|
+| GridPro, stated | 57 | 3648 | — | — (no figure exists, §2a) | — |
+| 1 layer × 22 per surface | 56 | 3638 | 0 | 58.490° | 3.814° |
+| **2 layers × 8 per surface** | 56 | 3692 | 0 | **52.289°** | **3.095°** |
+
+So the honest answer to "is it like the video's" is: **the counts matched from the start and the
+blocking did not, and the picture is what caught it.** What still differs after the change is
+visible in the figure — GridPro's cells are more uniform where mine stay clustered against the
+wall, and its bands curve round the nose more than my wedges do. **[I]** on those two, which are
+read off the frame and not measured.
 
 ### 7c. What is new in the generator
 

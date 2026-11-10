@@ -1,6 +1,7 @@
 # =============================================================================
 # A C/H on the CLEAN NACA 0012, built at the scale GridPro's own C-grid video
-# states: 56 blocks / 3638 cells against its 57 / 3648.
+# states AND arranged the way that video arranges them: 56 blocks / 3692 cells
+# against its 57 / 3648.
 #
 # From docs/research/nesting-blocks-at-a-complicated-leading-edge.md, which
 # records "C-Grid Mesh and Topology in GridPro" (4Jeu-EUXXmo). Its status bar
@@ -19,8 +20,17 @@
 # The cell count is reached with --node-scale, which multiplies the node counts
 # without touching the blocking. Everything else in this directory runs at 1.0.
 #
+# HOW THE BLOCKS ARE SPENT, which matching the COUNT does not settle. The first
+# version put 56 blocks as --layers 1 --split 22: twenty-two chordwise slivers
+# per surface, each running the whole radial span. Put beside the video frame at
+# a matched window that is visibly NOT what GridPro does -- its nose is wrapped
+# in concentric bands and only about five or six chordwise cuts cross the whole
+# view. Spending the same 56 on --layers 2 --split 8 instead is closer to the
+# frame AND better on every measure: worst corner 58.49 -> 52.29 deg, mean
+# 3.81 -> 3.10. Section 7d.
+#
 #   python3 docs/research/gridpro-blocking-method/make_ch.py \
-#       --layers 1 --split 22 --wake 6 --turn-blend 0.8 --node-scale 0.37 \
+#       --layers 2 --split 8 --wake 6 --turn-blend 0.8 --node-scale 0.67 \
 #       --out gridpro_ch_video.json
 #   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch_video.dat
 #
