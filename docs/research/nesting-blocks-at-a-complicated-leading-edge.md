@@ -433,6 +433,53 @@ re-verified byte-identical, as with every other option added in §6.
 
 ---
 
+## 8. The other video's blocking, compared
+
+`vs_icing_video_blocking.png` (`plot_vs_icing_video.py`). §7d compared the C-grid video's
+blocking; this is the icing video's.
+
+### 8a. That frame is a WIREFRAME, which is better for this than a mesh **[V]**
+
+`2FYLCyg8VSA`'s content frame does not show a filled grid at all: it shows **GridPro's block
+wireframe** — yellow block edges, orange square block corners, the iced surface in cyan — with the
+burned-in caption **"The forward nest creates a local nesting (loopback structure)"**. So for a
+blocking comparison it is the better of the two frames: the blocking is the only thing on it.
+
+### 8b. The scale CANNOT be matched, unlike §7d's **[V]**
+
+§7d could align its window because the aerofoil in that frame measures 406 px chord and 48 px
+thick, **t/c = 0.118**, which identifies it as NACA 0012 and fixes the scale. **This frame has no
+such anchor**: the body runs off the right edge of the inset panel (cyan spans x 308…829 against a
+panel edge at 830), so the chord is not in view, and GridPro's own ice geometry is not obtainable
+(§5), so there is no known dimension to scale by. **This comparison is therefore structural only,
+and is not drawn at a matched scale.** Saying so is the difference between this and §28e of the
+other note, where a sub-pixel claim nearly went in.
+
+A second mismatch is mine, not theirs: **their ice is an asymmetric single horn** — one tip
+jutting forward and up, a notch behind it, a smooth lower surface — where the section I built is a
+**symmetric double horn**. That is a shape I chose (§6a), not one measured from them.
+
+### 8c. What the two blockings actually differ in **[V]** on both readings
+
+**GridPro's refinement TERMINATES.** Around the horn its wireframe packs several nested arcs of
+small blocks, and a few block-widths out it is coarse again. The caption names the mechanism —
+a *local* nesting, a *loopback*.
+
+**Mine does not terminate.** Every block boundary at my nose is a line that runs outward and off
+the frame; there is no nesting, and the nose blocks are thin wedges spanning the whole radial
+extent. The picture is §6f's measurement seen directly: adding blocks at the feature took the
+case 8 → 25 → 99 inverted cells, because **every block added at the nose adds a far-field station
+that must be ordered**. GridPro has no such coupling, so it can stop refining wherever it likes.
+
+So the two videos' comparisons land on the same sentence from opposite ends. §7d: on a clean
+section I can match the block COUNT and still spend it differently. §8: on a complicated one I
+cannot spend it the way they do at all, and the wireframe shows why in one picture — **their extra
+blocks stay near the body; mine reach the far field by construction.** **[I]** on the attribution,
+which rests on §6f's measurement rather than on this frame.
+
+
+---
+
 ## Sources
 
 Primary, read by me:
