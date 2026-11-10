@@ -1,7 +1,6 @@
 # =============================================================================
-# A C/H on the CLEAN NACA 0012, built at the scale GridPro's own C-grid video
-# states AND arranged the way that video arranges them: 56 blocks / 3692 cells
-# against its 57 / 3648.
+# A C/H on the CLEAN NACA 0012, blocked the way GridPro's own C-grid video
+# blocks one: 54 blocks / 4320 cells against its 57 / 3648.
 #
 # From docs/research/nesting-blocks-at-a-complicated-leading-edge.md, which
 # records "C-Grid Mesh and Topology in GridPro" (4Jeu-EUXXmo). Its status bar
@@ -20,17 +19,26 @@
 # The cell count is reached with --node-scale, which multiplies the node counts
 # without touching the blocking. Everything else in this directory runs at 1.0.
 #
-# HOW THE BLOCKS ARE SPENT, which matching the COUNT does not settle. The first
-# version put 56 blocks as --layers 1 --split 22: twenty-two chordwise slivers
-# per surface, each running the whole radial span. Put beside the video frame at
-# a matched window that is visibly NOT what GridPro does -- its nose is wrapped
-# in concentric bands and only about five or six chordwise cuts cross the whole
-# view. Spending the same 56 on --layers 2 --split 8 instead is closer to the
-# frame AND better on every measure: worst corner 58.49 -> 52.29 deg, mean
-# 3.81 -> 3.10. Section 7d.
+# HOW THE BLOCKS ARE SPENT, which matching the COUNT does not settle, and which
+# the quality numbers do not settle either. Three arrangements of the same
+# budget, all 0 inverted, put beside the video's own frame at a matched window:
+#   1 layer  x 22 per surface   56 blk   max 58.49  mean 3.81
+#   2 layers x  8 per surface   56 blk   max 52.29  mean 3.10
+#   3 layers x  5 per surface   54 blk   max 52.47  mean 3.42   <-- this file
+#   4 layers x  3 per surface   56 blk   max 65.29  mean 4.51
+# The metrics prefer TWO layers. The picture does not: at two the nose still
+# carries a fan of thin slivers, where GridPro's is wrapped in concentric bands
+# at several radii with only a handful of chordwise cuts. Three layers is what
+# looks like the frame, and it costs 0.18 deg on the worst corner and 0.32 on
+# the mean. CHOSEN BY LOOKING, and the losing numbers are kept above so that is
+# auditable. Section 7d, figure vs_video_blocking.png.
+#
+# 54 and not 56: with 3 layers the count 2*LAYERS*(SPLIT+WAKE) reaches 54 or 60
+# and nothing between, so 54 is the nearest to GridPro's 57 that 3 layers can
+# produce -- and 57 itself is unreachable at any layer count, being odd.
 #
 #   python3 docs/research/gridpro-blocking-method/make_ch.py \
-#       --layers 2 --split 8 --wake 6 --turn-blend 0.8 --node-scale 0.67 \
+#       --layers 3 --split 5 --wake 4 --turn-blend 0.8 --node-scale 0.67 \
 #       --out gridpro_ch_video.json
 #   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch_video.dat
 #
