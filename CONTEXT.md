@@ -79,6 +79,14 @@ One of the four parameterised topology generators — `hgrid`, `ogrid`, `cgrid`,
 outside all four has no family.
 _Avoid_: template, generator, type
 
+**Count**:
+The number of nodes a topology edge carries. It is a SEED, not a requirement: opposite
+sides of a block hold the same number, a shared edge is one edge two blocks name, and
+that single relation partitions every edge into classes. The operator seeds a few and
+the mesher resolves the rest — so a count is a statement about a whole class, never
+about one edge, and the mesher's refusals say so.
+_Avoid_: resolution, density, divisions, node count
+
 **Binding**:
 The attachment of a topology edge to a CAD segment, held as that segment's stable id
 and, along it, a normalised arc length. Re-resampling the CAD does not move a binding;
