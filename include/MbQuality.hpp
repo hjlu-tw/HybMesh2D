@@ -269,6 +269,52 @@ struct MbQualityReport {
     // two percentile rules the shape figures use, so there is still exactly one
     // definition of "median" and "p95" in this report.
     MbAdjacentAreaRatio adjacentAreaRatio;
+
+    // ── THE SIZE JUMP'S TWO HALVES (issue #183) ─────────────────────────────
+    // The same figure over the pairs that STRADDLE a block boundary and over the
+    // pairs inside ONE block, BESIDE `adjacentAreaRatio` and never instead of it —
+    // the split `structuredShape` got in #144, one row down.
+    //
+    // WHY THE WHOLE-MESH FIGURE CANNOT ANSWER THE QUESTION THE SEAM POSES. The two
+    // populations have different causes and different fixes. A pair inside a block
+    // steps by the spacing law the user chose, so a large ratio there is answered by
+    // a growth rate or a count. A pair across a block boundary steps by whether two
+    // independently filled blocks agree on cell size where they meet, so a large
+    // ratio there is answered on the OTHER side of the seam. Mixed, the seam
+    // population is the one that disappears: the shipped O-grid has 4512 pairs
+    // inside blocks against 192 across them, so a seam mismatch cannot move the
+    // median, and the p95 and max are already owned by the wall clustering INSIDE
+    // the blocks — which is arithmetic, not a defect. This is #144's argument
+    // exactly, one figure along.
+    //
+    // IT IS THE FIRST FIGURE ON THIS BANNER WITH A PUBLISHED CRITERION BEHIND IT.
+    // Chi, Zhu, Shih, Slater, Addy & Choo (AIAA-2002-0381), on multi-block grids for
+    // iced aerofoils, require a wrap-around whose thickness is such that "grid
+    // spacing from contiguous blocks will be comparable in size at all block
+    // boundaries", and state that without it "it is impossible to generate a
+    // high-quality multi-block structured grid". That is a rule about the SEAM
+    // population and nothing else, and until this split the report could not be read
+    // against it.
+    //
+    // THE SPLIT COSTS ONE COMPARISON, NOT A SECOND PASS. The pairs were already all
+    // in the sample: adjacency is keyed by shared node id precisely so that a pair
+    // straddling a block boundary is measured like any other, so what was missing
+    // was never the measurement but the ability to separate it.
+    //
+    // A PARTITION, like the band's: every pair `adjacentAreaRatio` counts falls in
+    // exactly one half, so `adjacentAreaRatio.pairs == adjacentSeamRatio.pairs +
+    // adjacentWithinRatio.pairs`. An unmeasurable pair is dropped by the same
+    // reduction in all three, so the identity holds over what was MEASURED rather
+    // than over what was walked.
+    //
+    // AN EMPTY HALF IS NEGATIVE AND ORDINARY, and the seam half is empty on the
+    // shipped square and cavity, which declare one block each and therefore cannot
+    // have a seam pair. Printing it empty rather than suppressing the row is
+    // deliberate: suppression is a third state a reader cannot tell apart from a
+    // build that lacks the figure, where three negatives are this report's existing
+    // and unambiguous word for "not measured".
+    MbAdjacentAreaRatio adjacentSeamRatio;    // pairs straddling a block boundary
+    MbAdjacentAreaRatio adjacentWithinRatio;  // pairs inside one block
 };
 
 // Measure a finished multi-block mesh. Pure, total, and never throws: an empty or

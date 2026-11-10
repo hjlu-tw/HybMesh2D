@@ -280,6 +280,33 @@ and one of them found a hole that is now closed:
   U   check 18 reading the BAND's p95 instead of   -> 1 check, check 18's bar
       the bulk's
 
+AND THE SEAM SPLIT'S ONE (issue #183), a HAND run dated 2026-11-10:
+
+  S2  the block index never COMPARED in            -> 6 checks, and ONLY group
+      ``src/MbQuality.cpp``, so every quad pair        15's per-case count pin, on
+      is classified `within blocks`                    the six cases that HAVE a
+                                                      seam. ``square`` and
+                                                      ``cavity`` stay green
+                                                      because 0 across seams is
+                                                      their TRUE answer — each
+                                                      declares one block — which
+                                                      is why the pins list them
+                                                      at 0 rather than leaving
+                                                      them out. NOTHING ELSE in
+                                                      group 15 moves: the
+                                                      partition still holds
+                                                      (0 + N = N), the ordering
+                                                      check is satisfied by an
+                                                      empty half's three
+                                                      negatives, and the
+                                                      whole-mesh figures are
+                                                      untouched by definition.
+                                                      ``SEAM_PINS`` IS THE WHOLE
+                                                      COVER for this mutation on
+                                                      a real mesh, which is the
+                                                      same hole ``BAND_PINS``
+                                                      exists for one figure along
+
 MEASURED 2026-09-17, at the shipped defaults (``MB_SMOOTH_ITERS`` 20). These are
 the values ``PINS`` carries, and they are a PIN rather than a record now:
 
@@ -429,6 +456,11 @@ _ROWNUM = re.compile(r"^median ([\d.]+), p95 ([\d.]+), max ([\d.]+)$")
 # rows and at the same indent. Matched by their own labels rather than by
 # position, so a row inserted between them cannot silently reassign the figures.
 _HALF = re.compile(r"^      (wall band|bulk)\s+: (.+)$")
+# THE SIZE JUMP'S TWO ROWS (#183), a regex of their own rather than two more
+# alternatives in `_HALF`: these decompose the `Size jump` row and those
+# decompose the `Cell shape` headline, so collecting them into one dict would
+# make group 14's "exactly these two labels" assertion unwritable.
+_JHALF = re.compile(r"^      (across seams|within blocks)\s+: (.+)$")
 _HALFNUM = re.compile(
     r"^median ([\d.]+), p95 ([\d.]+), max ([\d.]+) \(over (\d+) ")
 
@@ -571,6 +603,45 @@ BAND_PINS = {
     "tworing_curve": (2296, 2312),
 }
 
+# THE SIZE JUMP'S TWO COUNTS, PER CASE (issue #183). `(across seams, within
+# blocks)`, pinned for `BAND_PINS`' reason and in its shape: a pin says the
+# CLASSIFICATION moved, not that a number is bad, and only the two COUNTS are
+# pinned because the figures themselves are the mesh's business.
+#
+# IT EXISTS BECAUSE THE INJECTION ROUND FOUND THE SAME HOLE #144's DID. Injection
+# S2 in `tests/cpp/test_mb_quality.cpp` — the block index never compared, so every
+# pair is classified `within` — is invisible to every figure on this line: the
+# whole-mesh four are untouched by definition, and with no per-case count the seam
+# half simply reports 0 pairs on all eight, which is the TRUE answer for two of
+# them. These are what tell the eight apart.
+#
+# SQUARE AND CAVITY PIN A ZERO, AND THAT IS THE POINT OF LISTING THEM. Each
+# declares ONE block, so a pair that straddles a block boundary is not something
+# they happen not to have — it is something they cannot have. The row is still
+# printed for them with three negative figures, because an absent row is a third
+# state a reader cannot tell from a build without the figure.
+SEAM_PINS = {
+    "square": (0, 760),
+    "cavity": (0, 480),
+    # The four interior lines of the H-grid, 18 pairs over them; the H-grid is the
+    # SMALLEST shipped multi-block case and the only one where the seam half is a
+    # sizeable fraction of the whole (18 of 142).
+    "hgrid": (18, 124),
+    # The O-grid's four radials. 192 = 4 x 48, the propagated count less one per
+    # radial, and the ONE shipped case whose seam ratio is exactly 1.000000 at
+    # every sweep count: its four radials are one equivalence class that wraps, so
+    # the blocks either side of each are the same shape by construction.
+    "ogrid": (192, 8928),
+    # The C-grid's three radial interfaces and its wake cut.
+    "cgrid": (144, 11216),
+    # 288 on all three two-ring cases: the four radials of each ring plus the four
+    # `follows` interfaces of the ring seam. Identical across the three because the
+    # BUDGET is identical, which is the comparison #153 and #154 are built on.
+    "tworing": (288, 8832),
+    "tworing_offset": (288, 8832),
+    "tworing_curve": (288, 8832),
+}
+
 failures = []
 
 
@@ -612,7 +683,7 @@ def last_report(out):
     reporting nothing is ``None``, which is how check 17 tells ``not measured``
     from a row that never printed.
     """
-    head, rows, halves = None, {}, {}
+    head, rows, halves, jhalves = None, {}, {}, {}
     seen = False
     for line in out.splitlines():
         if line.startswith("  - Cell shape"):
@@ -620,7 +691,7 @@ def last_report(out):
             head = ({"median": float(m.group(1)), "p95": float(m.group(2)),
                      "max": float(m.group(3)), "cells": float(m.group(4))}
                     if m else None)
-            rows, halves, seen = {}, {}, True
+            rows, halves, jhalves, seen = {}, {}, {}, True
             continue
         if not seen:
             continue
@@ -632,12 +703,20 @@ def last_report(out):
                                    "max": float(n.group(3)),
                                    "cells": float(n.group(4))} if n else None)
             continue
+        m = _JHALF.match(line)
+        if m:
+            n = _HALFNUM.match(m.group(2).strip())
+            jhalves[m.group(1)] = ({"median": float(n.group(1)),
+                                    "p95": float(n.group(2)),
+                                    "max": float(n.group(3)),
+                                    "pairs": float(n.group(4))} if n else None)
+            continue
         m = _ROW.match(line)
         if m:
             rows[m.group(1)] = m.group(2).strip()
         elif line.strip() and not line.startswith("      "):
             seen = False
-    return head, rows, halves
+    return head, rows, halves, jhalves
 
 
 def sidecar(stem):
@@ -674,6 +753,23 @@ def half_of(q, half):
     if q is None or any(f"{METRIC}_{half}_{f}" not in q for f in FIELDS):
         return None
     return {f: q[f"{METRIC}_{half}_{f}"] for f in FIELDS}
+
+
+JUMP = "adjacent_area_ratio"
+JUMP_FIELDS = ("pairs", "median", "p95", "max")
+
+
+def jump_half_of(q, half):
+    """One size-jump half's four figures off a parsed machine line (#183), or None.
+
+    ``half`` is ``"seam"`` or ``"within"``. The count is ``pairs`` and NOT ``cells``
+    — that is the size-jump figure's own rule, since it counts pairs of quads and
+    is therefore neither the quad count nor a fixed multiple of it — which is why
+    this cannot reuse ``half_of`` above however similar the two look.
+    """
+    if q is None or any(f"{JUMP}_{half}_{f}" not in q for f in JUMP_FIELDS):
+        return None
+    return {f: q[f"{JUMP}_{half}_{f}"] for f in JUMP_FIELDS}
 
 
 def midlines(pts, quad):
@@ -752,7 +848,7 @@ def one_case(tmp, name, config_name, blocks):
     check(f"{name}: the shipped case runs and exits 0 (got {rc})", rc == 0)
 
     # --- 1. the banner row ---------------------------------------------------
-    head, rows, halves = last_report(out)
+    head, rows, halves, jhalves = last_report(out)
     check(f"{name}: 1. the banner carries a Cell shape row with median, p95, max "
           f"and the count of structured quads", head is not None)
     if head is None:
@@ -850,6 +946,61 @@ def one_case(tmp, name, config_name, blocks):
           have and all((1.0 <= h["median"] <= h["p95"] <= h["max"]) if h["cells"] > 0
               else all(h[f] < 0.0 for f in FIGURES)
               for h in (lay, blk)))
+
+    # --- 15. THE SIZE JUMP, SPLIT AT THE BLOCK SEAM (issue #183) ------------
+    # The same operation group 14 checks on the shape figure, on the figure that
+    # is computed BETWEEN two cells rather than inside one. It decomposes the
+    # `Size jump` row and nothing above it.
+    seam = jump_half_of(line, "seam")
+    wthn = jump_half_of(line, "within")
+    check(f"{name}: 15. the machine line carries both halves as key=<float> "
+          f"tokens under {JUMP}_seam_* and {JUMP}_within_*",
+          seam is not None and wthn is not None)
+    # NO EARLY RETURN ON A MISSING HALF, for the reason group 14 states one screen
+    # up: injection R took every check below its own early return with it.
+    hasj = seam is not None and wthn is not None
+    if not hasj:
+        seam = wthn = {f: float("nan") for f in JUMP_FIELDS}
+    whole = {f: line.get(f"{JUMP}_{f}", float("nan")) for f in JUMP_FIELDS}
+    check(f"{name}: 15. ...the two halves PARTITION what the whole figure "
+          f"measured, so no pair is counted twice and none is lost between them "
+          f"({seam['pairs']:.0f} + {wthn['pairs']:.0f} = {whole['pairs']:.0f})",
+          hasj and seam["pairs"] + wthn["pairs"] == whole["pairs"])
+    check(f"{name}: 15. ...and the two counts are what they were the day the "
+          f"split was measured ({seam['pairs']:.0f} across seams, "
+          f"{wthn['pairs']:.0f} within blocks, against the pinned "
+          f"{SEAM_PINS[name]}) — a pin says the CLASSIFICATION moved, and its fix "
+          f"is either \"re-measure after reading why\" or \"this is the "
+          f"regression the pin was for\"",
+          hasj and (seam["pairs"], wthn["pairs"])
+          == (float(SEAM_PINS[name][0]), float(SEAM_PINS[name][1])))
+    check(f"{name}: 15. ...the banner prints both as rows under the Size jump "
+          f"row, under distinct labels ({sorted(jhalves)})",
+          set(jhalves) == {"across seams", "within blocks"})
+    check(f"{name}: 15. ...and those rows print the machine line's numbers to the "
+          f"three decimals they show, over the same two counts, so the banner and "
+          f"the line tell one story about the split",
+          hasj and all((jhalves.get(lbl) is None and h["pairs"] == 0)
+              or (jhalves.get(lbl) is not None
+                  and jhalves[lbl]["pairs"] == h["pairs"]
+                  and all(abs(jhalves[lbl][f] - h[f]) < 5e-4 for f in FIGURES))
+              for lbl, h in (("across seams", seam), ("within blocks", wthn))))
+    check(f"{name}: 15. ...each half is ordered and at or above the metric's "
+          f"floor wherever it measured anything, and NEGATIVE throughout where it "
+          f"did not — 1.0 is this figure's floor too, so a 0.0 could only be an "
+          f"absent measurement wearing a number",
+          hasj and all((1.0 <= h["median"] <= h["p95"] <= h["max"])
+                       if h["pairs"] > 0 else all(h[f] < 0.0 for f in FIGURES)
+                       for h in (seam, wthn)))
+    # THE WHOLE'S MAX IS THE LARGER HALF'S, which is group 16's property one
+    # figure along and is what would redden if a half were reduced over the wrong
+    # set while still counting the right number of pairs — the mutation the C++
+    # gate's 11f values are written for, reaching a real mesh here.
+    check(f"{name}: 15. ...and the whole figure's max is the larger half's, so a "
+          f"half reduced over the wrong pairs cannot agree with the row above it",
+          hasj and (whole["pairs"] == 0
+                    or whole["max"] == max(h["max"] for h in (seam, wthn)
+                                           if h["pairs"] > 0)))
 
     # --- 16. TODAY'S SPELLINGS STILL READ THE WHOLE MESH --------------------
     # The compatibility half of the criteria, against LITERAL names rather than
@@ -1143,7 +1294,7 @@ def main() -> int:
             lay = half_of(quality(outs[n]), "layer")
             blk = half_of(quality(outs[n]), "bulk")
             whole = shape_of(quality(outs[n]))
-            _, _, halves = last_report(outs[n])
+            _, _, halves, _ = last_report(outs[n])
             check(f"17. {n}: the banner prints `not measured` for that half "
                   f"rather than 0.0 ({halves})",
                   "wall band" in halves and halves["wall band"] is None)

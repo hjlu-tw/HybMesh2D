@@ -44,8 +44,9 @@ wall first-cell height accuracy, CELL SHAPE and cell count, plus one machine-rea
 `HYBMESH_MB_QUALITY cells=… inverted=… nonortho_max_deg=… nonortho_mean_deg=…
 wall_first_cell_worst_rel=… quad_midline_ratio_cells=… quad_midline_ratio_median=…
 quad_midline_ratio_p95=… quad_midline_ratio_max=… adjacent_area_ratio_pairs=…
-adjacent_area_ratio_median=… adjacent_area_ratio_p95=… adjacent_area_ratio_max=…` line,
-so the acceptance gate is a grep.
+adjacent_area_ratio_median=… adjacent_area_ratio_p95=… adjacent_area_ratio_max=…` line, plus
+the halves each of those two figures is split into (`_layer_*` / `_bulk_*`, `_seam_*` /
+`_within_*`), so the acceptance gate is a grep.
 - **Printed on every run, including a good one** — three of the four numbers are the baseline
   elliptic smoothing is judged against.
 - **Its own module rather than more of `MultiBlock.cpp`**: a different question ("is this mesh
@@ -126,7 +127,9 @@ so the acceptance gate is a grep.
     would change the TOPOLOGY's wake count and not the mesher; the negative control is that a 26th
     wake node moves the max to 3003.344 and moves no other case.
   - **EVERY SHIPPED CASE'S THREE FIGURES ARE PINNED, AND A PIN IS NOT A THRESHOLD** (#140). All
-    five shipped multi-block configs run in `test_multiblock_shape_surface.py`, and each one's
+    EIGHT shipped multi-block configs run in `test_multiblock_shape_surface.py` — the count was
+    FIVE when #140 wrote this and three cases have joined the family since (#153, #154, #175), a
+    drift nothing derives and #183 corrected by counting — and each one's
     median / p95 / max is held against the day it was measured by a check whose label names the
     case. A threshold says a number is BAD; a pin says it MOVED, and its fix is either "re-measure"
     or "this is the regression". The band is DERIVED from the pin: a case at the metric's floor
@@ -205,6 +208,76 @@ change.
   HAND runs, dated 2026-10-12 in that file's docstring.** The SIDECAR half is gated from the GUI
   side — `tests/test_case_type_author.py` and `tests/test_case_type_verdict.py` check 15.
 
+**AND THE SIZE JUMP IS REPORTED AGAIN OVER THE PAIRS THAT CROSS A BLOCK BOUNDARY AND OVER THE
+PAIRS THAT DO NOT, BESIDE THE WHOLE FIGURE AND NEVER INSTEAD OF IT** (`adjacentSeamRatio` /
+`adjacentWithinRatio` in `include/MbQuality.hpp`, the classification in the size-jump pass of
+`src/MbQuality.cpp`, the `across seams` / `within blocks` rows and the eight
+`adjacent_area_ratio_seam_*` / `_within_*` tokens in `src/cli.cpp`; #183). The wall band's split
+one figure along, and the same argument: a percentile over a mixed population describes whichever
+half is larger.
+- **THE TWO POPULATIONS ANSWER DIFFERENT QUESTIONS AND HAVE DIFFERENT FIXES.** A pair inside a
+  block steps by the spacing law the user chose, so a large ratio is answered by a growth rate or
+  a count; a pair across a boundary steps by whether two independently filled blocks agree where
+  they meet, so a large ratio is answered on the OTHER side of the seam. Mixed, the seam
+  population is the one that disappears: the shipped O-grid has **8928** pairs inside blocks
+  against **192** across them.
+- **IT IS THE FIRST FIGURE ON THIS BANNER WITH A PUBLISHED CRITERION BEHIND IT**, which is why the
+  split is worth its rows: Chi, Zhu, Shih, Slater, Addy & Choo (AIAA-2002-0381) require of a
+  multi-block iced-aerofoil grid that "grid spacing from contiguous blocks will be comparable in
+  size at all block boundaries", and state that without it "it is impossible to generate a
+  high-quality multi-block structured grid". That is a rule about the SEAM population and nothing
+  else. **It is still NOT A THRESHOLD here** — the source states no number — and the bar, if one
+  is ever wanted, is a case type's.
+- **AND IT IMMEDIATELY SAID SOMETHING THE MIXED FIGURE COULD NOT.** The smoother's cost to this
+  ratio was known per case and not per PLACE; measured at the shipped default against
+  `MB_SMOOTH_ITERS 0`, the worst pair in the mesh **becomes a seam pair on both two-ring cases**
+  and does not on the others: `tworing` seam max 1.060 -> **1.863** (whole 1.281 -> 1.863),
+  `tworing_offset` 1.040 -> **2.733** (whole 1.395 -> 2.733) — while the C-grid's seam barely
+  moves (1.010 -> 1.055) and its whole-mesh damage is all `within` (1.481 -> 2.276), and the
+  O-grid's seam is **exactly 1.000000 at both**, its four radials being one equivalence class that
+  wraps. So "the smoother costs this figure" is three different statements about three topologies.
+- **A PARTITION**: `adjacentAreaRatio.pairs == adjacentSeamRatio.pairs +
+  adjacentWithinRatio.pairs`, over what was MEASURED rather than over what was walked — an
+  unmeasurable pair is the same negative in all three and `reduceCellShapes` drops it from all
+  three. The identity `structuredShape.cells == structuredLayerShape.cells +
+  structuredBulkShape.cells` one figure up, for its reason.
+- **ONE COMPARISON, NOT A SECOND PASS**: the first owner of an edge records its BLOCK beside its
+  area, and the second owner compares. The pairs were already in this sample — keying by node id
+  is what puts a pair straddling a boundary here at all — so what was missing was never the
+  measurement but the ability to separate it.
+- **`_pairs`, never `_cells`, in both halves**, for the whole figure's own reason; and
+  `<metric>_<half>_*` is the shape the cell-shape figure's halves already use. **EVERY TOKEN THAT
+  EXISTED BEFORE #183 KEEPS ITS SPELLING AND ITS POSITION** — the eight are APPENDED — so `qlines`
+  and every grep reading the line are unaffected.
+- **AN EMPTY SEAM HALF IS NEGATIVE AND ORDINARY, AND ITS ROW IS STILL PRINTED.** The shipped
+  square and cavity declare ONE block each, so they cannot have a pair that straddles anything.
+  **Suppressing the row for them was considered and REFUSED**: an absent row is a third state a
+  reader cannot tell from a build without the figure, where three negatives are this report's
+  existing word for "not measured" — and printing it keeps the partition visible on the banner and
+  lets those two cases pin `(0, 760)` and `(0, 480)`, a stronger statement than an absence. The
+  parenthetical NAMES NO CAUSE, the rule every empty row here follows.
+- **NOTHING REACHES `.provenance.json`**, and that is a decision rather than an omission.
+  `MeshSizeJump`'s sidecar object, `services/mesh_shape_stats.py`, `services/case_type_reference.py`
+  (whose `_SETS` is a FLAT list in which `size_jump` is itself one set, so a half would be a set
+  growing a sub-level — a schema change, not a field) and the two case-type gates that already use
+  `size_jump.max` as a threshold key are ALL untouched. The only thing the sidecar buys is the
+  threshold key space, and this figure deliberately has no threshold; when a bar is wanted there
+  will be exemplars to derive it from, and that is the ticket that should pay for the schema.
+- **EVERY SHIPPED CASE'S TWO COUNTS ARE PINNED** (`SEAM_PINS`), following `BAND_PINS` and for its
+  reason rather than by symmetry: the counts are what a misclassification moves in silence. The
+  hand injection that proves it — the block index never compared, so every pair is classified
+  `within` — reddens **the per-case pin and NOTHING ELSE** on six of the eight cases, the partition
+  still holding at `0 + N = N` and an empty half's three negatives still satisfying the ordering
+  check. `square` and `cavity` stay green under it, because 0 is their true answer.
+- Gated by `tests/cpp/test_mb_quality.cpp` checks 11f and 11g, whose expected values are closed
+  forms as 11a-11e's are and whose seam count is DERIVED from the fixture's own block dimensions
+  rather than written down, and by `tests/test_multiblock_shape_surface.py` group 15 on all eight
+  shipped cases. **Both files' injections are HAND runs, dated 2026-11-10 in their own
+  docstrings**, and one is recorded as having FAILED TO BUILD on the first attempt and reprinted a
+  STALE binary's results — kept, because read as a result it would have confirmed the wrong thing.
+  The PARTITION check in the C++ gate is reddened by none of the three injections ALONE and is
+  recorded there as held twice; it earns its place in the surface gate, over eight real meshes.
+
 **THE REPORT SEPARATES THE WALL-CLUSTERED QUADS FROM THE REST, BESIDE THE WHOLE-MESH FIGURES AND
 NEVER INSTEAD OF THEM** (`wallBandMask` in `src/MbQuality.cpp`, `printMbQuality` in `src/cli.cpp`;
 #144, parent #128). The shipped O-grid's whole-mesh p95 is 23.662 against a median of 1.846: its
@@ -275,7 +348,7 @@ Measured after the split: band 2304 quads at median 5.184 / p95 28.508 / max 32.
   Why: `docs/design_notes/mesher.md`, "THE WALL BAND: what the O-grid's p95 was describing".
 - Gated by `tests/cpp/test_mb_quality.cpp` (21 groups, 105 checks),
   `tests/test_multiblock_quality_surface.py` and `tests/test_multiblock_shape_surface.py` (the
-  shape figures on ALL FIVE shipped multi-block cases, pinned, through the real binary — 18
+  shape figures on ALL EIGHT shipped multi-block cases, pinned, through the real binary — 18
   properties and thirteen hand injections, both enumerated in its own docstring; the assertion
   count is deliberately NOT restated here, being a live figure about another file that no
   `--sync` derivation keeps true). **The C++ gate's

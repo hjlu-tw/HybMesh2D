@@ -534,6 +534,29 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
         std::cout << " (area ratio between quads that share an edge, over " << sj.cells
                   << " pairs; 1.0 is no change, and it is a SIZE where the"
                      " non-orthogonality above is an angle)\n";
+    // THE TWO HALVES, BESIDE THE WHOLE AND NOT INSTEAD OF IT (issue #183), the way
+    // the wall band's two rows sit under the shape headline. They decompose THIS
+    // row and not that one: a pair inside a block steps by the spacing law the user
+    // chose, a pair across a boundary by whether two independently filled blocks
+    // agree where they meet, and the two are answered in different places.
+    //
+    // Same `printShapeHalf` as the band's rows, so an empty half says `not measured`
+    // in the words every other row says it in and NAMES NO CAUSE — and an empty seam
+    // half is ORDINARY here: the shipped square and cavity declare one block each,
+    // so they cannot have a pair that straddles anything. The row is still PRINTED
+    // for them, because suppressing it would be a third state a reader cannot tell
+    // apart from a build that does not have the figure, where three negatives are
+    // this report's existing word for "not measured".
+    {
+        const hybmesh::ShapeStats sjSeam{
+            q.adjacentSeamRatio.pairs, q.adjacentSeamRatio.median,
+            q.adjacentSeamRatio.p95, q.adjacentSeamRatio.max};
+        const hybmesh::ShapeStats sjWithin{
+            q.adjacentWithinRatio.pairs, q.adjacentWithinRatio.median,
+            q.adjacentWithinRatio.p95, q.adjacentWithinRatio.max};
+        printShapeHalf("across seams", sjSeam, "pairs straddling a block boundary");
+        printShapeHalf("within blocks", sjWithin, "pairs inside one block");
+    }
 
     // One machine-readable line, in the shape of the HYBMESH_ERROR convention, so
     // the acceptance gate this instrument exists for is a grep rather than a prose
@@ -596,6 +619,21 @@ static void printMbQuality(const hybmesh::MbQualityReport& q,
        << " adjacent_area_ratio_median=" << q.adjacentAreaRatio.median
        << " adjacent_area_ratio_p95=" << q.adjacentAreaRatio.p95
        << " adjacent_area_ratio_max=" << q.adjacentAreaRatio.max;
+    // THE TWO HALVES' EIGHT TOKENS (issue #183), APPENDED after the four above for
+    // the reason those four were appended after #144's: every token that existed
+    // before this ticket keeps its spelling AND its position for the greps and for
+    // `qlines`, the one parser six gates import. `<metric>_<half>_*` is the shape
+    // the shape figures' halves already use, and the count is `_pairs` here for the
+    // field's own reason — it counts PAIRS, and spelling it `cells` would make two
+    // different quantities look like one under two prefixes.
+    mr << " adjacent_area_ratio_seam_pairs=" << q.adjacentSeamRatio.pairs
+       << " adjacent_area_ratio_seam_median=" << q.adjacentSeamRatio.median
+       << " adjacent_area_ratio_seam_p95=" << q.adjacentSeamRatio.p95
+       << " adjacent_area_ratio_seam_max=" << q.adjacentSeamRatio.max
+       << " adjacent_area_ratio_within_pairs=" << q.adjacentWithinRatio.pairs
+       << " adjacent_area_ratio_within_median=" << q.adjacentWithinRatio.median
+       << " adjacent_area_ratio_within_p95=" << q.adjacentWithinRatio.p95
+       << " adjacent_area_ratio_within_max=" << q.adjacentWithinRatio.max;
     std::cout << mr.str() << std::endl;
 }
 

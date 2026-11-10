@@ -917,6 +917,113 @@ sidecar carries it either way, which is what the judging layer needed. And the h
 path still publishes no smoothness figure of any kind — it has no structured quad, so
 this is a different measurement rather than a port of this one.
 
+**THE SIZE JUMP, SPLIT AT THE BLOCK SEAM — AND THE FIRST FIGURE HERE WITH A PUBLISHED
+CRITERION BEHIND IT** (`adjacentSeamRatio` / `adjacentWithinRatio` in
+`include/MbQuality.hpp`, the classification in the size-jump pass of
+`src/MbQuality.cpp`, the `across seams` / `within blocks` rows and the eight
+`adjacent_area_ratio_seam_*` / `_within_*` tokens in `src/cli.cpp`; #183, 2026-11-10).
+
+WHERE IT CAME FROM, AND IT IS NOT WHERE THE FEATURE ENDED UP. The question put to
+this repo was whether it should acquire GridPro's **local block nesting** — the
+technique of inserting extra blocks at a complicated leading edge and taking them
+away again further out. The answer was NO, and that is recorded in
+`docs/research/nesting-blocks-at-a-complicated-leading-edge.md` §14 rather than here,
+because nothing was built for it. What the research that produced the "no" DID turn
+up is this: a published, checkable rule about block boundaries, pointed at an
+instrument this repo already had and could not read.
+
+THE RULE. Chi, Zhu, Shih, Slater, Addy & Choo, *Computing Aerodynamic Performance of
+a 2D Iced Airfoil: Blocking Topology and Grid Generation* (AIAA-2002-0381), on
+multi-block grids for iced aerofoils, prescribe a wrap-around block whose "thickness
+... is such that **grid spacing from contiguous blocks will be comparable in size at
+all block boundaries**", and state that without it "it is impossible to generate a
+high-quality multi-block structured grid". That is a statement about the pairs of
+cells that face each other ACROSS a seam, and about no other pairs. Every figure on
+this banner before #183 was one this repo invented and justified for itself; this is
+the first with an outside source stating what it is for. **It is still not a
+threshold** — "comparable in size" carries no number, and a bar belongs to a case
+type where there are exemplars to derive one from.
+
+WHY IT WAS CHEAP, which is the whole reason it was worth doing at all. `540c9df`
+keyed adjacency by NODE ID rather than by logical `(i, j)` specifically so that "a
+pair straddling a block boundary is measured like any other" — its own header says
+so. The seam pairs were therefore already in the sample, and had been for a month.
+They were simply reduced into one median with the thousands of pairs inside blocks,
+where they cannot move it: the shipped O-grid has 8928 pairs inside blocks against
+192 across them. The change is that the first owner of an edge now records WHICH
+BLOCK it came from beside its area, and the second owner compares two integers.
+
+AND IT PAID ON THE FIRST RUN, WHICH WAS NOT GUARANTEED. The rule file already
+recorded that the elliptic smoother costs this figure on every shipped case measured
+— `mb_ogrid` 1.19 -> 1.40, `mb_cgrid` 1.40 -> 1.90, `mb_tworing_offset` 1.24 -> 2.84.
+What it could not say is WHERE that cost lands, and the answer turns out to differ by
+topology. Measured at the shipped default against `MB_SMOOTH_ITERS 0`, worst pair in
+the mesh:
+
+| case | whole 0 -> 20 | across seams | within blocks |
+|------|---------------|--------------|---------------|
+| `tworing` | 1.281 -> 1.863 | 1.060 -> **1.863** | 1.281 -> 1.676 |
+| `tworing_offset` | 1.395 -> 2.733 | 1.040 -> **2.733** | 1.395 -> 1.893 |
+| `cgrid` | 1.481 -> 2.276 | 1.010 -> 1.055 | 1.481 -> **2.276** |
+| `ogrid` | 1.299 -> 1.558 | 1.000 -> **1.000** | 1.299 -> 1.558 |
+| `hgrid` | 1.532 -> 1.532 | 1.532 -> 1.532 | 1.274 -> 1.287 |
+
+On **both two-ring cases the worst pair in the whole mesh becomes a seam pair**; on
+the C-grid and the O-grid the seam is nearly untouched and the damage is inside
+blocks. The O-grid's seam reads **exactly 1.000000 at every cap**, which is not luck:
+its four radials are one equivalence class that wraps, so the blocks either side of
+each are the same shape by construction. "The smoother costs this figure" was one
+sentence; it is three different facts about three topologies.
+
+**AND THE MEASUREMENT THAT PRODUCED THAT TABLE WAS WRONG THE FIRST TIME, in the way
+this repo keeps meeting.** The first run compared `-mb_smooth_iters 0` against
+`-mb_smooth_iters 20` on the command line and reported every figure IDENTICAL at both
+— which read as "the smoother does not touch this figure", a clean and publishable
+negative. There is no such CLI flag. It was parsed as nothing, both runs took the
+default 20, and the comparison was one mesh against itself. The banner says
+`Smoothing Sweeps : 20` on both, which is what caught it. The gates' own habit is the
+fix and was already written down: **every gate that means "unsmoothed" says
+`MB_SMOOTH_ITERS 0`** in the config, never on the command line.
+
+WHAT IS DELIBERATELY NOT DONE. **Nothing reaches `.provenance.json`.** The sidecar's
+`MeshSizeJump`, `services/mesh_shape_stats.py`, `services/case_type_reference.py` and
+the two case-type gates that already use `size_jump.max` as a threshold key are all
+untouched. The only thing the sidecar buys is the threshold key space, and this
+figure deliberately has no threshold; and `_SETS` there is a FLAT list in which
+`size_jump` is itself one set, so a half would be a set growing a SUB-LEVEL — a
+schema change reaching four readers, not a field addition. When a bar is wanted there
+will be exemplars to derive it from, and that ticket should pay for the schema.
+
+THE ROW IS PRINTED EVEN WHEN IT CANNOT HAVE A PAIR, and suppressing it was considered
+and refused. The shipped square and cavity declare ONE block each. An absent row is a
+third state a reader cannot tell apart from a build that lacks the figure, where
+three negative figures are this report's existing and unambiguous word for "not
+measured"; printing it also keeps the partition visible on the banner, and lets those
+two cases pin `(0, 760)` and `(0, 480)` — which additionally pins that the within
+half got everything, a stronger statement than an absence. The adjacent precedent
+agreed: #144's wall band prints an empty row for exactly these two cases and the rule
+file calls that ORDINARY.
+
+THE GATE, AND THE INJECTION THAT CORRECTED ITS OWN RATIONALE. `tests/cpp/test_mb_quality.cpp`
+checks 11f and 11g reuse check 11c's two-block fixture, whose expected seam count is
+DERIVED in-test from the block's own node count rather than written down. Three hand
+injections, 2026-11-10: the two halves swapped (8 checks), the block index never
+compared (5, all in 11f), an empty seam half reported as 1.0 (1, check 11g alone).
+**The first falsified the comment written beside it** — it claimed a swap leaves the
+counts correct, and it does not, because this fixture's halves are 4 and 48 and the
+swap moves both. The comment now says what only the VALUES can see: a mutation that
+classifies every pair correctly and reduces the wrong numbers. **And the PARTITION
+check is reddened by none of the three alone**, recorded as held twice rather than
+quietly kept; it earns its place in the surface gate, where eight real meshes pin two
+counts each.
+
+A FOURTH INJECTION IS RECORDED BECAUSE IT DID NOT RUN. Forcing `straddles` to a bare
+`false` leaves the lookup above it unused, `-Werror,-Wunused-variable` refused the
+build, and the test binary from the PREVIOUS injection ran instead and reprinted its
+eight failures. Read as a result that would have been the second injection
+"confirmed" by a run that never happened — the stale-binary trap, caught here only
+because the failure list was identical to the one before it.
+
 **THE WALL BAND: what the O-grid's p95 was describing** (`wallBandMask` in
 `src/MbQuality.cpp`; issue #144, parent #128, and the multi-block twin of #143).
 

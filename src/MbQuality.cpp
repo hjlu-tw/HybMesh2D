@@ -354,9 +354,28 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
     // at most two quads on any edge; counting a third would invent a pair that
     // does not exist, so the ratio is taken once, when the SECOND owner arrives,
     // and later owners only advance the count.
+    // THE HALVES COST ONE COMPARISON, NOT A SECOND PASS (issue #183). The first
+    // owner of an edge records WHICH BLOCK it came from beside its area; when the
+    // second owner arrives, the two block indices decide which half the pair joins.
+    // The pairs were already all in this sample — keying by node id is what puts a
+    // pair straddling a block boundary here at all — so what was missing was never
+    // the measurement but the ability to separate it. See `MbQualityReport`'s own
+    // declaration for why the two populations answer different questions.
+    //
+    // THE RATIO IS PUSHED INTO THE WHOLE AND INTO ITS HALF, never computed once and
+    // partitioned afterwards: `measureHybridCellShapes` reduces its two halves the
+    // same way and for the same reason, so the report's one rule about measurability
+    // cannot hold in one set and not in another. An unmeasurable pair is the same
+    // negative in both, and `reduceCellShapes` drops it from both, which is what
+    // makes the partition hold over what was MEASURED rather than over what was
+    // walked.
     std::vector<double> jumps;
+    std::vector<double> seamJumps;
+    std::vector<double> withinJumps;
     std::unordered_map<unsigned long long, std::pair<double, int>> byEdge;
-    for (const MbBlock& b : mesh.blocks) {
+    std::unordered_map<unsigned long long, size_t> byEdgeBlock;
+    for (size_t bi = 0; bi < mesh.blocks.size(); ++bi) {
+        const MbBlock& b = mesh.blocks[bi];
         if (!blockIsWalkable(b)) continue;
         for (int j = 0; j + 1 < b.nj; ++j) {
             for (int i = 0; i + 1 < b.ni; ++i) {
@@ -370,6 +389,7 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
                     auto it = byEdge.find(key);
                     if (it == byEdge.end()) {
                         byEdge.emplace(key, std::make_pair(a, 1));
+                        byEdgeBlock.emplace(key, bi);
                         continue;
                     }
                     if (++it->second.second != 2) continue;
@@ -379,7 +399,14 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
                     // negative entry here — `reduceCellShapes` drops those, so a
                     // pair nobody could measure never becomes a 1.0 that reads as
                     // a perfectly smooth one.
-                    jumps.push_back(lo > 0.0 ? hi / lo : -1.0);
+                    const double r = lo > 0.0 ? hi / lo : -1.0;
+                    jumps.push_back(r);
+                    // THE FIRST OWNER'S BLOCK IS ALWAYS RECORDED beside its area, so
+                    // this lookup cannot miss; it is read rather than `at`-ed to keep
+                    // this loop total, the property the whole module is written to.
+                    auto bit = byEdgeBlock.find(key);
+                    const bool straddles = bit != byEdgeBlock.end() && bit->second != bi;
+                    (straddles ? seamJumps : withinJumps).push_back(r);
                 }
             }
         }
@@ -389,6 +416,18 @@ hybmesh::MbQualityReport hybmesh::measureMbQuality(const MbResult& mesh) {
     q.adjacentAreaRatio.median = sj.median;
     q.adjacentAreaRatio.p95 = sj.p95;
     q.adjacentAreaRatio.max = sj.max;
+
+    const ShapeStats sjSeam = reduceCellShapes(std::move(seamJumps));
+    q.adjacentSeamRatio.pairs = sjSeam.cells;
+    q.adjacentSeamRatio.median = sjSeam.median;
+    q.adjacentSeamRatio.p95 = sjSeam.p95;
+    q.adjacentSeamRatio.max = sjSeam.max;
+
+    const ShapeStats sjWithin = reduceCellShapes(std::move(withinJumps));
+    q.adjacentWithinRatio.pairs = sjWithin.cells;
+    q.adjacentWithinRatio.median = sjWithin.median;
+    q.adjacentWithinRatio.p95 = sjWithin.p95;
+    q.adjacentWithinRatio.max = sjWithin.max;
 
     return q;
 }

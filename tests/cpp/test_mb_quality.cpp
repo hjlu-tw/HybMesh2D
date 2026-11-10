@@ -159,6 +159,27 @@
 //      two lookups agree exactly — CHECK 11c AND ITS TWO-BLOCK FIXTURE EXIST
 //      BECAUSE OF THIS INJECTION, and no single-block document can replace them.
 //
+// AND THE SEAM-SPLIT ROUND'S THREE (issue #183), HAND RUNS DATED 2026-11-10, each
+// recorded with what it does NOT redden:
+//
+//   S1. the two halves SWAPPED -> 8 failures: 11f's two counts, 11f's three values
+//       and all three of 11g. It does NOT redden the PARTITION check — 4 + 48 is 52
+//       either way — which is the whole reason that check is recorded as held twice
+//       rather than treated as this split's gate.
+//   S2. the block index never COMPARED, so every pair is classified `within` ->
+//       5 failures, all in 11f. It does NOT redden 11g, and cannot: a one-block
+//       document has every pair inside a block already, so that fixture agrees with
+//       the mutation. 11f AND ITS TWO-BLOCK FIXTURE ARE THE WHOLE COVER for this.
+//   S3. an empty seam half reported as a perfect 1.0 instead of left negative ->
+//       1 failure, check 11g ALONE, which is the check written for it. The report's
+//       one rule, reaching the second figure to arrive after it was written down.
+//
+// A fourth was attempted and is recorded because it did NOT run: `straddles` forced
+// to a bare `false` leaves the lookup above it unused, which `-Werror,-Wunused-
+// variable` refuses, so the build failed and the STALE binary reprinted S1's eight
+// failures. Read as a result it would have been S2 "confirmed" by a run that never
+// happened. S2 above keeps the lookup and compares against a false literal instead.
+//
 // What survives that limitation is the two NEGATIVE CONTROLS below, which are
 // permanent because they measure the injections' own premises inside the test:
 // check 6 computes its bow-tie's shoelace area (an area test really would pass
@@ -980,6 +1001,84 @@ int main() {
               && q.adjacentAreaRatio.max < 0.0,
               "11d. ...so all three statistics are NEGATIVE, never the 1.0 that would "
               "read as a mesh with no size step in it");
+    }
+    {
+        // ── 11f. THE SIZE JUMP'S TWO HALVES (issue #183) ────────────────────
+        // The same fixture 11c earns the node-id lookup with, now asked WHERE its
+        // one bad step is. Every expected value is still a closed form of the
+        // document: the interface carries the propagated count, so the number of
+        // pairs straddling it is one less than the block's own node count in that
+        // direction, and the step across it is the two blocks' width ratio while
+        // the step inside either of them is nothing at all.
+        const MbResult m = build(twoBlocks(5, 2.0));
+        CHECK(m.ok, "11f. two blocks sharing one interface fill");
+        const MbQualityReport q = hybmesh::measureMbQuality(m);
+
+        // A PERMANENT NEGATIVE CONTROL, in check 2's and check 6's shape: the
+        // expected seam count is DERIVED from the mesh's own dimensions here, so
+        // the number below is not a 4 somebody read off a run and wrote down. The
+        // left block's east side IS the interface, so its `nj` nodes bound `nj - 1`
+        // quad pairs across it.
+        const int acrossPairs = m.blocks.at(0).nj - 1;
+        CHECK(acrossPairs == 4,
+              "11f. the fixture's interface really does bound 4 pairs, derived from "
+              "the block's own node count rather than assumed");
+
+        CHECK(q.adjacentSeamRatio.pairs == static_cast<size_t>(acrossPairs),
+              "11f. the seam half counts exactly the pairs that straddle the "
+              "interface");
+        CHECK(q.adjacentWithinRatio.pairs == 48,
+              "11f. ...and the within half the 24 inside each block");
+        // THE PARTITION. Every pair the headline counted falls in exactly one half,
+        // over what was MEASURED rather than over what was walked — an unmeasurable
+        // pair is the same negative in all three and the reduction drops it from
+        // all three.
+        //
+        // NO INJECTION OF THIS ROUND REDDENS IT ALONE, and that is recorded rather
+        // than repaired. The three below all move a per-half count as well, and the
+        // counts here are pinned to exact numbers, so on THIS fixture the partition
+        // is held twice — the shape this file already records for the declared-corner
+        // freeze. It earns its place in the SURFACE gate instead, where eight real
+        // meshes pin two counts each and this identity is what makes "and nothing
+        // was dropped between the rows" checkable on all of them.
+        CHECK(q.adjacentSeamRatio.pairs + q.adjacentWithinRatio.pairs
+              == q.adjacentAreaRatio.pairs,
+              "11f. ...so the two halves partition the whole and nothing is dropped "
+              "between the rows");
+
+        // THE VALUES, AND WHAT THEY ADD OVER THE COUNTS IS NARROWER THAN IT LOOKS.
+        // Injection S1 (the two halves swapped) reddens the COUNTS here as well,
+        // because this fixture's halves are 4 and 48 and the swap moves both — so
+        // "the counts cannot see a swap" would be false and is not claimed. What
+        // only these can see is a mutation that classifies every pair CORRECTLY and
+        // then reduces the wrong numbers into a half: the counts and the partition
+        // are all still exact, and the arithmetic is wrong.
+        CHECK_NEAR(q.adjacentSeamRatio.max, 2.0, 1e-9,
+                   "11f. the SEAM half carries the step, and it is the two blocks' "
+                   "width ratio exactly");
+        CHECK_NEAR(q.adjacentSeamRatio.median, 2.0, 1e-9,
+                   "11f. ...on every one of its pairs, not merely its worst");
+        CHECK_NEAR(q.adjacentWithinRatio.max, 1.0, 1e-9,
+                   "11f. ...while the WITHIN half steps by nothing at all, which is "
+                   "what makes a swap of the two visible here and in no count above");
+    }
+    {
+        // ── 11g. A SINGLE-BLOCK DOCUMENT CANNOT HAVE A SEAM PAIR ────────────
+        // The state the shipped square and cavity are in. The row is still printed
+        // for them (`src/cli.cpp`), and what it must carry is the report's own word
+        // for "not measured" rather than a flattering 1.0 — 11d's rule, reaching the
+        // half that arrived after it was written down.
+        const MbQualityReport q = hybmesh::measureMbQuality(build(unitSquare(5, 5)));
+        CHECK(q.adjacentSeamRatio.pairs == 0,
+              "11g. one block forms no pair that straddles anything");
+        CHECK(q.adjacentSeamRatio.median < 0.0 && q.adjacentSeamRatio.p95 < 0.0
+              && q.adjacentSeamRatio.max < 0.0,
+              "11g. ...so its three statistics are NEGATIVE, never the 1.0 that would "
+              "read as a perfectly matched seam on a mesh that has none");
+        CHECK(q.adjacentWithinRatio.pairs == q.adjacentAreaRatio.pairs
+              && q.adjacentWithinRatio.pairs == 24,
+              "11g. ...and the within half is then the whole figure, so the partition "
+              "holds in the degenerate case too");
     }
     {
         // INDEPENDENT OF `MB_SPLIT_QUADS`, for the reason the shape figures are and
