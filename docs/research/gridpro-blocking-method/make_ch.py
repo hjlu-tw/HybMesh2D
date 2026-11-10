@@ -50,6 +50,8 @@ from make_rings import (read_body, arc_table, at_fraction, te_rays,   # noqa: E4
 
 BODY = "examples/geometries/naca0012_cgrid.dat"
 BODY_NAME = "naca0012_cgrid.dat"
+# --body re-points both. The binding carries the BASENAME, which is what the
+# mesher matches its GEOM_FILE against, so the two must move together.
 
 # The far-field rectangle, in chords. 9 x 6 is the DEFAULT because it is the
 # extent the O-ring cases of sections 9-11 are closest to -- their far field is
@@ -65,6 +67,10 @@ CURVED = True                   # radials as the arc that leaves perpendicular
 ARC_OUT = False                 # ... and KEEP curving on the layers outside it
 ARC_OUT_W = 1.0                 # how far toward perpendicular-at-the-far-field
 ARC_OUT_C = (0.25, 0.0)         # the centre those arcs aim radially out from
+FAR_BY_ARC = 0.0                # blend the far-field map toward ARC LENGTH
+FAR_MONO = False                # ... or repair the cast where it reverses
+PIN_TIPS = 0                    # snap stations onto the sharpest features
+PIN_CONCAVE = False             # ... including the concave ones
 LAYERS = 1                      # radial layers from the body out to the far field
 LAYER_GROWTH = 5.0              # how fast those bands thicken outward
 WALL_BAND = 0.05                # the innermost band's thickness, in chords
@@ -367,6 +373,55 @@ def arc_perp_at_far(p_inner, p_outer):
     return cv
 
 
+def curvature_peaks(poly, k_max):
+    """Arc-length fractions of the ``k_max`` sharpest convex features of ``poly``.
+
+    THE METHOD'S OWN MOVE, and the one a station LAW cannot make. Every station
+    law in this file -- equal arc, equal normal turn, the lerp between them --
+    spaces stations by a rule and so lands a block corner ON a salient feature
+    only by luck. GridPro's method is the opposite way round: the complicated
+    part of the geometry gets block corners BECAUSE it is complicated. On the
+    iced section beside this file the single remaining fold sits at (0.016,
+    0.074), which is the upper horn's tip -- measured -- so the block edge was
+    cutting across the tip instead of meeting it.
+
+    Convex only: a concave valley wants a station too, but a corner declared in
+    a concave feature folds the block inside it, and the ice valley is exactly
+    that. Measured sign convention: this polyline is traversed with the body on
+    the left, so a convex tip turns one way and the valley the other.
+    """
+    n = len(poly)
+    s_tab, total = arc_table(poly)
+    turn = [0.0] * n
+    for i in range(1, n - 1):
+        ax, ay = poly[i][0] - poly[i - 1][0], poly[i][1] - poly[i - 1][1]
+        bx, by = poly[i + 1][0] - poly[i][0], poly[i + 1][1] - poly[i][1]
+        la, lb = math.hypot(ax, ay), math.hypot(bx, by)
+        if la == 0.0 or lb == 0.0:
+            continue
+        cross = (ax * by - ay * bx) / (la * lb)
+        dot = (ax * bx + ay * by) / (la * lb)
+        ang = math.degrees(math.atan2(cross, dot))
+        turn[i] = ang / max(1e-12, 0.5 * (la + lb))     # degrees per unit arc
+    sign = 1.0 if sum(turn) >= 0.0 else -1.0
+    cand = []
+    for i in range(2, n - 2):
+        v = sign * turn[i]
+        if v > 0.0 and v >= sign * turn[i - 1] and v >= sign * turn[i + 1]:
+            cand.append((v, s_tab[i] / total))
+        elif PIN_CONCAVE and v < 0.0 and v <= sign * turn[i - 1] \
+                and v <= sign * turn[i + 1]:
+            cand.append((-v, s_tab[i] / total))
+    cand.sort(reverse=True)
+    out, kept = [], []
+    for v, f in cand:
+        if all(abs(f - g) > 0.02 for g in kept):          # one station per feature
+            kept.append(f); out.append((v, f))
+        if len(kept) >= k_max:
+            break
+    return sorted(f for _, f in out)
+
+
 def build(split, wake_n):
     pts, seg_up, seg_lo = read_body(os.path.join(ROOT, BODY))
     te, rays, sector = te_rays(pts, 3)
@@ -458,8 +513,22 @@ def build(split, wake_n):
             return t          # BIT FOR BIT, not e + (t - e) * 1.0, which is not
         e = [k / split for k in range(1, split)]
         return [e[i] + (t[i] - e[i]) * TURN_BLEND for i in range(split - 1)]
-    fu = mix(seg_up)                            # te -> le along seg 0
-    fl = mix(seg_lo)                            # le -> te along seg 1
+    def pin(fr, poly):
+        """Snap the nearest station onto each sharp convex feature."""
+        if PIN_TIPS <= 0:
+            return fr
+        fr = list(fr)
+        for f in curvature_peaks(poly, PIN_TIPS):
+            j = min(range(len(fr)), key=lambda k: abs(fr[k] - f))
+            fr[j] = f
+        fr.sort()
+        for i in range(1, len(fr)):                       # keep it strictly increasing
+            if fr[i] <= fr[i - 1]:
+                fr[i] = fr[i - 1] + 1e-6
+        return fr
+
+    fu = pin(mix(seg_up), seg_up)               # te -> le along seg 0
+    fl = pin(mix(seg_lo), seg_lo)               # le -> te along seg 1
     tpar = {}
     for i in range(1, split):
         pu, nu = at_fraction(seg_up, fu[i - 1])
@@ -518,10 +587,78 @@ def build(split, wake_n):
     # ends and ran a monotone cubic through them by body arc length; the normal
     # cast below made it unreachable and it was deleted rather than left in.
     far_s = dict(anchor)
+
+    # --far-by-arc BLENDS THAT MAP TOWARD ARC LENGTH, and exists because the
+    # normal cast above is not monotone on a COMPLICATED leading edge. A glaze
+    # ice double horn has a concave valley at the stagnation point, so two
+    # neighbouring stations' normals converge and their far-field landings swap
+    # order; the check below then refuses, as it should. Measured on the iced
+    # section beside this file: refused at EVERY --turn-blend from 0.0 to 1.0,
+    # so it is the map and not the station law.
+    #
+    # Arc length is monotone BY CONSTRUCTION, and the block comment above
+    # records why it is not simply used: on a clean section it put mid-chord
+    # opposite x = -1.89 and measured 18.2 deg mean non-orthogonality. So this
+    # is a blend with both ends known to be wrong in opposite ways, and the
+    # shipped value is the smallest that makes the iced case monotone.
+    if FAR_BY_ARC > 0.0:
+        run = [0.0]
+        for i in range(1, len(walk)):
+            a, b = t.pos[node(walk[i - 1][0])], t.pos[node(walk[i][0])]
+            run.append(run[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
+        if run[-1] > 0.0:
+            for i in range(len(walk)):
+                by_arc = fs[-1] * run[i] / run[-1]
+                far_s[i] = far_s[i] * (1.0 - FAR_BY_ARC) + by_arc * FAR_BY_ARC
+
+    # --far-monotone KEEPS THE CAST AND REPAIRS ONLY WHERE IT REVERSES. Both
+    # maps available before this one are unusable on a complicated leading edge,
+    # and the measurement says which half each fails:
+    #   * the normal cast is what a usable mesh needs -- clean section, 0
+    #     inverted, 1.840 deg mean -- and it is NOT monotone on an iced nose,
+    #     so it is refused outright;
+    #   * arc length is monotone by construction and FOLDS, and it folds the
+    #     CLEAN section too: 1786 inverted of 14320, 42.4 deg mean. That control
+    #     is what shows the folding is the map and not the ice (section 29b).
+    # So neither end is right, and a blend of two unusable things was not going
+    # to be either -- measured, every blend from 0.2 to 0.8 still refused.
+    # Isotonic regression is the minimum-change repair: it is the nearest
+    # non-decreasing sequence in least squares, so every entry the cast already
+    # ordered correctly is left EXACTLY where the cast put it, and only a
+    # violating run is averaged. How many entries move is REPORTED, not hidden.
+    if FAR_MONO:
+        v = [far_s[i] for i in range(len(walk))]
+        before = list(v)
+        lvl, wt = [], []                                  # pool adjacent violators
+        for x in v:
+            lvl.append(x); wt.append(1.0)
+            while len(lvl) > 1 and lvl[-2] > lvl[-1]:
+                x2, w2 = lvl.pop(), wt.pop()
+                x1, w1 = lvl.pop(), wt.pop()
+                lvl.append((x1 * w1 + x2 * w2) / (w1 + w2)); wt.append(w1 + w2)
+        v, k = [], 0
+        for x, w in zip(lvl, wt):
+            v.extend([x] * int(round(w)))
+        eps = 1e-9 * max(1.0, fs[-1])
+        for i in range(1, len(v)):                        # break the ties PAVA leaves
+            if v[i] <= v[i - 1]:
+                v[i] = v[i - 1] + eps
+        moved = [i for i in range(len(v)) if abs(v[i] - before[i]) > eps]
+        if moved:
+            worst = max(abs(v[i] - before[i]) for i in moved)
+            print("  --far-monotone repaired %d of %d far-field stations "
+                  "(worst move %.4g, %.2f%% of the far-field path)"
+                  % (len(moved), len(v), worst, 100.0 * worst / fs[-1]))
+        for i in range(len(v)):
+            far_s[i] = v[i]
+
     for i in range(len(walk) - 1):                       # it must stay increasing
         if far_s[i + 1] <= far_s[i]:
             raise SystemExit("the far-field map is not monotone at walk entry "
-                             "%d; two radials would cross" % i)
+                             "%d; two radials would cross%s" % (i,
+                             "" if FAR_BY_ARC > 0 else
+                             " (--far-by-arc blends this map toward arc length, "
+                             "which is monotone by construction -- section 29)"))
     for i in range(len(walk)):
         t.free("F%d" % i, path_at(fp, fs, far_s[i]))
 
@@ -716,6 +853,29 @@ def main():
                     help="body stretches per surface")
     ap.add_argument("--wake", type=int, default=4,
                     help="stretches along the wake, each side of the cut")
+    ap.add_argument("--pin-tips", type=int, default=0,
+                    help="snap a station onto each of the N sharpest CONVEX "
+                         "features of each surface, so a block corner meets the "
+                         "feature instead of a block edge cutting across it "
+                         "(section 29d)")
+    ap.add_argument("--pin-concave", action="store_true",
+                    help="let --pin-tips also pin CONCAVE features. Excluded at "
+                         "first on the assumption that a corner declared inside "
+                         "a concave feature folds the block there; section 29d "
+                         "tested that and it is the opposite")
+    ap.add_argument("--far-monotone", action="store_true",
+                    help="keep the normal cast and repair only the stations "
+                         "where it reverses, by isotonic regression -- the "
+                         "minimum change that restores order (section 29c)")
+    ap.add_argument("--far-by-arc", type=float, default=0.0,
+                    help="blend the far-field map from the body's own NORMAL "
+                         "cast (0, the default) toward ARC LENGTH (1), which is "
+                         "monotone by construction; needed on a leading edge "
+                         "with a concave feature (section 29)")
+    ap.add_argument("--body", default="",
+                    help="a different section to block around, as a path "
+                         "relative to the repo root; the default is the clean "
+                         "NACA 0012 every other case here uses")
     ap.add_argument("--arc-out", action="store_true",
                     help="keep the radial CURVING on the layers outside the "
                          "first, each launched along the tangent the one inside "
@@ -756,11 +916,19 @@ def main():
                     help="the far-field rectangle, in chords")
     ap.add_argument("--out", default="gridpro_ch.json")
     args = ap.parse_args()
-    global CURVED, XI, XO, YF, TURN_BLEND, LAYERS, WALL_BAND, LAYER_GROWTH, ARC_OUT, ARC_OUT_W
+    global CURVED, XI, XO, YF, TURN_BLEND, LAYERS, WALL_BAND, LAYER_GROWTH, ARC_OUT, ARC_OUT_W, FAR_BY_ARC, FAR_MONO, PIN_TIPS, PIN_CONCAVE
+    global BODY, BODY_NAME
     global H_OUTER, BOX_L, BOX_Y
     CURVED = not args.chord_radials
     ARC_OUT = args.arc_out
+    if args.body:
+        BODY = args.body
+        BODY_NAME = os.path.basename(args.body)
     ARC_OUT_W = args.arc_out_blend
+    FAR_BY_ARC = args.far_by_arc
+    FAR_MONO = args.far_monotone
+    PIN_TIPS = args.pin_tips
+    PIN_CONCAVE = args.pin_concave
     TURN_BLEND = args.turn_blend
     LAYERS = args.layers
     WALL_BAND, LAYER_GROWTH = args.wall_band, args.layer_growth

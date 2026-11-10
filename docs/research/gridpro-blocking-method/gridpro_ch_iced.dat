@@ -1,0 +1,65 @@
+# =============================================================================
+# THE VIDEO METHOD, APPLIED: a C/H around a NACA 0012 WITH A GLAZE-ICE DOUBLE
+# HORN. 128 blocks, 0 inverted cells.
+#
+# Built from docs/research/nesting-blocks-at-a-complicated-leading-edge.md,
+# which records GridPro's two videos: when a leading edge becomes geometrically
+# complicated you add blocks LOCALLY around the feature. The section it cites
+# is not obtainable (that note's section 5), so naca0012_iced.dat beside this
+# file is a shape of MINE, built by make_iced_body.py. Nothing about it is
+# claimed to match GridPro's.
+#
+# WHAT IT TOOK, and all four are in section 29 with the measurement that forced
+# them -- none was a guess:
+#   --far-monotone   the far-field map's normal cast REVERSES across the ice
+#                    valley, so the generator refuses. Arc length is monotone
+#                    and folds the CLEAN section too (1786 of 14320), so it is
+#                    not the answer either. This keeps the cast and repairs only
+#                    the stations that reverse, by isotonic regression. It is
+#                    INERT on the clean section -- verified byte-identical.
+#   --pin-tips 1     a station law lands a block corner on the horn tip only by
+#                    luck. Pinning one takes the fold count 8 -> 1.
+#   --wall-band 0.02 the first layer must be thinner than the concave radius
+#                    behind the horn, or it folds there: 0.05 and 0.03 leave 1
+#                    inverted cell at (0.0487, 0.0988), 0.02 leaves none, and
+#                    0.015 leaves 187.
+#   --split 24       MORE blocks at the feature makes it WORSE here, which is
+#                    the opposite of the method's premise: 32 -> 48 -> 64 goes
+#                    8 -> 25 -> 99 inverted. Section 29e says why.
+#
+# QUALITY IS POOR AND IS NOT HIDDEN: max 76.3 deg, mean 10.3, against 50.1 and
+# 1.8 for the same topology on the clean section. This is a mesh, not a good
+# mesh.
+#
+#   python3 docs/research/gridpro-blocking-method/make_iced_body.py
+#   python3 docs/research/gridpro-blocking-method/make_ch.py \
+#       --body docs/research/gridpro-blocking-method/naca0012_iced.dat \
+#       --layers 2 --split 24 --turn-blend 0.8 --wake 8 \
+#       --far-monotone --pin-tips 1 --wall-band 0.02 --out gridpro_ch_iced.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch_iced.dat
+#
+# A RESEARCH HARNESS, not a shipped case.
+#
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_ch_iced.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- the rectangle is declared, corner by corner.
+GEOM_FILE docs/research/gridpro-blocking-method/naca0012_iced.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing: the far-field and outlet edges
+# carry no binding, so this is where their condition comes from. The aerofoil's
+# sides are bound and take 'wall' off their own sidecar. A real case would want
+# inlet / outlet / farfield told apart, which needs a far-field geometry file.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family (section 8g); five is
+# where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_ch_iced/mesh_gridpro_ch_iced.vtk

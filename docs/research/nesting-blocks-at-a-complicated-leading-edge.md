@@ -258,6 +258,94 @@ run; this section is a mapping between two documented models, no more.
 
 ---
 
+## 6. The method, applied — a mesh, and what it cost
+
+Added 2026-11-10, after the note above. §4 said what this repo's model could and could not
+express and marked the hard part **[I]**. This section builds it instead, so the parts that were
+inferred are now measured. Everything here is **[V]** unless marked.
+
+**Result: `gridpro_ch_iced.{json,dat}`, 128 blocks, 24720 cells, 0 inverted.** Figure
+`iced_leading_edge.png`. **Quality is poor and the case header says so**: non-orthogonality max
+**76.3°**, mean **10.3°**, against 50.1° and 1.8° for the same topology on the clean section. It
+is a mesh, not a good mesh.
+
+### 6a. The geometry is mine
+
+§5 says GridPro's iced section is not obtainable, so `make_iced_body.py` builds one: a glaze-ice
+**double horn**, two convex tips at (0.009, ±0.076) with a concave valley between them at the
+stagnation point, displacing a NACA 0012 along its own normals. The horn angles and heights are
+round numbers chosen to make a leading edge that is *complicated*; **nothing about the shape is
+claimed to match GridPro's**, and no figure of theirs was measured to produce it. An earlier
+version parametrised the ice by angle about the leading edge and grew ice on the TRAILING edge
+too — the trailing edge sits at the same angle — caught because the written file reached
+x = 1.0121.
+
+### 6b. The far-field map refuses, and the alternative folds the CLEAN section
+
+The generator places each station's far-field corner where the body's own **outward normal**
+lands, and requires that map to stay ordered. Across the ice valley two neighbouring normals
+converge and their landings swap, so it refuses — **at every `--turn-blend` from 0.0 to 1.0**, so
+it is the map and not the station law.
+
+The one alternative already described in the generator's own comments is arc length, monotone by
+construction. It folds: **1786 inverted of 14320 on the CLEAN section**, mean 42.4°. That control
+is what shows the folding is the map and not the ice — the iced case under the same map is 2334.
+
+### 6c. The repair that worked, and the control that makes it trustworthy
+
+`--far-monotone` keeps the cast and repairs only the stations that reverse, by isotonic
+regression — the nearest non-decreasing sequence, so anything the cast already ordered is left
+exactly where the cast put it. **On the clean section it is byte-identical and the mesh is
+unchanged to six decimals**, which is the control: the option costs nothing when it is not
+needed. On the iced section it moves **58 of 81** stations, worst move 12.4% of the far-field
+path — which is a rewrite, not a repair, and the section says so rather than calling it minimal.
+
+### 6d. A station LAW cannot put a corner on a feature
+
+With the map repaired the mesh had **8 inverted cells**, and the worst sat at **(0.016, 0.074)** —
+the upper horn's tip. Every station law here spaces stations by a rule, so a block corner lands on
+a salient feature only by luck, while **the whole point of the videos' method is that the
+complicated part gets corners BECAUSE it is complicated**. `--pin-tips 1` snaps one station onto
+each surface's sharpest convex feature: **8 → 1**.
+
+I had excluded concave features on the assumption that a corner declared inside one folds the
+block there. **Tested, and it makes no difference** — `--pin-concave` leaves the count at 1 and
+`nonortho_max` identical to six decimals, so the assumption was neither right nor load-bearing.
+The flag stays, with that recorded at its own definition.
+
+### 6e. The last fold was the first layer, not the blocking
+
+The remaining cell had positive area but a reflex corner, at **(0.0487, 0.0988)** — the concave
+shoulder behind the horn, inside a first layer 0.05 chords thick. **A layer thicker than the
+feature's concave radius must fold there**, and the sweep is monotone in exactly that way:
+`--wall-band` 0.05 → 1 inverted, 0.03 → 1, **0.02 → 0**, 0.015 → 187, 0.010 → 415.
+
+### 6f. MORE BLOCKS AT THE FEATURE MAKES IT WORSE — which is the method's own premise failing
+
+`--split` 32 → 48 → 64 gives **8 → 25 → 99** inverted cells. Adding blocks at the complicated
+part, which is the one thing both videos teach, moves this generator the wrong way.
+
+**The mechanism is not the one §4 inferred.** §4's **[I]** was about node counts: a `count` is
+fixed for a whole equivalence class, so refining the nose refines the row. That is still
+plausible and is still not measured here. What this section measured is a different obstacle in
+the same place: **every added block adds a far-field station that must be ordered**, so each one
+is a new chance for the cast to reverse and a longer run for the repair to average. GridPro does
+not have this failure mode because its far-field positions are **relaxed by the solver**, not cast
+from the body — the tutorial's own instruction is "Drag the corners and position them
+approximately" (§4). So the two models diverge exactly where the method needs them to agree.
+**[I]** on the attribution; **[V]** on the 8/25/99 and on everything in 6b–6e.
+
+### 6g. What is shipped
+
+`make_iced_body.py` (the section), four new generator options — `--body`, `--far-monotone`,
+`--pin-tips`/`--pin-concave`, and `--far-by-arc`, which is kept **because it is the measurement in
+6b** — and `gridpro_ch_iced.{json,dat}`. **Every one is behind a flag and the clean default was
+re-verified byte-identical after each**, so none of the eight cases in `gridpro-blocking-method.md`
+moved.
+
+
+---
+
 ## Sources
 
 Primary, read by me:
