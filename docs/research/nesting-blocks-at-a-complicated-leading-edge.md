@@ -769,7 +769,9 @@ claimed, and the one time I measured what it does claim, it delivered.
 
 **I still have not produced a usable nested mesh**, and the next step is now named rather than
 guessed: more levels and thicker bands, with the transition corner — not the nest — as the thing
-to fix. What this work has is the construction (§10), it on an aerofoil (§11), it in a good mesh
+to fix. **SUPERSEDED BY §15 (same day): neither more levels nor thicker
+bands can move the quantity that defines the method, because this declaration model cannot
+express a count-reducing termination at all — and §15d has the mesher's refusal.** What this work has is the construction (§10), it on an aerofoil (§11), it in a good mesh
 (§12), the benefit measured (§13b), and a gate-2 failure localised to one corner the literature
 predicts (§12d, §13c).
 
@@ -867,6 +869,134 @@ that works.
 §6f's rising inverted count is a cast far-field map, §11b's fold-when-thin is a predicted
 property of a one-level conformal transition, §12c's 32 NaN is a mesh the solver cannot run. What
 §13 established, and this section acts on, is that none of them tests the method's own claim.
+
+
+---
+
+## 15. Reproducing the video's nest — the model REFUSES it, in its own words
+
+**2026-11-10, the same day as §14.** §13d named the next step as "more levels and thicker
+bands". **That is superseded here, and not by an opinion**: in this declaration model neither
+one can produce the property that defines the method, and the mesher says so when asked.
+
+### 15a. What a nest IS, as a measurable property **[V]**
+
+§8c read it off GridPro's wireframe by eye — "their extra blocks stay near the body; mine reach
+the far field by construction". That sentence is a quantity:
+
+> **N(r)** = how many block-partition lines cross a circle of radius *r*.
+> A terminating (nested) blocking **FALLS**. One whose counts propagate is **FLAT**.
+
+The shape is scale-free, which is what makes it the right instrument against a video frame with
+no measurable chord (§8b). Tool: `measure_block_partition.py`. It reads the `block` cell field
+(#106) out of a `MB_SPLIT_QUADS 0` mesh, so it needs no second parse of the declaration.
+
+### 15b. Measured, on this repo's own blockings **[V]**
+
+| N(r) | r = 0.5 | 1 | 2 | 5 |
+|------|---------|---|---|---|
+| shipped C-grid, 4 blocks | 4 | 4 | 4 | 4 |
+| the §27 C/H, 160 blocks | 70 | 68 | 68 | 5 |
+| the same + §12's nest, 162 blocks | 70 | 68 | 68 | 5 |
+
+**Both are flat.** The C/H holds 68 lines from the body out to four chords; its fall at r = 5 is
+the domain ending (body-to-far is 6.5), not termination. Figure `blocking_termination.png`.
+
+**And §12's nest moves that curve at ONE radius in 260** — +1 line at r = 1.08, a chord out,
+not at the feature. §12a had to put it in the OUTERMOST layer; 15d says why that was never a
+quirk of that case.
+
+### 15c. §11's nest CONSERVES the line count, by construction **[V]**
+
+On the ring demonstrator, N(r) = **24 at every radius from the body to the far field**. The
+bookkeeping is exact and is in the generated document:
+
+> 24 body corners → **2 far corners OMITTED** (stations 5 and 7) → 22 radials, **+ 2 transition
+> diagonals** (`tL`, `tR`) → **24**.
+
+Every terminated radial is replaced one for one by the diagonal that closes its transition.
+So what §§11–12 built is a **local radial subdivision with a conformal closure**, not a nest:
+the refinement still reaches the far field. Nothing in §11 or §12 measured this, and the
+fold-when-thin of §11b is a separate and lesser problem.
+
+**Two figures in those sections do not reproduce today** and the discrepancy is recorded rather
+than chased: §11 quotes **648 quads, 0 inverted**; the committed `nested_wall.json` meshes to
+3528 quads with **36** inverted, and the generator re-run at today's defaults gives 3528 with
+**4**. The generator's defaults moved after §11 was written. **[V]**
+
+### 15d. The model cannot express a count-REDUCING termination, and the mesher says so **[V]**
+
+For N(r) to fall, a termination must remove more lines than it adds. The minimal such request is
+two blocks below, one above, the radial between them terminating. Declared by hand
+(`make_merge_refusal.py`, which writes the document and the config) and handed to the real
+mesher:
+
+> `[ERROR] edge 'n1' is declared kind 'interface' but is a side of 1 block(s) — the north of
+> block 'R'. ... an 'interface' ... and a 'cut' ... are each a side of exactly two.`
+> `HYBMESH_ERROR 8 TOPOLOGY`
+
+**A block has four sides, each exactly ONE edge.** The block above can name `n0` or `n1`, never
+both, so the one it does not name is a side of a single block and the arity rule refuses it.
+A circumferential line therefore cannot be split below and whole above — and a radial can never
+terminate without a replacement. **That is 15c's one-for-one, stated as a general law instead of
+an accident of one construction.**
+
+**It is also exactly what the vendor describes.** The *WS GUI Manual* §4.8.2: "for each layer
+**three corners are substituted for each corner on the previous layer**" — three lines becoming
+one is the operation refused above. **[V]**
+
+**NOT A BUG. Do not "fix" the arity rule.** It is what makes welding allocation rather than
+comparison (`.claude/rules/mesher-multiblock.md`), which is load bearing for a path with a 1e-7
+wall spacing beside a 1e-1 far-field one. What this section concludes is that a terminating nest
+needs a different EXPRESSIVENESS — a block side that is a CHAIN of edges — and that is a schema
+decision, not a parameter.
+
+### 15e. The three zones, and where ours stops being like theirs **[V]** on ours, **[I]** on theirs
+
+`blocking_three_zones.png`. Read off the icing wireframe: (1) a dense NEST hugging the ice,
+(2) a TERMINATION where those rows end — the caption's own "loopback" — and (3) a sparse FAN
+out to a rectangular far field. Ours has (3) and nothing else: the same lines that form the fan
+run all the way in to the ice. **Measured on our iced case**: N(r) rises from 5 at r = 0.03 to
+**51 at r = 2 and still 51 at r = 3**. It never falls. **[V]**
+
+**So "radial fan" is not the difference** — both have one. The difference is zone 2.
+
+**[I]** GridPro's model must therefore admit something this one does not; their wireframe is a
+corner graph from which blocks are inferred, rather than a per-block list of four named edges.
+**I did not verify that**, and no source read here states it.
+
+### 15f. What this supersedes, and what it does not
+
+- **SUPERSEDES §13d's "more levels and thicker bands".** Neither moves N(r) in this model. The
+  blocker is expressiveness, not depth.
+- **Does NOT supersede §14.** The decision not to acquire local nesting stands, on §14's own
+  grounds; 15d adds a fourth that is stronger than the other three.
+- **Does NOT retract §11b or §12c.** The fold-when-thin and the 32 NaN are real. They are now
+  known to be downstream of a construction that was never the method.
+- **The restart condition in §14b gains a prerequisite**: before a named target geometry is even
+  worth discussing, the model would need a side that is a chain of edges.
+
+### 15g. Named limits of this section
+
+- **GridPro's own N(r) is NOT plotted anywhere here.** Their mesh is a picture; the icing frame is
+  a wireframe and the C-grid frame a JPEG. Every number in 15b, 15c and 15e is from our own
+  topologies. The zones in 15e are read off a frame and are marked as such.
+- **"Four rows" in `blocking_three_zones.png` is a READ, not a measurement.** At the horn they
+  merge into a band too dense to count at that resolution, and no number is supplied for it.
+- **The ray method behind 15e has a tolerance** (35° of perpendicular) chosen to separate a ring
+  from a radial. Nothing calibrates it; a blocking whose layers meet the body obliquely would be
+  miscounted, and none of ours does.
+- **TWO OF THE THREE FIGURES CANNOT BE REGENERATED from this repo**, and that is a property of
+  the evidence rather than an oversight: `blocking_three_zones.png` and the left panel of
+  `nest_refused.png`'s companion embed a crop of the YouTube frame, which §5 records as fetched
+  and never committed (there is no licence to redistribute it). The NUMBERS they illustrate are
+  all reproducible — `measure_block_partition.py` prints every one of them — and
+  `blocking_termination.png` needs only the shipped and research topologies. A figure that cannot
+  be rebuilt is a quotation; the instrument beside it is not.
+- **An earlier draft of this section said our iced blocking had "one row"** and was wrong — the
+  crop that produced the picture had cut off the rings at d = 0.93 and 1.99. Kept here because
+  the error was in the FRAMING, not the measurement, and a figure that chooses its own window is
+  the specimen worth remembering.
 
 
 ---
