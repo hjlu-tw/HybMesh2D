@@ -480,6 +480,47 @@ which rests on §6f's measurement rather than on this frame.
 
 ---
 
+## 9. Is the NEAR-WALL method learnable? Half of it **[V]**
+
+Asked directly, and the answer splits cleanly. Figure `near_wall_method.png` is the icing frame's
+near-wall band at pixel zoom.
+
+**What the frame shows.** Orange squares are block corners, yellow lines block edges, the pale
+line the surface. Three things are going on: **block corners sit ON the surface**; **several
+block ROWS are stacked normal to it**; and **the number of rows CHANGES along the surface** — five
+or six where the horn is, about three a short way downstream, with the extra rows terminating
+through the diagonal edges between.
+
+**The first two this repo already does.** Corners on the body are `on_geometry` corners, and
+stacked rows are `--layers`; §7d ships three of them.
+
+**The third it cannot do, and that is the one that makes the method worth having.** To terminate a
+row, one block's side must be shared with TWO blocks on the other side. In this topology a block
+is `[south, east, north, west]` — **one edge per side** — and an `interface` must be a side of
+exactly two blocks. Tested on a minimal three-block case, with a control:
+
+| topology | result |
+|----------|--------|
+| two rows on the left, two on the right — the row runs all the way across | **meshes**: 256 cells, 0 inverted, 0.000° non-orthogonality |
+| two rows on the left, ONE block on the right — the row terminates | **REFUSED**: `edge 'lo_e' is declared kind 'interface' but is a side of 1 block(s) — the east of block 'b_lo'` |
+
+Same corners, same intent, one difference, and the control is what makes the refusal mean
+termination rather than a mistake in my test file. **[V]**
+
+**So:** the near-wall *drawing* is learnable and is already in §7d's case. The *nesting* is not a
+technique to copy but a capability the format lacks, and the refusal above is where it is lost.
+This is §6f and §8c reached a third time and finally at the level of the data model rather than
+the generator: **§6f measured that adding blocks at the nose makes the mesh worse, §8c showed
+their wireframe keeping the refinement local, and §9 names the line in the format that forbids
+it.** **[I]** on tying the three together; **[V]** on each separately.
+
+A caveat on scope: this says nothing about whether the format COULD be extended — only that as it
+stands, one edge per side is what blocks it. That is a design question for the repo, not a reading
+of GridPro.
+
+
+---
+
 ## Sources
 
 Primary, read by me:
