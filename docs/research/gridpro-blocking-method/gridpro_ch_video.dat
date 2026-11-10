@@ -1,0 +1,56 @@
+# =============================================================================
+# A C/H on the CLEAN NACA 0012, built at the scale GridPro's own C-grid video
+# states: 56 blocks / 3638 cells against its 57 / 3648.
+#
+# From docs/research/nesting-blocks-at-a-complicated-leading-edge.md, which
+# records "C-Grid Mesh and Topology in GridPro" (4Jeu-EUXXmo). Its status bar
+# reads 57 blocks / 3648 cells -- read off the published frame, section 2 there.
+# NOTE that the Grid Quality dialog legible on the same frame belongs to a
+# DIFFERENT tutorial (its own File Name field points at a Y-exhaust directory),
+# so there is no vendor quality figure for this case to compare against, and
+# none is quoted.
+#
+# WHY 56 AND NOT 57. This generator's block count is 2 * LAYERS * (SPLIT + WAKE)
+# -- derived by measuring 18 combinations of the three, exact in every one -- so
+# EVERY count it can produce is even and 57 is unreachable by construction, not
+# by tuning. Its topology is mirror-symmetric about the wake line, so blocks
+# come in top/bottom pairs; GridPro's 57 is odd, so theirs is not. Section 7.
+#
+# The cell count is reached with --node-scale, which multiplies the node counts
+# without touching the blocking. Everything else in this directory runs at 1.0.
+#
+#   python3 docs/research/gridpro-blocking-method/make_ch.py \
+#       --layers 1 --split 22 --wake 6 --turn-blend 0.8 --node-scale 0.37 \
+#       --out gridpro_ch_video.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_ch_video.dat
+#
+# MB_SPLIT_QUADS 0 HERE, unlike every other case in this directory. GridPro's
+# published grids are quad and its 3648 is a quad count, so splitting would
+# compare 7276 triangles against 3648 quads. Caught by the shipped default
+# reporting exactly twice the swept number.
+#
+# A RESEARCH HARNESS, not a shipped case.
+#
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_ch_video.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- the rectangle is declared, corner by corner.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 0
+
+# The FALLBACK, and here it is load bearing: the far-field and outlet edges
+# carry no binding, so this is where their condition comes from. The aerofoil's
+# sides are bound and take 'wall' off their own sidecar. A real case would want
+# inlet / outlet / farfield told apart, which needs a far-field geometry file.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family (section 8g); five is
+# where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_ch_video/mesh_gridpro_ch_video.vtk

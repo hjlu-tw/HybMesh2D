@@ -361,6 +361,50 @@ moved.
 
 ---
 
+## 7. The same method on a CLEAN section, at the video's own scale
+
+The iced case above was asked for and then set aside; this is the other half, and it is the half
+the C-grid video actually shows. Added 2026-11-10. Everything here is **[V]**.
+
+**Target: 57 blocks / 3648 cells**, the C-grid video's own status bar (§2). **Built:
+`gridpro_ch_video.{json,dat}` — 56 blocks, 3638 quads, 0 inverted, non-orthogonality max 58.5°,
+mean 3.81°.** Figure `video_scale_cgrid.png`. The cell count is 0.3% from theirs.
+
+### 7a. 56 and not 57, and it is structural
+
+Measured across **18 combinations** of layers, split and wake, exact in every one:
+
+> **blocks = 2 × LAYERS × (SPLIT + WAKE)**
+
+So **every block count this generator can produce is even**, and 57 is unreachable by
+construction rather than by tuning. The reason is visible in the formula: the topology is
+mirror-symmetric about the wake line, so its blocks come in top/bottom pairs. **GridPro's 57 is
+odd, so theirs is not** — somewhere in it is a block with no mirror twin, and nothing in the
+published frames says where. **[I]** on what that block is; **[V]** on the parity argument and on
+the 18 measurements.
+
+### 7b. Two things that nearly went in wrong
+
+**The cell count was out by exactly 2×.** The case inherited `MB_SPLIT_QUADS 1` from the file it
+was copied from, so the mesher reported 7276 against GridPro's 3648. GridPro's published grids are
+quad and 3648 is a quad count, so comparing would have been 7276 triangles against 3648 quads.
+This is the one case in the directory that sets `MB_SPLIT_QUADS 0`, and the header says why.
+Caught because the number was exactly twice the swept one.
+
+**There is no vendor quality figure for this case.** §2a already established that the Grid Quality
+dialog legible on the same frame belongs to a different tutorial — its own File Name field points
+at a Y-exhaust directory. So 58.5° / 3.81° are reported against nothing, and no GridPro skew is
+quoted beside them.
+
+### 7c. What is new in the generator
+
+`--node-scale`, which multiplies the five node counts without touching the blocking, so a case can
+be built at another grid's SIZE to compare counts. At 1.0 it is inert and the clean default was
+re-verified byte-identical, as with every other option added in §6.
+
+
+---
+
 ## Sources
 
 Primary, read by me:

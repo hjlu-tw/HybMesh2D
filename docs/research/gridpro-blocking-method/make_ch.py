@@ -84,6 +84,10 @@ N_SURF = 40                   # intervals along ONE surface
 N_WAKE = 34                   # intervals along the wake, per side
 N_WALL_LAYER = 25             # nodes across the innermost layer, when LAYERS > 1
 N_OUTER_LAYER = 17            # ... and across each layer outside it
+# --node-scale multiplies the five counts above together, so a case can be
+# built at ANOTHER GRID'S SIZE without changing its blocking. It exists to
+# compare against GridPro's own stated 3648 cells, which is far coarser than
+# anything else in this directory (section 7).
 
 
 # -- the far-field C, as one arc-length-parametrised polyline ---------------
@@ -881,6 +885,10 @@ def main():
                          "cast (0, the default) toward ARC LENGTH (1), which is "
                          "monotone by construction; needed on a leading edge "
                          "with a concave feature (section 29)")
+    ap.add_argument("--node-scale", type=float, default=1.0,
+                    help="multiply every node count by this, so the SAME "
+                         "blocking can be built at another grid's size; 1.0 is "
+                         "what every other case here uses")
     ap.add_argument("--body", default="",
                     help="a different section to block around, as a path "
                          "relative to the repo root; the default is the clean "
@@ -926,7 +934,7 @@ def main():
     ap.add_argument("--out", default="gridpro_ch.json")
     args = ap.parse_args()
     global CURVED, XI, XO, YF, TURN_BLEND, LAYERS, WALL_BAND, LAYER_GROWTH, ARC_OUT, ARC_OUT_W, FAR_BY_ARC, FAR_MONO, PIN_TIPS, PIN_CONCAVE
-    global BODY, BODY_NAME
+    global BODY, BODY_NAME, N_RADIAL, N_SURF, N_WAKE, N_WALL_LAYER, N_OUTER_LAYER
     global H_OUTER, BOX_L, BOX_Y
     CURVED = not args.chord_radials
     ARC_OUT = args.arc_out
@@ -934,6 +942,13 @@ def main():
         BODY = args.body
         BODY_NAME = os.path.basename(args.body)
     ARC_OUT_W = args.arc_out_blend
+    if args.node_scale != 1.0:
+        k = args.node_scale
+        N_RADIAL = max(3, int(round(N_RADIAL * k)))
+        N_SURF = max(2, int(round(N_SURF * k)))
+        N_WAKE = max(2, int(round(N_WAKE * k)))
+        N_WALL_LAYER = max(3, int(round(N_WALL_LAYER * k)))
+        N_OUTER_LAYER = max(3, int(round(N_OUTER_LAYER * k)))
     FAR_BY_ARC = args.far_by_arc
     FAR_MONO = args.far_monotone
     PIN_TIPS = args.pin_tips
