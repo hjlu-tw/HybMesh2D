@@ -335,6 +335,21 @@ from the body — the tutorial's own instruction is "Drag the corners and positi
 approximately" (§4). So the two models diverge exactly where the method needs them to agree.
 **[I]** on the attribution; **[V]** on the 8/25/99 and on everything in 6b–6e.
 
+### 6h. What the picture shows that the numbers did not **[V]**
+
+Looking at `iced_leading_edge.png`'s global panel: **several block boundaries have collapsed onto
+one another** — a cluster of near-coincident heavy lines below the nose, doubled vertical seams
+downstream — and the far field carries slivers beside huge wedges. That is 6c's "rewrite, not a
+repair" seen directly: isotonic regression pools a violating run to ONE value, so the stations in
+it coincide and their blocks come out epsilon-wide.
+
+**The obvious fix makes it much worse.** Spreading each pooled run evenly across the gap its
+neighbours leave, instead of separating the run by a bare epsilon, takes the case from **0
+inverted cells to 106**, mean 10.3° to 14.2°, and the worst adjacent area ratio from 4.5 to
+**939**. The pooled value is the least-squares answer and moving a station off it costs more than
+the sliver does. Reverted; the slivers stay, and are now a named cost rather than something the
+figure quietly shows and the text does not mention. **[V]**
+
 ### 6g. What is shipped
 
 `make_iced_body.py` (the section), four new generator options — `--body`, `--far-monotone`,

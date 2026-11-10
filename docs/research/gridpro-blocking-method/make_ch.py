@@ -639,8 +639,17 @@ def build(split, wake_n):
         v, k = [], 0
         for x, w in zip(lvl, wt):
             v.extend([x] * int(round(w)))
+        # PAVA pools a violating run to ONE value, so the stations in it sit on
+        # top of each other and their blocks come out epsilon-wide. That IS
+        # visible in the mesh -- several block boundaries collapse onto one line
+        # and the far field carries slivers (section 6h). SPREADING each pooled
+        # run evenly across the gap its neighbours leave was tried as the fix
+        # and is much WORSE: 0 inverted cells become 106, and the worst adjacent
+        # area ratio 4.5 becomes 939. The pooled value is the least-squares
+        # answer and moving a station off it costs more than the sliver does, so
+        # the bare separation below is kept and the slivers are a known cost.
         eps = 1e-9 * max(1.0, fs[-1])
-        for i in range(1, len(v)):                        # break the ties PAVA leaves
+        for i in range(1, len(v)):                        # nothing may still tie
             if v[i] <= v[i - 1]:
                 v[i] = v[i - 1] + eps
         moved = [i for i in range(len(v)) if abs(v[i] - before[i]) > eps]
