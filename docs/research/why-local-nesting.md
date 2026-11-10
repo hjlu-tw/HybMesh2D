@@ -8,6 +8,16 @@ test or source file was changed to write it**, and neither
 `nesting-blocks-at-a-complicated-leading-edge.md` nor `gridpro-blocking-method.md` was touched.
 2026-11-10.
 
+> **THAT SENTENCE WAS TRUE WHEN WRITTEN AND IS NO LONGER, recorded rather than quietly edited
+> (2026-11-10, later the same day).** The decision this note fed —
+> `nesting-blocks-at-a-complicated-leading-edge.md` §14 — declined local nesting and took §3.4's
+> spacing-match criterion instead, so **issue #183 changed `include/MbQuality.hpp`,
+> `src/MbQuality.cpp`, `src/cli.cpp`, two gates, `.claude/rules/mesher-quality.md` and
+> `docs/design_notes/mesher.md`**, and §14 was added to the note above. Nothing in THIS file's
+> findings moved; what changed is that it stopped being a note nothing acted on. The whole value
+> of the `[V]` / `[I]` / `[M]` markers is that a claim can be checked against the world, and a
+> self-description left to go stale would be the first one to fail.
+
 **The question, as asked.** 如果沒有比較好的話為什麼影片中要用這個方法? — if local block nesting
 at a complicated leading edge does not produce a better mesh, why does GridPro's video teach it?
 What benefit is the method actually *claimed and shown* to deliver, and under what conditions?
@@ -409,7 +419,15 @@ Stated as inference, because none of these sources was written about this tool. 
    the *transition layer* (absorb the surface's jaggedness in one band so the TFI fill never sees
    it — stated against TFI by name, §1) and the *spacing-match criterion* ("grid spacing from
    contiguous blocks will be comparable in size at all block boundaries"), which is a checkable
-   rule and which `MbQuality` is already positioned to measure as an across-seam ratio.
+   rule and which `MbQuality` **already measures — it simply does not SEPARATE it**.
+   **[V]**, corrected 2026-11-10: this read "is already positioned to measure as an across-seam
+   ratio", which understates a live instrument into an absent one. `MbAdjacentAreaRatio`
+   (`540c9df`) keys adjacency by NODE ID rather than by logical `(i, j)` **expressly so that a
+   pair straddling a block boundary is measured like any other** — its own header says so — so
+   the seam pairs were in the sample all along, reduced into one median with the thousands of
+   pairs inside blocks, where they cannot move it (8928 against 192 on the shipped O-grid).
+   **Acted on in issue #183**, which reports the figure again over each population; what it cost
+   was one integer comparison.
 
 ---
 

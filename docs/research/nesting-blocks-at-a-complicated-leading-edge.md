@@ -781,6 +781,96 @@ problem, not the answer.
 
 ---
 
+## 14. DECIDED: this repo does NOT acquire local nesting — and what it took instead
+
+**2026-11-10.** §13d named a next step ("more levels and thicker bands, with the transition
+corner — not the nest — as the thing to fix"). **That step is not being taken, and this section
+exists so the sentence above is not read as a live to-do by the next session.** The question was
+put to the maintainer as a design review and settled branch by branch; what follows is the
+outcome, not a summary of the argument.
+
+### 14a. The decision
+
+**No local nesting in the repo.** The question that started this work —
+"如果沒有比較好的話為什麼影片中要用這個方法?" — is a question about UNDERSTANDING, and §13 answered it: the
+method delivers what it claims (a 31% local median aspect-ratio reduction for +0.2% cells,
+§13b), and the three earlier negative results were measuring something it never claimed. An
+answered question is not a reason to build the thing.
+
+The concrete grounds, each measured in this note rather than assumed:
+
+1. **No target geometry.** Nothing on this repo's roadmap is a large-scale-difference case. The
+   motivating one — an iced aerofoil — has a published standard practice that is NOT nesting
+   (§13d, and `why-local-nesting.md` §1).
+2. **Gate 2 fails** (§12c: 32 NaN). The one nested mesh spliced into a good mesh is not solvable.
+3. **What would have to be built is not an extension of what exists.** §13c: a nest is a BAND at
+   1:3ⁿ per level and GridPro's own worked example uses FIVE; §§11–12 built ONE, which is the
+   thinnest and weakest member of the family. Five levels plus thicker bands is a rewrite of
+   `nest_into.py`, not a parameter on it.
+
+### 14b. The restart condition, stated so this can be reopened on evidence
+
+Two conditions, both required: **a named target geometry**, and **gate 2 as a hard precondition**
+— no nesting code leaves `docs/research/` until some nested mesh runs through the solver. The
+next step itself is already named in §13d and does not need rediscovering.
+
+### 14c. What WAS taken, and it is shipped
+
+The research produced one thing worth keeping, and it is not the nest. `why-local-nesting.md`
+§3.4 names a **published, checkable criterion about block boundaries** — Chi et al.'s "grid
+spacing from contiguous blocks will be comparable in size at all block boundaries" — and points
+it at an instrument this repo already had. **Shipped as issue #183**: the mesher's existing
+`adjacent_area_ratio` figure is now reported again over the pairs that cross a block boundary and
+over the pairs that do not (`across seams` / `within blocks`), on every `MESH_MODE 1` run.
+
+It was cheap because the seam pairs were already being measured and merely averaged away — and
+it paid immediately: the elliptic smoother's cost to that ratio lands **on the seam** on both
+two-ring cases and **inside blocks** on the C-grid and O-grid, which the mixed figure could not
+say. Rules: `.claude/rules/mesher-quality.md`. Why: `docs/design_notes/mesher.md`, "THE SIZE
+JUMP, SPLIT AT THE BLOCK SEAM".
+
+**Building the ruler is the part that survives the decision not to build the thing.**
+
+### 14d. One candidate kept, deliberately decoupled from ice
+
+`why-local-nesting.md` §3.4's other cheap takeaway is the **transition layer** — absorb a
+surface's jaggedness in one band so the transfinite fill never sees it, which Chi et al. state
+against TFI generators BY NAME, and `MESH_MODE 1` is one.
+
+It was nearly discarded with the nesting decision because its motivating geometry is an iced
+aerofoil. **That binding is wrong, and the repo's own output says so**: a shipped O-grid run
+warns that edge `w0`'s 25 nodes sample a 40-facet polyline at 1.667 facets per interval, so "the
+polyline's own turning does not fall equally on the nodes", and that **"about half of that
+reaches the non-orthogonality of the cells along this edge"** — 4.050° against the 3.750° an even
+sampling would give. That is a discrete surface's jaggedness propagating into the mesh, with a
+number on it, in a case this repo ships today. The transition layer is the named remedy for that
+class.
+
+**Not built.** Recorded as a candidate hanging off an existing warning, to compete on its own
+evidence rather than on ice.
+
+### 14e. A reading discipline, written down because it is what this whole chain cost
+
+§13b only worked once the measurement matched the claim. The generalisation, for the next local
+method anyone evaluates here:
+
+**A local improvement must show the local figure improving AND the global figure not worsening,
+and both must be in the unit the claim is denominated in.** The mesher already prints both —
+per-block rows under `Cell shape`, and the whole-mesh headline beside them — so this needs no
+tool and no flag. What it needs is for the pair to be read together. §§6f, 11 and 12 each reported
+a single number in a unit nobody had claimed, and produced three negative results about a method
+that works.
+
+### 14f. What this section does NOT retract
+
+§§1–13 stand as written. The three negative results are real measurements of real defects —
+§6f's rising inverted count is a cast far-field map, §11b's fold-when-thin is a predicted
+property of a one-level conformal transition, §12c's 32 NaN is a mesh the solver cannot run. What
+§13 established, and this section acts on, is that none of them tests the method's own claim.
+
+
+---
+
 ## Sources
 
 Primary, read by me:
