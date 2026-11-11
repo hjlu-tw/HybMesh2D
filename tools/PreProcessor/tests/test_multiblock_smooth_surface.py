@@ -567,8 +567,17 @@ def run(tmp, name, extra="", config=None):
 # label to a fixed width and a longer edge id overflows it, so the shipped
 # four-block C-grid's `east 'e_ff_nose_up': asked ...` has NO space before the
 # colon — and this regex has been silently dropping that row and `e_ff_nose_lo`
-# beside it ever since. Nothing caught it: every check here reads the WORST
-# deviation or a count this file pins, and the two missing rows were neither.
+# beside it ever since those edges were named.
+#
+# AND THE WIDENING IS NOT INERT HERE, which a first draft of this comment claimed
+# by saying every check reads the worst deviation or a pinned count. Check 12's
+# last clause takes `max(cg_b.values())` — EVERY row — so before the fix it took
+# that maximum over a set two rows short. It stays green only because the two
+# rows that arrived TIE the airfoil pair at 0.44%, which is to say the
+# comparison got strictly stronger and nothing in this file would have said so
+# either way. That is the half worth remembering: a parser that silently drops
+# rows weakens the checks that quantify over them, not only the ones that name
+# them.
 _WALL_BANNER = re.compile(
     r"^\s+\w+ '([^']+)'\s*: asked .* got .* \(([-\d.]+)%\)\s*$")
 
@@ -1529,10 +1538,16 @@ def main() -> int:
               f"mesh, are silent because the sweeps IMPROVED them — the bar is the "
               f"mesh the solve started from and not the declaration (af_up "
               f"{cg_b.get('af_up')}% -> {cg_a.get('af_up')}%, af_lo "
-              f"{cg_b.get('af_lo')}% -> {cg_a.get('af_lo')}%)",
+              f"{cg_b.get('af_lo')}% -> {cg_a.get('af_lo')}%; the before mesh's "
+              f"rows: { {k: v for k, v in sorted(cg_b.items())} })",
               "af_up" not in w20 and "af_lo" not in w20
               and all(cg_b.get(e, 0.0) > cg_a.get(e, 0.0) > 0.0
                       for e in ("af_up", "af_lo"))
+              # JOINT-worst, and the word matters since #191. `e_ff_nose_up` and
+              # `e_ff_nose_lo` were invisible to this file's banner parser until
+              # that ticket widened it, and they tie the airfoil pair at 0.44% —
+              # so `>=` is the honest comparator and "the worst-held walls" would
+              # now be a claim this mesh does not support.
               and min(cg_b.get(e, 0.0) for e in ("af_up", "af_lo"))
                   >= max(cg_b.values()))
         wo20 = wall_height_warns(outo20)

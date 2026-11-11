@@ -5653,15 +5653,38 @@ The share beyond one chord falls from 35.4% to 20.8% and the far bin by a factor
 exactly 3840**, which is the conservation above showing up as a measurement rather than as an
 argument.
 
-**AND THE LEVER IS THE SECOND RADIAL CLASS, NOT THE CHAIN.** 29 stations from the wall to the seam
-and 13 from the seam to the far field is 41 — the four-block case's single class exactly — but it
-lands 28 intervals inside one chord where one tanh over the whole span lands 22. What the chain
-buys is that the split can be DECLARED with every far-field edge's count unchanged: without one,
-the inner band's outer side is a single edge, the outer region is one block per quadrant, and
-`e_ff_nose_up` is a 97-node edge. **The two halves are gated separately** — check 5 the counts,
-check 9 the distribution — and check 9's last clause attributes the cells to the radial split out
-loud. There is no A/B for that attribution and there cannot be: the no-chain version of this
-document does not exist.
+**THE CONTROL'S OWN ROW IS NOT #188's, AND THE DIFFERENCE IS THE RULER RATHER THAN THE MESH.** That
+ticket states 63.1 / 23.8 / 13.2 for the same run and this re-measurement gives 64.6 / 22.9 / 12.5 —
+58 cells moved between bins, 1.5% of the total. The 3840 agrees exactly, so it is not a different
+mesh; what the earlier figures were binned by is not recorded, and the distance here is to the
+aerofoil POLYLINE by segment rather than to a chord, a centre or a nearest vertex. The ticket's row
+is left as it stands and this one is the gate's, which is #43's rule: a dated figure is annotated,
+never edited.
+
+**AND THE LEVER IS THE SECOND RADIAL CLASS, NOT THE CHAIN — MEASURED, by the A/B a first draft of
+this paragraph wrongly called unwritable.** The chain-free version of this document is the shipped
+one with its two chains COLLAPSED: `m1` + `m2` into one seam edge, `ff1` + `ff2` into one 97-node
+far-field edge, the terminating radial dropped and the two outer nose blocks merged. It MESHES —
+9600 quads, 0 inverted — and its added cells land where the shipped case's do to within two cells
+in every bin: **79.3% / 20.1% / 0.7% against 79.2% / 20.1% / 0.7%**. So the distribution is the
+second radial class's doing and the chain contributes nothing to it. What the chain buys is exactly
+and only what that document gives up: its far field over each nose is ONE 97-node edge where the
+shipped case has two of 49. 29 + 13 - 1 = 41 is the four-block case's single class exactly, and it
+lands 28 intervals inside one chord where one tanh over the whole span lands 22. Gated: check 5 the
+counts, check 9 the distribution, **check 11 the A/B**.
+
+**AND THE REVIEW IS WHAT PRODUCED IT.** The claim "there is no A/B for that attribution and there
+cannot be: the no-chain version of this document does not exist" was written, shipped in a commit,
+and read by the Spec axis, which answered that the document is writable and merely fails criterion
+2. It took one derived fixture. **An impossibility argued from the model is a hypothesis until
+something tries to write the thing** — the same lesson one level up from the one this ticket opened
+with, where the model's conservation law turned out to be real and #188's framing of the win did
+not survive it.
+
+**ONE FIGURE MOVED THE OTHER WAY, AND IT IS REPORTED AS A DIRECTION RATHER THAN ATTRIBUTED.** The
+shipped case is better than that control on both non-orthogonality figures (42.230 / 5.300 against
+47.335 / 7.131). The comparison is NOT clean: collapsing the chain also merges two 48-interval seam
+edges into one of 96, so the chordwise law moved with the blocking and this figure carries both.
 
 **THE THREE CONTINUATION SPACINGS ARE DERIVED AND NOTHING ENFORCES THEM**, which is the four-block
 case's own blind spot about its two 0.005s, one size larger. `0.11082851` is the inner band's final
@@ -5683,8 +5706,11 @@ because #57 measured that it matters. The full quotation, including the 480 `far
 fixed width — so a longer id simply overflows it. `test_multiblock_shape_surface.py` saw six of
 this case's ten blocks and said so; `test_multiblock_smooth_surface.py`'s `_WALL_BANNER` has been
 silently dropping the SHIPPED four-block C-grid's `e_ff_nose_up` and `e_ff_nose_lo` rows ever since
-those edges were named, and nothing caught it because every check there reads the worst deviation
-or a count. Both are `\s*` now. And this case reaches the smoothing cap AT its own best residual
+those edges were named. Both are `\s*` now, and the widening is NOT inert in the smoothing gate:
+check 12's last clause takes a maximum over EVERY row, so it had been taking it over a set two rows
+short, and it stays green only because the two rows that arrived TIE the airfoil pair at 0.44%. A
+parser that silently drops rows weakens the checks that quantify over them, not only the ones that
+name them — which is the half a first draft of this paragraph got wrong. And this case reaches the smoothing cap AT its own best residual
 where all five cases in that file's group 14 reach it PAST their best — a sixth curved case on a
 different branch, deliberately not added to that group, which would have to assert the opposite of
 what it asserts.

@@ -456,7 +456,9 @@ _HEAD = re.compile(
 # regex saw six of the chain C-grid's ten blocks and said so; the same defect sits
 # in `test_multiblock_smooth_surface.py`'s `_WALL_BANNER`, where it has been
 # dropping the shipped four-block C-grid's `e_ff_nose_up` and `e_ff_nose_lo` rows
-# since those edges were named. Both are fixed; neither was found by a check.
+# since those edges were named — and where the widening turned out NOT to be
+# inert, because one check there quantifies over every row. Both are fixed;
+# neither was found by a check.
 _ROW = re.compile(r"^      block '([^']+)'\s*: (.+)$")
 _ROWNUM = re.compile(r"^median ([\d.]+), p95 ([\d.]+), max ([\d.]+)$")
 # The two WALL-BAND rows (#144), which sit under the same headline as the block

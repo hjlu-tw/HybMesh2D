@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **52,949
-characters (53,259 bytes, 2026-11-11) ≈ 13k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **52,943
+characters (53,253 bytes, 2026-11-11) ≈ 13k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**53,500**, leaving 551 characters of slack — derived by a rule the gate states at that
+**53,500**, leaving 557 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -76,7 +76,7 @@ file = **does the rule exist**; `.claude/rules/*.md` = **what is the rule**; `do
 |------|---------------------------|-----------------|
 | Mesher — configuration (`.dat`, BL params, `MESH_MODE`) + core C++ | `.claude/rules/mesher.md` | `src/**`, `include/**`, `config/**`, `tests/cpp/**` |
 | Mesher — the `MESH_MODE 1` multi-block path (the pure entry point, the split rules, the quality ruler, BC binding by arc length, topological welding, the O-grid, the C-grid) | `.claude/rules/mesher-multiblock.md` | `include/MultiBlock.hpp`, `include/Mb*.hpp`, `src/MultiBlock.cpp`, `src/Mb*.cpp`, `src/cli.cpp`, `include/Config.hpp`, `config/multiblock_*.dat`, `tests/cpp/test_multiblock*.cpp`, `tests/cpp/test_mb_*.cpp` — all nine verbatim, not a shorthand, which this row got wrong once. Five are patterns, so a new `Mb*` module is covered with no edit and a differently-named one is not. The last two are the row above's as well: a multi-block session loads BOTH, the intended overlap. **Smoothing left this file in #85 (`mesher-smoothing.md`), and WHAT A BLOCK SIDE IS in #189 — the row below.** |
-| Mesher — WHAT A BLOCK SIDE IS (ONE EDGE or a CHAIN, the four-sides-close-a-ring refusal, the frame the SOUTH edge fixes — which REVERSED an earlier rule — and the four shared corner NODES) | `.claude/rules/mesher-block-side.md` | `include/MultiBlock.hpp`, `src/MultiBlock.cpp`, `tests/cpp/test_multiblock.cpp`, `examples/topology/*.json` — four globs, the exact list being that file's own `paths:`. The EIGHTEENTH rule file and the NINTH taken because one was FULL, the FOURTH split OUT of the row above (#85, #153, #177, this), which left #188 with 883. The first three globs are that row's as well, the intended overlap — what the document DECLARES is there, what one of a block's four sides IS is here. The last glob reaches a tree no rule file had covered — the nine shipped topology documents, where a block's four sides are actually written, were handed no rules at all. NOT "the second" — #177's row below claimed `tools/` as a first and #189 measured that false. |
+| Mesher — WHAT A BLOCK SIDE IS (ONE EDGE or a CHAIN, the four-sides-close-a-ring refusal, the frame the SOUTH edge fixes — which REVERSED an earlier rule — and the four shared corner NODES) | `.claude/rules/mesher-block-side.md` | `include/MultiBlock.hpp`, `src/MultiBlock.cpp`, `tests/cpp/test_multiblock.cpp`, `examples/topology/*.json` — four globs, the exact list being that file's own `paths:`. The EIGHTEENTH rule file and the NINTH taken because one was FULL, the FOURTH split OUT of the row above (#85, #153, #177, this), which left #188 with 883. The first three globs are that row's as well, the intended overlap — what the document DECLARES is there, what one of a block's four sides IS is here. The last glob reaches a tree no rule file had covered — the TEN shipped topology documents, where a block's four sides are actually written, were handed no rules at all. NOT "the second" — #177's row below claimed `tools/` as a first and #189 measured that false. |
 | Mesher — the `MESH_MODE 1` SMOOTHER (`MB_SMOOTH_ITERS`: the stage in the seam, the Winslow kernel, the wall control functions, which nodes move and in whose frame, the two report lines, the DEFAULT and the quality gate) | `.claude/rules/mesher-smoothing.md` | `include/MbControl.hpp`, `src/MbControl.cpp`, `include/MbShared.hpp`, `src/MbShared.cpp`, `include/MultiBlock.hpp`, `src/MultiBlock.cpp`, `include/Config.hpp`, `src/cli.cpp`, `tests/cpp/test_multiblock.cpp` and its two gates — eleven globs, the exact list being that file's own `paths:`. EVERY ONE is also in the row above's: this file OVERLAPS rather than partitions, being the second taken for CONTEXT (#89 took the ninth), and its header says why a budget forced it. A session under `src/MbShared.cpp` loads THREE mesher rule files. |
 | Mesher — what a `MESH_MODE 1` run MEASURES and PRINTS (`HYBMESH_MB_QUALITY`: inverted cells, non-orthogonality, the wall first-cell height, the cell-shape metric and its wall-band split, the exit codes, the negative-measurement rule, the per-case pins) | `.claude/rules/mesher-quality.md` | `include/MbQuality.hpp`, `src/MbQuality.cpp`, `src/cli.cpp`, `tests/cpp/test_mb_quality.cpp` — four globs, the exact list being that file's own `paths:`. ALL FOUR are another rule file's as well: `src/cli.cpp` is the two rows above's, and every one of them is under `mesher.md`'s `src/**` / `include/**` / `tests/cpp/**`, so a session under `src/MbQuality.cpp` loads THREE mesher rule files — the intended overlap. The cell-shape METRIC itself stays in `mesher.md`, being shared with the hybrid path; what is here is what the multi-block report does with it. |
 | Mesher — WHERE AN EDGE's NODES GO ALONG IT (the spacing laws: the tanh default, the wall height solved for by bisection, the TWO-SIDED law an edge with a different height at each end takes, the refusals, and the warning when a request was not honoured) | `.claude/rules/mesher-spacing.md` | `tools/PreProcessor/include/Spacing.hpp`, `src/MultiBlock.cpp`, `include/Config.hpp`, `tests/cpp/test_multiblock.cpp` — four globs, the exact list being that file's own `paths:`. The first MESHER rule file whose globs reach `tools/` — this row and that file said FIRST outright, measured FALSE at #189 (`gui-canvas-edit.md` at #147, `gui-lifecycle.md` at #77) — which CLOSES a blind spot `mesher-multiblock.md` had named and could not fix: a session opening the spacing header used to be handed no rules at all. The other three are that file's as well, so a session under `src/MultiBlock.cpp` loads it, this one, and `mesher.md` — the intended overlap. |
@@ -134,7 +134,7 @@ here rather than continued — which left #188 with 883: what a block side IS �
 the ring refusal, the frame the SOUTH edge fixes and the four shared corner NODES — is a
 different question from what the document declares, and #188's chain-valued side had nowhere
 to be written. **Its last glob is the second to reach a tree no rule file had covered**, and
-unlike #177's that hole was on no blind-spot list: the nine `examples/topology/*.json`
+unlike #177's that hole was on no blind-spot list: the `examples/topology/*.json`
 documents are where a block's four sides are actually WRITTEN, `mesher-multiblock.md` names
 them throughout, and a session opening one was handed nothing. It is a FOURTH instance of the
 shape rather than one of the three above, so that count is unchanged — what #189 adds is that
@@ -462,7 +462,7 @@ and its rationale with it. Nothing is ruled on here. The rationale for the GUI a
   field and renders as before. The value is the DECLARATION INDEX, not the block's id string
 - **`generate_letters.py`**: Generates letter-shaped geometry files
 - **`case_sources_index.py`**: which solver cases were built from which geometry (reads every `results/solver/*/grid/cad/SOURCES.txt`). No argument lists every case; an argument (path or partial name) answers "if I change this CAD, which cases go stale?" and exits 1 when nothing matches.
-- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 22 mesher cases (~8 s), for proving
+- **`golden_mesh.py`**: `capture <dir>` / `compare <dir>` over 23 mesher cases (~8 s), for proving
   that a refactor changed **nothing**. Byte comparison cannot make that claim — the mesher is not
   byte-reproducible and node NUMBERING varies run to run — so it canonicalises by COORDINATE and
   reports the worst deviation, keeping an exact 0.0 distinguishable from a match that merely fits

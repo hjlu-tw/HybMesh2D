@@ -20,7 +20,7 @@ FALSE, measured at #189: `gui-canvas-edit.md` globbed `tools/PreProcessor/includ
 at #147 and `gui-lifecycle.md` globbed `tools/scripts/gmsh_*` at #77. The claim below rests on
 its own measurement and not on that one.)
 
-> **NO RULE FILE'S GLOBS REACH `examples/`.** The nine shipped topology documents under
+> **NO RULE FILE'S GLOBS REACH `examples/`.** The shipped topology documents under
 > `examples/topology/` are the place where a block's four sides are actually WRITTEN, and seven
 > of the nine are named in `.claude/rules/mesher-multiblock.md` (`hgrid_blocks`,
 > `ogrid_circle`, `cgrid_naca0012`, `tworing_ogrid`, `tworing_offset`, `tworing_curve`,
@@ -133,7 +133,9 @@ is this file's.
       land within one chord against the control's 64.6%, and 0.7% beyond five chords against
       12.5%, because 29 + 13 - 1 = 41 spends 28 intervals inside one chord where the single
       class spends 22. The chain is what lets that split be declared with the far-field
-      edges unchanged. Both halves are gated separately.
+      edges unchanged. Gated separately — check 5 the counts, check 9 the distribution, and
+      check 11 the A/B that attributes it: the SAME document with its chains collapsed gives
+      79.3% / 20.1% / 0.7%, so the chain moves no cell anywhere.
     - Gated by `tests/test_multiblock_cgrid_chain_surface.py` (10 groups), whose docstring
       carries the dated gate-2 run — mesher, `getPGrid`, `unicones`, cfl 0.6, 100
       iterations, no NaN — and its four-block control run the same day at the same operating
@@ -195,14 +197,14 @@ is this file's.
   far field keeps its counts — is unachievable in this model, and that the cell locality it
   asks for comes from a second radial class rather than from the chain. **A capability's
   demonstrator is where its claim gets tested, and this one failed half of it.**
-- **THE CHAIN'S OWN CONTRIBUTION TO THE CELL DISTRIBUTION IS ZERO, AND NOTHING MEASURES THAT
-  DIRECTLY.** The gate holds the two halves separately — check 5 that the far-field edges keep
-  their numbers, check 9 that the added cells land near the body — and check 9's last clause
-  attributes the second to the radial split. What it does NOT do is run the same radial split
-  WITHOUT a chain, because that document cannot be written: without one, the inner band's outer
-  side is one edge, the outer region is one block per quadrant, and `e_ff_nose_up` is a 97-node
-  edge. The attribution is therefore an argument from the model rather than an A/B, and it is
-  recorded as such.
+- ~~**THE CHAIN'S OWN CONTRIBUTION TO THE CELL DISTRIBUTION IS ZERO, AND NOTHING MEASURES THAT
+  DIRECTLY** ... because that document cannot be written.~~ **FALSE, and corrected by #191's own
+  review before the ticket closed.** The chain-free document IS writable — it is the shipped one
+  with its two chains collapsed, which merely fails criterion 2 — and check 11 now runs it: 79.3%
+  of its added cells inside one chord against the shipped case's 79.2%, every bin within two cells.
+  So the attribution is a MEASUREMENT. Kept as a specimen because the sentence had the shape of a
+  proof and was an assumption: **an impossibility argued from the model is a hypothesis until
+  something tries to write the thing.**
 - **THE LOOP BRANCH SHIPPED UNGATED, AND WHAT FOUND IT WAS A REVIEW READING THE SPEC'S OWN LIST.**
   Refusal (5) above — two members over one corner pair — was in the code, reachable through the
   real binary, named in no document and exercised by no check, because #190's spec enumerates four

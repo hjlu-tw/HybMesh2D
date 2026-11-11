@@ -49,18 +49,38 @@ rather than quoted (check 9, measured 2026-11-11):
          raised to 97 and
          nothing else changed)
       THIS CASE                 3840    3042 79.2%   772 20.1%    26  0.7%
+      the CHAIN-FREE A/B        3840    3044 79.3%   770 20.1%    26  0.7%
+        (THIS case with its two
+         chains collapsed, check 11)
 
     Both add the same 3840 quads, because both put 97 nodes on the aerofoil and
     the node count is conserved out to the far field. What moves is WHERE they
     land: the share beyond one chord falls from 35.4% to 20.8%.
 
-    AND THE LEVER IS NOT THE CHAIN. It is the second radial class: 28 intervals
-    inside one chord and 12 over the nine beyond it, against the control's single
-    tanh that spends 22 and 18 on the same span. The chain is what lets that split
-    be DECLARED with every far-field edge's count unchanged — without it the inner
-    band's outer side would have to be one edge, the outer region one block per
-    quadrant, and ``e_ff_nose_up`` a 97-node edge. Both halves are necessary and
-    the gate holds them separately: check 5 the counts, check 9 the distribution.
+    THE CONTROL'S ROW IS NOT #188's, AND THE DIFFERENCE IS THE RULER. That ticket
+    states 63.1 / 23.8 / 13.2 for the same run; this re-measurement gives 64.6 /
+    22.9 / 12.5, which is 58 cells moving between bins. The 3840 agrees exactly,
+    so it is not a different mesh — what the earlier figures were binned by is not
+    recorded, and the distance here is to the aerofoil POLYLINE by segment rather
+    than to a chord, a centre or a nearest vertex. The ticket's row is left as it
+    stands, following #43's rule that a dated figure is annotated and not edited.
+
+    AND THE LEVER IS NOT THE CHAIN — MEASURED, by the third row. It is the second
+    radial class: 28 intervals inside one chord and 12 over the nine beyond it,
+    against the control's single tanh that spends 22 and 18 on the same span. The
+    chain-free A/B is this document with ``m1`` + ``m2`` merged into one seam edge,
+    ``ff1`` + ``ff2`` into one 97-node far-field edge, the terminating radial
+    dropped and the two outer nose blocks merged — the same mesh request with the
+    one schema feature removed — and it lands its cells where this case does to
+    within two in every bin. So what the chain buys is exactly and only what that
+    document gives up: its far field over each nose is ONE 97-node edge where this
+    case has two of 49. Check 5 holds the counts, check 9 the distribution, check
+    11 the A/B.
+
+    AN EARLIER DRAFT OF THIS FILE SAID THAT A/B COULD NOT BE WRITTEN, and the Spec
+    axis of the review answered that it could. It took one derived fixture. The
+    lesson is kept rather than quietly fixed: an impossibility argued from the
+    model is a hypothesis until something tries to write the thing.
 
 GATE 1 — ZERO INVERTED CELLS — is check 2, and it passed on the first run of the
 shipped declaration at every cap tried.
@@ -225,6 +245,61 @@ def topology(path=_TOPO):
         text = "".join("" if s.lstrip().startswith("//") else s
                        for s in f.readlines())
     return json.loads(text)
+
+
+def _collapse_chains(doc):
+    """The shipped document with its two chains COLLAPSED, derived not written.
+
+    `m1` + `m2` become one seam edge, `ff1` + `ff2` one far-field edge carrying
+    their sum, the terminating radial between the two outer nose blocks is
+    dropped and those blocks are merged. Lower half likewise. It is the same
+    mesh request with the one schema feature removed, which is what makes it the
+    A/B for "what does a chain buy".
+
+    DERIVED FROM THE SHIPPED DOCUMENT so it cannot drift from the case it
+    controls for: a count, a spacing or a corner edited there moves this too.
+    The ONE thing it does not inherit is the junction's continuation spacing,
+    which has no junction left to continue across — so the merged edge keeps the
+    trailing-edge clustering its first half declared and nothing else.
+    """
+    doc = json.loads(json.dumps(doc))
+    merge = (("m1", "m2", "m_up"), ("m3", "m4", "m_lo"),
+             ("ff1", "ff2", "ff_up"), ("ff3", "ff4", "ff_lo"))
+    was = {e["id"]: e for e in doc["edges"]}
+    out = []
+    for e in doc["edges"]:
+        if e["id"] in ("r_mid_up", "r_mid_lo", "m2", "m4", "ff2", "ff4"):
+            continue
+        hit = next((m for m in merge if m[0] == e["id"]), None)
+        if hit:
+            a, b, nid = hit
+            e = dict(e, id=nid,
+                     corners=[was[a]["corners"][0], was[b]["corners"][1]])
+            if "count" in was[a]:
+                e["count"] = was[a]["count"] + was[b]["count"] - 1
+            e["spacing"] = ({"ds_start": 0.005} if nid in ("m_up", "ff_up")
+                            else {"ds_end": 0.005})
+        out.append(e)
+    doc["edges"] = out
+    doc["corners"] = [c for c in doc["corners"] if c["id"] not in
+                      ("s_mid_up", "s_mid_lo", "fm_up", "fm_lo")]
+    blocks = []
+    for b in doc["blocks"]:
+        if b["id"] in ("o_nose_up_fwd", "o_nose_lo_fwd"):
+            continue
+        if b["id"] == "o_nose_up_aft":
+            b = {"id": "o_nose_up",
+                 "edges": ["r_te_up_out", "ff_up", "r_le_out", "m_up"]}
+        elif b["id"] == "o_nose_lo_aft":
+            b = {"id": "o_nose_lo",
+                 "edges": ["r_le_out", "ff_lo", "r_te_lo_out", "m_lo"]}
+        else:
+            b = dict(b, edges=["m_up" if e == ["m1", "m2"] else
+                               "m_lo" if e == ["m3", "m4"] else e
+                               for e in b["edges"]])
+        blocks.append(b)
+    doc["blocks"] = blocks
+    return doc
 
 
 def run(tmp, name, config_text):
@@ -460,16 +535,43 @@ def main():
           f"four-block r_te_up {edges4['r_te_up'].get('count')})",
           edges["r_te_up_in"]["count"] + edges["r_te_up_out"]["count"] - 1
           == edges4["r_te_up"]["count"] == 41)
-    check("6. ...and no block has one of each as its two i-sides, which is what "
-          "makes them two classes rather than one — the inner band's 28 "
-          "intervals answer to the wall and the outer region's 12 to the far "
-          "field",
-          all(not ({es[0], es[2]} & {"r_te_up_in", "r_le_in", "r_te_lo_in",
-                                     "e_out_up_in", "e_out_lo_in"}
-                   and {es[0], es[2]} & {"r_te_up_out", "r_mid_up", "r_le_out",
-                                         "r_mid_lo", "r_te_lo_out",
-                                         "e_out_up_out", "e_out_lo_out"})
-              for es in blocks.values()))
+    # THE TWO CLASSES ARE DERIVED FROM THE DOCUMENT, NOT TWO LISTS OF EDGE IDS.
+    # A class is what the relation makes it — every block's south and north are
+    # one — so the sets come out of a union-find over the blocks' own i-sides.
+    # Two hand-written literals would pass this check while silently losing a
+    # radial somebody added, which is the shape `test_multiblock_smooth_surface.py`
+    # group 13 enumerates from `config/` to avoid.
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for es in blocks.values():
+        a, b = find(es[0]), find(es[2])
+        if a != b:
+            parent[a] = b
+    classes = {}
+    for e in list(parent):
+        classes.setdefault(find(e), set()).add(e)
+    radial = sorted((sorted(v) for v in classes.values()), key=len)
+    check(f"6. ...and the i-sides fall into exactly TWO classes, derived from the "
+          f"blocks' own south/north pairs rather than from a list here — which is "
+          f"what makes them two budgets and not one, the inner band's 28 "
+          f"intervals answering to the wall and the outer region's 12 to the far "
+          f"field ({radial})",
+          len(radial) == 2 and len(radial[0]) == 5 and len(radial[1]) == 7
+          and all(e.endswith("_in") for e in radial[0])
+          and not any(e.endswith("_in") for e in radial[1]))
+    check(f"6. ...and the run resolves each class to one number, 29 and 13, so "
+          f"the split is the mesh's and not the document's alone "
+          f"({ {e: edges[e].get('count') or prop.get(e) for e in radial[0]} }, "
+          f"{ {e: edges[e].get('count') or prop.get(e) for e in radial[1]} })",
+          {edges[e].get("count") or prop.get(e) for e in radial[0]} == {29}
+          and {edges[e].get("count") or prop.get(e) for e in radial[1]} == {13})
 
     # ── 7. THE EXPORTED MESH IS ONE CONFORMAL BODY ───────────────────────
     #
@@ -602,10 +704,111 @@ def main():
     # The full claim — every pre-existing case byte-for-byte — is
     # `tools/scripts/golden_mesh.py`'s, and this is the cheap daily version of it.
     check(f"10. the shipped four-block C-grid still meshes to its own 5920 "
-          f"vertices and 11520 triangles, so adding this case beside it moved "
-          f"neither geometry nor mesher "
-          f"({len(vrt_nodes(stem_b))} nodes unsplit)",
-          len(vrt_nodes(stem_b)) == 5920)
+          f"vertices and its own 5760 structured quads at this unsplit cap, so "
+          f"adding this case beside it moved neither geometry nor mesher "
+          f"({len(vrt_nodes(stem_b))} nodes, {len(cel_cells(stem_b))} cells)",
+          len(vrt_nodes(stem_b)) == 5920 and len(cel_cells(stem_b)) == 5760)
+
+    # ── 11. THE A/B THAT SETTLES THE ATTRIBUTION ─────────────────────────
+    #
+    # THE FIRST DRAFT OF THIS FILE SAID THE A/B COULD NOT BE WRITTEN, and that
+    # was FALSE — a review read the sentence and asked for the document. It is
+    # the shipped one with its two chains COLLAPSED: `m1` + `m2` merged into one
+    # edge, `ff1` + `ff2` into one 97-node far-field edge, the terminating
+    # `r_mid_up` dropped and the two outer nose blocks merged into one. Nothing
+    # else moves — the same geometry, the same seam ellipse, the same two radial
+    # classes, the same 97 on the aerofoil.
+    #
+    # It is DERIVED from the shipped document rather than written out, so it
+    # cannot drift from the case it is the control for.
+    #
+    # WHAT IT MEASURES. If the cell distribution is the chain's doing, this mesh
+    # must lose it. It does not: 79.3% against 79.2% inside one chord, 26 cells
+    # against 26 beyond five. So "the lever is the second radial class" stops
+    # being an argument from the model and becomes a measurement — and what the
+    # chain buys is exactly and only the thing this document gives up, which is
+    # that its far field over each nose is ONE 97-node edge where the shipped
+    # case has two of 49.
+    nochain = _collapse_chains(doc)
+    nc_path = os.path.join(tmp, "nochain.json")
+    with open(nc_path, "w", encoding="utf-8") as f:
+        json.dump(nochain, f, indent=1)
+    rc_nc, out_nc, stem_nc = run(tmp, "nochain", base_config(
+        topo=nc_path) + unsplit)
+    q_nc = _qlines(out_nc)
+    check(f"11. the chain-free control is the shipped document with its two "
+          f"chains COLLAPSED, and it MESHES — so the A/B an earlier draft of "
+          f"this file called unwritable exists (rc {rc_nc}, inverted "
+          f"{q_nc[0].get('inverted') if q_nc else '?'}, cells "
+          f"{q_nc[0].get('cells') if q_nc else '?'})",
+          rc_nc == 0 and bool(q_nc) and q_nc[0].get("inverted") == 0
+          and q_nc[0].get("cells") == 9600)
+    nc_edges = {e["id"]: e for e in nochain["edges"]}
+    nc_prop = dict((m, int(n)) for m, n in
+                   re.findall(r"'([^']+)' = (\d+)", out_nc))
+    check(f"11. ...and it gives up exactly ONE thing: its far field over each "
+          f"nose is a single {nc_edges['ff_up'].get('count')}-node edge where "
+          f"the shipped case has two of 49, which is criterion 2 failing and is "
+          f"the whole of what the chain buys",
+          nc_edges["ff_up"]["count"] == nc_edges["ff_lo"]["count"] == 97
+          and nc_prop.get("m_up") == 97
+          and not any(isinstance(e, list)
+                      for b in nochain["blocks"] for e in b["edges"]))
+    h_nc = _bin_cells(stem_nc + ".vtk", body)
+    add_nc = [h_nc[k] - h_b[k] for k in range(3)]
+    beyond_nc = (add_nc[1] + add_nc[2]) / float(sum(add_nc))
+    check(f"11. ...and its added cells land where the shipped case's do, to "
+          f"within two cells in every bin: {100 * beyond_nc:.1f}% beyond one "
+          f"chord against {100 * beyond_n:.1f}%, so the DISTRIBUTION is the "
+          f"second radial class's doing and the chain contributes nothing to it "
+          f"— measured, not argued (control {add_nc}, shipped {add_n})",
+          sum(add_nc) == sum(add_n)
+          and all(abs(add_nc[k] - add_n[k]) <= 2 for k in range(3)))
+    # AND THE OTHER DIRECTION, so check 11 cannot be read as "the chain is free".
+    # The shipped case's mesh is BETTER on both non-orthogonality figures. The
+    # comparison is NOT clean and the message says so: collapsing the chain also
+    # collapses two 48-interval seam edges into one 96-interval edge, so the
+    # chordwise distribution moved with the blocking and this figure carries
+    # both. It is reported as a direction, not attributed.
+    check(f"11. ...while the shipped case is nevertheless better on both "
+          f"non-orthogonality figures (max {q[0].get('nonortho_max_deg'):.3f} "
+          f"vs {q_nc[0].get('nonortho_max_deg'):.3f}, mean "
+          f"{q[0].get('nonortho_mean_deg'):.3f} vs "
+          f"{q_nc[0].get('nonortho_mean_deg'):.3f}) — a direction only, because "
+          f"collapsing the chain also merges two 48-interval seam edges into one "
+          f"of 96, so the chordwise law moved with the blocking",
+          q[0]["nonortho_max_deg"] < q_nc[0]["nonortho_max_deg"]
+          and q[0]["nonortho_mean_deg"] < q_nc[0]["nonortho_mean_deg"])
+
+
+    # ── 12. THE THREE HOMES STATE THIS RUN'S OWN FIGURES ─────────────────
+    #
+    # The distribution table is quoted in four places — this file's docstring,
+    # `.claude/rules/mesher-block-side.md`, `docs/design_notes/mesher.md` and the
+    # commit message — and only this file MEASURES it. Three of those four are
+    # checked here against the run, which is the shape
+    # `test_multiblock_smooth_surface.py` group 14 uses for the smoother's
+    # residual table and for the same reason: `--sync` cannot reach a figure that
+    # needs the mesher run to produce it, so a hand-copied home goes stale in
+    # silence. The commit message is deliberately NOT checked: it is history.
+    pcts = ["%.1f%%" % (100.0 * add_n[0] / tot_n),
+            "%.1f%%" % (100.0 * add_c[0] / tot_c),
+            "%.1f%%" % (100.0 * add_n[2] / tot_n),
+            "%.1f%%" % (100.0 * add_c[2] / tot_c)]
+    for label, path in (
+            ("this gate's own docstring", os.path.abspath(__file__)),
+            (".claude/rules/mesher-block-side.md",
+             os.path.join(_REPO, ".claude", "rules", "mesher-block-side.md")),
+            ("docs/design_notes/mesher.md",
+             os.path.join(_REPO, "docs", "design_notes", "mesher.md"))):
+        text = open(path, encoding="utf-8").read()
+        missing = [v for v in pcts + ["3840"] if v not in text]
+        check(f"12. {label} states THIS run's own figures — the within-one-chord "
+              f"share for this case and for the control, the beyond-five share "
+              f"for each, and the 3840 both add — so the table a reader meets "
+              f"there is derived by this gate rather than remembered "
+              f"(missing: {missing or 'none'})",
+              not missing)
 
     print()
     if failures:
