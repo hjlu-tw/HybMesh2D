@@ -315,7 +315,15 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
 - **The relation is "opposite sides of one block", and there is NO second rule for an interface** — a
   shared edge is one edge two blocks name, so it propagates across blocks by itself. `count` is now a
   SEED. The COUNT propagates; the **SPACING LAW does not**.
-- **A conflict names both edges, both counts AND the chain**, a block at a time from a BFS over the
+  **ONE EXCEPTION SINCE #190, and it is the one place this relation is NOT symmetric**: where a side
+  is a CHAIN of edges the two are not merged at all — the chain's members are resolved by the
+  relation above, their SUM decides the side facing it, and a seed that contradicts that sum is
+  REFUSED rather than pushed back. The rules are `.claude/rules/mesher-block-side.md`, with
+  everything else about a chain; nothing here changes for a document that names one edge per side,
+  measured as 22/22 golden SAME at 0.000e+00.
+- **A conflict names both edges, both counts AND the chain** — this bullet's `chain` is the BFS PATH
+  of links between two seeds and is NOT #190's chain of edges, two senses of one word that this file
+  and the one next door each use in their own — a block at a time from a BFS over the
   recorded links; both gates put the two seeds TWO blocks apart, since a one-block conflict lets a
   chain-free report pass. A class with **no** seed is refused naming every edge in it — never
   defaulted, and **not** seeded from `SURFACE_MESH_SIZE`.

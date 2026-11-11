@@ -78,6 +78,16 @@
 //     the EXPORT are check 6 of
 //     tools/PreProcessor/tests/test_multiblock_surface.py, plus check 5b of
 //     tests/cpp/test_mesh_mode.cpp for Config::validate().
+//   * CHAINS (#190, checks 61-65) are exercised HERE AND NOWHERE ELSE. No shipped
+//     config, no `examples/topology/*.json` and no golden case carries one, so
+//     nothing exports a chain-bearing mesh, measures it with `MbQuality`, hands it
+//     to the `.cel` writer or runs it through the solver — the 22/22 golden SAME
+//     at 0.000e+00 recorded for that ticket is evidence the feature is ADDITIVE
+//     and says nothing about a chain-bearing mesh being good. Nor does anything
+//     here reach the SMOOTHER with a chain in the document: a chain side and the
+//     shorter side beneath it do not match station for station, so `addGhosts`
+//     builds no ghost layer and the line is frozen at any cap — a consequence of
+//     src/MbShared.cpp that no check asserts.
 //   * The geometry fixtures are BUILT here rather than resampled. What they
 //     reproduce is the two conventions of the real chain that decide where an
 //     attachment lands (a joint belongs to the later segment; a closed loop's
@@ -367,6 +377,64 @@
 // figures, which should have been the tell — and is in fact inert. The harness now
 // touches the file after restoring it. Read the exit code first, and distrust a
 // result that reproduces the previous ticket's numbers exactly.
+//
+// TEN MORE for #190's CHAINS — a side that is an ordered list of edges joined end
+// to end — and ALL TEN BITE. Measured 2026-11-11 the same way (each patch applied
+// to src/MultiBlock.cpp alone, rebuilt with the recompile confirmed in the build
+// output, this executable run, exit code read BEFORE the FAIL count, control run
+// clean). The build tree was NOT shared with a background suite while they ran,
+// which is the trap that made an earlier ticket score a live mutation as inert:
+//
+//   CA the chain is MERGED into its opposite side's class    -> 61, 61b, 62, 64, 65
+//      (the symmetric relation restored)                        (27)
+//   CB the sum does not subtract the shared junctions        -> 61, 61b, 62, 64, 65
+//      (total = sum of the members' counts)                     (27)
+//   CC the concatenation does not drop the junction node     -> 61, 61b, 62, 64, 65
+//                                                               (25)
+//   CD a member's OWN reversal dropped in the concatenation  -> 61b, 65 (3)
+//   CE the chain-of-one refusal removed                      -> 63 (2)
+//   CF the chain-on-a-WALL refusal removed                   -> 63 (1)
+//   CG the join test removed: every member taken forwards    -> 61b, 63, 65 (4)
+//   CH the contradicting-seed refusal removed (the sum       -> 62 (1)
+//      silently loses to whatever was there)
+//   CI the two-facing-chains check removed                   -> 65 (2)
+//   CJ only a chain's FIRST member registers as a block side -> 61, 61b, 62, 64, 65
+//                                                               (28)
+//
+// FIVE OF THEM ARE RECORDED FOR WHAT THEY SHOWED rather than for confirming a
+// check.
+//
+// CA, CB AND CC ARE THREE DIFFERENT DEFECTS WITH ONE SYMPTOM, and it is the
+// PRE-EXISTING invariant that catches all three: each ends at `block 'T': its
+// opposite sides came out with different node counts after propagation`, the
+// seam's own internal-inconsistency guard, so none of the three is distinguished
+// by a check written for it. That is the guard working — a chain cannot make a
+// block's two opposite sides disagree without something saying so — and it is also
+// why check 61 asserts the block's DIMENSIONS and the weld by NODE IDENTITY rather
+// than stopping at `r.ok`: those are the lines that would separate them if the
+// guard were ever removed.
+//
+// CF REDDENS EXACTLY ONE CHECK OF THE TWO WRITTEN FOR IT, and the one it leaves
+// green is the more obvious. With the wall refusal gone the document is still
+// refused — by the ARITY rule, since a wall declared as a chain member is a side
+// of two blocks — and that refusal names 'n0' too. So "it is refused" and "it
+// names the edge" are both satisfied by the wrong refusal; only the assertion that
+// the message says INTERIOR line can tell the two apart. A single
+// `refuses(..., "'n0'", ...)` would have been a check that cannot fail.
+//
+// CJ IS THE FEATURE SEEN FROM THE OTHER SIDE. Registering only a chain's first
+// member as a block side puts the document straight back to
+// `edge 'n1' is declared kind 'interface' but is a side of 1 block(s)` — the exact
+// refusal `docs/research/gridpro-blocking-method/make_merge_refusal.py` was written
+// to provoke. The arity rule is untouched by this ticket; what changed is that a
+// chain member reaches it as a side of the carrying block.
+//
+// CD AND CG BOTH NEEDED A FIXTURE THAT DID NOT EXIST AT FIRST. Every chain in the
+// termination document runs in its members' own declared direction, so
+// `SideSpec::rev` is all zeros and dropping it changes nothing; 61b (a member
+// declared backwards, asserted to produce the SAME mesh bit for bit) and 65's
+// flipped upper chain are what make the two reversals' composition visible. Before
+// they were written CD was INERT.
 #include "MultiBlock.hpp"
 #include "MbControl.hpp"
 #include "MbQuality.hpp"
@@ -1294,6 +1362,127 @@ std::string stretchedBox(int ni, int nj, const std::string& w, const std::string
     {"id": "b0", "edges": ["s", "e", "n", "w"]}
   ]
 })";
+}
+
+// ── A LINE THAT TERMINATES: two blocks below, ONE above (issue #190) ──────
+//
+//        t0 ───────────── tT ───────────── t2       L = [s0, r1, n0, w0]
+//        │                 T                │       R = [s1, e0, n1, r1]
+//        m0 ──── n0 ──── m1 ──── n1 ──── m2         T = [<south>, eT, tT, wT]
+//        │       L        │       R       │
+//        b0 ──── s0 ──── b1 ──── s1 ──── b2
+//
+// THE DOCUMENT THE MESHER REFUSED, and the one it now meshes, one side apart.
+// `r1` TERMINATES at `m1`: the line between the two lower blocks stops there and
+// has no continuation above. With T's south declared as ONE edge it can name `n0`
+// or `n1` and never both, and the one it does not name is then a side of a single
+// block, which the arity rule refuses by name. Declared as the CHAIN
+// `["n0", "n1"]` it names both, and that is the whole of the feature.
+//
+// `southT` is spelled into T's block declaration verbatim, so every case below
+// differs from the accepted document by exactly the thing it is about; `n0Kind`
+// and `tTExtra` reach the other two knobs the refusals need.
+std::string termination(const std::string& southT = R"(["n0", "n1"])",
+                        const std::string& n0Kind = "interface",
+                        const std::string& tTExtra = "") {
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "b0", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b1", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "b2", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "m0", "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "m1", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "m2", "kind": "free", "xy": [2.0, 1.0]},
+    {"id": "t0", "kind": "free", "xy": [0.0, 2.0]},
+    {"id": "t2", "kind": "free", "xy": [2.0, 2.0]}
+  ],
+  "edges": [
+    {"id": "s0", "corners": ["b0", "b1"], "kind": "wall", "count": 5},
+    {"id": "s1", "corners": ["b1", "b2"], "kind": "wall", "count": 5},
+    {"id": "w0", "corners": ["b0", "m0"], "kind": "wall", "count": 4},
+    {"id": "r1", "corners": ["b1", "m1"], "kind": "interface"},
+    {"id": "e0", "corners": ["b2", "m2"], "kind": "wall"},
+    {"id": "n0", "corners": ["m0", "m1"], "kind": ")") + n0Kind + R"("},
+    {"id": "n1", "corners": ["m1", "m2"], "kind": "interface"},
+    {"id": "wT", "corners": ["m0", "t0"], "kind": "wall", "count": 4},
+    {"id": "eT", "corners": ["m2", "t2"], "kind": "wall"},
+    {"id": "tT", "corners": ["t0", "t2"], "kind": "wall")" + tTExtra + R"(}
+  ],
+  "blocks": [
+    {"id": "L", "edges": ["s0", "r1", "n0", "w0"]},
+    {"id": "R", "edges": ["s1", "e0", "n1", "r1"]},
+    {"id": "T", "edges": [)" + southT + R"(, "eT", "tT", "wT"]}
+  ]
+})";
+}
+
+// ── THREE blocks under one, so a chain has a MIDDLE (issue #190) ──────────
+//
+//   t0 ──────────────── tT ──────────────── t3      A = [s0, r1, n0, w0]
+//   │                    T                   │      B = [s1, r2, n1, r1]
+//   m0 ── n0 ── m1 ── n1 ── m2 ── n2 ── m3          C = [s2, e0, n2, r2]
+//   │     A      │     B     │     C    │           T = [<south>, eT, tT, wT]
+//   b0 ── s0 ── b1 ── s1 ── b2 ── s2 ── b3
+//
+// WHAT ONLY THIS FIXTURE REACHES, and it is why there are two. A two-member chain
+// has no member that is neither first nor second, so the walk's mid-chain gap —
+// "the chain has reached corner X and this member has neither end there" — is
+// unreachable from `termination` at all; the only gap a two-member chain can have
+// is the one between its FIRST TWO, which is a different branch with a different
+// message. Three members reach both. The three lower counts are also DIFFERENT
+// (5, 4, 3), so the chain's total of 10 is a number no member carries and no pair
+// of them sums to.
+std::string chainTrio(const std::string& southT = R"(["n0", "n1", "n2"])") {
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "b0", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b1", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "b2", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "b3", "kind": "free", "xy": [3.0, 0.0]},
+    {"id": "m0", "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "m1", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "m2", "kind": "free", "xy": [2.0, 1.0]},
+    {"id": "m3", "kind": "free", "xy": [3.0, 1.0]},
+    {"id": "t0", "kind": "free", "xy": [0.0, 2.0]},
+    {"id": "t3", "kind": "free", "xy": [3.0, 2.0]}
+  ],
+  "edges": [
+    {"id": "s0", "corners": ["b0", "b1"], "kind": "wall", "count": 5},
+    {"id": "s1", "corners": ["b1", "b2"], "kind": "wall", "count": 4},
+    {"id": "s2", "corners": ["b2", "b3"], "kind": "wall", "count": 3},
+    {"id": "w0", "corners": ["b0", "m0"], "kind": "wall", "count": 4},
+    {"id": "r1", "corners": ["b1", "m1"], "kind": "interface"},
+    {"id": "r2", "corners": ["b2", "m2"], "kind": "interface"},
+    {"id": "e0", "corners": ["b3", "m3"], "kind": "wall"},
+    {"id": "n0", "corners": ["m0", "m1"], "kind": "interface"},
+    {"id": "n1", "corners": ["m1", "m2"], "kind": "interface"},
+    {"id": "n2", "corners": ["m2", "m3"], "kind": "interface"},
+    {"id": "wT", "corners": ["m0", "t0"], "kind": "wall", "count": 4},
+    {"id": "eT", "corners": ["m3", "t3"], "kind": "wall"},
+    {"id": "tT", "corners": ["t0", "t3"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "A", "edges": ["s0", "r1", "n0", "w0"]},
+    {"id": "B", "edges": ["s1", "r2", "n1", "r1"]},
+    {"id": "C", "edges": ["s2", "e0", "n2", "r2"]},
+    {"id": "T", "edges": [)") + southT + R"(, "eT", "tT", "wT"]}
+  ]
+})";
+}
+
+// One block's resolved dimensions by its DECLARED id, or (0, 0) when it is not
+// there. By id rather than by index for `diagonals`' reason: a check about which
+// block came out how big must not also be a check about declaration order.
+std::pair<int, int> blockDims(const MbResult& r, const std::string& id) {
+    for (const auto& b : r.blocks) if (b.id == id) return {b.ni, b.nj};
+    return {0, 0};
+}
+
+const hybmesh::MbBlock* blockById(const MbResult& r, const std::string& id) {
+    for (const auto& b : r.blocks) if (b.id == id) return &b;
+    return nullptr;
 }
 
 // ── A NON-CONVEX block, which the algebraic fill FOLDS (issue #82) ────────
@@ -5591,6 +5780,341 @@ int main() {
             bool unif = dd.size() == b.size();
             for (size_t k = 0; unif && k < dd.size(); ++k) unif = dd[k] == b[k];
             CHECK(unif, "60. ...and they are the UNIFORM ones, bit for bit");
+        }
+    }
+
+    // ── 61. A SIDE MAY BE A CHAIN, and the refused document MESHES (#190) ───
+    //
+    // THE CONTROL FIRST. The same arrangement with T's south declared as ONE edge
+    // is the document `docs/research/gridpro-blocking-method/make_merge_refusal.py`
+    // writes, and the refusal it gets is the arity rule — which is NOT fixed here
+    // and must still fire, because it is what makes welding allocation rather than
+    // comparison.
+    {
+        refuses(termination(R"("n0")"), "n1",
+                "61. a terminating line with T's south as ONE edge is still refused");
+        refuses(termination(R"("n1")"), "n0",
+                "61. ...and naming the other half moves the refusal, it does not lift it");
+
+        MbResult r = build(termination());
+        CHECK(r.ok, "61. the SAME arrangement declared as a chain is accepted (err: "
+                    + r.error + ")");
+        // NO EARLY RETURN. This file records and continues, and an abort here would
+        // make every later check's verdict a function of this one — which is how an
+        // injection comes back looking narrower than it is.
+        CHECK(r.blocks.size() == 3, "61. three blocks come back");
+        // The two lower blocks are untouched by the chain; T spans both.
+        CHECK(blockDims(r, "L") == std::make_pair(5, 4), "61. block 'L' is 5 x 4");
+        CHECK(blockDims(r, "R") == std::make_pair(5, 4), "61. block 'R' is 5 x 4");
+        CHECK(blockDims(r, "T") == std::make_pair(9, 4),
+              "61. block 'T' is 9 x 4 — its south is the chain, 5 + 5 less the ONE "
+              "corner the two members share");
+
+        int inverted = 0;
+        for (const auto& c : r.cells) {
+            const auto& a = r.nodes[static_cast<size_t>(c.nodeIds[0])];
+            const auto& b = r.nodes[static_cast<size_t>(c.nodeIds[1])];
+            const auto& d = r.nodes[static_cast<size_t>(c.nodeIds[2])];
+            if ((b - a).cross(d - a) <= 0.0) ++inverted;
+        }
+        CHECK(inverted == 0, "61. ...with ZERO inverted cells ("
+              + std::to_string(inverted) + " of " + std::to_string(r.cells.size()) + ")");
+
+        // CONFORMITY BY NODE IDENTITY, which is the claim that matters and is not
+        // a claim about coordinates: T's south row must BE the two lower blocks'
+        // north rows, node id for node id, with the junction counted once. A
+        // comparison of positions would pass on a mesh with two coincident nodes,
+        // which is exactly the hanging node this feature must not introduce.
+        const hybmesh::MbBlock* L = blockById(r, "L");
+        const hybmesh::MbBlock* R = blockById(r, "R");
+        const hybmesh::MbBlock* T = blockById(r, "T");
+        if (L && R && T) {
+            bool welded = true;
+            for (int i = 0; i < 5; ++i) {
+                if (T->nodeAt(i, 0) != L->nodeAt(i, 3)) welded = false;
+                if (T->nodeAt(4 + i, 0) != R->nodeAt(i, 3)) welded = false;
+            }
+            CHECK(welded, "61. every node of T's south IS a node of L's or R's north — "
+                          "the chain is welded by allocation, with no tolerance anywhere");
+            CHECK(T->nodeAt(4, 0) == L->nodeAt(4, 3) && T->nodeAt(4, 0) == R->nodeAt(0, 3),
+                  "61. ...and the junction corner 'm1' is ONE node all three blocks hold");
+        }
+        // NO NODE IS ALLOCATED TWICE. 5x4 + 5x4 + 9x4 minus the 4 shared along
+        // 'r1' minus the 9 shared along the chain = 63.
+        CHECK(r.nodes.size() == 63, "61. 63 nodes are produced, so the chain's shared "
+              "row is allocated once (got " + std::to_string(r.nodes.size()) + ")");
+        CHECK(r.cells.size() == 2u * (4u * 3u + 4u * 3u + 8u * 3u),
+              "61. ...and every quad of all three blocks is split");
+    }
+
+    // ── 61b. A MEMBER DECLARED AGAINST THE CHAIN'S OWN DIRECTION (#190) ────
+    //
+    // An edge has ONE declared direction and nothing says it has to be the one the
+    // side runs in — that is already true of a block's other three sides, and a
+    // chain adds a SECOND reversal underneath the ring's. The two compose, so this
+    // asserts the composition the only way that cannot be satisfied by getting
+    // both wrong: the same mesh, position for position, as the forward document.
+    {
+        MbResult fwd = build(termination());
+        MbResult rev = build(swap1(termination(),
+            R"({"id": "n1", "corners": ["m1", "m2"], "kind": "interface"})",
+            R"({"id": "n1", "corners": ["m2", "m1"], "kind": "interface"})"));
+        CHECK(rev.ok, "61b. a chain whose second member is declared BACKWARDS is accepted "
+                      "(err: " + rev.error + ")");
+        CHECK(blockDims(rev, "T") == std::make_pair(9, 4),
+              "61b. ...and the carrying block is the same 9 x 4");
+        const hybmesh::MbBlock* a = blockById(fwd, "T");
+        const hybmesh::MbBlock* b = blockById(rev, "T");
+        if (a && b && a->ni == b->ni && a->nj == b->nj) {
+            double worst = 0.0;
+            for (int j = 0; j < a->nj; ++j)
+                for (int i = 0; i < a->ni; ++i) {
+                    const double d = (fwd.nodes[static_cast<size_t>(a->nodeAt(i, j))]
+                                      - rev.nodes[static_cast<size_t>(b->nodeAt(i, j))])
+                                         .length();
+                    if (d > worst) worst = d;
+                }
+            CHECK(worst == 0.0, "61b. ...and every node of it is at the SAME position, bit "
+                  "for bit — the member's reversal and the ring's compose (worst "
+                  + fmtE(worst) + ")");
+        }
+    }
+
+    // ── 62. THE CHAIN'S SUM DECIDES THE SIDE FACING IT, ONE WAY (#190) ──────
+    {
+        MbResult r = build(termination());
+        CHECK(r.ok, "62. setup (err: " + r.error + ")");
+        CHECK(countOf(r, "tT") == 9,
+              "62. 'tT' — T's north, which the document never seeds — resolves to 9, the "
+              "chain's total (got " + std::to_string(countOf(r, "tT")) + ")");
+        CHECK(seededSet(r) == std::vector<std::string>({"s0", "s1", "w0", "wT"}),
+              "62. ...and is reported as PROPAGATED: only the four edges the document "
+              "declares a count on are seeded");
+        CHECK(countOf(r, "n0") == 5 && countOf(r, "n1") == 5,
+              "62. ...while the chain's two members keep the counts their own blocks "
+              "beneath fixed");
+
+        // THE THREE-MEMBER SUM, where the total is a number no member carries.
+        MbResult t = build(chainTrio());
+        CHECK(t.ok, "62. a THREE-member chain is accepted (err: " + t.error + ")");
+        CHECK(countOf(t, "tT") == 10,
+              "62. ...and its opposite side resolves to 5 + 4 + 3 less TWO shared "
+              "corners = 10 (got " + std::to_string(countOf(t, "tT")) + ")");
+        CHECK(blockDims(t, "T") == std::make_pair(10, 4),
+              "62. ...which is the width the block comes out at");
+
+        // A SEEDED OPPOSITE SIDE THAT CONTRADICTS THE SUM IS REFUSED, naming both
+        // numbers and both edges, rather than being resolved either way.
+        MbResult bad = hybmesh::buildMultiBlock(
+            termination(R"(["n0", "n1"])", "interface", R"(, "count": 12)"), {}, MbParams{});
+        CHECK(!bad.ok, "62. a count on 'tT' that contradicts the chain's total is refused");
+        CHECK(mentions(bad.error, "'tT'") && mentions(bad.error, "12")
+                  && mentions(bad.error, "9") && mentions(bad.error, "'n0'")
+                  && mentions(bad.error, "'n1'"),
+              "62. ...naming BOTH numbers and BOTH edges (got: " + bad.error + ")");
+        CHECK(bad.nodes.empty() && bad.cells.empty() && bad.blocks.empty(),
+              "62. ...and producing nothing");
+
+        // PROPAGATION IS ONE-WAY, AND THIS IS WHAT SAYS SO. Seeding the opposite
+        // side AT the chain's own total still leaves the members unresolved when
+        // nothing else fixes them: the number does not flow back through the chain.
+        // Without this the contradiction above would be satisfied by a rule that
+        // simply resolved whichever side was seeded.
+        const std::string noSeeds =
+            swap1(swap1(termination(R"(["n0", "n1"])", "interface", R"(, "count": 9)"),
+                        R"({"id": "s0", "corners": ["b0", "b1"], "kind": "wall", "count": 5})",
+                        R"({"id": "s0", "corners": ["b0", "b1"], "kind": "wall"})"),
+                  R"({"id": "s1", "corners": ["b1", "b2"], "kind": "wall", "count": 5})",
+                  R"({"id": "s1", "corners": ["b1", "b2"], "kind": "wall"})");
+        MbResult back = hybmesh::buildMultiBlock(noSeeds, {}, MbParams{});
+        CHECK(!back.ok, "62. a count on 'tT' does NOT flow back into the chain's members: "
+                        "with nothing else seeding them the document is refused");
+        CHECK(mentions(back.error, "'n0'") || mentions(back.error, "'n1'"),
+              "62. ...naming a member as the thing with no count (got: " + back.error + ")");
+        // AND THE CONTROL that makes the previous line a statement about the
+        // DIRECTION rather than about the document being short of seeds: putting
+        // the two lower counts back — and nothing else — accepts it, so what the
+        // chain's members needed was their own blocks' seeds and never 'tT'.
+        MbResult fwd = hybmesh::buildMultiBlock(
+            termination(R"(["n0", "n1"])", "interface", R"(, "count": 9)"), {}, MbParams{});
+        CHECK(fwd.ok, "62. ...while the same document WITH those two counts is accepted, "
+                      "so the refusal is the direction and not a shortage of seeds (err: "
+              + fwd.error + ")");
+    }
+
+    // ── 63. THE FOUR NEW REFUSALS, each naming what it saw (#190) ───────────
+    {
+        // A CHAIN OF ONE. The bare edge id stays the only spelling of an ordinary
+        // side, so the two cannot drift apart.
+        refuses(termination(R"(["n0"])"), "at least TWO edges",
+                "63. a chain of one member is refused");
+        refuses(termination(R"(["n0"])"), "write \"n0\"",
+                "63. ...and is told the spelling to use instead");
+        refuses(termination(R"([])"), "at least TWO edges",
+                "63. an empty list is the same refusal");
+
+        // A CHAIN ON A WALL. Interior lines only, so the wall spacing publication,
+        // its readers, the wall-band walk and the spacing laws are untouched.
+        refuses(termination(R"(["n0", "n1"])", "wall"), "'n0'",
+                "63. a chain with a WALL member is refused");
+        refuses(termination(R"(["n0", "n1"])", "wall"), "INTERIOR line",
+                "63. ...and says that a chain is an interior line only");
+
+        // MEMBERS THAT DO NOT JOIN END TO END — the FIRST TWO, which share no
+        // corner at all.
+        refuses(chainTrio(R"(["n0", "n2", "n1"])"), "share no corner",
+                "63. a chain whose first two members do not meet is refused");
+        refuses(chainTrio(R"(["n0", "n2", "n1"])"), "'n2'",
+                "63. ...naming the member it could not join");
+
+        // ...and MID-CHAIN, which only a three-member chain can reach: 'n1' and
+        // 'n0' do join (at 'm1'), so the chain runs m2 -> m1 -> m0 and 'n2' has
+        // neither of its ends at 'm0'.
+        refuses(chainTrio(R"(["n1", "n0", "n2"])"), "reaches corner 'm0'",
+                "63. a chain that breaks in the MIDDLE names the corner it reached");
+        refuses(chainTrio(R"(["n1", "n0", "n2"])"), "'n2'",
+                "63. ...and the member that is not there");
+
+        // A member named twice is still the pre-existing refusal, not a new one:
+        // an edge used twice anywhere on one block is a block welded to itself.
+        refuses(termination(R"(["n0", "n0"])"), "named twice",
+                "63. a chain naming one edge twice is refused as a self-weld");
+    }
+
+    // ── 64. THE OLD REFUSALS STILL FIRE, with a chain in the document (#190) ─
+    {
+        // FOUR SIDES STILL CLOSE A RING, with the CHAIN's two ends taking the
+        // place of a single edge's. Reversing the chain's order reverses the side,
+        // so its west no longer meets its south.
+        MbResult rv = hybmesh::buildMultiBlock(termination(R"(["n1", "n0"])"), {},
+                                               MbParams{});
+        CHECK(!rv.ok, "64. a chain declared the other way round breaks the ring");
+        CHECK(mentions(rv.error, "do not close a ring")
+                  && mentions(rv.error, "the chain ['n1', 'n0']"),
+              "64. ...and the message names the SIDE as a chain rather than as one of "
+              "its members (got: " + rv.error + ")");
+
+        // THE ARITY RULE IS UNTOUCHED AND A CHAIN MEMBER SATISFIES IT. 'n0' is a
+        // side of L and of T, 'n1' of R and of T — two blocks each, like any other
+        // interior line — so both are reported as welded shared edges.
+        MbResult r = build(termination());
+        CHECK(r.ok, "64. setup (err: " + r.error + ")");
+        int seen = 0;
+        for (const auto& se : r.sharedEdges)
+            if (se.edgeId == "n0" || se.edgeId == "n1") {
+                ++seen;
+                CHECK(se.nodes == 5, "64. shared edge '" + se.edgeId + "' carries 5 nodes");
+                CHECK(se.sideA == hybmesh::MB_NORTH && se.sideB == hybmesh::MB_SOUTH,
+                      "64. ...and is reported as the north of the block beneath and the "
+                      "SOUTH of the block carrying the chain");
+            }
+        CHECK(seen == 2, "64. both chain members are reported as shared edges");
+        CHECK(r.sharedEdges.size() == 3,
+              "64. ...and so is 'r1', the line that terminates — three in all");
+
+        // A CHAIN DOES NOT MAKE ITS MEMBERS WALLS. No boundary face is emitted
+        // along either of them, so the chain is not a wall through the fluid.
+        CHECK(r.wallSpecs.size() == 7,
+              "64. seven wall sides are published — the chain contributes none (got "
+              + std::to_string(r.wallSpecs.size()) + ")");
+        bool chainIsWall = false;
+        for (const auto& ws : r.wallSpecs)
+            if (ws.edgeId == "n0" || ws.edgeId == "n1") chainIsWall = true;
+        CHECK(!chainIsWall, "64. ...and neither chain member is one of them");
+    }
+
+    // ── 65. TWO CHAINS FACING EACH OTHER ARE CHECKED, NEVER PROPAGATED (#190) ─
+    //
+    // Reachable rather than defensive: T's south is a chain here and so is its
+    // NORTH, over two blocks nobody draws below. Neither total can decide the
+    // other — each is decided by its own members — so all that is left is whether
+    // they agree, and the refusal says so instead of reporting the internal
+    // "opposite sides came out with different node counts" that would otherwise
+    // reach the user.
+    {
+        // The accepted form: the upper chain's members sum to the lower's 9.
+        const std::string base = R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "b0", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "b1", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "b2", "kind": "free", "xy": [2.0, 0.0]},
+    {"id": "m0", "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "m1", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "m2", "kind": "free", "xy": [2.0, 1.0]},
+    {"id": "p0", "kind": "free", "xy": [0.0, 2.0]},
+    {"id": "p1", "kind": "free", "xy": [1.0, 2.0]},
+    {"id": "p2", "kind": "free", "xy": [2.0, 2.0]},
+    {"id": "q0", "kind": "free", "xy": [0.0, 3.0]},
+    {"id": "q2", "kind": "free", "xy": [2.0, 3.0]}
+  ],
+  "edges": [
+    {"id": "s0", "corners": ["b0", "b1"], "kind": "wall", "count": 5},
+    {"id": "s1", "corners": ["b1", "b2"], "kind": "wall", "count": 5},
+    {"id": "w0", "corners": ["b0", "m0"], "kind": "wall", "count": 4},
+    {"id": "r1", "corners": ["b1", "m1"], "kind": "interface"},
+    {"id": "e0", "corners": ["b2", "m2"], "kind": "wall"},
+    {"id": "n0", "corners": ["m0", "m1"], "kind": "interface"},
+    {"id": "n1", "corners": ["m1", "m2"], "kind": "interface"},
+    {"id": "wT", "corners": ["m0", "p0"], "kind": "wall", "count": 4},
+    {"id": "eT", "corners": ["m2", "p2"], "kind": "wall"},
+    {"id": "u0", "corners": ["p0", "p1"], "kind": "interface", "count": COUNT0},
+    {"id": "u1", "corners": ["p1", "p2"], "kind": "interface", "count": COUNT1},
+    {"id": "wU", "corners": ["p0", "q0"], "kind": "wall", "count": 3},
+    {"id": "eU", "corners": ["p2", "q2"], "kind": "wall"},
+    {"id": "tU", "corners": ["q0", "q2"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "L", "edges": ["s0", "r1", "n0", "w0"]},
+    {"id": "R", "edges": ["s1", "e0", "n1", "r1"]},
+    {"id": "T", "edges": [["n0", "n1"], "eT", ["u0", "u1"], "wT"]},
+    {"id": "U", "edges": [["u0", "u1"], "eU", "tU", "wU"]}
+  ]
+})";
+        MbResult ok = hybmesh::buildMultiBlock(
+            swap1(swap1(base, "COUNT0", "4"), "COUNT1", "6"), {}, MbParams{});
+        CHECK(ok.ok, "65. two chains facing each other are accepted when their totals "
+                     "agree (err: " + ok.error + ")");
+        CHECK(blockDims(ok, "T") == std::make_pair(9, 4),
+              "65. ...and the block between them comes out 9 wide from BOTH");
+        CHECK(countOf(ok, "tU") == 9,
+              "65. ...with the upper chain's own total deciding ITS opposite side too");
+
+        MbResult no = hybmesh::buildMultiBlock(
+            swap1(swap1(base, "COUNT0", "4"), "COUNT1", "7"), {}, MbParams{});
+        CHECK(!no.ok, "65. two chains whose totals disagree are refused");
+        CHECK(mentions(no.error, "BOTH chains") && mentions(no.error, "9")
+                  && mentions(no.error, "10"),
+              "65. ...naming both totals (got: " + no.error + ")");
+        CHECK(!mentions(no.error, "was not read consistently"),
+              "65. ...rather than falling through to the internal-inconsistency message, "
+              "which is what a user used to be handed");
+
+        // ONE CHAIN, TWO BLOCKS THAT DISAGREE ABOUT WHICH WAY IT RUNS. Each block
+        // resolves its OWN side, so `["u1", "u0"]` runs p2 -> p0 with both members
+        // reversed inside it and is then reversed again by the ring. Nothing here
+        // is new policy — a shared EDGE has had this property since #53 — but it is
+        // where BOTH reversals are turned on at once, and the mesh must not move.
+        MbResult flip = hybmesh::buildMultiBlock(
+            swap1(swap1(swap1(base, "COUNT0", "4"), "COUNT1", "6"),
+                  R"({"id": "T", "edges": [["n0", "n1"], "eT", ["u0", "u1"], "wT"]})",
+                  R"({"id": "T", "edges": [["n0", "n1"], "eT", ["u1", "u0"], "wT"]})"),
+            {}, MbParams{});
+        CHECK(flip.ok, "65. the upper chain named in the OPPOSITE order by its other "
+                       "block is accepted (err: " + flip.error + ")");
+        const hybmesh::MbBlock* t0 = blockById(ok, "T");
+        const hybmesh::MbBlock* t1 = blockById(flip, "T");
+        if (t0 && t1 && t0->ni == t1->ni && t0->nj == t1->nj) {
+            double worst = 0.0;
+            for (int j = 0; j < t0->nj; ++j)
+                for (int i = 0; i < t0->ni; ++i) {
+                    const double d = (ok.nodes[static_cast<size_t>(t0->nodeAt(i, j))]
+                                      - flip.nodes[static_cast<size_t>(t1->nodeAt(i, j))])
+                                         .length();
+                    if (d > worst) worst = d;
+                }
+            CHECK(worst == 0.0, "65. ...and its block is unmoved, bit for bit (worst "
+                  + fmtE(worst) + ")");
         }
     }
 

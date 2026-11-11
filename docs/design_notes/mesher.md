@@ -5474,6 +5474,120 @@ visited per query, 2c the cells allocated and 9c the pairs rejected, which is th
 not the PHASE being fast: a caller that queried the right index with the wrong radius would pass
 all three. Re-running the table above by hand is the only thing that would notice.
 
+**A BLOCK SIDE MAY BE A CHAIN, AND A CHAIN'S COUNT GOES OUT OF IT AND NEVER IN** (#190, parent
+#188)
+
+**THE PROBLEM IS THE MODEL'S COHERENCE, NOT A BUG IN IT.** A count is a seed: opposite sides of a
+block hold the same number, a shared edge is one edge two blocks name, and that single relation
+partitions every edge into equivalence classes. It is why the operator seeds three numbers on the
+H-grid and gets twelve. It is also why there is no way to say "more nodes HERE". Measured on the
+shipped C-grid by running it against itself with one count changed — doubling the aerofoil's count
+(49 -> 97) and changing nothing else adds **3840 cells**, of which **63.1%** land within one chord
+of the body (what was asked for), **23.8%** one to five chords out, and **13.2% beyond five
+chords**, where nobody asked for anything. The expensive version is §6f of
+`docs/research/nesting-blocks-at-a-complicated-leading-edge.md`: an iced nose went from 8 to 25 to
+99 inverted cells as blocks were added at the feature, because every block added at the nose adds
+a far-field station that must be ordered.
+
+**AND THE MESHER SAID SO, IN ITS OWN WORDS, BEFORE A LINE OF THIS WAS WRITTEN.**
+`docs/research/gridpro-blocking-method/make_merge_refusal.py` writes the minimal request — two
+blocks below, one above, the line between them terminating — and gets
+`edge 'n1' is declared kind 'interface' but is a side of 1 block(s)` /
+`HYBMESH_ERROR 8 TOPOLOGY`. That refusal is CORRECT and is not what was changed. A block has four
+sides; each was exactly one edge; so the block above can name one half of the line below or the
+other and never both, and the half it does not name is a side of one block. **The arity rule is
+what makes welding allocation rather than comparison**, which is the property that lets a 1e-7
+wall spacing and a 1e-1 far-field one sit in one mesh with no tolerance anywhere. What was wrong
+was the expressiveness of a SIDE, one level up.
+
+**WHAT LANDED.** A side is one edge, as before, or an ordered list joined end to end. A list of one
+is refused. The members are resolved by the ordinary class relation — each is also a side of the
+block beneath it — and their SUM then decides the opposite side of the block carrying the chain.
+`sum(n_m - 1) + 1` for M members, because the M-1 junctions are each ONE declared corner. **The
+propagation runs members -> total -> opposite side and never the reverse**, and the ADR's title
+carries that because it is the thing a future reader is most likely to mistake for a bug.
+
+**THE ONE-WAY RULE IS GATED AS A DIRECTION, NOT AS A REFUSAL, AND THE DIFFERENCE IS THE CONTROL.**
+Check 62 asserts that a count on the opposite side which contradicts the sum is refused naming
+both numbers and both edges — and a rule that simply resolved whichever side was seeded first
+would pass that, since it would also refuse. So the check goes further: the two lower blocks' own
+seeds are removed and the opposite side is seeded AT the chain's own total, and the document is
+still refused, because the number does not flow back through the chain. Beside it sits the control
+that makes that a statement about the DIRECTION rather than about the document being short of
+seeds — the same document with the two lower counts restored is ACCEPTED. Either half alone is
+satisfiable by something that is not the rule.
+
+**THE FILL NEEDED NO CHANGE, AND THAT IS WHERE MOST OF THE RISK WENT.** A side already reached the
+transfinite fill as a vector of node positions, so a chain concatenates into exactly that vector.
+The junction node is dropped from the second member because it is the SAME ALLOCATED ID — the
+corner was allocated once in `cornerNode`, the member ending there and the member starting there
+both read it — not because two positions were found to agree. Check 61 asserts that by node
+IDENTITY rather than by coordinate, deliberately: a comparison of positions passes on a mesh with
+two coincident nodes, which is precisely the hanging node this feature must not introduce. 63 nodes
+come back for 5x4 + 5x4 + 9x4 blocks, which is the arithmetic with every shared row counted once.
+
+**TWO REVERSALS NOW COMPOSE, AND EACH HAS ONE HOME.** `SideSpec::rev` says a member is traversed
+against its own declared direction so the joins meet; `Frame::rev` says the whole side is traversed
+against the ring. They are applied in that order and in one place each — the concatenation lays the
+members down in the SIDE's direction, then the finished side is reversed if the ring asks. The one
+reader that has to compose them by hand is `declaredDs`, which picks the perpendicular edge a
+wall's first-cell height is asked of: with a chain there, the member that touches the wall is the
+one at that END of the side IN THE BLOCK'S FRAME, which is `(fromEnd != f.rev[sideK])` choosing
+first or last, and the member's own `rev` XORed in to pick which of ITS two ends. On a one-member
+side every line of that reduces to the line that was there before.
+
+**TWO FACING CHAINS ARE A CHECK AND NOT A PROPAGATION, AND IT IS REACHABLE.** Each is decided by
+its own members, so neither can decide the other; all that is left is whether the totals agree.
+Check 65 builds four blocks where the middle one's south AND north are both chains and asserts
+both halves — accepted at 4 + 6, refused at 4 + 7 naming both totals. The refusal matters because
+without it the user is handed `its opposite sides came out with different node counts after
+propagation; the topology was not read consistently`, which is the seam's INTERNAL-inconsistency
+message: it names no fix and tells a reader their document is not the problem when it is.
+
+**THE MID-CHAIN GAP NEEDED A THIRD BLOCK, AND THAT IS WHY THERE ARE TWO FIXTURES.** A two-member
+chain has no member that is neither first nor second, so the walk's mid-chain refusal — "the chain
+has reached corner X and this member has neither end there" — is unreachable from the two-block
+termination at all; the only gap it can have is between its first two, which is a different branch
+with a different message. `chainTrio` reaches both, and its three lower counts are deliberately
+different (5, 4, 3) so the total of 10 is a number no member carries and no pair of them sums to.
+
+**A CLAUSE WAS WRITTEN AND DELETED BECAUSE NOTHING COULD REACH IT.** The no-seed refusal was given
+an extra sentence for the case where the unresolved group is the side FACING a chain — "its count
+comes from that chain's own members, seed one of THOSE instead". It is unreachable: that group is
+unresolved only while the chain's members are, and each member then sits in a group of its own that
+the same message already names, so which one is reported first is the class ordering's answer and
+not a judgement. The alternative was to make the reporting PREFER a chain-facing group so the
+clause could be gated, which is a behaviour change invented to make a sentence testable. The
+sentence went instead, and the reason is recorded at the site.
+
+**THE SMOOTHER FREEZES A CHAIN-BEARING SIDE, AND THAT FALLS OUT RATHER THAN BEING DECIDED.**
+`mbSmoothPlan` builds a ghost layer across a shared edge only when the two sides match station for
+station (`addGhosts` in `src/MbShared.cpp`, every station checked by node id); a chain side has
+more stations than the side beneath it, so no ghost layer is built and every node on that line
+keeps its position at any `MB_SMOOTH_ITERS`. That is the honest answer for this release — the solve
+has no frame in which to move a node whose two blocks disagree about how many stations the line
+has — and it is a CONSEQUENCE nothing asserts, recorded as a named blind spot in
+`.claude/rules/mesher-block-side.md` rather than as a property. `src/MbShared.cpp` was not edited.
+
+**22/22 GOLDEN SAME AT EXACTLY 0.000e+00, FROM A SEPARATELY BUILT BINARY.** `git archive HEAD` into
+a scratch tree, built there, captured with `HYBMESH_GOLDEN_BIN` pointed at THAT binary, then
+compared against the working tree — so the claim is a comparison and not a binary against itself.
+That is the hard gate on "additive", and it is what the list-of-one refusal is for: with a chain of
+one legal, every existing document would have had a second spelling and the two would have been
+free to drift apart.
+
+**TEN HAND INJECTIONS, dated 2026-11-11 in `tests/cpp/test_multiblock.cpp`'s own docstring**, each
+patch applied to `src/MultiBlock.cpp` alone, rebuilt, the executable run, exit code read BEFORE the
+FAIL count, control run clean. The build tree was not shared with a background suite while they
+ran, which is the trap #175 recorded. What each one does NOT redden is recorded beside it there,
+because an injection that breaks everything says less than one that breaks exactly the check
+written for it.
+
+**WHAT IS NOT HERE.** No shipped case and no golden case carries a chain, so nothing exports one,
+hands one to the quality instrument, the `.cel` writer or the solver. No topology family emits one.
+Chains are interior only. All four are in the rule file's blind-spot list, and the demonstrator is
+#191.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

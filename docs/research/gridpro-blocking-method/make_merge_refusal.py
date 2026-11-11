@@ -28,6 +28,14 @@ rather than comparison (`.claude/rules/mesher-multiblock.md`). What section 15
 concludes is that a terminating nest needs a DIFFERENT expressiveness -- a side
 that is a CHAIN of edges -- not that this refusal is wrong.
 
+THAT EXPRESSIVENESS LANDED IN #190 (2026-11-11), AND THIS FILE STILL WRITES THE
+REFUSAL. The document below is unchanged on purpose: it is the RED half, and the
+GREEN half is the same document with T's south declared as the chain
+`["n0", "n1"]`, which meshes with zero inverted cells. Both are gated at
+`tests/cpp/test_multiblock.cpp` check 61, where the chain spelling sits beside
+this one. The arity rule was not touched, so running this still exits 8.
+Rules: `.claude/rules/mesher-block-side.md`.
+
     python3 docs/research/gridpro-blocking-method/make_merge_refusal.py
     ./run.sh -conf docs/research/gridpro-blocking-method/merge_refusal.dat
 """

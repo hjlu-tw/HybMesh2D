@@ -951,6 +951,18 @@ wall spacing beside a 1e-1 far-field one. What this section concludes is that a 
 needs a different EXPRESSIVENESS — a block side that is a CHAIN of edges — and that is a schema
 decision, not a parameter.
 
+> **SUPERSEDED IN PART, 2026-11-11 (#190), and kept as the record of why.** The schema decision
+> above was taken: a side may now be an ordered list of edges joined end to end, and the SAME
+> document `make_merge_refusal.py` writes meshes with zero inverted cells when T's south is
+> declared `["n0", "n1"]`. What is superseded is "the model CANNOT express it". What is NOT
+> superseded is everything else here: the arity rule was not touched and still produces the
+> refusal quoted above for the one-edge spelling, the vendor reading is unchanged, and **§14's
+> decision not to acquire local nesting stands on its own grounds** — the capability was built
+> for refining a feature without the far field inheriting it, which §15e's own N(r) curve is the
+> case for, and a declined method is not its consumer. Rules:
+> `.claude/rules/mesher-block-side.md`. Decision and the rejected alternatives:
+> `docs/adr/0003-a-block-side-may-be-a-chain-and-counts-propagate-out-of-it-never-into-it.md`.
+
 ### 15e. The three zones, and where ours stops being like theirs **[V]** on ours, **[I]** on theirs
 
 `blocking_three_zones.png`. Read off the icing wireframe: (1) a dense NEST hugging the ice,

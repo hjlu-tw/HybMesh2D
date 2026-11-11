@@ -218,9 +218,39 @@ struct EdgeSpec {
     hybmesh::MbCurve curve;
 };
 
+// ONE OF A BLOCK'S FOUR SIDES, as the document declares it: one edge id, or an
+// ordered CHAIN of two or more joined end to end (#190).
+//
+// A LIST OF ONE IS REFUSED, so the bare edge id stays the ONLY spelling of an
+// ordinary side and the two cannot drift apart. `member` / `rev` carry the
+// resolution: which edges, in the side's own direction, and which of them are
+// traversed against their own declared direction to make the joins meet. `a` and
+// `b` are then the two corners the SIDE runs between — which is exactly what the
+// ring match, the count relation and the fill used to read off a single edge, so
+// a chain costs those three nothing but the indirection.
+struct SideSpec {
+    std::vector<std::string> ids;   // the declared members, in order
+    std::vector<int> member;        // ...as indices into `edges`, parallel to `ids`
+    std::vector<char> rev;          // member traversed against its OWN direction
+    std::string a, b;               // the side's two ends, in the side's direction
+    bool chain() const { return ids.size() > 1; }
+    // How the side READS in a refusal. One place, so no message spells it twice
+    // and a chain is never reported as whichever member happened to be first.
+    std::string label() const {
+        if (ids.empty()) return "an empty side";
+        if (!chain()) return "edge '" + ids[0] + "'";
+        std::string s = "the chain [";
+        for (size_t k = 0; k < ids.size(); ++k) {
+            if (k) s += ", ";
+            s += "'" + ids[k] + "'";
+        }
+        return s + "]";
+    }
+};
+
 struct BlockSpec {
     std::string id;
-    std::vector<std::string> edges;   // exactly 4, in [south, east, north, west]
+    std::vector<SideSpec> sides;      // exactly 4, in [south, east, north, west]
 };
 
 // The name of one side of a block, from the ONE place the [south, east, north,
@@ -795,13 +825,81 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
     return true;
 }
 
+// JOIN ONE SIDE'S MEMBERS END TO END, in the order the document named them, and
+// resolve the two corners the SIDE runs between (#190).
+//
+// A single edge answers immediately and takes its own two corners, which is what
+// keeps a chain-free document identical. A chain is WALKED: the first two members
+// decide which way the side runs, and every member after that must begin at the
+// corner the one before it ended at. Nothing is reordered and nothing is matched
+// by position — a chain whose members do not meet is a typo, and a typo that
+// meshes is the wrong-mesh-with-no-error this whole path refuses.
+bool resolveSide(const std::vector<EdgeSpec>& edges, const std::string& where,
+                 const std::string& sideWord, SideSpec& s, std::string& err) {
+    const EdgeSpec& e0 = edges[static_cast<size_t>(s.member[0])];
+    s.rev.assign(s.ids.size(), 0);
+    if (!s.chain()) { s.a = e0.a; s.b = e0.b; return true; }
+    // CHAINS ARE INTERIOR LINES ONLY. A wall side stays exactly one edge, which
+    // leaves the wall spacing publication, its readers, the wall-band walk and the
+    // spacing laws untouched by this feature — and the canonical use needs nothing
+    // more, the wall below a termination being two separate blocks' sides.
+    for (int m : s.member) {
+        const EdgeSpec& e = edges[static_cast<size_t>(m)];
+        if (e.kind != hybmesh::MB_EDGE_WALL) continue;
+        err = where + ", " + sideWord + ": edge '" + e.id + "' is declared kind 'wall' and "
+              "is a member of a chain. A side that is a chain of edges is an INTERIOR line "
+              "only — every member must be an 'interface' or a 'cut' — so that a wall's "
+              "first cell height, its boundary condition and its binding are untouched. "
+              "Declare this side as a single edge, or declare that edge interior.";
+        return false;
+    }
+    const EdgeSpec& e1 = edges[static_cast<size_t>(s.member[1])];
+    const bool bJoins = (e0.b == e1.a || e0.b == e1.b);
+    const bool aJoins = (e0.a == e1.a || e0.a == e1.b);
+    if (bJoins && aJoins) {
+        err = where + ", " + sideWord + ": its first two members, '" + e0.id + "' ['" + e0.a
+            + "', '" + e0.b + "'] and '" + e1.id + "' ['" + e1.a + "', '" + e1.b
+            + "'], share BOTH of their corners, so the chain has no direction to run in "
+              "and no two ends. A side is a line, not a loop.";
+        return false;
+    }
+    if (!bJoins && !aJoins) {
+        err = where + ", " + sideWord + ": its members do not join end to end — '" + e0.id
+            + "' runs ['" + e0.a + "', '" + e0.b + "'] and the next member '" + e1.id
+            + "' runs ['" + e1.a + "', '" + e1.b + "'], which share no corner at all. A "
+              "chain's members must be named IN ORDER, each starting at the corner the one "
+              "before it ended at.";
+        return false;
+    }
+    s.rev[0] = bJoins ? 0 : 1;
+    s.a = bJoins ? e0.a : e0.b;
+    std::string at = bJoins ? e0.b : e0.a;
+    for (size_t k = 1; k < s.member.size(); ++k) {
+        const EdgeSpec& e = edges[static_cast<size_t>(s.member[k])];
+        if (e.a == at)      { s.rev[k] = 0; at = e.b; }
+        else if (e.b == at) { s.rev[k] = 1; at = e.a; }
+        else {
+            err = where + ", " + sideWord + ": its members do not join end to end — the "
+                  "chain reaches corner '" + at + "' after edge '"
+                + edges[static_cast<size_t>(s.member[k - 1])].id + "', and the next member '"
+                + e.id + "' runs ['" + e.a + "', '" + e.b + "'], which has neither of its "
+                  "ends there. A chain's members must be named IN ORDER, each starting at "
+                  "the corner the one before it ended at.";
+            return false;
+        }
+    }
+    s.b = at;
+    return true;
+}
+
 bool parseBlocks(const json& doc, const std::vector<EdgeSpec>& edges,
                  std::vector<BlockSpec>& out, std::string& err) {
     const json* arr = nullptr;
     if (!requireArray(doc, "blocks", arr, err)) return false;
-    auto knownEdge = [&](const std::string& id) {
-        for (const auto& e : edges) if (e.id == id) return true;
-        return false;
+    auto edgeIndexById = [&edges](const std::string& id) -> int {
+        for (size_t k = 0; k < edges.size(); ++k)
+            if (edges[k].id == id) return static_cast<int>(k);
+        return -1;
     };
     for (size_t i = 0; i < arr->size(); ++i) {
         const json& b = (*arr)[i];
@@ -823,28 +921,69 @@ bool parseBlocks(const json& doc, const std::vector<EdgeSpec>& edges,
         }
         auto es = b.find("edges");
         if (es == b.end() || !es->is_array() || es->size() != 4) {
-            err = where + " ('" + spec.id + "'): 'edges' must be exactly four edge ids, "
-                  "in the order [south, east, north, west].";
+            err = where + " ('" + spec.id + "'): 'edges' must be exactly four sides, in "
+                  "the order [south, east, north, west]. A side is one edge id, or a list "
+                  "of edge ids joined end to end.";
             return false;
         }
+        const std::string me = where + " ('" + spec.id + "')";
+        spec.sides.assign(4, SideSpec{});
         for (size_t k = 0; k < 4; ++k) {
-            if (!(*es)[k].is_string()) {
-                err = where + " ('" + spec.id + "'): edges[" + std::to_string(k)
-                    + "] must be an edge id.";
+            const json& sj = (*es)[k];
+            const std::string sideWord =
+                std::string("its ") + sideName(static_cast<int>(k)) + " side";
+            SideSpec& side = spec.sides[k];
+            // THE TWO SPELLINGS, and a list of ONE is refused so there is exactly
+            // one way to write an ordinary side. Any other JSON type is a typo.
+            if (sj.is_string()) {
+                side.ids.push_back(sj.get<std::string>());
+            } else if (sj.is_array()) {
+                if (sj.size() < 2) {
+                    err = me + ", " + sideWord + ": a side declared as a list must name at "
+                          "least TWO edges joined end to end. A list of one is refused so "
+                          "that the bare edge id stays the only spelling of an ordinary "
+                          "side"
+                        + ((sj.size() == 1 && sj[0].is_string())
+                               ? " — write \"" + sj[0].get<std::string>() + "\" instead."
+                               : std::string("."));
+                    return false;
+                }
+                for (const json& m : sj) {
+                    if (!m.is_string()) {
+                        err = me + ", " + sideWord + ": every member of a chain must be an "
+                              "edge id.";
+                        return false;
+                    }
+                    side.ids.push_back(m.get<std::string>());
+                }
+            } else {
+                err = me + ": edges[" + std::to_string(k) + "] must be an edge id, or a "
+                      "list of edge ids joined end to end.";
                 return false;
             }
-            std::string id = (*es)[k].get<std::string>();
-            if (!knownEdge(id)) {
-                err = where + " ('" + spec.id + "'): edge '" + id
-                    + "' is not declared in 'edges'.";
-                return false;
+            for (size_t t = 0; t < side.ids.size(); ++t) {
+                const std::string& id = side.ids[t];
+                const int idx = edgeIndexById(id);
+                if (idx < 0) {
+                    err = me + ": edge '" + id + "' is not declared in 'edges'.";
+                    return false;
+                }
+                // ACROSS THE WHOLE BLOCK, not within one side: an edge used twice
+                // anywhere on one block is a block welded to itself, which is not
+                // fillable by a transfinite map over four sides.
+                bool twice = false;
+                for (size_t p = 0; p < k && !twice; ++p)
+                    for (const std::string& q : spec.sides[p].ids) if (q == id) twice = true;
+                for (size_t u = 0; u < t && !twice; ++u)
+                    if (side.ids[u] == id) twice = true;
+                if (twice) {
+                    err = me + ": edge '" + id + "' is named twice; a block's four sides "
+                          "must name distinct edges.";
+                    return false;
+                }
+                side.member.push_back(idx);
             }
-            if (std::find(spec.edges.begin(), spec.edges.end(), id) != spec.edges.end()) {
-                err = where + " ('" + spec.id + "'): edge '" + id + "' is named twice; a "
-                      "block's four sides must be four distinct edges.";
-                return false;
-            }
-            spec.edges.push_back(id);
+            if (!resolveSide(edges, me, sideWord, side, err)) return false;
         }
         // A DUPLICATE BLOCK ID IS REFUSED, like a duplicate corner or edge id, and
         // for one reason more than symmetry: the randomized diagonal rule hashes
@@ -1476,7 +1615,10 @@ bool segmentRun(const hybmesh::MbGeometry& g, int seg, const std::string& who,
 // rather than an error.
 struct Frame {
     std::string corner[4];   // A (0,0), B (ni-1,0), C (ni-1,nj-1), D (0,nj-1)
-    int edge[4] = {-1, -1, -1, -1};
+    // Does the BLOCK traverse this side against the side's own direction? One
+    // flag per SIDE, not per edge: a chain's members already carry their own
+    // reversal inside the side (`SideSpec::rev`), so this stays the single place
+    // the RING's reversal is applied and the two compose rather than compete.
     bool rev[4] = {false, false, false, false};
 };
 
@@ -1485,40 +1627,25 @@ struct Frame {
 // `parseBlocks` is one: `buildMultiBlock` had six inline phases and the two that
 // resolve are pure functions of the parse.
 bool resolveBlockFrames(const std::vector<BlockSpec>& blocks,
-                        const std::vector<EdgeSpec>& edges,
                         std::vector<Frame>& frames, std::string& err) {
-    auto edgeIndexById = [&edges](const std::string& id) -> int {
-        for (size_t k = 0; k < edges.size(); ++k)
-            if (edges[k].id == id) return static_cast<int>(k);
-        return -1;
-    };
     frames.assign(blocks.size(), Frame{});
     for (size_t bi = 0; bi < blocks.size(); ++bi) {
         const BlockSpec& blk = blocks[bi];
         Frame& f = frames[bi];
-        for (int k = 0; k < 4; ++k) {
-            f.edge[k] = edgeIndexById(blk.edges[static_cast<size_t>(k)]);
-            // The parse already proved every id resolves, so this branch should be
-            // dead — but a silent fallback on a broken invariant meshes a block
-            // nobody declared, and a wrong mesh is the one outcome worse than none.
-            if (f.edge[k] < 0) {
-                err = "block '" + blk.id + "': edge '"
-                    + blk.edges[static_cast<size_t>(k)] + "' resolved during parsing and "
-                      "not during filling; the topology was not read consistently and no "
-                      "mesh was made.";
-                return false;
-            }
-        }
-        const EdgeSpec& S = edges[static_cast<size_t>(f.edge[0])];
-        const EdgeSpec& E = edges[static_cast<size_t>(f.edge[1])];
-        const EdgeSpec& N = edges[static_cast<size_t>(f.edge[2])];
-        const EdgeSpec& W = edges[static_cast<size_t>(f.edge[3])];
-        auto ringFail = [&](const EdgeSpec& e, const char* side,
+        // THE RING IS MATCHED ON SIDES, NOT ON EDGES, which is what makes a chain
+        // cost this phase nothing: `resolveSide` has already reduced each side to
+        // the two corners it runs between, so a chain's two ends take the place of
+        // a single edge's and every line below is the one that was here before.
+        const SideSpec& S = blk.sides[0];
+        const SideSpec& E = blk.sides[1];
+        const SideSpec& N = blk.sides[2];
+        const SideSpec& W = blk.sides[3];
+        auto ringFail = [&](const SideSpec& e, const char* side,
                             const std::string& want) {
             err = "block '" + blk.id + "': its four sides do not close a ring. Its south "
-                  "edge '" + S.id + "' runs ['" + S.a + "', '" + S.b + "'], which fixes "
-                  "the block's i direction, so its " + std::string(side) + " edge '"
-                + e.id + "' must have an end at " + want + " — but it runs ['" + e.a
+                  "side, " + S.label() + ", runs ['" + S.a + "', '" + S.b + "'], which fixes "
+                  "the block's i direction, so its " + std::string(side) + " side, "
+                + e.label() + ", must have an end at " + want + " — but it runs ['" + e.a
                 + "', '" + e.b + "']. A block's four edges must close a ring: south and "
                   "west meet at its i-min/j-min corner, south and east at i-max/j-min, "
                   "north and west at i-min/j-max, north and east at i-max/j-max. Each of "
@@ -1560,7 +1687,6 @@ bool resolveBlockFrames(const std::vector<BlockSpec>& blocks,
 // report which of the two each one got. The other resolving phase; see
 // `resolveBlockFrames` for why it is a function.
 bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
-                       const std::vector<Frame>& frames,
                        std::vector<EdgeSpec>& edges,
                        std::vector<hybmesh::MbEdgeCount>& out,
                        std::vector<int>& classOf, std::string& err) {
@@ -1588,10 +1714,29 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
     // dozens of edges "counts disagree" does not say which declaration to change.
     struct Link { int other; size_t block; int sideA; int sideB; };
     std::vector<std::vector<Link>> adj(edges.size());
+    // A CHAIN IS NOT MERGED WITH THE SIDE FACING IT, and that omission is the
+    // whole of #190's one-way rule rather than an oversight. A chain's members are
+    // resolved by the relation above exactly as they are today — each is also a
+    // side of the block beneath it — and their SUM then decides the opposite side,
+    // in the second pass below. Merging the two here would make the relation
+    // symmetric again, so a coarse far field would drag a fine feature coarse,
+    // which is the coupling this feature exists to break.
+    struct SumRule { size_t block; int chainSide; int otherSide; };
+    std::vector<SumRule> sums;
     for (size_t bi = 0; bi < blocks.size(); ++bi) {
         const int pairs[2][2] = {{0, 2}, {3, 1}};   // south/north, west/east
         for (const auto& pr : pairs) {
-            const int a = frames[bi].edge[pr[0]], b = frames[bi].edge[pr[1]];
+            const SideSpec& A = blocks[bi].sides[static_cast<size_t>(pr[0])];
+            const SideSpec& B = blocks[bi].sides[static_cast<size_t>(pr[1])];
+            if (A.chain() || B.chain()) {
+                // Whichever of the two is a chain leads. With BOTH chains there is
+                // nothing to propagate in either direction and the rule becomes a
+                // CHECK that the two totals agree — stated once, not twice.
+                sums.push_back({bi, A.chain() ? pr[0] : pr[1],
+                                    A.chain() ? pr[1] : pr[0]});
+                continue;
+            }
+            const int a = A.member[0], b = B.member[0];
             adj[static_cast<size_t>(a)].push_back({b, bi, pr[0], pr[1]});
             adj[static_cast<size_t>(b)].push_back({a, bi, pr[1], pr[0]});
             parent[static_cast<size_t>(findRoot(a))] = findRoot(b);
@@ -1639,6 +1784,12 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
     std::map<int, std::vector<int>> classes;
     for (size_t k = 0; k < edges.size(); ++k)
         classes[findRoot(static_cast<int>(k))].push_back(static_cast<int>(k));
+    // What each class RESOLVED TO, and where that number came from. The second map
+    // exists because a contradiction has to say which declaration produced the
+    // number it disagrees with — a seed, or a chain on some block — and once a
+    // count can arrive two ways "edge X declares it" stops being true by default.
+    std::map<int, int> value;
+    std::map<int, std::string> origin;
     for (const auto& kv : classes) {
         int seed = -1;
         for (int i : kv.second) {
@@ -1659,7 +1810,97 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
                   "two edges are not linked by such a chain.";
             return false;
         }
-        if (seed < 0) {
+        if (seed < 0) continue;
+        value[kv.first] = seeded[static_cast<size_t>(seed)];
+        origin[kv.first] = "edge '" + edges[static_cast<size_t>(seed)].id
+                         + "' declares count "
+                         + std::to_string(seeded[static_cast<size_t>(seed)]);
+    }
+
+    // ── The SECOND pass: a chain's total decides the side facing it ────────
+    //
+    // DEPENDENCY ORDERED by iteration to a fixed point rather than by a sort: a
+    // chain's members must be resolved before its total exists, and one chain's
+    // total can be what resolves another chain's member. Repeating until nothing
+    // moves is the same answer a topological sort would give, without needing the
+    // dependency graph to be acyclic — a cycle simply leaves its classes
+    // unresolved, and the refusal below is already the right thing to say.
+    //
+    // A chain of M members spanning counts n_1..n_M carries sum(n_m - 1) + 1
+    // nodes, because the M-1 junction corners are each ONE declared corner and are
+    // welded by allocation: the member ending there and the member starting there
+    // hold the same node id. That is the same arithmetic the fill does when it
+    // concatenates the side, so the two cannot disagree.
+    auto sideTotal = [&](const SideSpec& s, int& n) {
+        int total = 1;
+        for (int m : s.member) {
+            const auto v = value.find(findRoot(m));
+            if (v == value.end()) return false;
+            total += v->second - 1;
+        }
+        n = total;
+        return true;
+    };
+    auto chainSum = [&](const SideSpec& s, int total) {
+        std::string t = s.label() + " totals " + std::to_string(total) + " nodes (";
+        for (size_t k = 0; k < s.member.size(); ++k) {
+            if (k) t += " + ";
+            // READ FROM THE RESOLVED VALUE, never from the edge's own `count`:
+            // that field still holds the SEED at this point (0 on a member whose
+            // count propagated), and the two are only equal on a seeded member.
+            t += std::to_string(value[findRoot(s.member[k])]);
+        }
+        return t + ", less the " + std::to_string(s.member.size() - 1)
+             + " shared corner(s))";
+    };
+    for (bool moved = true; moved;) {
+        moved = false;
+        for (const SumRule& sr : sums) {
+            const BlockSpec& blk = blocks[sr.block];
+            const SideSpec& ch = blk.sides[static_cast<size_t>(sr.chainSide)];
+            const SideSpec& op = blk.sides[static_cast<size_t>(sr.otherSide)];
+            int total = 0;
+            if (!sideTotal(ch, total)) continue;
+            if (op.chain()) {
+                // TWO CHAINS FACING EACH OTHER PROPAGATE NEITHER WAY. Each is
+                // decided by its own members, so all that is left is whether they
+                // agree — and if they do not, neither one is the authority.
+                int other = 0;
+                if (!sideTotal(op, other) || other == total) continue;
+                err = "block '" + blk.id + "': its " + sideName(sr.chainSide)
+                    + " and " + sideName(sr.otherSide) + " sides are BOTH chains, and "
+                      "they do not carry the same number of nodes — "
+                    + chainSum(ch, total) + " while " + chainSum(op, other)
+                    + ". Opposite sides of a block carry equal counts, and a chain's "
+                      "total is decided by its own members and is never propagated INTO "
+                      "another chain, so these two have to be declared to agree.";
+                return false;
+            }
+            const int root = findRoot(op.member[0]);
+            const auto v = value.find(root);
+            if (v == value.end()) {
+                value[root] = total;
+                origin[root] = chainSum(ch, total) + " on block '" + blk.id + "'";
+                moved = true;
+                continue;
+            }
+            if (v->second == total) continue;
+            err = "block '" + blk.id + "': its " + sideName(sr.chainSide) + " side is a "
+                  "chain and " + chainSum(ch, total) + ", but the "
+                + sideName(sr.otherSide) + " side facing it, edge '" + op.ids[0]
+                + "', carries " + std::to_string(v->second) + " (" + origin[root]
+                + "). Opposite sides of a block carry equal counts, and a chain's total "
+                  "decides the side facing it: propagation runs members -> total -> "
+                  "opposite side and NEVER the other way, so a count that disagrees is "
+                  "refused rather than pushed back through the chain. Either declare "
+                  "count " + std::to_string(total) + " on '" + op.ids[0]
+                + "', or change the counts on the chain's members.";
+            return false;
+        }
+    }
+
+    for (const auto& kv : classes) {
+        if (value.find(kv.first) == value.end()) {
             std::ostringstream os;
             os << "no edge in a group of " << kv.second.size() << " structurally linked "
                   "edge(s) declares a 'count', so nothing fixes the node count for any of "
@@ -1668,11 +1909,18 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
             os << ". Seed ONE of them with \"count\": <n> (an integer >= 2) and the rest "
                   "follow — opposite sides of a block carry equal counts, and a shared "
                   "edge is one edge named by two blocks.";
+            // NO CHAIN CLAUSE HERE, and that is a decision rather than an
+            // omission. A group facing a chain is unresolved only while the
+            // chain's own members are, and each member sits in a group of its own
+            // that this same message names — so the instruction a reader needs is
+            // already the one they are given, on the group that really is missing
+            // a seed. Which of several unresolved groups is reported first is the
+            // class ordering's answer and not a judgement.
             err = os.str();
             return false;
         }
         for (int i : kv.second)
-            edges[static_cast<size_t>(i)].count = seeded[static_cast<size_t>(seed)];
+            edges[static_cast<size_t>(i)].count = value[kv.first];
     }
     for (size_t k = 0; k < edges.size(); ++k)
         out.push_back({edges[k].id, edges[k].count, seeded[k] > 0});
@@ -2370,10 +2618,15 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // and is not silently accepted here.
     struct Use { int block; int side; };
     std::map<std::string, std::vector<Use>> uses;
+    // EVERY MEMBER OF A CHAIN IS A USE, which is what leaves the arity rule
+    // satisfied verbatim rather than widened: a chain member is a side of the
+    // block carrying the chain AND a side of the block beneath it, so it is a side
+    // of exactly two blocks like any other interior line. Do NOT "fix" the arity
+    // rule for chains — it is what makes welding allocation rather than comparison.
     for (size_t bi = 0; bi < blocks.size(); ++bi)
         for (int k = 0; k < 4; ++k)
-            uses[blocks[bi].edges[static_cast<size_t>(k)]]
-                .push_back({static_cast<int>(bi), k});
+            for (const std::string& id : blocks[bi].sides[static_cast<size_t>(k)].ids)
+                uses[id].push_back({static_cast<int>(bi), k});
 
     // A declaration that reaches nothing is a typo, not a preference: an edge in
     // no block and a corner on no edge are both silently absent from the mesh.
@@ -2405,9 +2658,9 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     }
 
     std::vector<Frame> frames;
-    if (!resolveBlockFrames(blocks, edges, frames, err)) return fail(err);
+    if (!resolveBlockFrames(blocks, frames, err)) return fail(err);
     std::vector<int> edgeClass;
-    if (!resolveEdgeCounts(blocks, frames, edges, r.edgeCounts, edgeClass, err))
+    if (!resolveEdgeCounts(blocks, edges, r.edgeCounts, edgeClass, err))
         return fail(err);
 
     // ── The fallback boundary condition ───────────────────────────────────
@@ -2979,9 +3232,29 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         std::vector<Point2D> sPts[4];
         std::vector<int> sIds[4];
         for (int k = 0; k < 4; ++k) {
-            const EdgeNodes& en = eNodes[static_cast<size_t>(f.edge[k])];
-            sPts[k] = en.pts;
-            sIds[k] = en.ids;
+            // A CHAIN CONCATENATES INTO EXACTLY THE VECTOR THE FILL ALREADY TAKES,
+            // which is why the fill itself needs no change. Each member is laid
+            // down in the SIDE's direction (`SideSpec::rev`), and the junction node
+            // between two members is dropped from the second of them — not welded:
+            // it is ONE declared corner, allocated once in `cornerNode`, so the two
+            // members already hold the same id there and the `skip` removes a
+            // repeat rather than reconciling two positions.
+            const SideSpec& sd = blk.sides[static_cast<size_t>(k)];
+            for (size_t m = 0; m < sd.member.size(); ++m) {
+                const EdgeNodes& en = eNodes[static_cast<size_t>(sd.member[m])];
+                std::vector<Point2D> mp = en.pts;
+                std::vector<int> mi = en.ids;
+                if (sd.rev[m]) {
+                    std::reverse(mp.begin(), mp.end());
+                    std::reverse(mi.begin(), mi.end());
+                }
+                const size_t skip = m ? 1u : 0u;
+                sPts[k].insert(sPts[k].end(), mp.begin() + skip, mp.end());
+                sIds[k].insert(sIds[k].end(), mi.begin() + skip, mi.end());
+            }
+            // ...and the RING's reversal is applied to the finished side, once, so
+            // a chain read backwards is its members backwards and each member
+            // backwards, in one place rather than composed by eye.
             if (f.rev[k]) {
                 std::reverse(sPts[k].begin(), sPts[k].end());
                 std::reverse(sIds[k].begin(), sIds[k].end());
@@ -3097,18 +3370,30 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             // one — the same reversal the ids and the positions already go through,
             // read once here rather than a second time by eye.
             auto declaredDs = [&](int sideK, bool fromEnd) {
-                const EdgeSpec& pe = edges[static_cast<size_t>(f.edge[sideK])];
+                // WHICH MEMBER TOUCHES THIS WALL, when the perpendicular side is a
+                // chain: the one at that end of the side IN THE BLOCK'S FRAME. On
+                // an ordinary one-edge side there is only one and this is the line
+                // that was here before.
+                const SideSpec& sd = blk.sides[static_cast<size_t>(sideK)];
+                const size_t m = (fromEnd != f.rev[sideK]) ? sd.member.size() - 1 : 0;
+                const EdgeSpec& pe = edges[static_cast<size_t>(sd.member[m])];
                 // The block reads the edge in its own frame, so the frame's "far
                 // end" is the edge's own start when the edge is traversed
                 // backwards. XOR rather than a second ternary: `rev` is already
-                // the one place that reversal is applied.
-                const int end = (fromEnd != f.rev[sideK]) ? END_FINISH : END_START;
+                // the one place that reversal is applied — composed here with the
+                // member's own reversal inside the side, which is the second.
+                const bool back = (sd.rev[m] != 0) != f.rev[sideK];
+                const int end = (fromEnd != back) ? END_FINISH : END_START;
                 return pe.cluster[end] ? pe.ds[end] : 0.0;
             };
             for (int k = 0; k < 4; ++k) {
                 const MbSide side = static_cast<MbSide>(k);   // sIds[] is in this order
                 const MbSideAxis ax = mbSideAxis(side);
-                const EdgeSpec& e = edges[static_cast<size_t>(f.edge[k])];
+                // THE SIDE'S FIRST MEMBER IS THE WHOLE SIDE HERE, because a
+                // chain is interior only: `resolveSide` refuses a wall inside one,
+                // so a side whose first member is a wall has exactly that one edge.
+                const EdgeSpec& e =
+                    edges[static_cast<size_t>(blk.sides[static_cast<size_t>(k)].member[0])];
                 // Gated on the KIND: an interface or a cut is an interior line, and
                 // "how tall is the first cell off it" is not a question about one.
                 if (e.kind != hybmesh::MB_EDGE_WALL) continue;
@@ -3211,7 +3496,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // of the fill loop. Both read node IDS and the frame's declared kinds; the
     // positions above are not consulted here at all.
     for (size_t bi = 0; bi < blocks.size(); ++bi) {
-        const Frame& f = frames[bi];
+        const BlockSpec& blk = blocks[bi];
         const int blockIdx = static_cast<int>(bi);
         const MbBlock& b0 = r.blocks[bi];
         const int ni = b0.ni, nj = b0.nj;
@@ -3274,12 +3559,18 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         // both blocks have cells against it, so emitting it as a boundary face
         // would hand the exporter a face with two owners and the solver a wall
         // through the middle of the fluid.
+        // A CHAIN IS NEVER A WALL, so the side's first member answers for the
+        // whole side here as it does for the wall spec above: `resolveSide` refuses
+        // a wall inside a chain, so a side whose first member is a wall is one edge.
+        auto wallEdge = [&](int k) {
+            return blk.sides[static_cast<size_t>(k)].member[0];
+        };
         auto isWall = [&](int k) {
-            return edges[static_cast<size_t>(f.edge[k])].kind
+            return edges[static_cast<size_t>(wallEdge(k))].kind
                        == hybmesh::MB_EDGE_WALL;
         };
         auto addBoundary = [&](int k, int v1, int v2) {
-            const Attached& a = edgeBc[static_cast<size_t>(f.edge[k])];
+            const Attached& a = edgeBc[static_cast<size_t>(wallEdge(k))];
             MbBoundaryEdge be;
             be.v1 = v1;
             be.v2 = v2;

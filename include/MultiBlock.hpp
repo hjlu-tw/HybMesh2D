@@ -331,6 +331,25 @@ Point2D mbWinslowUpdate(const MbWinslowStencil& s, const MbControl& q);
 
 // A block's four sides, in the [south, east, north, west] order the topology
 // document declares them and every check in this module is written against.
+//
+// A SIDE IS ONE EDGE, OR AN ORDERED CHAIN OF THEM joined end to end (#190). The
+// bare edge id stays the only spelling of an ordinary side — a list of one is
+// refused — so a document that names one edge per side behaves exactly as it did
+// before chains existed. What a chain buys is the one property it was built for:
+// COUNTS PROPAGATE OUT OF IT AND NEVER INTO IT. Its members are resolved by the
+// ordinary class relation, each being also a side of the block beneath, and their
+// SUM then decides the side facing it; an opposite side that contradicts that sum
+// is REFUSED rather than pushed back through the chain. That asymmetry is the
+// feature, not a gap: it is what lets a count be seeded fine at a feature while
+// the far field keeps its own.
+//
+// Nothing in THIS header changes shape for one. A chain's members already
+// allocate their own nodes, the block reads them in order, and each side still
+// reaches the transfinite fill as one list of node positions — so `MbBlock`,
+// `MbSharedEdge` (which reports a member against the side of the carrying block
+// it is part of) and `MbSideWalk` are the same objects they were. Chains are
+// INTERIOR ONLY — every member is an `interface` or a `cut` — which is what
+// leaves `MbWallSpec`, its readers and the spacing laws untouched.
 enum MbSide { MB_SOUTH = 0, MB_EAST = 1, MB_NORTH = 2, MB_WEST = 3 };
 
 // WHERE a side sits in the block's logical grid. This is the [south, east,

@@ -79,12 +79,28 @@ One of the four parameterised topology generators — `hgrid`, `ogrid`, `cgrid`,
 outside all four has no family.
 _Avoid_: template, generator, type
 
+**Side**:
+One of the four things a block names, in `[south, east, north, west]` order. It is ONE edge,
+or a CHAIN of them; either way it reaches the fill as one list of node positions running
+between two corners. A block has exactly four, they must close a ring, and the south one
+fixes the block's i direction.
+_Avoid_: face, wall, boundary, edge
+
+**Chain**:
+A side declared as an ordered list of edges joined end to end, so that a line can TERMINATE —
+split below a block and whole above it. Its members are ordinary edges, each also a side of
+the block beneath; the chain's own node count is their sum, and that total decides the side
+FACING it. The propagation is one-way, which is the point: a fine feature does not inherit a
+coarse far field. A list of one is refused, and every member must be an interior line.
+_Avoid_: composite side, multi-edge, group, segment list
+
 **Count**:
 The number of nodes a topology edge carries. It is a SEED, not a requirement: opposite
 sides of a block hold the same number, a shared edge is one edge two blocks name, and
 that single relation partitions every edge into classes. The operator seeds a few and
 the mesher resolves the rest — so a count is a statement about a whole class, never
-about one edge, and the mesher's refusals say so.
+about one edge, and the mesher's refusals say so. The one exception is a CHAIN, whose
+total decides the side facing it and is never decided BY it.
 _Avoid_: resolution, density, divisions, node count
 
 **Binding**:
