@@ -5715,6 +5715,52 @@ where all five cases in that file's group 14 reach it PAST their best — a sixt
 different branch, deliberately not added to that group, which would have to assert the opposite of
 what it asserts.
 
+**THE ONLY DEVICE THAT ENDS A GRID LINE, AND IT NEEDED NO MESHER CHANGE** (#192 step 1, parent
+#188)
+
+**WHY IT WAS LOOKED FOR.** #188 asked for "refine a feature without the far field inheriting it".
+#190 gave a block side a chain; #191 measured that a chain cannot deliver it, because a chain
+junction is an ordinary valence-4 node and the node count along the body therefore equals the node
+count along the far field at every radius. For a count to FALL, a grid line has to end, and in an
+all-quad conformal mesh a line ends only at an IRREGULAR node — a corner where three or five blocks
+meet rather than four.
+
+**IT IS EXPRESSIBLE TODAY, AND THAT IS MEASURED.** Three quads around one point: a hexagon
+`h0..h5` and its centre `p`, block k being `(p, h_2k, h_2k+1, h_2k+2)`. Each of the three radials
+is a side of exactly two blocks, so the ARITY RULE is satisfied without widening; each block's four
+edges close a counter-clockwise ring; the four-shared-corner-nodes check passes. Through the pure
+entry point: three 5x5 blocks, 48 quads, **0 inverted**, 61 nodes, and exactly ONE interior node
+whose valence is not four — at the origin, valence 3, in three cells. **Not one line of `src/`
+changed for this.**
+
+**N BLOCKS AT A CORNER MAKE N COUNT CLASSES.** The surprise is not that it meshes but how many
+counts it needs. Each block's two i-sides are one radial and one wall, so the relation never goes
+AROUND the corner: the hexagon's nine edges fall into three classes of three and a document seeding
+one of them is refused, naming the size of the group with no count. The four-block square needs
+four seeds for the same reason. That is the only thing an author has to learn here and it is the
+first thing a change to the propagation would break, so it is asserted (66b) rather than commented.
+
+**WHAT IS NOT CLAIMED, said plainly because the easy reading is the expensive one.** Each irregular
+node ends exactly ONE grid line, and irregular nodes occur only at block CORNERS. Taking the shipped
+C-grid's aerofoil from 97 nodes to 193 while holding the far field at 145 would therefore need
+**96** of them — a blocking of a wholly different order from today's four or ten. Whether a useful
+reduction needs 96 or 6 depends on a construction nobody here has drawn, and gate 2 on such a mesh
+is unknown with a bad prior: §12c of the nesting note records the last local topology change in this
+repo passing gate 1, looking fine, and going to 32 NaN. **The device existing is not the capability
+being available**, and #192's steps 2-4 are where that distinction gets priced.
+
+**THE INJECTION ROUND IS WHERE THE WORK WAS**, and two of its three findings are about injections
+rather than about the code. IR1 — a fresh node per edge end instead of the shared declared corner —
+is INERT as an injection into check 66: it reddens 35 checks from group 1 onward and then segfaults
+before reaching 66, so it scores as a crash and not as a bite, and the property it aimed at is
+already held by the four-corner check. IR2a, a guard refusing a three-block corner tested INSIDE the
+block loop, reddens 35 as well, because the counter trips on the way up through 3 at every four-way
+corner in the suite; moved to a pass that FINISHES before it judges (IR2b) it reddens 8 assertions,
+all of them in group 66 and nothing else — which is the claim worth having, that check 66 is the
+only thing in the repo naming this arrangement. IR3's first run did not COMPILE (`-Werror` on an
+unused fixture) and the binary that ran was the previous injection's, reporting its failures as if
+they were IR3's: **a build that fails and a test that reddens look alike through a pipe.**
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

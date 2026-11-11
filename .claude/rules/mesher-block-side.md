@@ -153,6 +153,29 @@ is this file's.
   - **A SIDE READS AS A SIDE IN EVERY REFUSAL**, through `SideSpec::label()` — `edge 'x'` or
     `the chain ['x', 'y']`. A ring failure that named one member would send the reader to the
     wrong declaration.
+- **A CORNER SHARED BY THREE BLOCKS IS ACCEPTED, AND IT IS THE ONLY DEVICE IN THIS MODEL THAT
+  ENDS A GRID LINE** (#192 step 1). Three quads around one point — a hexagon and its centre,
+  each of the three radials a side of exactly two blocks — meshes with zero inverted cells and
+  needs NO mesher change: the arity rule is satisfied, each block's four edges close a
+  counter-clockwise ring, and the four-corner check passes. The resulting node has **valence 3**
+  and sits in three cells, which is what a chain junction is NOT: that one is valence 4, which
+  is why a chain moves no cell (`.claude/rules/mesher-block-side.md` above, and #191's own A/B).
+  - **N BLOCKS AT A CORNER MAKE N COUNT CLASSES, NOT ONE.** Each block's two i-sides are one
+    radial and one wall, so nothing propagates AROUND such a corner: the hexagon needs THREE
+    seeds and the four-block square FOUR. A document seeding one of three is refused, naming
+    the size of the group with no count. This is the only thing about the arrangement an
+    author has to learn, and it is the thing a change to the propagation would break first.
+  - **NOTHING IS CLAIMED HERE ABOUT A COUNT REDUCTION.** Each irregular node ends exactly ONE
+    grid line, and what a useful reduction costs in blocks per line ended is UNMEASURED —
+    #192's steps 2-4. Taking the shipped C-grid's aerofoil from 97 nodes to 193 while holding
+    the far field at 145 would need 96 of them. **Do not read "the device exists" as "the
+    capability is available."**
+  - **A VALENCE-5 CORNER IS THE SAME DEVICE RUN THE OTHER WAY** and this repo already ships
+    one: the C-grid's `te`, where five edges end and four blocks meet. It ADDS a line.
+  - Gated by check 66 (with 66b for the seeds and 66c, a four-block corner, as the negative
+    control), with its injections dated in that file's docstring. **No shipped case carries a
+    three-block corner**, so check 66 is the whole of its coverage.
+  Why: `docs/design_notes/mesher.md`, "THE ONLY DEVICE THAT ENDS A GRID LINE".
 - Gated by `tests/cpp/test_multiblock.cpp` — check 9 for the accepted against-convention side and
   the refusals, checks 17-23 for the welded pair whose shared edge is one side of each — and by
   `tests/test_multiblock_weld_surface.py`, which measures CONFORMITY on the exported files. The

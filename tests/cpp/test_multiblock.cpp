@@ -453,6 +453,35 @@
 // the branch the walk picks its direction by whichever test runs first, which is a
 // mesh decided by the order of two `if`s.
 //
+// CHECK 66'S INJECTIONS, run by HAND 2026-11-11 (#192 step 1), restored by content
+// from a copy taken first. TWO, and each is recorded with what it does NOT redden,
+// because the count of reddened checks is the measurement:
+//
+//   IR1  src/MultiBlock.cpp: a FRESH node per edge end instead of the shared
+//        declared corner. INERT AS AN INJECTION INTO CHECK 66 and recorded as
+//        such rather than dropped: it reddens 35 checks from group 1 onward and
+//        then SEGFAULTS (exit 139) before reaching 66 at all, so it scores as a
+//        crash and not as a bite. The property it aimed at — the corner is ONE
+//        node, not three coincident ones — is already held by the four-corner
+//        check two hundred lines below, which is why no narrow version of it
+//        exists. Kept as the record that a blunt injection measures nothing.
+//   IR2b src/MultiBlock.cpp: refuse a corner that EXACTLY three blocks name as one
+//        of their own four ring corners — the shape of a future tidy-up that would
+//        kill the device with no shipped case to notice. Reddens 8 assertions, ALL
+//        of them in group 66, and NOTHING else in this file. That is the whole
+//        claim: check 66 is the only thing in the repo that names a three-block
+//        corner. (IR2a, the same guard tested INSIDE the block loop, reddens 35 —
+//        the counter trips on the way up through 3 at every four-way corner. The
+//        pass has to finish before the count is judged, and that is a property of
+//        the injection rather than of the code.)
+//   IR3  THIS FILE: hand 66c's negative control the HEXAGON instead of the square.
+//        Reddens exactly one assertion, 66c's own, which is what makes that
+//        control non-vacuous rather than a line that cannot fail. Its first run
+//        did NOT compile — `-Werror` on an unused `quadQuad` — and the binary that
+//        ran was the previous injection's, reporting IR2b's eight failures as if
+//        they were IR3's. A build that fails and a test that reddens look alike
+//        through a pipe; the second run checks the compile before reading the run.
+//
 // CD AND CG BOTH NEEDED A FIXTURE THAT DID NOT EXIST AT FIRST. Every chain in the
 // termination document runs in its members' own declared direction, so
 // `SideSpec::rev` is all zeros and dropping it changes nothing; 61b (a member
@@ -468,6 +497,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -1494,6 +1524,125 @@ std::string chainTrio(const std::string& southT = R"(["n0", "n1", "n2"])") {
     {"id": "T", "edges": [)") + southT + R"(, "eT", "tT", "wT"]}
   ]
 })";
+}
+
+// THREE QUADS AROUND ONE POINT — the only device in this model that can end a grid
+// line (#192 step 1). A hexagon `h0..h5` and its centre `p`; block k is
+// (p, h_2k, h_2k+1, h_2k+2), so the three `r*` interfaces all end on `p`.
+//
+// A BUILDER RATHER THAN A LITERAL, and the one knob is the SEEDS, because what is
+// surprising about this document is not that it meshes but how many counts it needs:
+// its edges fall into THREE classes of three, not one class of nine, so a single
+// seed is refused. 66b is that refusal and this parameter is how it differs from
+// the accepted document by exactly that.
+//
+// The coordinates are the unit hexagon's and are written out rather than computed:
+// a fixture that calls `cos` is a fixture whose geometry moves with the libm the
+// test was built against, and check 66's valence count must not depend on that.
+std::string triQuad(const std::string& seeds = R"(, "count": 5)",
+                    const std::string& seed2 = R"(, "count": 5)") {
+    return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "p",  "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "h0", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "h1", "kind": "free", "xy": [0.5, 0.8660254037844386]},
+    {"id": "h2", "kind": "free", "xy": [-0.5, 0.8660254037844386]},
+    {"id": "h3", "kind": "free", "xy": [-1.0, 0.0]},
+    {"id": "h4", "kind": "free", "xy": [-0.5, -0.8660254037844386]},
+    {"id": "h5", "kind": "free", "xy": [0.5, -0.8660254037844386]}
+  ],
+  "edges": [
+    {"id": "r0", "corners": ["p", "h0"], "kind": "interface", "count": 5},
+    {"id": "r2", "corners": ["p", "h2"], "kind": "interface")") + seeds + R"(},
+    {"id": "r4", "corners": ["p", "h4"], "kind": "interface")" + seed2 + R"(},
+    {"id": "w0", "corners": ["h0", "h1"], "kind": "wall"},
+    {"id": "w1", "corners": ["h1", "h2"], "kind": "wall"},
+    {"id": "w2", "corners": ["h2", "h3"], "kind": "wall"},
+    {"id": "w3", "corners": ["h3", "h4"], "kind": "wall"},
+    {"id": "w4", "corners": ["h4", "h5"], "kind": "wall"},
+    {"id": "w5", "corners": ["h5", "h0"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "a", "edges": ["r0", "w0", "w1", "r2"]},
+    {"id": "b", "edges": ["r2", "w2", "w3", "r4"]},
+    {"id": "c", "edges": ["r4", "w4", "w5", "r0"]}
+  ]
+})";
+}
+
+// FOUR quads around one point, the same construction one block wider: a square cut
+// on its two midlines. It exists as check 66's NEGATIVE CONTROL and for nothing
+// else — a valence counter stuck at 3, or one that reported the number of BLOCKS
+// at a corner rather than the number of EDGES, passes every assertion about the
+// hexagon and fails here.
+//
+// IT NEEDS FOUR SEEDS WHERE THE HEXAGON NEEDS THREE, which is the same surprise
+// 66b asserts and is worth seeing twice: a corner where N blocks meet makes N
+// classes, not one, because each block's two i-sides are one radial and one wall
+// rather than two radials. Nothing propagates AROUND such a corner.
+std::string quadQuad() {
+    return R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "c",  "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "me", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "mn", "kind": "free", "xy": [0.0, 1.0]},
+    {"id": "mw", "kind": "free", "xy": [-1.0, 0.0]},
+    {"id": "ms", "kind": "free", "xy": [0.0, -1.0]},
+    {"id": "qne", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "qnw", "kind": "free", "xy": [-1.0, 1.0]},
+    {"id": "qsw", "kind": "free", "xy": [-1.0, -1.0]},
+    {"id": "qse", "kind": "free", "xy": [1.0, -1.0]}
+  ],
+  "edges": [
+    {"id": "ce", "corners": ["c", "me"], "kind": "interface", "count": 5},
+    {"id": "cn", "corners": ["c", "mn"], "kind": "interface", "count": 5},
+    {"id": "cw", "corners": ["c", "mw"], "kind": "interface", "count": 5},
+    {"id": "cs", "corners": ["c", "ms"], "kind": "interface", "count": 5},
+    {"id": "e1", "corners": ["me", "qne"], "kind": "wall"},
+    {"id": "e2", "corners": ["qne", "mn"], "kind": "wall"},
+    {"id": "e3", "corners": ["mn", "qnw"], "kind": "wall"},
+    {"id": "e4", "corners": ["qnw", "mw"], "kind": "wall"},
+    {"id": "e5", "corners": ["mw", "qsw"], "kind": "wall"},
+    {"id": "e6", "corners": ["qsw", "ms"], "kind": "wall"},
+    {"id": "e7", "corners": ["ms", "qse"], "kind": "wall"},
+    {"id": "e8", "corners": ["qse", "me"], "kind": "wall"}
+  ],
+  "blocks": [
+    {"id": "ne", "edges": ["ce", "e1", "e2", "cn"]},
+    {"id": "nw", "edges": ["cn", "e3", "e4", "cw"]},
+    {"id": "sw", "edges": ["cw", "e5", "e6", "cs"]},
+    {"id": "se", "edges": ["cs", "e7", "e8", "ce"]}
+  ]
+})";
+}
+
+// How many DISTINCT neighbours each node has, and how many cells each sits in, off
+// a quad mesh. The valence of a node is the first of those: an interior node of a
+// structured block has four, and a node where an odd number of blocks meet does
+// not. Taken off `MbResult::cells` rather than off any block's (i, j), because a
+// node three blocks share has three different (i, j)s and the whole question is
+// whether it is nevertheless ONE node.
+void meshValence(const MbResult& r, std::vector<std::set<int>>& nbr,
+                 std::vector<int>& inCells, std::set<std::pair<int, int>>& onceUsed) {
+    nbr.assign(r.nodes.size(), {});
+    inCells.assign(r.nodes.size(), 0);
+    std::map<std::pair<int, int>, int> use;
+    for (const auto& cell : r.cells) {
+        const int n = static_cast<int>(cell.nodeIds.size());
+        for (int k = 0; k < n; ++k) {
+            const int a = cell.nodeIds[static_cast<size_t>(k)];
+            const int b = cell.nodeIds[static_cast<size_t>((k + 1) % n)];
+            nbr[static_cast<size_t>(a)].insert(b);
+            nbr[static_cast<size_t>(b)].insert(a);
+            ++inCells[static_cast<size_t>(a)];
+            ++use[{std::min(a, b), std::max(a, b)}];
+        }
+    }
+    onceUsed.clear();
+    for (const auto& kv : use)
+        if (kv.second == 1) onceUsed.insert(kv.first);
 }
 
 // One block's resolved dimensions by its DECLARED id, or (0, 0) when it is not
@@ -6154,6 +6303,133 @@ int main() {
             CHECK(worst == 0.0, "65. ...and its block is unmoved, bit for bit (worst "
                   + fmtE(worst) + ")");
         }
+    }
+
+    // ── 66. A CORNER SHARED BY THREE BLOCKS MESHES, and makes the one node a
+    //        chain cannot (#192 step 1) ───────────────────────────────────────
+    //
+    // WHY THIS IS HERE AT ALL. #188 asked for "refine a feature without the far
+    // field inheriting it"; #190 gave a side a chain and #191 measured that a
+    // chain cannot deliver it, because a chain junction is an ordinary valence-4
+    // node and the node count along the body therefore equals the node count
+    // along the far field at every radius. The ONLY device in this model that
+    // ends a grid line is an IRREGULAR node — a corner where three blocks meet
+    // rather than four — and it turns out to need no mesher change at all. This
+    // check is that fact written down, because a capability nothing in the repo
+    // knows about is the state #190's own blind-spot list named as the defect.
+    //
+    // IT IS NOT A REDUCTION, AND THIS CHECK CLAIMS NOTHING ABOUT ONE. What a
+    // useful count reduction costs in blocks per line ended is #192's steps 2-4
+    // and is unmeasured. All that is established here is that the device exists,
+    // welds, and is reachable from a document a user could write.
+    {
+        const MbParams quads = [] { MbParams q; q.splitQuads = false; return q; }();
+        MbResult r = build(triQuad(), quads);
+        CHECK(r.ok, "66. a corner shared by THREE blocks is accepted (err: "
+                    + r.error + ")");
+        CHECK(r.blocks.size() == 3, "66. three blocks come back");
+        CHECK(blockDims(r, "a") == std::make_pair(5, 5), "66. block 'a' is 5 x 5");
+        CHECK(blockDims(r, "b") == std::make_pair(5, 5), "66. block 'b' is 5 x 5");
+        CHECK(blockDims(r, "c") == std::make_pair(5, 5), "66. block 'c' is 5 x 5");
+
+        int inverted = 0;
+        for (const auto& cell : r.cells) {
+            const auto& a = r.nodes[static_cast<size_t>(cell.nodeIds[0])];
+            const auto& b = r.nodes[static_cast<size_t>(cell.nodeIds[1])];
+            const auto& d = r.nodes[static_cast<size_t>(cell.nodeIds[2])];
+            if ((b - a).cross(d - a) <= 0.0) ++inverted;
+        }
+        CHECK(inverted == 0, "66. ...with ZERO inverted cells ("
+              + std::to_string(inverted) + " of " + std::to_string(r.cells.size()) + ")");
+
+        // THE DEVICE ITSELF, counted off the MESH and not off the declaration.
+        // Exactly one interior node has a valence that is not four, it is at the
+        // origin, and it sits in THREE cells. A reader should take the three
+        // numbers together: "one irregular node" alone would pass on a mesh that
+        // had torn, and "valence 3" alone says nothing about how many there are.
+        std::vector<std::set<int>> nbr;
+        std::vector<int> inCells;
+        std::set<std::pair<int, int>> onceUsed;
+        meshValence(r, nbr, inCells, onceUsed);
+        std::set<int> onBoundary;
+        for (const auto& e : onceUsed) { onBoundary.insert(e.first); onBoundary.insert(e.second); }
+        std::vector<int> irregular;
+        int interior = 0;
+        for (size_t v = 0; v < r.nodes.size(); ++v) {
+            if (onBoundary.count(static_cast<int>(v))) continue;
+            ++interior;
+            if (nbr[v].size() != 4) irregular.push_back(static_cast<int>(v));
+        }
+        CHECK(irregular.size() == 1,
+              "66. ...and EXACTLY ONE of its " + std::to_string(interior)
+              + " interior nodes is irregular — the device, counted off the mesh ("
+              + std::to_string(irregular.size()) + ")");
+        if (irregular.size() == 1) {
+            const int v = irregular[0];
+            CHECK(nbr[static_cast<size_t>(v)].size() == 3,
+                  "66. ...its valence is THREE, which is what ends a grid line ("
+                  + std::to_string(nbr[static_cast<size_t>(v)].size()) + ")");
+            CHECK(inCells[static_cast<size_t>(v)] == 3,
+                  "66. ...and it sits in THREE cells, one per block, so the three "
+                  "blocks share it rather than each holding a copy ("
+                  + std::to_string(inCells[static_cast<size_t>(v)]) + ")");
+            CHECK(r.nodes[static_cast<size_t>(v)].length() == 0.0,
+                  "66. ...and it is the declared corner 'p' at the origin, so the "
+                  "irregular node is WHERE the document put it and not an artefact "
+                  "somewhere else in the fill");
+        }
+
+        // WELDED BY IDENTITY, which is the claim that matters and is not a claim
+        // about coordinates: three coincident nodes would render identically and
+        // would be three hanging nodes. The hexagon's six boundary edges are the
+        // only edges used once, so a tear anywhere inside would show up as more.
+        CHECK(onceUsed.size() == 24,
+              "66. ...and exactly 24 edges are used once — the hexagon's six sides "
+              "at four intervals each — so nothing inside the mesh is torn ("
+              + std::to_string(onceUsed.size()) + ")");
+        CHECK(r.nodes.size() == 61,
+              "66. ...and 61 nodes come back for 3 x 5 x 5, which is 75 less the "
+              "three shared radials' 5 counted twice and 'p' counted three times "
+              "instead of once (" + std::to_string(r.nodes.size()) + ")");
+
+        // ── 66b. THE SURPRISE, AND THE CONTROL FOR IT ────────────────────────
+        //
+        // The three `r*` edges are NOT one equivalence class. Each block's two
+        // i-sides are one `r*` and one `w*`, so the relation makes three classes
+        // of three — {r0, w1, w4}, {r2, w3, w0}, {r4, w5, w2} — and a document
+        // that seeds only one of them is refused. That is the only thing about
+        // this arrangement an author has to learn, and it is asserted rather than
+        // left as a comment because it is also the thing a future change to the
+        // propagation would break first.
+        refuses(triQuad("", ""), "3",
+                "66b. seeding ONE of the three classes is refused, naming the size "
+                "of the group that has no count");
+        MbResult two = build(triQuad(R"(, "count": 5)", ""), quads);
+        CHECK(!two.ok, "66b. ...and so is seeding two of the three");
+
+        // ── 66c. THE NEGATIVE CONTROL ────────────────────────────────────────
+        //
+        // The same construction one block wider — a square cut on both midlines —
+        // puts FOUR blocks at its centre and must come back regular. Without it,
+        // a valence counter stuck at three, or one reporting the number of blocks
+        // at a corner rather than the number of edges, passes every assertion
+        // above.
+        MbResult four = build(quadQuad(), quads);
+        CHECK(four.ok, "66c. the four-block corner is accepted too (err: "
+                       + four.error + ")");
+        meshValence(four, nbr, inCells, onceUsed);
+        onBoundary.clear();
+        for (const auto& e : onceUsed) { onBoundary.insert(e.first); onBoundary.insert(e.second); }
+        int irregular4 = 0, interior4 = 0;
+        for (size_t v = 0; v < four.nodes.size(); ++v) {
+            if (onBoundary.count(static_cast<int>(v))) continue;
+            ++interior4;
+            if (nbr[v].size() != 4) ++irregular4;
+        }
+        CHECK(irregular4 == 0 && interior4 > 0,
+              "66c. ...and NONE of its " + std::to_string(interior4)
+              + " interior nodes is irregular, so check 66 measures the three-block "
+                "corner and not any corner (" + std::to_string(irregular4) + ")");
     }
 
     return hybmesh::test::report("test_multiblock");
