@@ -4246,6 +4246,109 @@ measured on the old and new trees:
 the applier silently skip it, which is the same "the setting does nothing" failure
 class as the above.
 
+**AN UNRECOGNISED COMMAND-LINE ARGUMENT IS NAMED** (#186, parent #184; measured
+2026-11-11). The same failure class as the `KEY=VALUE` override above, at the door most
+users come through, and it had already cost something: the smoothed-versus-unsmoothed
+figures in #183 were first gathered as `-mb_smooth_iters 0` against
+`-mb_smooth_iters 20`. There is no such flag. Both arms parsed it as nothing and ran at
+the shipped default of 20, every figure agreed to six decimals, and that reads as a
+clean negative result — "the smoother does not touch this figure". It was caught only
+because the banner happens to print `Smoothing Sweeps : 20`, and because five cases
+agreeing to six decimals looked too good to be true. **The warning has to land on the
+run whose numbers are about to be quoted**, which is why it is a `LOG_WARN` in the
+argument loop and not a note in a document.
+
+- **ADVISORY, NEVER A REFUSAL, and the reason is the installed base.** The topology
+  document was made strict when nothing in the wild used the format; a command line does
+  not have that property, and a refusal would turn "your setting does nothing" into
+  "your case does not run" for the same mistake. Nothing here prevents a later ticket
+  promoting it. Measured: exit code unchanged, `HYBMESH_ERROR` line unchanged, mesh
+  still written.
+- **NO LIST OF ARGUMENT NAMES WAS INTRODUCED, and that is a refusal rather than an
+  omission.** A predicate enumerating the known flags would be a second copy of the
+  chain, free to drift from it — the "two sufficient conditions for one rule mask each
+  other" failure this repo has recorded more than once. The chain of `arg == "-..."`
+  comparisons IS the list, and the terminal `else` asks the chain itself.
+- **THE TWO PASSES ARE THE WHOLE DIFFICULTY.** Phase 1 collects `-conf`, `-geom`,
+  `-seed` and `-geom_nobl` and skips every phase-2 flag's value so it cannot be mistaken
+  for the bare positional config path; phase 2 re-walks the same `argv`. Three kinds of
+  token are therefore legitimately unmatched by any `arg ==` test in phase 2 and must
+  not be named: a phase-1 flag (skipped by its own branch, which already existed), a
+  phase-1 flag's values (skipped by the same `while` loops), and **the bare positional
+  config path**, which is the one with no token to recognise. It is skipped by INDEX —
+  `positionalConfigIdx`, recorded where phase 1 consumes it — because by the time phase 2
+  sees `mycase.dat` there is nothing about the string that distinguishes it from a typo.
+- **A FLAG'S NAME DECIDES THE BRANCH; ITS VALUE IS TAKEN INSIDE IT.** The chain used to
+  read `arg == "-out_name" && i + 1 < argc`, which folds two different facts into one
+  test: with a terminal `else` beneath it, a trailing `-out_name` with no value would
+  have been reported as an argument that does not exist. That message is FALSE and is
+  worse than silence — it sends a user looking for a flag they spelled correctly. The
+  thirteen value-taking branches were split so the name alone selects the branch and a
+  `takeValue` lambda either returns the value or says `expects a value and none
+  followed`. **Two sentences, matched separately in the gate**, for the same reason
+  `warned_keys` and `unread_keys` are two: a single regex over both would let one claim
+  be reported as the other. This was not in #186's acceptance criteria; it is the cost of
+  the terminal branch and is recorded here rather than left as a surprise.
+- **AN UNKNOWN FLAG'S VALUE IS NAMED ON ITS OWN.** `-mb_smooth_iters 0` with an explicit
+  `-conf` produces two warnings, `'-mb_smooth_iters'` and `'0'`, and both are true: the
+  value had no effect either. Whether it should additionally be REFUSED — because
+  without `-conf` that bare token is promoted to the positional config path, so
+  `-bogus_flag mycase.dat` quietly loads `mycase.dat` as the configuration — is #187's
+  question, named here rather than guessed at.
+- **NO NEW OVERRIDE WAS ADDED.** `-mb_smooth_iters` is still not a flag. The defect is
+  the silence, not the absence; adding the one flag that happened to be imagined would
+  fix a single instance and leave the class intact, and `MB_SMOOTH_ITERS` already exists
+  as a `.dat` key, which is how the gates set it.
+
+**THE TWO-SIDED HALF, measured.** A warning that fires on everything is as useless as
+one that fires on nothing, and only one of those looks broken. All eighteen recognised
+arguments — `-conf`, `-geom`, `-seed`, `-geom_nobl`, `-domain`, `-domain_bl`, the five
+`-bc_*`, `-out_vtk` / `-out_starcd` / `-out_cgns` / `-out_name` and the three `-seed_*` —
+are driven in ONE command line and the reported set is asserted EMPTY, which is what
+makes the claim hold for each of them rather than for the first. That run deliberately
+fails validation (`MESH_MODE 3`), so it costs no mesh, and its exit code 2 is the
+positive control proving the loop ran at all rather than the binary dying before it.
+Beside it, the command lines this repo actually issues are run for real: `-conf <path>`
+alone (the GUI worker `mesh_gen_run.py`, `services/pipeline_runner.py`, and the
+multi-block half of `golden_mesh.py`), `-conf <path> -geom <g> -out_name <s> -out_vtk 1
+-out_starcd 1` (`golden_mesh.py`'s hybrid shape), and the bare positional config. Every
+flag documented in `README.md` and `README_EN.md` was checked against the chain and all
+of them exist — the READMEs name no flag the parser does not have.
+
+**SEVEN INJECTIONS, and one that came back INERT first.** Each mutates `src/cli.cpp`,
+rebuilds and runs the gate; the unmutated tree is the negative control and is ALL PASS.
+Deleting the terminal branch → 3 FAIL (the world before this ticket). Removing `-conf`'s
+phase-2 skip → 5 FAIL. Disabling the `positionalConfigIdx` skip → 1 FAIL, and it is the
+bare-positional check, which nothing else covers. Reporting a missing value as `Unknown`
+→ 2 FAIL, including the one that says it must NOT be called unknown. Dropping `-geom`'s
+value skip → 3 FAIL. Turning the warning into a `reportError` → 3 FAIL on the advisory
+half. Printing a placeholder instead of the token → 3 FAIL. **The first attempt at the
+first of those scored 0 FAIL and was a malformed injection, not a hole**: it added an
+`else if (arg == "-never_matches_anything")` branch ABOVE the terminal `else` instead of
+removing it, so the `else` still fired and the gate was right to stay green. A zero-FAIL
+injection is a claim about the mutation before it is a claim about the gate.
+
+**GOLDEN: 22 cases, 22 SAME, 0 DIFF, worst coordinate deviation 0.000e+00**, captured
+from the pre-change binary on a clean tree at `30cea8a` and compared after the build. One
+of the 22 matched a NO-MESH outcome (`isolated_corner`) rather than a mesh, which is what
+that case is for and is reported rather than counted as a mesh.
+
+**Blind spots, named.**
+- The warning goes to **stderr** through `LOG_WARN`, like every other warning here. A
+  caller that discards stderr sees nothing; the GUI worker and the pipeline runner both
+  capture it, and `run.sh` passes it through, but a hand-rolled wrapper need not.
+- **`-h` and `--help` now warn**, truthfully — there is no help flag and none was added.
+  That is the first thing this binary has ever said about them.
+- An **empty argv token** is still promoted to the positional config path by phase 1
+  (`std::string::operator[]` returns `'\0'` on an empty string, so the `arg[0] != '-'`
+  test passes), and `./build/HybMesh2D ""` exits 2 with `Config file '' could not be
+  opened` — measured, pre-existing and unchanged. With an explicit `-conf` before it the
+  same token is named as `''`.
+- The all-eighteen run proves only that **none of them is reported unknown**; that each
+  flag still does what it says is not this gate's claim, and the restructured
+  value-taking branches rest on the golden comparator plus the shipped command lines for
+  that.
+
 **AN INTERIOR LINE THAT FOLLOWS A CURVE** (#151, measured 2026-09-29). Until this
 ticket every `interface` and every `cut` was a straight CHORD between its two declared
 corners, and the mesher's own refusal said why and what it cost: the only key that made

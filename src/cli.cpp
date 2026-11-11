@@ -1326,6 +1326,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
     bool geomProvided = false;
     bool seedProvided = false;
     bool confExplicit = false;
+    int positionalConfigIdx = -1;   // argv slot phase 1 took as the config path
 
     // Phase-2 flags that consume exactly one value. Phase 1 must skip their value
     // so it is never mistaken for the bare positional config path (e.g. the "1" in
@@ -1360,9 +1361,12 @@ int hybmesh::runCli(int argc, char* argv[]) {
             ++i; // value belongs to a phase-2 flag, not the config path
         } else if (arg[0] != '-' && !confExplicit) {
             // Bare positional config path (only the first one; guarded so a stray
-            // value can't override it).
+            // value can't override it). The INDEX is remembered, not just the
+            // string: phase 2 cannot tell a consumed positional from an unknown
+            // token by looking at the token (#186).
             configFile = arg;
             confExplicit = true;
+            positionalConfigIdx = i;
         }
     }
 
@@ -1394,27 +1398,46 @@ int hybmesh::runCli(int argc, char* argv[]) {
         }
     }
 
+    // An argument that matches NOTHING below is NAMED rather than dropped (#186).
+    // No list of argument names is introduced: the chain of comparisons IS the
+    // list, so a flag added to the parser is covered without a second copy free
+    // to drift from it. The flag's NAME decides the branch and the value is taken
+    // inside it, which keeps the two sentences apart -- a flag that exists but was
+    // handed no value is a missing value, and calling it unknown would be false
+    // and would send the user looking for a flag they spelled correctly.
+    auto takeValue = [&](const std::string& flag, int& idx) -> const char* {
+        if (idx + 1 < argc) return argv[++idx];
+        LOG_WARN("Command-line argument '" << flag << "' expects a value and none "
+                 "followed; it was IGNORED and had no effect on this run.");
+        return nullptr;
+    };
+
     // 第二階段：處理其他命令列參數，這些參數優先於設定檔
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-bc_xmin" && i + 1 < argc) config.bcXMin = argv[++i];
-        else if (arg == "-bc_xmax" && i + 1 < argc) config.bcXMax = argv[++i];
-        else if (arg == "-bc_ymin" && i + 1 < argc) config.bcYMin = argv[++i];
-        else if (arg == "-bc_ymax" && i + 1 < argc) config.bcYMax = argv[++i];
-        else if (arg == "-bc_geom" && i + 1 < argc) config.bcGeom = argv[++i];
-        else if (arg == "-out_vtk" && i + 1 < argc) { int v; if (parseIntArg(argv[++i], v)) config.exportVTK = (v != 0); }
-        else if (arg == "-out_starcd" && i + 1 < argc) { int v; if (parseIntArg(argv[++i], v)) config.exportStarCD = (v != 0); }
-        else if (arg == "-out_cgns" && i + 1 < argc) { int v; if (parseIntArg(argv[++i], v)) config.exportCGNS = (v != 0); }
-        else if (arg == "-out_name" && i + 1 < argc) config.outputFilename = argv[++i];
-        else if (arg == "-domain" && i + 1 < argc) config.domainFile = argv[++i];
+        // Phase 1 consumed this slot as the bare positional config path. It is
+        // not a token phase 2 can recognise, so it is skipped by INDEX.
+        if (i == positionalConfigIdx) continue;
+        if (arg == "-bc_xmin") { if (const char* v = takeValue(arg, i)) config.bcXMin = v; }
+        else if (arg == "-bc_xmax") { if (const char* v = takeValue(arg, i)) config.bcXMax = v; }
+        else if (arg == "-bc_ymin") { if (const char* v = takeValue(arg, i)) config.bcYMin = v; }
+        else if (arg == "-bc_ymax") { if (const char* v = takeValue(arg, i)) config.bcYMax = v; }
+        else if (arg == "-bc_geom") { if (const char* v = takeValue(arg, i)) config.bcGeom = v; }
+        else if (arg == "-out_vtk") { if (const char* v = takeValue(arg, i)) { int n; if (parseIntArg(v, n)) config.exportVTK = (n != 0); } }
+        else if (arg == "-out_starcd") { if (const char* v = takeValue(arg, i)) { int n; if (parseIntArg(v, n)) config.exportStarCD = (n != 0); } }
+        else if (arg == "-out_cgns") { if (const char* v = takeValue(arg, i)) { int n; if (parseIntArg(v, n)) config.exportCGNS = (n != 0); } }
+        else if (arg == "-out_name") { if (const char* v = takeValue(arg, i)) config.outputFilename = v; }
+        else if (arg == "-domain") { if (const char* v = takeValue(arg, i)) config.domainFile = v; }
         else if (arg == "-domain_bl") config.domainGrowBL = true; // domain wall grows BL inward (internal flow)
         else if (arg == "-geom_nobl") { // already collected in phase 1; skip its values here
             while (i + 1 < argc && argv[i+1][0] != '-') ++i;
         }
-        else if (arg == "-seed_size" && i + 1 < argc) parseDoubleArg(argv[++i], config.seedSize);
-        else if (arg == "-seed_radius" && i + 1 < argc) parseDoubleArg(argv[++i], config.seedRadius);
-        else if (arg == "-seed_mode" && i + 1 < argc) {
-            std::string m = argv[++i]; config.seedMode = (m == "embed" || m == "1") ? 1 : 0;
+        else if (arg == "-seed_size") { if (const char* v = takeValue(arg, i)) parseDoubleArg(v, config.seedSize); }
+        else if (arg == "-seed_radius") { if (const char* v = takeValue(arg, i)) parseDoubleArg(v, config.seedRadius); }
+        else if (arg == "-seed_mode") {
+            if (const char* v = takeValue(arg, i)) {
+                std::string m = v; config.seedMode = (m == "embed" || m == "1") ? 1 : 0;
+            }
         }
         // -geom / -seed / -conf 已經處理過，但在這裡跳過它們的參數以避免干擾
         else if (arg == "-geom") {
@@ -1425,6 +1448,15 @@ int hybmesh::runCli(int argc, char* argv[]) {
         }
         else if (arg == "-conf") {
             if (i + 1 < argc) ++i;
+        }
+        else {
+            // Advisory, never a refusal: the exit code, the machine-readable line
+            // and the mesh are all unchanged. A user who invents a flag has to be
+            // told on THIS run, because the numbers they are about to quote came
+            // from it -- #183's `-mb_smooth_iters 0` control arm ran at the
+            // default 20 and read as a clean negative result.
+            LOG_WARN("Unknown command-line argument '" << arg << "'; it was "
+                     "IGNORED and had no effect on this run.");
         }
     }
 

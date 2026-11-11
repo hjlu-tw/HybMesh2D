@@ -30,6 +30,16 @@ What this pins down:
      yet.
   5. The topology file is read from its own declaration and reported in the banner.
   6. An unknown mode is a CONFIG failure, not a silent fall back to mode 0.
+  7. A command-line argument the parser recognises NOTHING of is NAMED, stated to
+     have had no effect, and changes nothing else -- the run still exits 0 and
+     still writes its mesh. The two-sided half is the one that matters: every
+     argument this repo's own scripts and READMEs pass stays SILENT, including the
+     ones consumed in phase 1 and every recognised flag's VALUE. ``-mb_smooth_iters``
+     is pinned BY NAME, because that flag does not exist and a published
+     measurement in #183 was nearly gathered through it: both arms ran at the
+     shipped default of 20 and agreed to six decimals, which reads as a clean
+     negative result. A flag that exists but was handed no value gets a DIFFERENT
+     sentence, because calling it unknown would be false.
 
 THE GOLDEN BASELINE, recorded here because #49's first acceptance item is that the
 existing path is untouched and because a procedure nobody wrote down is one nobody
@@ -81,12 +91,18 @@ def check(msg, cond):
         failures.append(msg)
 
 
-def run(tmp, body: str):
-    """Run the mesher on a one-off config; return (returncode, combined output)."""
+def run(tmp, body: str, args=None, conf: bool = True):
+    """Run the mesher on a one-off config; return (returncode, combined output).
+
+    ``args`` are appended to the command line, and ``conf=False`` hands the config
+    over as the BARE POSITIONAL path instead of through ``-conf`` -- a route the
+    argument loop treats differently (phase 1 consumes it by position), so section
+    7 has to drive both."""
     dat = os.path.join(tmp, "mode.dat")
     with open(dat, "w", encoding="utf-8") as f:
         f.write(body)
-    p = subprocess.run([_BIN, "-conf", dat], cwd=tmp, env=_mesher_env(),
+    argv = [_BIN] + (["-conf", dat] if conf else [dat]) + list(args or [])
+    p = subprocess.run(argv, cwd=tmp, env=_mesher_env(),
                        capture_output=True, text=True, timeout=180)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
@@ -104,6 +120,22 @@ def unread_keys(out: str) -> set:
     two ask the user for different things (delete the setting, versus keep it —
     the next increment reads it)."""
     return set(re.findall(r"does not read '([A-Z][A-Z0-9_]*)' yet", out))
+
+
+def unknown_args(out: str) -> set:
+    """The command-line tokens the mesher reported as recognising nothing of."""
+    return set(re.findall(r"Unknown command-line argument '([^']*)'", out))
+
+
+def novalue_args(out: str) -> set:
+    """The flags reported as KNOWN but handed no value.
+
+    A deliberately different sentence from the one above, matched separately for
+    the same reason ``unread_keys`` is: the two say different things about the
+    token -- "no such argument" versus "this argument exists and you left its
+    value off" -- and a single regex over both would let one be reported as the
+    other."""
+    return set(re.findall(r"Command-line argument '([^']*)' expects a value", out))
 
 
 #: A square duct so the DEFAULT mode has something real to mesh. Written here
@@ -129,8 +161,9 @@ def main() -> int:
         geom = os.path.join(tmp, "square.dat")
         write_square(geom)
 
-        # ── 1. the default is the existing path ─────────────────────────────
-        rc, out = run(tmp, f"""
+        def plain(stem):
+            """A small hybrid case that meshes, named so the caller can find it."""
+            return f"""
 GEOM_FILE {geom}
 DOMAIN_X_MIN -6
 DOMAIN_X_MAX 6
@@ -138,8 +171,11 @@ DOMAIN_Y_MIN -6
 DOMAIN_Y_MAX 6
 BL_LAYERS 3
 EXPORT_VTK 1
-OUTPUT_FILENAME {os.path.join(tmp, 'plain')}
-""")
+OUTPUT_FILENAME {os.path.join(tmp, stem)}
+"""
+
+        # ── 1. the default is the existing path ─────────────────────────────
+        rc, out = run(tmp, plain("plain"))
         check("1. a config that never mentions MESH_MODE still meshes (rc=0)", rc == 0)
         check("1. ...and reports mode 0 in the banner, so a finished mesh records "
               "which path made it",
@@ -291,6 +327,103 @@ OUTPUT_FILENAME {out_name}
               "for something else", rc3 == 2)
         check("6. ...and the message names the value and the modes that exist",
               "MESH_MODE 3 is not a known mode" in out3)
+
+        # ── 7. an argument the parser recognises nothing of is NAMED ───────
+        # The defect this pins is not hypothetical: the smoothed-versus-unsmoothed
+        # figures in issue #183 were first gathered as `-mb_smooth_iters 0` against
+        # `-mb_smooth_iters 20`. There is no such flag. Both arms ran at the shipped
+        # default of 20, every number agreed to six decimals, and that reads as a
+        # clean negative result -- "the smoother does not touch this figure". It was
+        # caught only because the banner happens to print `Smoothing Sweeps : 20`.
+        rc, out = run(tmp, plain("invented"), ["-mb_smooth_iters", "0"])
+        check("7. an invented command-line flag is NAMED, with the exact token the "
+              f"user typed ({sorted(unknown_args(out))})",
+              "-mb_smooth_iters" in unknown_args(out))
+        check("7. ...and the message says it was IGNORED and had no effect on this "
+              "run, so the caveat arrives with the numbers rather than after them",
+              "Unknown command-line argument '-mb_smooth_iters'; it was IGNORED "
+              "and had no effect on this run." in out)
+        check("7. ...and the run still exits 0: this is advisory, never a refusal",
+              rc == 0)
+        check("7. ...and still wrote its mesh",
+              os.path.exists(os.path.join(tmp, "invented.vtk")))
+        # The VALUE of an unknown flag is named too, and that is deliberate: it had
+        # no effect either. Whether it should additionally be REFUSED -- because a
+        # bare token can be promoted to the positional config path -- is the
+        # question #187 exists to answer, and is NOT decided here.
+        check("7. ...and the invented flag's value is named on its own, having had "
+              f"no effect of its own ({sorted(unknown_args(out))})",
+              unknown_args(out) == {"-mb_smooth_iters", "0"})
+
+        # The two-sided half. A warning that fires on everything is as useless as
+        # one that fires on nothing, and only one of the two looks broken.
+        seed = os.path.join(tmp, "seed.dat")
+        nobl = os.path.join(tmp, "nobl.dat")
+        dom = os.path.join(tmp, "dom.dat")
+        write_square(seed, n=8, side=0.4)
+        write_square(nobl, n=8, side=0.6)
+        write_square(dom, n=8, side=12.0)
+        every_flag = [
+            "-geom", geom, nobl,          # the multi-value collectors, two files
+            "-geom_nobl", nobl,
+            "-seed", seed,
+            "-seed_size", "0.05", "-seed_radius", "0.5", "-seed_mode", "source",
+            "-domain", dom, "-domain_bl",
+            "-bc_xmin", "farfield", "-bc_xmax", "farfield",
+            "-bc_ymin", "farfield", "-bc_ymax", "farfield", "-bc_geom", "wall",
+            "-out_vtk", "1", "-out_starcd", "0", "-out_cgns", "0",
+            "-out_name", os.path.join(tmp, "everyflag"),
+        ]
+        # MESH_MODE 3 makes this fail validation the moment parsing is over, so the
+        # check costs no mesh -- and the exit code is the positive control proving
+        # the argument loop really ran rather than the binary dying before it.
+        rc, out = run(tmp, f"MESH_MODE 3\nGEOM_FILE {geom}\n", every_flag)
+        check("7. every argument the parser knows -- `-conf`, the three multi-value "
+              "collectors, `-domain`/`-domain_bl`, the five `-bc_*`, the three "
+              "`-out_*` toggles, `-out_name` and the three `-seed_*` -- is SILENT, "
+              f"all eighteen in one command line ({sorted(unknown_args(out))})",
+              not unknown_args(out))
+        check("7. ...and the run still reached validation, so that silence is a "
+              "parse that happened rather than one that never ran", rc == 2)
+        # Phase 1 collects -conf/-geom/-seed/-geom_nobl and skips the value of each
+        # phase-2 flag; phase 2 must not then report any of them unknown. The set
+        # above is empty, so this holds for EVERY one of them, not just the first.
+        check("7. ...which covers each argument consumed in the EARLY pass "
+              "individually, not merely one of them",
+              not ({"-conf", "-geom", "-seed", "-geom_nobl"} & unknown_args(out)))
+        check("7. ...and no recognised flag's VALUE is reported as an argument of "
+              "its own",
+              not ({"farfield", "wall", "source", "0.05", "0.5", "1", "0", geom,
+                    nobl, seed, dom} & unknown_args(out)))
+
+        # The command lines this repo's own scripts actually use. `-conf <path>`
+        # alone is the GUI worker's, the pipeline runner's and the multi-block half
+        # of the golden comparator's; the second is golden_mesh.py's hybrid shape.
+        rc, out = run(tmp, plain("shipped"),
+                      ["-geom", geom, "-out_name", os.path.join(tmp, "shipped2"),
+                       "-out_vtk", "1", "-out_starcd", "1"])
+        check(f"7. the command line the golden comparator itself runs is silent "
+              f"({sorted(unknown_args(out))})", not unknown_args(out))
+        check("7. ...and still meshes", rc == 0 and
+              os.path.exists(os.path.join(tmp, "shipped2.vtk")))
+        rc, out = run(tmp, plain("positional"), conf=False)
+        check(f"7. a config handed over as the BARE POSITIONAL path is silent -- it "
+              f"was consumed in phase 1 by position, which phase 2 cannot see from "
+              f"the token alone ({sorted(unknown_args(out))})",
+              not unknown_args(out))
+        check("7. ...and still meshes", rc == 0 and
+              os.path.exists(os.path.join(tmp, "positional.vtk")))
+
+        # A flag that EXISTS but was handed no value gets its own sentence. Calling
+        # it unknown would be false, and would send a user looking for a flag they
+        # had spelled correctly.
+        rc, out = run(tmp, plain("novalue"), ["-out_name"])
+        check(f"7. a recognised flag with no value is reported as a MISSING VALUE "
+              f"({sorted(novalue_args(out))})", novalue_args(out) == {"-out_name"})
+        check(f"7. ...and is NOT called unknown, which would be false "
+              f"({sorted(unknown_args(out))})", not unknown_args(out))
+        check("7. ...and that is advisory too: still exit 0, still a mesh",
+              rc == 0 and os.path.exists(os.path.join(tmp, "novalue.vtk")))
 
     print()
     if failures:

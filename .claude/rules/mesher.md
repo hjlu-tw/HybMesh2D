@@ -95,6 +95,30 @@ the old and new trees:
 **An unrecognised per-geometry `KEY=VALUE` override is NAMED, not dropped**
 (`parseBLOverrideToken` asks `isBLParam` and warns) — same "the setting does nothing" failure class.
 
+**AN UNRECOGNISED COMMAND-LINE ARGUMENT IS NAMED** (`hybmesh::runCli` in `src/cli.cpp`; #186):
+`[WARN] Unknown command-line argument '-mb_smooth_iters'; it was IGNORED and had no effect on this
+run.` Advisory, never a refusal — the exit code, the machine-readable line and the mesh are all
+unchanged — because a refusal would turn "your setting does nothing" into "your case does not run",
+and unlike a topology document this surface has an installed base.
+- **No list of argument names exists, and that is a refusal rather than an omission.** The chain of
+  `arg == "-..."` comparisons IS the list, so a flag added to the parser is covered with no second
+  copy free to drift from it.
+- **The loop runs in TWO passes and the terminal branch respects both.** `-conf`, `-geom`, `-seed`
+  and `-geom_nobl` are collected in phase 1 and skipped in phase 2 by their own branches; the bare
+  positional config path is skipped by INDEX (`positionalConfigIdx`), because phase 2 cannot tell a
+  consumed positional from an unknown token by looking at the token.
+- **A flag's NAME decides the branch and its value is taken INSIDE it** (`takeValue`). A recognised
+  flag handed no value gets its own sentence — `expects a value and none followed` — because calling
+  it unknown would be false and would send a user looking for a flag they spelled correctly.
+- **An unknown flag's VALUE is named on its own**, having had no effect of its own. Whether it should
+  additionally be REFUSED — a bare token becomes the positional config path when no `-conf` was
+  given — is open and is #187's question, not an oversight here.
+- **No new override was added, `-mb_smooth_iters` least of all.** The defect is the SILENCE, not the
+  absence; adding the one flag that happened to be imagined would fix a single instance and leave the
+  class intact. `MB_SMOOTH_ITERS` is a `.dat` key and is how the gates set it.
+- Gate: `tests/test_mesh_mode_surface.py` section 7, through the real binary, in BOTH directions — a
+  warning that fires on everything is as useless as one that fires on nothing.
+
 **`DOMAIN_FILE` AND `GEOM_FILE` ARE ONE KIND OF LINE UNDER `MESH_MODE 1`** (`buildMultiBlockMesh`
 in `src/cli.cpp`; #171). On the hybrid path the two decide different things — which outline the
 far field is built from, and whether it grows a BL — and `Config` keeps them apart, `domainFile`
