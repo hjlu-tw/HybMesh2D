@@ -15,8 +15,9 @@ a function and a row in the registry.
 
 WHAT THE DOCUMENT MUST SATISFY, and why each one is satisfied BY CONSTRUCTION here
 rather than checked afterwards — the mesher refuses every one of them by name
-(`.claude/rules/mesher-multiblock.md`), and a template that can produce a refusal has
-handed the user back the JSON they came here to avoid:
+(`.claude/rules/mesher-multiblock.md`, except the corner ring, whose rule moved to
+`.claude/rules/mesher-block-side.md` in #189), and a template that can produce a refusal
+has handed the user back the JSON they came here to avoid:
 
 * **The corner ring closes counter-clockwise**, each block declaring its four edges
   ``[south, east, north, west]`` with south/north running i-min -> i-max and

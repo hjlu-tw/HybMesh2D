@@ -92,11 +92,8 @@ cells, already-resolved boundary edges, warnings as data and an optional error. 
 - **What v0 does not do is refused BY NAME, never approximated**, each refusal naming the work it
   waits for: a `blocks[].orientation`. (`on_geometry` and `binding` were on this list and are
   implemented by #52; the `interface`/`cut` kinds and a second block by #53.)
-- **A block's orientation is the corner order of its own four edges**, `[south, east, north, west]`,
-  south/north running i-min→i-max and west/east j-min→j-max. A **clockwise** corner ring is refused
-  under the TOPOLOGY code, never silently re-wound. SUPERSEDED IN PART by #53: a DIRECTION
-  deviation is no longer refused, only a set of four edges that does not CLOSE a ring.
-  Why: `docs/design_notes/mesher.md`, "A block's orientation is the corner order".
+- **The orientation convention and the ring refusal moved to**
+  `.claude/rules/mesher-block-side.md` (#189), with the frame rule and the corner-node check.
 - **The boundary edges are ONE counter-clockwise walk**, matching `addTaggedLoop` /
   `buildDomainBoundary`. Measured: the direction does **not** reach the `.bnd` (`exportStarCD` takes
   face node order from the owning cell), so this is consistency for a reader. The C++ test pins the
@@ -332,16 +329,6 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   **said out loud**: the distinction lives in the declaration, the validation and the report
   (`MbResult::sharedEdges`, a `Cut '<id>'` banner row), which is what makes a later divergence a
   change rather than a rewrite. Still never INFERRED from the binding.
-- **A block's frame comes from its SOUTH edge; this REVERSES #50's rule.** The other three sides may
-  be declared either way and are traversed as the ring requires — a shared edge has ONE direction and
-  two blocks whose frames need not agree. Nothing is inferred: four edges that do not CLOSE a ring
-  are refused by name, a ring closing onto THREE corners is refused too (reachable: two distinct
-  edges over one corner pair), and the clockwise-ring refusal is unchanged. C++ check 9 is the
-  **inverted** version of the one that pinned the old refusal.
-  Why: `docs/design_notes/mesher.md`, "The clockwise-ring refusal is unchanged".
-- **"The four sides meet at four shared corner NODES" is checked, before the writes overwrite one
-  with the other.** It looks tautological after the ring match and is not: it caught the
-  dropped-reversal injection in both gates.
 - Gated by `tests/cpp/test_multiblock.cpp` 17-23, `tests/test_multiblock_weld_surface.py` (which
   measures CONFORMITY on the exported files — interior edges shared by exactly two cells, the
   boundary set equal to the `.bnd`, one connected component) and the `mb_hgrid` golden case on the
@@ -359,6 +346,15 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
   four blocks" was never a limit** — `tests/cpp/test_multiblock.cpp` 59 fills nine (GATED rather
   than quoted), `ogrid_splits` admits 64, and #153 SHIPS eight. What is true is the ARITY rule one
   line up.
+
+**WHAT A BLOCK SIDE IS HAS ITS OWN RULE FILE: `.claude/rules/mesher-block-side.md`** (#189,
+the EIGHTEENTH). The orientation convention and the ring refusal, the frame the SOUTH edge
+fixes, and "the four sides meet at four shared corner NODES" are there, with the BUDGET
+argument and the seam's own blind spots: a different question, this file answering "what does
+this document declare and how is the block filled" and that one "what IS one side, and what
+makes four of them a block". A session editing `src/MultiBlock.cpp` or
+`tests/cpp/test_multiblock.cpp` loads BOTH; one opening a document under `examples/topology/`
+is handed that file and nothing else, no rule file's globs having reached those nine before it.
 
 **THE SPACING LAWS HAVE THEIR OWN RULE FILE: `.claude/rules/mesher-spacing.md`** (#177,
 the SEVENTEENTH). Where an edge's nodes go ALONG it — the tanh default, the wall height

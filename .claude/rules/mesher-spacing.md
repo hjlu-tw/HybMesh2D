@@ -11,9 +11,12 @@ paths:
 Loaded on demand when the spacing header, the one place that chooses between its laws, the
 key the wall height comes from or the C++ gate is read. **The SEVENTEENTH rule file, and the
 EIGHTH taken because another was FULL** (`mesher-multiblock.md` left #176 with 521 characters
-of slack and #177's rules did not fit) — but unlike the seven before it, it is ALSO the first
-whose globs reach `tools/`, which CLOSES a blind spot `.claude/rules/mesher-multiblock.md`
-had named and could not fix:
+of slack and #177's rules did not fit) — and it CLOSES a blind spot
+`.claude/rules/mesher-multiblock.md` had named and could not fix. **"The first whose globs
+reach `tools/`" stood here and is FALSE**, measured at #189: `gui-canvas-edit.md` globbed
+`tools/PreProcessor/include/NacaAirfoil*` at #147 and `gui-lifecycle.md` globbed
+`tools/scripts/gmsh_*` at #77. What is true is narrower and is what the blind spot was
+about — the SPACING HEADER was reached by nothing:
 
 > **NO RULE FILE'S GLOBS REACH `tools/`**, so the O-grid rule's own spacing law —
 > `tools/PreProcessor/include/Spacing.hpp`, named in that rule — is unreachable from the

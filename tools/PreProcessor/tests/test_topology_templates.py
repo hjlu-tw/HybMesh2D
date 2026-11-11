@@ -9,8 +9,9 @@ mesher ACCEPTS — so this gate holds the two halves of it:
   * the family function's output satisfies, ACROSS A SPREAD OF PARAMETERS, every
     structural rule the mesher refuses a document for. Each of those rules is a
     named refusal in ``src/MultiBlock.cpp`` and a bullet in
-    ``.claude/rules/mesher-multiblock.md``; a template that can produce one has
-    handed the user back the JSON they came here to avoid.
+    ``.claude/rules/mesher-multiblock.md`` — or, for the ring closure, in
+    ``.claude/rules/mesher-block-side.md`` (#189); a template that can produce one
+    has handed the user back the JSON they came here to avoid.
   * the DEFAULTS run the real binary to a zero exit code with zero inverted cells.
     A template that produces a document but not a mesh has done nothing, and the
     ticket's demo is "pick H-grid, accept the defaults, generate, see a mesh".

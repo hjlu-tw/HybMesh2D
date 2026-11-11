@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 276 more of today because this repo's own prose
+bytes, which the root file has 306 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -309,6 +309,21 @@ Known remaining blind spots, stated rather than pretended away:
     say so; leaving a pointer this commit itself broke would have been the defect, not the
     discipline. The two from EARLIER tickets (`arch_probes.py:171`,
     `test_field_spec_tables.py:515`) are still there and still not this ticket's to fix.
+    #189's sweep found THREE and repointed all three, in files its ticket puts out of scope
+    for exactly #89's reason: `topology_doc_invariants.py`, `test_topology_templates.py` and
+    `services/topology_hgrid.py` each promise that every structural rule they state is "a
+    bullet in `mesher-multiblock.md`", and `ring_closes` — the corner ring — stopped being one
+    the moment the eighteenth rule file took it. All three are DOCSTRING text, so no
+    behaviour changed and the full suite says so. IT FOUND TWO, AND THE REVIEW FOUND THE
+    THIRD: the first version of this entry said "Nothing else went stale", which is a
+    non-enumerated `never` of exactly the kind the root file's own rule forbids, written one
+    clause after a grep that had covered two files and not the GUI tree. What the sweep got
+    right is worth keeping: the moved rules carry `Why:` anchors INTO
+    `docs/design_notes/mesher.md` rather than out of it, that note names no rule file at
+    either anchor, and `docs/agents/rule-file-style.md`'s reference block is a different block
+    of the same file — a move that takes its anchors with it can only break pointers aimed AT
+    it, which is the half of this blind spot a grep can actually find. The grep is only as
+    good as the trees it is pointed at, which is what the third instance measures.
  c2. `ROOT_BUDGET` is THREE claims, and #109 closed the second of them. Check 7 holds the
     VALUE: the root file's stated budget must equal this constant and its stated slack must
     equal that constant minus the file's real size, so the budget can no longer be
@@ -412,9 +427,13 @@ Known remaining blind spots, stated rather than pretended away:
     Four escapes are left. A module named in BOTH notes passes, which is why
     `case_export.py` — already in `pipeline.md` through the `case_archive` and
     `case_input_paths` rationale — is not among the modules its own injection fires on. A
-    rule file naming no Python module is vacuously true: `mesher.md` and
-    `mesher-smoothing.md` (zero each, their rules being about C++ and `.dat` keys) —
-    `mesher-multiblock.md` was the second of those when #89 split it and no longer is,
+    rule file naming no Python module is vacuously true, and the set is RE-MEASURED at #189
+    rather than carried: `mesher-smoothing.md`, `mesher-spacing.md` and the new
+    `mesher-block-side.md` (zero each, their rules being about C++ and `.dat` keys).
+    `mesher.md` was on that list and is not now — it names `models/mesh_config_io.py` — and
+    `mesher-spacing.md` joined it at #177 without the list being touched, which is this
+    entry's own subject one level down: a hand-written enumeration beside a gate about
+    hand-written figures. `mesher-multiblock.md` was on it when #89 split it and no longer is,
     naming `services/phi_quality.py` and `services/pipeline_bc_derive.py`. A module a glob
     claims that the rule file never NAMES is invisible, because ownership is read off the
     names in the prose and then filtered by the globs, never enumerated from the globs
@@ -491,10 +510,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    17 rule files now — 59,992 / 59,780 / 59,117 / 56,802 / 56,405 / 45,914 / 41,250 / 37,516 / 30,991 / 25,539 / 23,361 / 22,126 / 20,568 / 16,710 / 15,762 / 12,846 / 8,969  characters (gui-topology, gui-handoff, mesher-multiblock, mesher-smoothing, pipeline-case, mesher, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, gui-canvas-edit, gui-apply, gui-evidence, gui-preflight, gui-results, mesher-spacing, gui-lifecycle) — so "moving text into another rule file
+    18 rule files now — 59,992 / 59,780 / 58,662 / 56,802 / 56,405 / 45,914 / 41,250 / 37,516 / 30,991 / 25,539 / 23,361 / 22,126 / 20,568 / 16,710 / 15,762 / 13,100 / 8,969 / 6,271  characters (gui-topology, gui-handoff, mesher-multiblock, mesher-smoothing, pipeline-case, mesher, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, gui-canvas-edit, gui-apply, gui-evidence, gui-preflight, gui-results, mesher-spacing, gui-lifecycle, mesher-block-side) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 8 / 220 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    15, which have 883 / 3,198 / 3,595 / 14,086 / 18,750 / 22,484 / 29,009 / 34,461 / 36,639 / 37,874 / 39,432 / 43,290 / 44,238 / 47,154 / 51,031. #76 spent 3,446 of
+    16, which have 1,338 / 3,198 / 3,595 / 14,086 / 18,750 / 22,484 / 29,009 / 34,461 / 36,639 / 37,874 / 39,432 / 43,290 / 44,238 / 46,900 / 51,031 / 53,729. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -652,9 +671,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 50,284 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 52,463 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 50,284 taken down to the boundary above is 50,000, to
+# are its size and its slack -- and 52,463 taken down to the boundary above is 52,000, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -821,7 +840,38 @@ _SOURCES = {
 # 48,388 with 612 of slack and the band's floor needs 500 left over, so a row past 112
 # characters re-bands -- and a row that did not name the area would be the stale pointer the
 # table exists to prevent. Check 8 named 51,000 and this is a paste of it.
-ROOT_BUDGET = 51_000
+# #189 is #177's cause once more and from the SAME file a second time: it took the EIGHTEENTH
+# rule file, so a tripwire row went in and the paragraph counting them was rewritten. ITS
+# ORDINAL IS NOT CONTINUED FROM THE TWO ENTRIES ABOVE, because theirs do not continue either:
+# the ordinals this block states run to #166's TWELFTH and then #170 and #177 restate NINTH and
+# TENTH, which makes this one the FIFTEENTH if those two are read as thirteenth and fourteenth.
+# The ordinal is the only thing wrong with them, and repairing another ticket's entry is not
+# this one's to do; saying so is cheaper than propagating it. The FULL-file case is the one
+# `docs/agents/rule-file-style.md` answers with a SPLIT -- `mesher-multiblock.md` left #188 with
+# 883 characters of slack against a feature whose whole subject is the thing the moved rules
+# define, a block SIDE -- and, as at #177, the seam was not chosen by the budget:
+# `examples/topology/*.json`, the nine documents where a block's four sides are actually
+# WRITTEN, was reached by no rule file's globs at all, so the new file closes that instance of
+# blind spot (c) too. What differs from #177 is that this hole was on NO blind-spot list -- it
+# was measured while taking the split rather than found by an audit, and #177's own "FIRST
+# rule file whose globs reach `tools/`" turns out to be false (`gui-canvas-edit.md` got there
+# at #147), which is why the new file rests on its own measurement instead. The row is 953
+# characters against a table whose 18 rows run 152 to 1,297 -- all three excluding the
+# newline, which the first draft of this sentence counted on one side only -- and the
+# multi-block row's rewrite, the spacing row's correction and the counting paragraph are
+# 1,225 more. The row ends 35 characters shorter than review left it because the slack had
+# reached 502: in band by two characters, which is the "next typo fix must edit this file"
+# case #78's first draft was refuted over, so the clause the new rule file already carries
+# in full came out of the row rather than the band being bent to fit it. NO version fits the old band either: the root was 50,284 with
+# 716 of slack and the band's floor needs 500 left over, so a row past 216 characters re-bands
+# -- and a row that did not name the area would be the stale pointer the table exists to
+# prevent. Check 8 printed `ROOT_BUDGET = 53000` and this is a paste of it -- printed as the
+# band's ARITHMETIC rather than as a recommendation, because the root was over budget when it
+# ran and check 8 DEFERS to check 1 there. With the value pasted both pass. THE SLACK IS NOT
+# STATED HERE: it moves with every later edit to the root inside the band, this sentence said
+# 890 against a real 572 by the end of #189's own review, and the live figure is a check 7
+# one in `CLAUDE.md`. What matters here is the BAND, which 53,000 is inside.
+ROOT_BUDGET = 53_000
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -1108,10 +1158,14 @@ def check_gate_names(world):
     The acceptance criterion asks only for the rule files, but the root still
     carries most of the rules while the move is staged, and the relocation tickets
     are precisely when a gate name can be dropped in transit. Same property, one
-    superset — and it is measured, not assumed: all 17 gates the root names today
+    superset — and it is measured, not assumed: all 10 gates the root names today
     resolve. That count falls with each relocation (44 before #63 moved the pipeline
     rules out) and is re-derived here rather than carried; it stood at 44 through three
-    tickets that each lowered it, which is the failure this whole file is about.
+    tickets that each lowered it, which is the failure this whole file is about — and it
+    read 17 against a real 10 until #189 re-derived it, so "re-derived here" has now been
+    false of this very sentence as well. It is still not a check 7 figure, deliberately:
+    the number constrains nothing, and what the check enforces is that each named gate
+    EXISTS.
     """
     fails = []
     sources = [(_ROOT_NAME, world["root"])]

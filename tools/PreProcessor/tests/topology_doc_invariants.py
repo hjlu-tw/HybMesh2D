@@ -13,8 +13,9 @@ caller run one invariant across a whole spread and report every failure in one l
 which is the shape both gates already had.
 
 Every rule here is a named refusal in ``src/MultiBlock.cpp`` and a bullet in
-``.claude/rules/mesher-multiblock.md``. A template that can produce one has handed the
-user back the JSON they came to avoid.
+``.claude/rules/mesher-multiblock.md`` — except ``ring_closes``, whose bullet moved to
+``.claude/rules/mesher-block-side.md`` in #189. A template that can produce one has handed
+the user back the JSON they came to avoid.
 """
 from __future__ import annotations
 
