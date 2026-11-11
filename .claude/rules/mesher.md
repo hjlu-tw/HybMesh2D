@@ -100,22 +100,32 @@ the old and new trees:
 run.` Advisory, never a refusal — the exit code, the machine-readable line and the mesh are all
 unchanged — because a refusal would turn "your setting does nothing" into "your case does not run",
 and unlike a topology document this surface has an installed base.
-- **No list of argument names exists, and that is a refusal rather than an omission.** The chain of
-  `arg == "-..."` comparisons IS the list, so a flag added to the parser is covered with no second
-  copy free to drift from it.
+- **The terminal branch introduces NO list of argument names, and that is a refusal rather than an
+  omission.** It asks the chain of `arg == "-..."` comparisons, which IS the list, so a flag added
+  to the parser is covered with no new copy free to drift from it. **One list does exist and
+  PREDATES this**: `kValueFlags` in phase 1 names the same 13 value-taking flags so their values are
+  not mistaken for the positional config path. It can drift — a value-taking flag added to the
+  chain alone has its value promoted to that path — and that promotion is #187's subject.
 - **The loop runs in TWO passes and the terminal branch respects both.** `-conf`, `-geom`, `-seed`
   and `-geom_nobl` are collected in phase 1 and skipped in phase 2 by their own branches; the bare
   positional config path is skipped by INDEX (`positionalConfigIdx`), because phase 2 cannot tell a
   consumed positional from an unknown token by looking at the token.
-- **A flag's NAME decides the branch and its value is taken INSIDE it** (`takeValue`). A recognised
+- **A flag's NAME decides the branch and its value is taken INSIDE it** (`takeValueOrWarn`). A recognised
   flag handed no value gets its own sentence — `expects a value and none followed` — because calling
   it unknown would be false and would send a user looking for a flag they spelled correctly.
-- **An unknown flag's VALUE is named on its own**, having had no effect of its own. Whether it should
-  additionally be REFUSED — a bare token becomes the positional config path when no `-conf` was
-  given — is open and is #187's question, not an oversight here.
+- **An unknown flag's VALUE is named on its own ONLY when a `-conf` already stood before it.**
+  `-conf x.dat -bogus 0` names `'-bogus'` AND `'0'`, both truthfully. `-bogus 0` with no earlier
+  `-conf` names only `'-bogus'`: phase 1 took `0` as the positional config path, so phase 2 skips
+  that slot by index and the token that decided the whole input document is silent. Measured, and
+  it is #187's subject — this rule does not claim to have closed it.
 - **No new override was added, `-mb_smooth_iters` least of all.** The defect is the SILENCE, not the
   absence; adding the one flag that happened to be imagined would fix a single instance and leave the
   class intact. `MB_SMOOTH_ITERS` is a `.dat` key and is how the gates set it.
+- **The missing-value sentence covers 13 of the 17 value-taking arguments.** `-conf`, `-geom`,
+  `-seed` and `-geom_nobl` match their own phase-2 branch, so they are never called unknown — but
+  they are SILENT when handed nothing, and `-geom` with no paths OVERWRITES the config's geometry
+  list with an empty one and meshes an empty domain at exit 0. Measured, pre-existing, unchanged
+  here, and a follow-up under #184; "it was IGNORED and had no effect" would be false of `-geom`.
 - Gate: `tests/test_mesh_mode_surface.py` section 7, through the real binary, in BOTH directions — a
   warning that fires on everything is as useless as one that fires on nothing.
 

@@ -91,17 +91,22 @@ def check(msg, cond):
         failures.append(msg)
 
 
-def run(tmp, body: str, args=None, conf: bool = True):
+def run(tmp, body: str, args=None, conf: bool = True, argv_tail=None):
     """Run the mesher on a one-off config; return (returncode, combined output).
 
     ``args`` are appended to the command line, and ``conf=False`` hands the config
     over as the BARE POSITIONAL path instead of through ``-conf`` -- a route the
     argument loop treats differently (phase 1 consumes it by position), so section
-    7 has to drive both."""
+    7 has to drive both. ``argv_tail`` replaces everything after the binary, with
+    ``@DAT@`` standing for the config written here: the only way to put a token
+    BEFORE the config path, which is what the ordering check needs."""
     dat = os.path.join(tmp, "mode.dat")
     with open(dat, "w", encoding="utf-8") as f:
         f.write(body)
-    argv = [_BIN] + (["-conf", dat] if conf else [dat]) + list(args or [])
+    if argv_tail is not None:
+        argv = [_BIN] + [a.replace("@DAT@", dat) for a in argv_tail]
+    else:
+        argv = [_BIN] + (["-conf", dat] if conf else [dat]) + list(args or [])
     p = subprocess.run(argv, cwd=tmp, env=_mesher_env(),
                        capture_output=True, text=True, timeout=180)
     return p.returncode, (p.stdout or "") + (p.stderr or "")
@@ -348,12 +353,28 @@ OUTPUT_FILENAME {out_name}
         check("7. ...and still wrote its mesh",
               os.path.exists(os.path.join(tmp, "invented.vtk")))
         # The VALUE of an unknown flag is named too, and that is deliberate: it had
-        # no effect either. Whether it should additionally be REFUSED -- because a
-        # bare token can be promoted to the positional config path -- is the
-        # question #187 exists to answer, and is NOT decided here.
+        # no effect either. It is also ORDER-DEPENDENT, which the two checks below
+        # pin rather than leave to a sentence -- `-conf` came first here, as it does
+        # in every command line this repo issues.
         check("7. ...and the invented flag's value is named on its own, having had "
               f"no effect of its own ({sorted(unknown_args(out))})",
               unknown_args(out) == {"-mb_smooth_iters", "0"})
+        # Put the invented flag FIRST and its value is NOT named: phase 1 reached it
+        # before any -conf, took it as the bare positional config path and skipped
+        # that slot by index. Here the later -conf overwrites the path so the run is
+        # still right, but the token that could have decided the whole input document
+        # is silent -- which is #184's user story 5 and the whole of #187. Pinned so
+        # that the claim "an unknown flag's value is named" cannot be quoted without
+        # the condition it holds under.
+        rc, out = run(tmp, plain("ordering"),
+                      argv_tail=["-bogus_flag", "@DAT@", "-conf", "@DAT@"])
+        check("7. ...but NOT when the invented flag comes before the config: phase 1 "
+              "promoted its value to the positional path, so only the flag is named "
+              f"({sorted(unknown_args(out))}) -- #187's subject, open here",
+              unknown_args(out) == {"-bogus_flag"})
+        check("7. ...and that run still meshed, so the silence is a token consumed "
+              "rather than a run that failed",
+              rc == 0 and os.path.exists(os.path.join(tmp, "ordering.vtk")))
 
         # The two-sided half. A warning that fires on everything is as useless as
         # one that fires on nothing, and only one of the two looks broken.

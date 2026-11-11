@@ -1405,7 +1405,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
     // inside it, which keeps the two sentences apart -- a flag that exists but was
     // handed no value is a missing value, and calling it unknown would be false
     // and would send the user looking for a flag they spelled correctly.
-    auto takeValue = [&](const std::string& flag, int& idx) -> const char* {
+    auto takeValueOrWarn = [&](const std::string& flag, int& idx) -> const char* {
         if (idx + 1 < argc) return argv[++idx];
         LOG_WARN("Command-line argument '" << flag << "' expects a value and none "
                  "followed; it was IGNORED and had no effect on this run.");
@@ -1418,24 +1418,24 @@ int hybmesh::runCli(int argc, char* argv[]) {
         // Phase 1 consumed this slot as the bare positional config path. It is
         // not a token phase 2 can recognise, so it is skipped by INDEX.
         if (i == positionalConfigIdx) continue;
-        if (arg == "-bc_xmin") { if (const char* v = takeValue(arg, i)) config.bcXMin = v; }
-        else if (arg == "-bc_xmax") { if (const char* v = takeValue(arg, i)) config.bcXMax = v; }
-        else if (arg == "-bc_ymin") { if (const char* v = takeValue(arg, i)) config.bcYMin = v; }
-        else if (arg == "-bc_ymax") { if (const char* v = takeValue(arg, i)) config.bcYMax = v; }
-        else if (arg == "-bc_geom") { if (const char* v = takeValue(arg, i)) config.bcGeom = v; }
-        else if (arg == "-out_vtk") { if (const char* v = takeValue(arg, i)) { int n; if (parseIntArg(v, n)) config.exportVTK = (n != 0); } }
-        else if (arg == "-out_starcd") { if (const char* v = takeValue(arg, i)) { int n; if (parseIntArg(v, n)) config.exportStarCD = (n != 0); } }
-        else if (arg == "-out_cgns") { if (const char* v = takeValue(arg, i)) { int n; if (parseIntArg(v, n)) config.exportCGNS = (n != 0); } }
-        else if (arg == "-out_name") { if (const char* v = takeValue(arg, i)) config.outputFilename = v; }
-        else if (arg == "-domain") { if (const char* v = takeValue(arg, i)) config.domainFile = v; }
+        if (arg == "-bc_xmin") { if (const char* v = takeValueOrWarn(arg, i)) config.bcXMin = v; }
+        else if (arg == "-bc_xmax") { if (const char* v = takeValueOrWarn(arg, i)) config.bcXMax = v; }
+        else if (arg == "-bc_ymin") { if (const char* v = takeValueOrWarn(arg, i)) config.bcYMin = v; }
+        else if (arg == "-bc_ymax") { if (const char* v = takeValueOrWarn(arg, i)) config.bcYMax = v; }
+        else if (arg == "-bc_geom") { if (const char* v = takeValueOrWarn(arg, i)) config.bcGeom = v; }
+        else if (arg == "-out_vtk") { if (const char* v = takeValueOrWarn(arg, i)) { int n; if (parseIntArg(v, n)) config.exportVTK = (n != 0); } }
+        else if (arg == "-out_starcd") { if (const char* v = takeValueOrWarn(arg, i)) { int n; if (parseIntArg(v, n)) config.exportStarCD = (n != 0); } }
+        else if (arg == "-out_cgns") { if (const char* v = takeValueOrWarn(arg, i)) { int n; if (parseIntArg(v, n)) config.exportCGNS = (n != 0); } }
+        else if (arg == "-out_name") { if (const char* v = takeValueOrWarn(arg, i)) config.outputFilename = v; }
+        else if (arg == "-domain") { if (const char* v = takeValueOrWarn(arg, i)) config.domainFile = v; }
         else if (arg == "-domain_bl") config.domainGrowBL = true; // domain wall grows BL inward (internal flow)
         else if (arg == "-geom_nobl") { // already collected in phase 1; skip its values here
             while (i + 1 < argc && argv[i+1][0] != '-') ++i;
         }
-        else if (arg == "-seed_size") { if (const char* v = takeValue(arg, i)) parseDoubleArg(v, config.seedSize); }
-        else if (arg == "-seed_radius") { if (const char* v = takeValue(arg, i)) parseDoubleArg(v, config.seedRadius); }
+        else if (arg == "-seed_size") { if (const char* v = takeValueOrWarn(arg, i)) parseDoubleArg(v, config.seedSize); }
+        else if (arg == "-seed_radius") { if (const char* v = takeValueOrWarn(arg, i)) parseDoubleArg(v, config.seedRadius); }
         else if (arg == "-seed_mode") {
-            if (const char* v = takeValue(arg, i)) {
+            if (const char* v = takeValueOrWarn(arg, i)) {
                 std::string m = v; config.seedMode = (m == "embed" || m == "1") ? 1 : 0;
             }
         }

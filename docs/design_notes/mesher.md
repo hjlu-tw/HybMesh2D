@@ -4269,6 +4269,16 @@ argument loop and not a note in a document.
   chain, free to drift from it — the "two sufficient conditions for one rule mask each
   other" failure this repo has recorded more than once. The chain of `arg == "-..."`
   comparisons IS the list, and the terminal `else` asks the chain itself.
+  **But "no list exists" would be false, and the rule file said it before review caught
+  it.** `kValueFlags` — phase 1's set of the 13 value-taking flag names, twenty lines
+  above the chain — is exactly such a second copy, and it PREDATES this ticket. The true
+  claim is the narrower one: nothing here ADDED a list, and the drift hazard
+  `kValueFlags` carries is real and nameable — a value-taking flag added to the chain
+  alone would have its value promoted by phase 1 to the bare positional config path.
+  That promotion is #187's subject, which is where the hazard's fix belongs; a
+  `{name, setter}` table collapsing `kValueFlags` and the 13 branches into one list is
+  the obvious shape and was left to that ticket rather than taken here. This is the
+  "enumerate before every / no / only" rule, failed in the one sentence that asserted it.
 - **THE TWO PASSES ARE THE WHOLE DIFFICULTY.** Phase 1 collects `-conf`, `-geom`,
   `-seed` and `-geom_nobl` and skips every phase-2 flag's value so it cannot be mistaken
   for the bare positional config path; phase 2 re-walks the same `argv`. Three kinds of
@@ -4284,17 +4294,23 @@ argument loop and not a note in a document.
   have been reported as an argument that does not exist. That message is FALSE and is
   worse than silence — it sends a user looking for a flag they spelled correctly. The
   thirteen value-taking branches were split so the name alone selects the branch and a
-  `takeValue` lambda either returns the value or says `expects a value and none
-  followed`. **Two sentences, matched separately in the gate**, for the same reason
+  `takeValueOrWarn` lambda either returns the value or says `expects a value and none
+  followed` — named for both halves, because a `takeValue` that also warns is a name
+  that hides one of them. **Two sentences, matched separately in the gate**, for the same reason
   `warned_keys` and `unread_keys` are two: a single regex over both would let one claim
   be reported as the other. This was not in #186's acceptance criteria; it is the cost of
   the terminal branch and is recorded here rather than left as a surprise.
-- **AN UNKNOWN FLAG'S VALUE IS NAMED ON ITS OWN.** `-mb_smooth_iters 0` with an explicit
-  `-conf` produces two warnings, `'-mb_smooth_iters'` and `'0'`, and both are true: the
-  value had no effect either. Whether it should additionally be REFUSED — because
-  without `-conf` that bare token is promoted to the positional config path, so
-  `-bogus_flag mycase.dat` quietly loads `mycase.dat` as the configuration — is #187's
-  question, named here rather than guessed at.
+- **AN UNKNOWN FLAG'S VALUE IS NAMED ON ITS OWN — AND ONLY WHEN A `-conf` ALREADY STOOD
+  BEFORE IT.** The unconditional version of this sentence was also written first and is
+  also false. Measured on the built binary: `-conf x.dat -bogus 0` warns about
+  `'-bogus'` and `'0'`, both truthfully; `-bogus 0 -conf x.dat` warns about `'-bogus'`
+  ALONE, because phase 1 reached `0` first, took it as the positional config path and
+  set `confExplicit` — the later `-conf` then overwrote the path, so nothing is wrong
+  with the run, but phase 2 skips that slot by index and the token is silent. And
+  `-bogus mycase.dat` with no `-conf` anywhere loads `mycase.dat` as the configuration
+  and says nothing about it, which is #184's user story 5 verbatim and the whole of
+  #187. **This ticket does not close that**, and the gate now pins the measured
+  behaviour rather than the sentence that was convenient.
 - **NO NEW OVERRIDE WAS ADDED.** `-mb_smooth_iters` is still not a flag. The defect is
   the silence, not the absence; adding the one flag that happened to be imagined would
   fix a single instance and leave the class intact, and `MB_SMOOTH_ITERS` already exists
@@ -4344,6 +4360,25 @@ that case is for and is reported rather than counted as a mesh.
   test passes), and `./build/HybMesh2D ""` exits 2 with `Config file '' could not be
   opened` — measured, pre-existing and unchanged. With an explicit `-conf` before it the
   same token is named as `''`.
+- **`-mb_smooth_iters 0`'s second warning is order-dependent**, as above: the value is
+  named only because the gate puts `-conf` first, which is also where every command line
+  in this repo puts it. A user who writes the invented flag before the config gets one
+  warning, not two.
+- **THE MISSING-VALUE SENTENCE COVERS 13 OF THE 17 VALUE-TAKING ARGUMENTS.** `-conf`,
+  `-geom`, `-seed` and `-geom_nobl` match their own phase-2 branch, so they are never
+  reported unknown and are never lied about — they are simply silent, exactly as they
+  were before this ticket, and nothing here made them worse. They are also the same
+  failure class #184 exists to kill, measured 2026-11-11: **`-conf` with no value**
+  warns nothing and falls back to `config/Background_para.dat`, which is not the config
+  the user was naming; **`-conf case.dat -geom`** warns nothing and is worse than a
+  fallback — `geomProvided` is set while `cmdGeomFiles` is empty, so `config.geomFiles`
+  is OVERWRITTEN with an empty list, an empty domain is meshed, 400 cells are exported
+  and the run exits 0. A collector's predicate is "collected zero paths", not "no value
+  followed", and "it was IGNORED and had no effect" is FALSE of `-geom` — so this is a
+  different message rather than four more call sites, and it carries a decision
+  (does an empty collection still overwrite?) that should be named rather than guessed.
+  Deliberately NOT taken here: a partial fix of `-conf` alone would replace one
+  unevenness with another. Filed as a follow-up under #184 instead.
 - The all-eighteen run proves only that **none of them is reported unknown**; that each
   flag still does what it says is not this gate's claim, and the restructured
   value-taking branches rest on the golden comparator plus the shipped command lines for
