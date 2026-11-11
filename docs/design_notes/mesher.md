@@ -5501,7 +5501,14 @@ wall spacing and a 1e-1 far-field one sit in one mesh with no tolerance anywhere
 was the expressiveness of a SIDE, one level up.
 
 **WHAT LANDED.** A side is one edge, as before, or an ordered list joined end to end. A list of one
-is refused. The members are resolved by the ordinary class relation — each is also a side of the
+is refused. **SEVEN refusal branches in all** — the four #190 names (a chain of one, a wall member,
+members that do not join, a contradicting seed) plus three the implementation needed: the join
+failure splits into TWO shapes with two different claims (the first two sharing no corner, where no
+direction is known yet; and a break mid-chain, which can name the corner the chain had REACHED),
+two members over ONE corner pair is a loop rather than a line, and two facing chains that disagree
+is a check where neither side can be the authority. The count is enumerated rather than summarised
+in all three homes, because a review found it stated as "four" in two of them meaning two different
+fours. The members are resolved by the ordinary class relation — each is also a side of the
 block beneath it — and their SUM then decides the opposite side of the block carrying the chain.
 `sum(n_m - 1) + 1` for M members, because the M-1 junctions are each ONE declared corner. **The
 propagation runs members -> total -> opposite side and never the reverse**, and the ADR's title
@@ -5576,12 +5583,27 @@ That is the hard gate on "additive", and it is what the list-of-one refusal is f
 one legal, every existing document would have had a second spelling and the two would have been
 free to drift apart.
 
-**TEN HAND INJECTIONS, dated 2026-11-11 in `tests/cpp/test_multiblock.cpp`'s own docstring**, each
-patch applied to `src/MultiBlock.cpp` alone, rebuilt, the executable run, exit code read BEFORE the
-FAIL count, control run clean. The build tree was not shared with a background suite while they
-ran, which is the trap #175 recorded. What each one does NOT redden is recorded beside it there,
-because an injection that breaks everything says less than one that breaks exactly the check
-written for it.
+**ELEVEN HAND INJECTIONS, dated 2026-11-11 in `tests/cpp/test_multiblock.cpp`'s own docstring**,
+each patch applied to `src/MultiBlock.cpp` alone, rebuilt with the recompile confirmed in the build
+output, the executable run, exit code read BEFORE the FAIL count, control run clean. The build tree
+was not shared with a background suite while they ran, which is the trap #175 recorded. **What they
+do NOT redden is recorded there as one paragraph rather than per line**, and it is the half worth
+reading: the five narrow ones leave every accepted document's checks green, the one-chain and
+two-chain branches do not redden each other's check — which is what says they are two rules rather
+than one written twice — and the broad one leaves only the parse refusals standing. The first draft
+of this sentence claimed the information was "recorded beside" each injection when four of the ten
+carried only what they DID redden; a review axis read the list and found it.
+
+**THE ELEVENTH IS A REVIEW FINDING, AND SO IS THE CHECK UNDER IT.** `resolveSide` shipped with a
+branch nothing exercised and no document named: two members spanning the SAME corner pair, i.e. a
+chain that is a loop rather than a line. #190's spec names four new refusals and this is a FIFTH
+the implementation needed — which is why the counting is now stated as SEVEN branches and
+enumerated in all three homes rather than summarised as "four" in one and "four" differently in
+another. It is REACHABLE, verified through the real binary: two distinct edges over one corner pair
+are legal at parse time (the three-corner ring refusal is built out of exactly that), `resolveSide`
+runs before the arity rule, and `run.sh` on a hand-written document prints the refusal and
+`HYBMESH_ERROR 8 TOPOLOGY`. Without the branch the walk would take its direction from whichever of
+two `if`s ran first — a mesh decided by statement order. Injection CK is what now holds it.
 
 **WHAT IS NOT HERE.** No shipped case and no golden case carries a chain, so nothing exports one,
 hands one to the quality instrument, the `.cel` writer or the solver. No topology family emits one.

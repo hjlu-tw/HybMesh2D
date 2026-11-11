@@ -378,8 +378,8 @@
 // touches the file after restoring it. Read the exit code first, and distrust a
 // result that reproduces the previous ticket's numbers exactly.
 //
-// TEN MORE for #190's CHAINS — a side that is an ordered list of edges joined end
-// to end — and ALL TEN BITE. Measured 2026-11-11 the same way (each patch applied
+// ELEVEN MORE for #190's CHAINS — a side that is an ordered list of edges joined
+// end to end — and ALL ELEVEN BITE. Measured 2026-11-11 the same way (each patch applied
 // to src/MultiBlock.cpp alone, rebuilt with the recompile confirmed in the build
 // output, this executable run, exit code read BEFORE the FAIL count, control run
 // clean). The build tree was NOT shared with a background suite while they ran,
@@ -400,6 +400,20 @@
 //   CI the two-facing-chains check removed                   -> 65 (2)
 //   CJ only a chain's FIRST member registers as a block side -> 61, 61b, 62, 64, 65
 //                                                               (28)
+//   CK the two-members-over-one-corner-pair refusal removed  -> 63 (2)
+//
+// WHAT THE NARROW ONES DO NOT REDDEN, which is the half worth reading. CE, CF, CG,
+// CK and CI touch nothing outside the refusal each is about: every one of them is
+// in the PARSE (CE, CF, CG, CK) or in the two-facing-chains branch (CI), and the
+// accepted documents 61, 61b, 62 and 64 are built on never reach either — so a
+// green 61 under any of them is the feature still working, not a check asleep. CH
+// is the mirror of that: it is in the ONE-chain branch of the same pass as CI, and
+// neither reddens the other's check, which is what says the two branches are two
+// rules rather than one written twice. CD reddens 61b and 65 and NOT 61, because
+// 61's chain runs in its members' own declared direction and has no reversal to
+// lose — the fixture gap recorded below. CJ is the broad one and the only check it
+// leaves green is 63, every new refusal there firing during the parse, before
+// `uses` is built at all.
 //
 // FIVE OF THEM ARE RECORDED FOR WHAT THEY SHOWED rather than for confirming a
 // check.
@@ -428,6 +442,16 @@
 // refusal `docs/research/gridpro-blocking-method/make_merge_refusal.py` was written
 // to provoke. The arity rule is untouched by this ticket; what changed is that a
 // chain member reaches it as a side of the carrying block.
+//
+// CK IS A REVIEW FINDING AND THE CHECK CAME WITH IT. The branch refusing two
+// members that span the SAME corner pair — a chain that is a loop rather than a
+// line — shipped with no check and was named in no document; #190's spec lists
+// four new refusals and this is a fifth the implementation needed. It is
+// REACHABLE, not defensive: two distinct edges over one corner pair are legal at
+// parse time (check 9's three-corner ring is built out of exactly that), and
+// `resolveSide` runs before the arity rule, so the real binary reaches it. Without
+// the branch the walk picks its direction by whichever test runs first, which is a
+// mesh decided by the order of two `if`s.
 //
 // CD AND CG BOTH NEEDED A FIXTURE THAT DID NOT EXIST AT FIRST. Every chain in the
 // termination document runs in its members' own declared direction, so
@@ -5979,6 +6003,20 @@ int main() {
         // an edge used twice anywhere on one block is a block welded to itself.
         refuses(termination(R"(["n0", "n0"])"), "named twice",
                 "63. a chain naming one edge twice is refused as a self-weld");
+
+        // TWO DISTINCT MEMBERS OVER ONE CORNER PAIR — a chain that is a LOOP and
+        // not a line. Reachable rather than defensive, and the self-weld refusal
+        // above does NOT cover it: these are two different edges, so nothing is
+        // named twice, and two edges over one corner pair are legal at parse time
+        // (check 9's three-corner ring is built out of exactly that). Without this
+        // the walk would pick a direction by which test ran first.
+        const std::string loop = swap1(termination(),
+            R"({"id": "n1", "corners": ["m1", "m2"], "kind": "interface"})",
+            R"({"id": "n1", "corners": ["m0", "m1"], "kind": "interface"})");
+        refuses(loop, "share BOTH of their corners",
+                "63. a chain whose first two members span the SAME corner pair is refused");
+        refuses(loop, "a line, not a loop",
+                "63. ...on the grounds that a side has two ends");
     }
 
     // ── 64. THE OLD REFUSALS STILL FIRE, with a chain in the document (#190) ─

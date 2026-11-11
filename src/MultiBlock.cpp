@@ -253,6 +253,18 @@ struct BlockSpec {
     std::vector<SideSpec> sides;      // exactly 4, in [south, east, north, west]
 };
 
+// THE ONE EDGE A SIDE IS, for the readers that ask a question only a WALL has an
+// answer to — "is this side a wall", "what BC does it carry", "what first-cell
+// height does the edge running away from it declare".
+//
+// `member[0]` is the WHOLE side for them, and that is a consequence of one rule
+// rather than an approximation: `resolveSide` refuses a `wall` inside a chain, so
+// a side whose first member is a wall has exactly that one member. Stated here
+// once, because it was about to be stated at each of the three call sites.
+int soleEdge(const BlockSpec& b, int side) {
+    return b.sides[static_cast<size_t>(side)].member[0];
+}
+
 // The name of one side of a block, from the ONE place the [south, east, north,
 // west] convention lives (`mbSideAxis` in the header). There was a second copy of
 // these four words here, which is exactly the shape
@@ -834,6 +846,12 @@ bool parseEdges(const json& doc, const std::vector<Corner>& corners,
 // corner the one before it ended at. Nothing is reordered and nothing is matched
 // by position — a chain whose members do not meet is a typo, and a typo that
 // meshes is the wrong-mesh-with-no-error this whole path refuses.
+// The sentence BOTH "do not join end to end" refusals end on. One constant, so the
+// two cannot drift into saying different things about one rule.
+const char* const kChainOrder =
+    " A chain's members must be named IN ORDER, each starting at the corner the one "
+    "before it ended at.";
+
 bool resolveSide(const std::vector<EdgeSpec>& edges, const std::string& where,
                  const std::string& sideWord, SideSpec& s, std::string& err) {
     const EdgeSpec& e0 = edges[static_cast<size_t>(s.member[0])];
@@ -866,9 +884,8 @@ bool resolveSide(const std::vector<EdgeSpec>& edges, const std::string& where,
     if (!bJoins && !aJoins) {
         err = where + ", " + sideWord + ": its members do not join end to end — '" + e0.id
             + "' runs ['" + e0.a + "', '" + e0.b + "'] and the next member '" + e1.id
-            + "' runs ['" + e1.a + "', '" + e1.b + "'], which share no corner at all. A "
-              "chain's members must be named IN ORDER, each starting at the corner the one "
-              "before it ended at.";
+            + "' runs ['" + e1.a + "', '" + e1.b + "'], which share no corner at all."
+            + kChainOrder;
         return false;
     }
     s.rev[0] = bJoins ? 0 : 1;
@@ -883,8 +900,8 @@ bool resolveSide(const std::vector<EdgeSpec>& edges, const std::string& where,
                   "chain reaches corner '" + at + "' after edge '"
                 + edges[static_cast<size_t>(s.member[k - 1])].id + "', and the next member '"
                 + e.id + "' runs ['" + e.a + "', '" + e.b + "'], which has neither of its "
-                  "ends there. A chain's members must be named IN ORDER, each starting at "
-                  "the corner the one before it ended at.";
+                  "ends there."
+                + kChainOrder;
             return false;
         }
     }
@@ -1784,12 +1801,15 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
     std::map<int, std::vector<int>> classes;
     for (size_t k = 0; k < edges.size(); ++k)
         classes[findRoot(static_cast<int>(k))].push_back(static_cast<int>(k));
-    // What each class RESOLVED TO, and where that number came from. The second map
-    // exists because a contradiction has to say which declaration produced the
-    // number it disagrees with — a seed, or a chain on some block — and once a
-    // count can arrive two ways "edge X declares it" stops being true by default.
-    std::map<int, int> value;
-    std::map<int, std::string> origin;
+    // What each class RESOLVED TO, and where that number came from, as ONE value.
+    // The second half exists because a contradiction has to say which declaration
+    // produced the number it disagrees with — a seed, or a chain on some block —
+    // and once a count can arrive two ways "edge X declares it" stops being true
+    // by default. One struct rather than two parallel maps so that "a resolved
+    // class always knows its origin" is structural: two maps keyed alike is the
+    // shape `Mesh::recordBoundaryEdge` was made private over.
+    struct Resolved { int n = 0; std::string origin; };
+    std::map<int, Resolved> value;
     for (const auto& kv : classes) {
         int seed = -1;
         for (int i : kv.second) {
@@ -1811,10 +1831,10 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
             return false;
         }
         if (seed < 0) continue;
-        value[kv.first] = seeded[static_cast<size_t>(seed)];
-        origin[kv.first] = "edge '" + edges[static_cast<size_t>(seed)].id
-                         + "' declares count "
-                         + std::to_string(seeded[static_cast<size_t>(seed)]);
+        value[kv.first] = Resolved{seeded[static_cast<size_t>(seed)],
+                                   "edge '" + edges[static_cast<size_t>(seed)].id
+                                       + "' declares count "
+                                       + std::to_string(seeded[static_cast<size_t>(seed)])};
     }
 
     // ── The SECOND pass: a chain's total decides the side facing it ────────
@@ -1836,7 +1856,7 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
         for (int m : s.member) {
             const auto v = value.find(findRoot(m));
             if (v == value.end()) return false;
-            total += v->second - 1;
+            total += v->second.n - 1;
         }
         n = total;
         return true;
@@ -1848,7 +1868,14 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
             // READ FROM THE RESOLVED VALUE, never from the edge's own `count`:
             // that field still holds the SEED at this point (0 on a member whose
             // count propagated), and the two are only equal on a seeded member.
-            t += std::to_string(value[findRoot(s.member[k])]);
+            //
+            // `.at()` AND NOT `operator[]`, which is the precondition enforced
+            // rather than stated: every caller runs after a successful
+            // `sideTotal`, and `operator[]` on a class that was NOT resolved would
+            // INSERT a zero that the write-back at the end of this function then
+            // puts onto every edge of it — a mesh of 0-node edges instead of a
+            // refusal.
+            t += std::to_string(value.at(findRoot(s.member[k])).n);
         }
         return t + ", less the " + std::to_string(s.member.size() - 1)
              + " shared corner(s))";
@@ -1879,16 +1906,16 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
             const int root = findRoot(op.member[0]);
             const auto v = value.find(root);
             if (v == value.end()) {
-                value[root] = total;
-                origin[root] = chainSum(ch, total) + " on block '" + blk.id + "'";
+                value[root] = Resolved{total,
+                                       chainSum(ch, total) + " on block '" + blk.id + "'"};
                 moved = true;
                 continue;
             }
-            if (v->second == total) continue;
+            if (v->second.n == total) continue;
             err = "block '" + blk.id + "': its " + sideName(sr.chainSide) + " side is a "
                   "chain and " + chainSum(ch, total) + ", but the "
                 + sideName(sr.otherSide) + " side facing it, edge '" + op.ids[0]
-                + "', carries " + std::to_string(v->second) + " (" + origin[root]
+                + "', carries " + std::to_string(v->second.n) + " (" + v->second.origin
                 + "). Opposite sides of a block carry equal counts, and a chain's total "
                   "decides the side facing it: propagation runs members -> total -> "
                   "opposite side and NEVER the other way, so a count that disagrees is "
@@ -1920,7 +1947,7 @@ bool resolveEdgeCounts(const std::vector<BlockSpec>& blocks,
             return false;
         }
         for (int i : kv.second)
-            edges[static_cast<size_t>(i)].count = value[kv.first];
+            edges[static_cast<size_t>(i)].count = value.at(kv.first).n;
     }
     for (size_t k = 0; k < edges.size(); ++k)
         out.push_back({edges[k].id, edges[k].count, seeded[k] > 0});
@@ -3389,11 +3416,7 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
             for (int k = 0; k < 4; ++k) {
                 const MbSide side = static_cast<MbSide>(k);   // sIds[] is in this order
                 const MbSideAxis ax = mbSideAxis(side);
-                // THE SIDE'S FIRST MEMBER IS THE WHOLE SIDE HERE, because a
-                // chain is interior only: `resolveSide` refuses a wall inside one,
-                // so a side whose first member is a wall has exactly that one edge.
-                const EdgeSpec& e =
-                    edges[static_cast<size_t>(blk.sides[static_cast<size_t>(k)].member[0])];
+                const EdgeSpec& e = edges[static_cast<size_t>(soleEdge(blk, k))];
                 // Gated on the KIND: an interface or a cut is an interior line, and
                 // "how tall is the first cell off it" is not a question about one.
                 if (e.kind != hybmesh::MB_EDGE_WALL) continue;
@@ -3559,18 +3582,12 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
         // both blocks have cells against it, so emitting it as a boundary face
         // would hand the exporter a face with two owners and the solver a wall
         // through the middle of the fluid.
-        // A CHAIN IS NEVER A WALL, so the side's first member answers for the
-        // whole side here as it does for the wall spec above: `resolveSide` refuses
-        // a wall inside a chain, so a side whose first member is a wall is one edge.
-        auto wallEdge = [&](int k) {
-            return blk.sides[static_cast<size_t>(k)].member[0];
-        };
         auto isWall = [&](int k) {
-            return edges[static_cast<size_t>(wallEdge(k))].kind
+            return edges[static_cast<size_t>(soleEdge(blk, k))].kind
                        == hybmesh::MB_EDGE_WALL;
         };
         auto addBoundary = [&](int k, int v1, int v2) {
-            const Attached& a = edgeBc[static_cast<size_t>(wallEdge(k))];
+            const Attached& a = edgeBc[static_cast<size_t>(soleEdge(blk, k))];
             MbBoundaryEdge be;
             be.v1 = v1;
             be.v2 = v2;

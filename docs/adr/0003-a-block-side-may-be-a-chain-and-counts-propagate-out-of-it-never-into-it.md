@@ -49,10 +49,15 @@ new relation symmetric again would restore the problem while leaving the syntax 
 - **Four sides still close a ring**, with a chain's two ends taking the place of its single
   edge's — generalised, not removed. The self-weld refusal and "a kind is declared and never
   inferred from a binding" survive verbatim.
-- **Four refusals are added, each naming what it saw**: members that do not join end to end
-  (two shapes — the first two sharing no corner, and a break mid-chain naming the corner the
-  chain had reached); a seeded opposite side contradicting the sum, naming both numbers and both
-  edges; a chain of length one; and a chain with a wall member.
+- **SEVEN refusal branches are added, each naming what it saw.** The four this decision needed:
+  a chain of length one (or none); a chain with a wall member; members that do not join end to
+  end; and a seeded opposite side contradicting the sum, naming both numbers and both edges.
+  And three the implementation needed: the join failure is TWO branches with two different
+  claims (the first two members sharing no corner, where no direction is yet known, and a break
+  mid-chain, which can name the corner the chain had REACHED); two members spanning ONE corner
+  pair is a loop and not a line; and two facing chains whose totals differ is a check, neither
+  being the authority. Enumerated here, in the rule file and in the design note with the same
+  seven, because a review found two of the three stating "four" and meaning different fours.
 - **A chain-bearing side is FROZEN by the elliptic smoother, and that falls out rather than being
   decided.** `mbSmoothPlan` builds a ghost layer only where two welded sides match station for
   station; a chain side and the shorter side beneath it do not, so no ghost layer is built and

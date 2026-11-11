@@ -103,10 +103,20 @@ is this file's.
     because two positions were found to agree. **TWO reversals compose and each has ONE home** —
     `SideSpec::rev` (a member against its own declared direction, so the joins meet) and
     `Frame::rev` (the whole side against the ring). Nothing reads a position.
-  - **FOUR NEW REFUSALS, each naming what it saw**: a chain of length one (or none); a chain with a
-    wall member; members that do not join end to end, in TWO shapes — the first two sharing no
-    corner, and a break mid-chain naming the corner the chain had REACHED; and two facing chains
-    whose totals differ.
+  - **SEVEN NEW REFUSAL BRANCHES, each naming what it saw, and the count is ENUMERATED here
+    because a review found three documents saying "four" and meaning different fours**: (1) a
+    chain of one member, or none; (2) a member declared `wall`; (3) the first two members sharing
+    NO corner, where no direction is known yet; (4) a member mid-chain that does not start where
+    the chain had REACHED, which can name that corner; (5) the first two members spanning ONE
+    corner pair — a loop, not a line, and the branch that shipped UNGATED until #190's review;
+    (6) a seeded opposite side contradicting the chain's total; (7) two facing chains whose
+    totals differ. #190 names four of the seven; the other three are shapes the implementation
+    needed.
+  - **NO TOPOLOGY FAMILY EMITS A CHAIN, and that is a decision rather than a gap.**
+    `services/topology_*` can once the schema accepts one, and which family should and with what
+    parameter is a separate question that must bring its own evidence (`.claude/rules/gui-topology.md`
+    is eight characters from its budget). Until then a chain is reachable only by hand-writing a
+    document.
   - **A SIDE READS AS A SIDE IN EVERY REFUSAL**, through `SideSpec::label()` — `edge 'x'` or
     `the chain ['x', 'y']`. A ring failure that named one member would send the reader to the
     wrong declaration.
@@ -153,7 +163,9 @@ is this file's.
   solver, or runs one through `tools/scripts/golden_mesh.py`. The 22/22 SAME above is evidence
   that the feature is ADDITIVE and says nothing about a chain-bearing mesh being good. A
   demonstrator is #191.
-- **NO TOPOLOGY FAMILY EMITS A CHAIN.** `services/topology_*` can once the schema accepts one, and
-  which family should and with what parameter is a separate question that must bring its own
-  evidence (`.claude/rules/gui-topology.md` is eight characters from its budget). Until then a
-  chain is reachable only by hand-writing a document.
+- **THE LOOP BRANCH SHIPPED UNGATED, AND WHAT FOUND IT WAS A REVIEW READING THE SPEC'S OWN LIST.**
+  Refusal (5) above — two members over one corner pair — was in the code, reachable through the
+  real binary, named in no document and exercised by no check, because #190's spec enumerates four
+  refusals and the implementation needed seven. Check 63 holds it now and injection CK is dated
+  with the rest. The general shape is the hole: a branch an implementation adds beyond the
+  ticket's list is one nothing counts.
