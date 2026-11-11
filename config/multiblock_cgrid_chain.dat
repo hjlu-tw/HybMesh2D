@@ -1,0 +1,61 @@
+# ==============================================================================
+# Multi-block structured meshing (MESH_MODE 1) — a TEN-BLOCK C-GRID around the
+# same NACA 0012 as config/multiblock_cgrid.dat, whose aerofoil carries 97 nodes
+# per surface against that case's 49, while every far-field edge still declares
+# the number it declares there.
+#
+#   ./run.sh -conf config/multiblock_cgrid_chain.dat
+#
+# This is a SECOND shipped case beside the four-block C-grid, never a
+# replacement: that case keeps its own mesh, its own pins and its own golden
+# baseline, and the comparison needs both sides.
+#
+# What this case adds to the multi-block family:
+#   * the only two CHAIN sides in any shipped document — 'i_upper's east is
+#     ["m1", "m2"] and 'i_lower's is ["m3", "m4"] — so a count seeded on the far
+#     field decides the members, their SUM decides the aerofoil, and the block
+#     boundary between the two outer nose blocks TERMINATES at the junction
+#     instead of running on into the inner band;
+#   * a SECOND radial equivalence class, 29 stations from the wall to the seam
+#     and 13 from the seam to the far field, which is 41 in all — the four-block
+#     case's single class spends exactly 41 on the same span;
+#   * an interior line that is a DECLARED CURVE rather than a drawn polyline:
+#     the seam is four arcs of one ellipse, centre (1, 0), a = 2, b = 1, and no
+#     geometry file is added for it.
+#
+# The geometry is that case's, unchanged and shared: the same two-segment
+# aerofoil and the same six-segment D-shaped far field, which is what makes the
+# cell-distribution comparison in docs/design_notes/mesher.md a measurement
+# rather than an impression.
+#
+# The one thing to know before editing the topology: the three continuation
+# spacings in it (0.11082851 on the outer radials, 0.01537496 on 'm2' and 'm3',
+# 0.03757995 on 'ff2' and 'ff3') are each the final interval of the edge beside
+# them, read off an unsmoothed run. Change a count, a span or the wall height
+# and they are wrong, and the seam shows as a jump in cell size. The acceptance
+# run is recorded in tools/PreProcessor/tests/test_multiblock_cgrid_chain_surface.py.
+# ==============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE examples/topology/cgrid_chain_naca0012.json
+
+# The same two files the four-block C-grid reads, for the same reasons — see
+# config/multiblock_cgrid.dat at this place, including why the far field is on a
+# 'DOMAIN_FILE' line.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+DOMAIN_FILE examples/geometries/cgrid_farfield.dat nobl
+
+# The wall-normal spacing, under the name it already has. Every radial of the
+# INNER band declares its body end a wall end and takes this height for its
+# first cell — including the two on the outlet plane, whose body end is the wake
+# cut. The outer band's radials start where the inner band finishes instead.
+BL_INITIAL_THICKNESS 0.001
+
+MB_SPLIT_QUADS 1
+
+# The FALLBACK. Every edge here binds, so nothing should reach it.
+BC_GEOM wall
+
+EXPORT_VTK 1
+EXPORT_STARCD 1
+OUTPUT_FILENAME results/meshes/multiblock_cgrid_chain/mesh_multiblock_cgrid_chain.vtk

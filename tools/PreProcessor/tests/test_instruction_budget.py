@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 306 more of today because this repo's own prose
+bytes, which the root file has 310 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -510,10 +510,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    18 rule files now — 59,992 / 59,780 / 59,378 / 56,802 / 56,405 / 49,021 / 41,250 / 37,516 / 30,991 / 25,539 / 23,361 / 22,126 / 20,568 / 16,710 / 15,762 / 13,686 / 13,100 / 8,969  characters (gui-topology, gui-handoff, mesher-multiblock, mesher-smoothing, pipeline-case, mesher, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, gui-canvas-edit, gui-apply, gui-evidence, gui-preflight, gui-results, mesher-block-side, mesher-spacing, gui-lifecycle) — so "moving text into another rule file
+    18 rule files now — 59,992 / 59,780 / 59,378 / 56,802 / 56,405 / 49,021 / 41,250 / 37,516 / 30,991 / 25,539 / 23,361 / 22,126 / 20,568 / 17,156 / 16,710 / 15,762 / 13,100 / 8,969  characters (gui-topology, gui-handoff, mesher-multiblock, mesher-smoothing, pipeline-case, mesher, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, gui-canvas-edit, gui-apply, gui-evidence, mesher-block-side, gui-preflight, gui-results, mesher-spacing, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 8 / 220 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    16, which have 622 / 3,198 / 3,595 / 10,979 / 18,750 / 22,484 / 29,009 / 34,461 / 36,639 / 37,874 / 39,432 / 43,290 / 44,238 / 46,314 / 46,900 / 51,031. #76 spent 3,446 of
+    16, which have 622 / 3,198 / 3,595 / 10,979 / 18,750 / 22,484 / 29,009 / 34,461 / 36,639 / 37,874 / 39,432 / 42,844 / 43,290 / 44,238 / 46,900 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -671,9 +671,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 52,484 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 52,949 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 52,484 taken down to the boundary above is 52,000, to
+# are its size and its slack -- and 52,949 taken down to the boundary above is 52,500, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -870,8 +870,19 @@ _SOURCES = {
 # ran and check 8 DEFERS to check 1 there. With the value pasted both pass. THE SLACK IS NOT
 # STATED HERE: it moves with every later edit to the root inside the band, this sentence said
 # 890 against a real 572 by the end of #189's own review, and the live figure is a check 7
-# one in `CLAUDE.md`. What matters here is the BAND, which 53,000 is inside.
-ROOT_BUDGET = 53_000
+# one in `CLAUDE.md`. What matters here is the BAND, which 53,500 is inside.
+#
+# RE-BANDED AT #191, and the shape of the decision is #189's: an EIGHTH shipped
+# `MESH_MODE 1` case joined the run-command list and the paragraph under it, 465
+# characters for a four-line entry and a `bash` block, which took the slack from 516 to
+# 51 -- inside the budget and out of the BAND, which is the "next typo fix must edit this
+# gate too" case #78's first draft was refuted over. Nothing was trimmed to avoid it: the
+# entry names the case, what a chain IS in one clause, the figure that makes it a second
+# case rather than a replacement, and the rule file -- and a run command with no
+# description is the stale pointer the list exists to prevent. Check 8 printed
+# `ROOT_BUDGET = 53500` as the band's own ARITHMETIC (the size taken DOWN to a 500
+# boundary, plus 1,000) and this is a paste of it, which is the same way 53,000 arrived.
+ROOT_BUDGET = 53_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units
@@ -3659,10 +3670,10 @@ check(len(_hits) == 1 and "'12'" in _hits[0]
 # the code is what the figure is about. A gate that read the number out of the prose
 # beside it would pass here.
 inj = copy_world(world)
-_renamed = 'check(f"13. all six added configs EXIT 0'
+_renamed = 'check(f"13. all seven added configs EXIT 0'
 assert inj["sources"][_SMOOTH].count(_renamed) == 1, "injection fixture: check moved"
 inj["sources"][_SMOOTH] = inj["sources"][_SMOOTH].replace(
-    _renamed, 'check(f"14. all six added configs EXIT 0')
+    _renamed, 'check(f"14. all seven added configs EXIT 0')
 check(_smooth_other_three_group(inj) == (14,),
       "injection 13m2. injection is well-formed: the code now drives those configs from "
       "group 14, and the docstring still says what it said")
@@ -3681,13 +3692,17 @@ check(_ok and not check_self_report(synced)
 # it sat in the file's FIRST LINE — the copy furthest from the runs it counts, which is
 # exactly where #116 found the group number wrong.
 _COUNT_LABEL = _GROUP_LABEL          # ONE anchor, two fields: 13m bends the first
-inj, was = bend_figure(world, _COUNT_LABEL, 2, "SEVEN")
-check(was == _fmt_word_upper(_smooth_other_count(world)) and was != "SEVEN"
+# THE BENT WORD IS "ELEVEN" AND NOT "SEVEN", and the swap is dated: #191's chain
+# C-grid made SEVEN the TRUE count, so the old literal would have bent the figure to
+# itself and this injection would have been inert while still reporting a bite. Any
+# word no reading of the code gives will do; what must never be here is the real one.
+inj, was = bend_figure(world, _COUNT_LABEL, 2, "ELEVEN")
+check(was == _fmt_word_upper(_smooth_other_count(world)) and was != "ELEVEN"
       and _resolve(inj, _entry_by_label(_COUNT_LABEL))[1] is None,
       "injection 13m3. injection is well-formed: the docstring stated how many shipped "
       "configs that group drives, and now states a number no reading of the code gives")
 _hits = [f for f in check_self_report(inj) if "smooth_other_count" in f]
-check(len(_hits) == 1 and "SEVEN" in _hits[0]
+check(len(_hits) == 1 and "ELEVEN" in _hits[0]
       and _hits[0].startswith(_TARGET_PATH["src:" + _SMOOTH]),
       "injection 13m3. check 7 fails on the head docstring's COUNT, naming the gate file "
       "and both words — the half that had no gate until #153 moved it")
@@ -3831,8 +3846,11 @@ check(_LINE120 in _synced120["gate"]
 for _label, _target, _was, _now in (
         ("the block-field gate's injection count", "note:mesher.md",
          "injections into `src/Mesh.cpp`", "injections into the writer"),
+        # The WORD tracks the count `--sync` writes: SIX until #191's chain C-grid
+        # arrived in that group, SEVEN since. It is the anchor's own text, so it
+        # moves with the figure rather than beside it.
         (_GROUP_LABEL, "src:" + _SMOOTH,
-         "ALSO DRIVES THE OTHER SIX", "ALSO DRIVES THE REMAINING SIX"),
+         "ALSO DRIVES THE OTHER SEVEN", "ALSO DRIVES THE REMAINING SEVEN"),
         # Built from `_ROOT_NAME` rather than written out: this target is THIS file, so a
         # literal here would be a second occurrence of the very phrase the fixture
         # requires to be unique, and the loop would abort on its own source text.

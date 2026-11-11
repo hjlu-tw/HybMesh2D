@@ -112,6 +112,37 @@ is this file's.
     (6) a seeded opposite side contradicting the chain's total; (7) two facing chains whose
     totals differ. #190 names four of the seven; the other three are shapes the implementation
     needed.
+  - **ONE SHIPPED CASE CARRIES A CHAIN, AND IT IS THE ONLY ONE** (#191):
+    `config/multiblock_cgrid_chain.dat` + `examples/topology/cgrid_chain_naca0012.json`, a
+    TEN-block C-grid beside the four-block one, whose aerofoil carries 97 nodes per surface
+    against that case's 49 while every far-field edge still declares a number that case
+    declares. It is a SECOND case, never a replacement — the comparison needs both sides.
+    `i_upper`'s east is `["m1", "m2"]` and `i_lower`'s is `["m3", "m4"]`; `r_mid_up` and
+    `r_mid_lo` are the block boundaries that TERMINATE at the junctions.
+    - **WHAT A CHAIN DOES NOT BUY, and the gate states it as a number beside what it does.**
+      The far field over each nose carries 97 NODES, not 49: opposite sides hold the same
+      number, a chain's side holds its members' sum, and no interior node in this model has a
+      valence other than four — so the body's node count and the far field's are EQUAL at
+      every radius, in a chain-bearing document exactly as in any other. A chain moves which
+      EDGES carry the total and where the boundaries between them may stop. **Do not write
+      "refine the body and the far field keeps its mesh" anywhere**; #188's user story 14 and
+      #191's criterion 2 read that way and the measurement does not support it.
+    - **WHAT PUT THE ADDED CELLS NEAR THE BODY IS THE SECOND RADIAL CLASS, NOT THE CHAIN.**
+      Both this case and the control — the four-block document with its two aerofoil counts
+      raised to 97 and nothing else touched — add the SAME 3840 quads. 79.2% of this case's
+      land within one chord against the control's 64.6%, and 0.7% beyond five chords against
+      12.5%, because 29 + 13 - 1 = 41 spends 28 intervals inside one chord where the single
+      class spends 22. The chain is what lets that split be declared with the far-field
+      edges unchanged. Both halves are gated separately.
+    - Gated by `tests/test_multiblock_cgrid_chain_surface.py` (10 groups), whose docstring
+      carries the dated gate-2 run — mesher, `getPGrid`, `unicones`, cfl 0.6, 100
+      iterations, no NaN — and its four-block control run the same day at the same operating
+      point. `tools/scripts/golden_mesh.py`'s `mb_cgrid_chain` covers the `.vtk` and both
+      STAR-CD files; 23/23 SAME at exactly 0.000e+00 against a baseline captured from a
+      separately built `c66da1f` binary. The case is also pinned in
+      `tests/test_multiblock_shape_surface.py` and driven by
+      `tests/test_multiblock_smooth_surface.py` group 13, whose completeness guards are what
+      refuse a shipped config with no pin and no gate.
   - **NO TOPOLOGY FAMILY EMITS A CHAIN, and that is a decision rather than a gap.**
     `services/topology_*` can once the schema accepts one, and which family should and with what
     parameter is a separate question that must bring its own evidence (`.claude/rules/gui-topology.md`
@@ -157,12 +188,21 @@ is this file's.
   and a future change to `addGhosts` could free those nodes without any gate noticing. The rules
   for what moves are `.claude/rules/mesher-smoothing.md`'s and this is not written there, because
   nothing there was changed.
-- **NO SHIPPED CASE AND NO GOLDEN CASE CARRIES A CHAIN.** The capability is gated through the pure
-  entry point on documents built in `tests/cpp/test_multiblock.cpp` and nowhere else: nothing
-  exports a chain-bearing mesh, hands one to the quality instrument, the `.cel` writer or the
-  solver, or runs one through `tools/scripts/golden_mesh.py`. The 22/22 SAME above is evidence
-  that the feature is ADDITIVE and says nothing about a chain-bearing mesh being good. A
-  demonstrator is #191.
+- ~~**NO SHIPPED CASE AND NO GOLDEN CASE CARRIES A CHAIN.**~~ **CLOSED by #191**, which shipped
+  the case named in the rules above and put it through the quality instrument, the `.cel`
+  writer, `golden_mesh.py` and the solver. Kept as a specimen for what the closing MEASURED:
+  the demonstrator's own gate found that `#188`'s framing of the win — refine the body and the
+  far field keeps its counts — is unachievable in this model, and that the cell locality it
+  asks for comes from a second radial class rather than from the chain. **A capability's
+  demonstrator is where its claim gets tested, and this one failed half of it.**
+- **THE CHAIN'S OWN CONTRIBUTION TO THE CELL DISTRIBUTION IS ZERO, AND NOTHING MEASURES THAT
+  DIRECTLY.** The gate holds the two halves separately — check 5 that the far-field edges keep
+  their numbers, check 9 that the added cells land near the body — and check 9's last clause
+  attributes the second to the radial split. What it does NOT do is run the same radial split
+  WITHOUT a chain, because that document cannot be written: without one, the inner band's outer
+  side is one edge, the outer region is one block per quadrant, and `e_ff_nose_up` is a 97-node
+  edge. The attribution is therefore an argument from the model rather than an A/B, and it is
+  recorded as such.
 - **THE LOOP BRANCH SHIPPED UNGATED, AND WHAT FOUND IT WAS A REVIEW READING THE SPEC'S OWN LIST.**
   Refusal (5) above — two members over one corner pair — was in the code, reachable through the
   real binary, named in no document and exercised by no check, because #190's spec enumerates four

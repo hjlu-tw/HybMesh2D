@@ -91,6 +91,14 @@ The topology file is staged into the case alongside the CAD
 (`results/solver/<name>/grid/cad/`) and listed in `SOURCES.txt` with its original absolute
 path, because in this mode it decides the mesh as much as the geometry does.
 
+`multiblock_cgrid_chain_demo.json` is the same chain on the same two geometries with the
+TEN-block topology beside them (`examples/topology/cgrid_chain_naca0012.json`), whose
+aerofoil carries twice the nodes. It exists so the only two CHAIN sides in the tree are
+exercised through the solver and not only through the mesher, and it is the run quoted in
+`tools/PreProcessor/tests/test_multiblock_cgrid_chain_surface.py`'s own gate-2 record —
+run beside the line above, on the same day, at the same operating point, because that is
+the only thing that makes the two comparable.
+
 **Or name a topology FAMILY instead of a document** (`ogrid_family_demo.json`, the only
 shipped script that does). A `mesh.topology` section with `"family": "ogrid"`, the two
 geometries it binds and their segment lists replaces `mesh_topology_file` entirely: the

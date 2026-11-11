@@ -24,7 +24,7 @@ own them rather than composed here — the same rule the golden comparator follo
 these files are documentation a user runs, and an edit to one has to be visible
 from a gate.
 
-SINCE #114 GROUP 13 ALSO DRIVES THE OTHER SIX — every shipped multi-block config
+SINCE #114 GROUP 13 ALSO DRIVES THE OTHER SEVEN — every shipped multi-block config
 this file does not import a ``base_config`` for, so all of them are exercised for the
 wall warning's floor. That group ENUMERATES them from ``config/`` rather than from a
 list, which is what caught #153's two-ring O-grid arriving as a sixth. They enter
@@ -563,8 +563,14 @@ def run(tmp, name, extra="", config=None):
 # tree and fails on a second, so a fourth copy cannot arrive as a first.
 
 
+# `\s*` AND NOT `\s+` BEFORE THE COLON, measured (#191). The banner pads the
+# label to a fixed width and a longer edge id overflows it, so the shipped
+# four-block C-grid's `east 'e_ff_nose_up': asked ...` has NO space before the
+# colon — and this regex has been silently dropping that row and `e_ff_nose_lo`
+# beside it ever since. Nothing caught it: every check here reads the WORST
+# deviation or a count this file pins, and the two missing rows were neither.
 _WALL_BANNER = re.compile(
-    r"^\s+\w+ '([^']+)'\s+: asked .* got .* \(([-\d.]+)%\)\s*$")
+    r"^\s+\w+ '([^']+)'\s*: asked .* got .* \(([-\d.]+)%\)\s*$")
 
 
 def wall_banner(out, before=False):
@@ -1565,7 +1571,8 @@ def main() -> int:
         # then the five minus the two group 12 drives.
         shipped = sorted(os.path.basename(f)[:-4] for f in
                          glob.glob(os.path.join(_REPO, "config", "multiblock_*.dat")))
-        driven = ["multiblock_cavity", "multiblock_cgrid", "multiblock_curve_placeholder",
+        driven = ["multiblock_cavity", "multiblock_cgrid",
+                  "multiblock_cgrid_chain", "multiblock_curve_placeholder",
                   "multiblock_hgrid",
                   "multiblock_ogrid", "multiblock_square", "multiblock_tworing",
                   "multiblock_tworing_curve", "multiblock_tworing_offset"]
@@ -1607,11 +1614,37 @@ def main() -> int:
         # movable-shared count would move.
         cfg_tworing_curve = shipped_config("multiblock_tworing_curve")
         rc_tc, tc, _ = run(tmp, "tc175", config=lambda: cfg_tworing_curve)
-        check(f"13. all six added configs EXIT 0 at the default cap, so the "
+        # #191's case is here for this group's own rule — a shipped config nothing
+        # drives cannot exist — and it adds the only document in the tree with a
+        # CHAIN side. What that is worth here is the freeze arithmetic below: a
+        # chain's members are ordinary shared edges to the smoother, so a change
+        # that treated a chain member as a side of ONE block would move this
+        # count and nothing else in this file would notice.
+        cfg_cgrid_chain = shipped_config("multiblock_cgrid_chain")
+        rc_cc, cc, _ = run(tmp, "cc191", config=lambda: cfg_cgrid_chain)
+        check(f"13. all seven added configs EXIT 0 at the default cap, so the "
               f"banners the checks below parse describe a mesh that was actually "
               f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg}, tworing "
-              f"{rc_tr}, tworing_offset {rc_to}, tworing_curve {rc_tc})",
-              (rc_sq, rc_cv, rc_hg, rc_tr, rc_to, rc_tc) == (0, 0, 0, 0, 0, 0))
+              f"{rc_tr}, tworing_offset {rc_to}, tworing_curve {rc_tc}, "
+              f"cgrid_chain {rc_cc})",
+              (rc_sq, rc_cv, rc_hg, rc_tr, rc_to, rc_tc, rc_cc)
+              == (0, 0, 0, 0, 0, 0, 0))
+        # THE CHAIN CASE'S FREEZE ARITHMETIC, stated as the sum rather than as a
+        # number read off a run. Fifteen shared edges; the four chain members
+        # declare the ellipse they ARE, so the freeze rule holds them and they
+        # contribute nothing; the other eleven contribute their interiors:
+        # 23 (the wake cut) + 3 x 27 (the inner radials) + 5 x 11 (the outer
+        # radials) + 2 x 23 (the two wake seams) = 205. A chain member counted as
+        # a side of one block, or one that stopped being read as a declared shape,
+        # moves this.
+        cc_shared = [int(m) for m in re.findall(r"(\d+) shared nodes", cc)]
+        cc_sm = smooth_line(cc)
+        check(f"13. ...and the CHAIN case freezes its four chain members while "
+              f"leaving the eleven other shared edges free: 23 + 3 x 27 + 5 x 11 "
+              f"+ 2 x 23 = 205 of its 15 shared edges' nodes move "
+              f"({cc_sm.get('moved_shared')}, edges {cc_shared})",
+              len(cc_shared) == 15
+              and cc_sm.get("moved_shared") == 23 + 3 * 27 + 5 * 11 + 2 * 23)
         tc_shared = [int(m) for m in re.findall(r"(\d+) shared nodes", tc)]
         tc_sm = smooth_line(tc)
         check(f"13. ...and the DECLARED-CURVE case freezes its four seams while "

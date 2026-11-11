@@ -450,7 +450,14 @@ FIGURES = ("median", "p95", "max")
 _HEAD = re.compile(
     r"^  - Cell shape\s+: median ([\d.]+), p95 ([\d.]+), max ([\d.]+) "
     r"\(quad midline ratio over (\d+) structured quads")
-_ROW = re.compile(r"^      block '([^']+)'\s+: (.+)$")
+# `\s*` AND NOT `\s+` BEFORE THE COLON, measured (#191). The banner pads the
+# label to a fixed width and a longer id simply overflows it, so
+# `block 'o_nose_up_aft': median ...` carries NO space at all. With `\s+` this
+# regex saw six of the chain C-grid's ten blocks and said so; the same defect sits
+# in `test_multiblock_smooth_surface.py`'s `_WALL_BANNER`, where it has been
+# dropping the shipped four-block C-grid's `e_ff_nose_up` and `e_ff_nose_lo` rows
+# since those edges were named. Both are fixed; neither was found by a check.
+_ROW = re.compile(r"^      block '([^']+)'\s*: (.+)$")
 _ROWNUM = re.compile(r"^median ([\d.]+), p95 ([\d.]+), max ([\d.]+)$")
 # The two WALL-BAND rows (#144), which sit under the same headline as the block
 # rows and at the same indent. Matched by their own labels rather than by
@@ -520,6 +527,12 @@ CASES = (
     ("ogrid", "multiblock_ogrid", ("q0", "q1", "q2", "q3")),
     ("cgrid", "multiblock_cgrid",
      ("b_wake_up", "b_upper", "b_lower", "b_wake_lo")),
+    # #191. The row above's aerofoil at twice the count, bought with the only two
+    # CHAIN sides in any shipped document and a second radial equivalence class.
+    ("cgrid_chain", "multiblock_cgrid_chain",
+     ("i_wake_up", "i_upper", "i_lower", "i_wake_lo",
+      "o_wake_up", "o_nose_up_aft", "o_nose_up_fwd",
+      "o_nose_lo_fwd", "o_nose_lo_aft", "o_wake_lo")),
     ("tworing", "multiblock_tworing",
      ("q0", "q1", "q2", "q3", "p0", "p1", "p2", "p3")),
     ("tworing_offset", "multiblock_tworing_offset",
@@ -540,6 +553,16 @@ PINS = {
               "max": 32.767868},
     "cgrid": {"cells": 5760, "median": 4.832007, "p95": 148.005672,
               "max": 3147.957636},
+    # Measured 2026-11-11 (#191). The SAME worst cell as the row above to five
+    # decimals — 3148.02 against 3147.96 — and that is the arithmetic above
+    # repeating rather than a coincidence: the wake cut's declaration is
+    # unchanged, so the last of its 24 intervals still sits over a 1e-3 first
+    # radial cell, and this case's chain and its second radial class touch
+    # neither. Its MEDIAN and p95 are better (4.77 / 112.2 against 4.83 / 148.0)
+    # because the 3840 quads it adds are 97-wide rows in the inner band, which is
+    # the squarest part of either mesh.
+    "cgrid_chain": {"cells": 9600, "median": 4.766743, "p95": 112.161584,
+                    "max": 3148.016897},
     # Measured 2026-09-29 (#153). Its max is the O-grid's to five decimals and for
     # the same reason — both declare a 1e-3 first cell under the same 0.0327
     # azimuthal spacing — while the median and p95 are LOWER, which is one half of
@@ -584,6 +607,12 @@ BAND_PINS = {
     "hgrid": (76, 4),
     "ogrid": (2304, 2304),
     "cgrid": (2022, 3738),
+    # #191. The band grows by 392 cells against the row above while the mesh grows
+    # by 3840, and the ratio is the point: the walk follows the clustering off the
+    # aerofoil, which is twice as finely sampled along the wall and no deeper into
+    # the fluid, so doubling the aerofoil's count widens the band rather than
+    # thickening it. The bulk takes the rest.
+    "cgrid_chain": (2414, 7186),
     # #153. The band reaches the INNER ring's 2208 and stops: the outer ring's
     # clustering is at its seam end, not at a wall, so the walk has nothing to
     # follow there. That is the two-ring case's own statement of what the band
@@ -634,6 +663,13 @@ SEAM_PINS = {
     "ogrid": (192, 8928),
     # The C-grid's three radial interfaces and its wake cut.
     "cgrid": (144, 11216),
+    # #191. Thirteen interior lines against the C-grid's four, and 408 pairs
+    # against 144 — the three inner radials, the five outer ones, the two wake
+    # seams, the four chain members and the wake cut, each contributing its own
+    # count less one. The two the chain BUYS are `r_mid_up` and `r_mid_lo`: they
+    # are block boundaries that exist in the outer region and stop at the chain's
+    # junction instead of running on into the inner band.
+    "cgrid_chain": (408, 18536),
     # 288 on all three two-ring cases: the four radials of each ring plus the four
     # `follows` interfaces of the ring seam. Identical across the three because the
     # BUDGET is identical, which is the comparison #153 and #154 are built on.

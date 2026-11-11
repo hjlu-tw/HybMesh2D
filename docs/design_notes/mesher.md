@@ -5610,6 +5610,85 @@ hands one to the quality instrument, the `.cel` writer or the solver. No topolog
 Chains are interior only. All four are in the rule file's blind-spot list, and the demonstrator is
 #191.
 
+**REFINING THE AEROFOIL WITHOUT REFINING THE FAR FIELD — WHAT THE DEMONSTRATOR MEASURED, AND
+WHERE ITS TICKET'S PREMISE WAS WRONG** (#191, parent #188)
+
+**THE FIRST THING #191 PRODUCED WAS A PROOF THAT TWO OF ITS OWN ACCEPTANCE CRITERIA CANNOT BOTH
+HOLD.** The ticket asks for a mesh whose aerofoil count is double the shipped C-grid's AND whose
+far-field edges' counts are unchanged, and reads the chain as what buys the pair. It is not. A
+block's two opposite sides hold the same number; a chain's side holds `sum(n_m - 1) + 1`; a chain
+junction is an ordinary valence-4 node (checked: the member below it and the carrying block's
+interior line above it are one grid line, so nothing terminates). A chain-bearing mesh is therefore
+still a logical rectangle, and **the node count along the body equals the node count along the far
+field at every radius**. Doubling the aerofoil doubles the far field, in this model, with or
+without a chain. The question was put to the maintainer before anything was built, and the reading
+taken is the one the criterion survives under: **each far-field EDGE still declares a number the
+four-block case declares**, there being twice as many of them over the nose. The honest
+consequence — 97 nodes where that case has 49 — is asserted in the gate beside the criterion, so
+the two can never be read apart.
+
+**THE CASE.** `config/multiblock_cgrid_chain.dat` + `examples/topology/cgrid_chain_naca0012.json`:
+ten blocks, an inner band and an outer region, 97 nodes per aerofoil surface, `ff1`..`ff4` at 49
+apiece, `i_upper`'s east `["m1", "m2"]` and `i_lower`'s `["m3", "m4"]`. It adds **no geometry
+file**: it reads the four-block case's two unchanged, and its seam is four arcs of ONE declared
+ellipse (centre (1, 0), a = 2, b = 1) — chosen because that conic passes through (1, 1) with a
+HORIZONTAL tangent and through (-1, 0) with a vertical one, so the seam meets the straight wake
+line at y = 1 and its own mirror ahead of the nose with no kink, and stands 0.82 to 1.00 chords off
+the body throughout. The far field is split at its OWN corner, where the straight top meets the
+radius-10 arc, which is also within 0.026 of where the four-block case's mid-chord grid line
+reaches the far field — measured, not chosen, so the two outer nose blocks tile that case's one
+block rather than cutting across it.
+
+**WHERE THE ADDED CELLS GO, against the control #188 states, measured 2026-11-11 and taken by the
+gate rather than quoted into it.** Both are compared against the shipped four-block C-grid's 5760
+quads, binned by the distance from the cell centroid to the aerofoil POLYLINE (not to a chord or a
+centre — on a 12% aerofoil the two differ by the thickness):
+
+| | added | < 1 chord | 1-5 chords | > 5 chords |
+|---|---|---|---|---|
+| the CONTROL (four blocks, `af_up`/`af_lo` raised to 97, nothing else touched) | 3840 | 2480 (64.6%) | 880 (22.9%) | 480 (12.5%) |
+| THIS CASE | 3840 | 3042 (79.2%) | 772 (20.1%) | 26 (0.7%) |
+
+The share beyond one chord falls from 35.4% to 20.8% and the far bin by a factor of 18. **Both add
+exactly 3840**, which is the conservation above showing up as a measurement rather than as an
+argument.
+
+**AND THE LEVER IS THE SECOND RADIAL CLASS, NOT THE CHAIN.** 29 stations from the wall to the seam
+and 13 from the seam to the far field is 41 — the four-block case's single class exactly — but it
+lands 28 intervals inside one chord where one tanh over the whole span lands 22. What the chain
+buys is that the split can be DECLARED with every far-field edge's count unchanged: without one,
+the inner band's outer side is a single edge, the outer region is one block per quadrant, and
+`e_ff_nose_up` is a 97-node edge. **The two halves are gated separately** — check 5 the counts,
+check 9 the distribution — and check 9's last clause attributes the cells to the radial split out
+loud. There is no A/B for that attribution and there cannot be: the no-chain version of this
+document does not exist.
+
+**THE THREE CONTINUATION SPACINGS ARE DERIVED AND NOTHING ENFORCES THEM**, which is the four-block
+case's own blind spot about its two 0.005s, one size larger. `0.11082851` is the inner band's final
+radial interval, `0.01537496` is `m1`'s and `0.03757995` is `ff1`'s, each read off an unsmoothed run
+and written into the edge beside it so the seam is not visible as a jump in cell size. Change a
+count, a span or `BL_INITIAL_THICKNESS` and all three are wrong; what would say so is the size jump
+ACROSS SEAMS, which the report prints and nothing bars.
+
+**GATE 2 RAN, AND SO DID ITS CONTROL, ON THE SAME DAY THROUGH THE SAME CHAIN.** Mesher ->
+`getPGrid` -> `unicones` at M 0.2, Re 200, zero incidence, cfl 0.6, 100 iterations: exit 0/0/0,
+9856 vertices, 19200 triangles, 512 boundary elements, no NaN, residuals O(1e-4) at iteration 90.
+The four-block case re-run beside it gives the same verdict at its own sizes. The CFL is stated
+because #57 measured that it matters. The full quotation, including the 480 `farfield` warnings
+`getPGrid` emits from its own token list and the `.bc.def` the runner derives, is in
+`tools/PreProcessor/tests/test_multiblock_cgrid_chain_surface.py`'s docstring.
+
+**TWO THINGS THE WORK FOUND THAT NOBODY ASKED FOR.** A latent defect in two gates' banner parsers:
+`^      block '([^']+)'\s+:` requires a space before the colon, and the banner pads its label to a
+fixed width — so a longer id simply overflows it. `test_multiblock_shape_surface.py` saw six of
+this case's ten blocks and said so; `test_multiblock_smooth_surface.py`'s `_WALL_BANNER` has been
+silently dropping the SHIPPED four-block C-grid's `e_ff_nose_up` and `e_ff_nose_lo` rows ever since
+those edges were named, and nothing caught it because every check there reads the worst deviation
+or a count. Both are `\s*` now. And this case reaches the smoothing cap AT its own best residual
+where all five cases in that file's group 14 reach it PAST their best — a sixth curved case on a
+different branch, deliberately not added to that group, which would have to assert the opposite of
+what it asserts.
+
 ### PreProcessor JSON Config
 JSON format; supports multi-element definitions with transforms (scale/rotate/translate), per-segment spacing strategy, and auto-split threshold. See `tools/PreProcessor/config/` for examples.
 

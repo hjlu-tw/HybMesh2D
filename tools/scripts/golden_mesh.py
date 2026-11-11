@@ -83,6 +83,7 @@ import test_multiblock_surface as mb                  # noqa: E402
 import test_multiblock_binding_surface as mbb         # noqa: E402
 import test_multiblock_ogrid_surface as mbo          # noqa: E402
 import test_multiblock_cgrid_surface as mbc          # noqa: E402
+import test_multiblock_cgrid_chain_surface as mbcc   # noqa: E402
 import test_multiblock_tworing_surface as mbt       # noqa: E402
 import test_multiblock_tworing_offset_surface as mbto  # noqa: E402
 import test_multiblock_curve_surface as mbcv       # noqa: E402
@@ -396,6 +397,20 @@ CASES = {
     #     stay at one is now runtime and the comparison to that recorded baseline,
     #     not the fold.
     "mb_cgrid_smooth": _shipped_multiblock(mbc, extra="\nMB_SMOOTH_ITERS 1\n"),
+    #   mb_cgrid_chain (#191): the TEN-block C-grid, and the ONLY case here whose
+    #     document gives a block a side that is a CHAIN of edges -- `i_upper`'s
+    #     east is `["m1", "m2"]` and `i_lower`'s is `["m3", "m4"]`. What a
+    #     regression would move, and which of the three files would say so:
+    #     a chain resolved as its FIRST member instead of as the sum takes the
+    #     aerofoil from 97 nodes to 49 and halves the `.vrt`; a junction node
+    #     allocated twice instead of once leaves two coincident nodes on the seam,
+    #     which the `.vtk` renders identically and the `.cel` connectivity does
+    #     not; and a chain member that started exporting a boundary face -- it is
+    #     an interior line, so it must not -- adds 192 faces to the `.bnd` while
+    #     leaving every coordinate untouched. It is here for the second reason
+    #     `mb_tworing_curve` is as well: every shipped `config/multiblock_*.dat`
+    #     is a case in this table, and nothing enforces that.
+    "mb_cgrid_chain": _shipped_multiblock(mbcc),
     "mb_random": _multiblock(17, 13,
                              extra="MB_SPLIT_RULE 3\nMB_SPLIT_SEED 20260903\n"),
 }

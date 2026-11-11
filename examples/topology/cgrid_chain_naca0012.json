@@ -1,0 +1,264 @@
+// A TEN-BLOCK C-GRID around the same NACA 0012, whose aerofoil carries TWICE the
+// nodes of the four-block C-grid beside it while every far-field edge still
+// declares the SAME number it declares there (issue #191, parent #188).
+//
+//   ./run.sh -conf config/multiblock_cgrid_chain.dat
+//
+// It is a SECOND shipped case, not a replacement. examples/topology/
+// cgrid_naca0012.json is untouched: same mesh, same pins, same golden baseline.
+// The comparison in docs/design_notes/mesher.md needs both sides.
+//
+// WHAT IS NEW HERE: A BLOCK SIDE THAT IS A CHAIN (#190). `i_upper`'s east is
+// `["m1", "m2"]` — two edges joined end to end — and `i_lower`'s is
+// `["m3", "m4"]`. Those are the only two chains in any shipped document. The
+// property they buy is the one they were built for: COUNTS PROPAGATE OUT OF A
+// CHAIN AND NEVER INTO IT. `m1` and `m2` are each resolved to 49 by the outer
+// block beneath them, their SUM (49 + 49 - 1 = 97) decides the side facing them,
+// and that side is the aerofoil. So `ff1`, `ff2`, `ff3` and `ff4` each declare
+// the 49 that `e_ff_nose_up` and `e_ff_nose_lo` declare next door, and the
+// aerofoil carries 97 against that case's 49.
+//
+// WHAT THAT DOES AND DOES NOT MEAN, said here because the easy reading is wrong.
+// The far field over the nose carries 97 NODES, not 49: a block side's two
+// opposite sides hold the same number, a chain's total is the sum of its members,
+// and no interior node in this model has a valence other than four — so the
+// node count along the body and the node count along the far field are EQUAL at
+// every radius, in this document exactly as in the one beside it. What a chain
+// changes is which EDGES carry that total and where the block boundaries between
+// them may stop. `r_mid_up` is a block boundary that exists in the outer region
+// and TERMINATES at the chain's junction; without a chain it would have to run on
+// into the inner band and split it too, and `e_ff_nose_up` would have to be one
+// 97-node edge. See docs/design_notes/mesher.md, "REFINING THE AEROFOIL WITHOUT
+// REFINING THE FAR FIELD", for the measurement and for what is NOT bought.
+//
+// WHERE THE ADDED CELLS GO, AND WHAT PUTS THEM THERE. Against the four-block
+// C-grid this document adds 3840 quads — the same 3840 that simply raising that
+// case's aerofoil count to 97 adds — and 79.2% of them land within one chord of
+// the body against that control's 64.6%, with 0.7% beyond five chords against
+// 12.5%. The lever is NOT the chain: it is the SECOND radial equivalence class.
+// The inner band's 29 stations answer to the wall and the outer region's 13 to
+// the far field, 29 + 13 - 1 = 41, which is exactly the number the four-block
+// case spends on one class from the wall to the far field. The chain is what
+// lets that split be declared with the far-field edges unchanged.
+//
+// THE SEAM IS A DECLARED CURVE AND NEEDS NO GEOMETRY FILE. The inner band's
+// outer boundary is one ellipse, centre (1, 0), a = 2, b = 1, which passes
+// through (1, 1) at t = 90 degrees with a HORIZONTAL tangent — so it meets the
+// straight wake seam at y = 1 with no kink — and through (-1, 0) at t = 180 with
+// a vertical one, so the upper and lower halves meet smoothly dead ahead of the
+// nose. It stands between 0.82 and 1.00 chords off the body over the whole
+// aerofoil, which is why "within one chord" and "inside the inner band" are
+// nearly the same statement. `curve` (#175) rather than a `follows` on a drawn
+// polyline: a conic needs no file, and the span of each of the four arcs comes
+// from its own two corners rather than from a declared pair of angles.
+//
+// THE FRAME, per block, is the four-block case's unchanged: i runs OUTWARD from
+// the body to the far field (its south and north are the two radials) and j runs
+// ANTICLOCKWISE around the body (its west is the body side, its east the far
+// side). The blocks are declared inner band first, anticlockwise, then outer
+// region, anticlockwise.
+{
+  "format_version": 1,
+
+  "corners": [
+    // On the aerofoil: the trailing edge and the leading edge, as next door.
+    {"id": "te", "kind": "on_geometry", "geom": "naca0012_cgrid.dat", "seg": 0, "t": 0.0},
+    {"id": "le", "kind": "on_geometry", "geom": "naca0012_cgrid.dat", "seg": 1, "t": 0.0},
+
+    // On the far field, the SAME six joints the four-block case uses, plus three
+    // positions strictly inside a segment. `sw_up` and `sw_lo` are where the seam
+    // reaches the outlet plane, one chord off the wake, at t = 0.1 and t = 0.9 of
+    // the two outlet segments — which are 10 long with a point every 0.5, so both
+    // land on a point of the polyline rather than between two.
+    //
+    // `fm_up` and `fm_lo` are where the far field is SPLIT so that each of its
+    // nose edges keeps the count it has next door. t = 1.0 / 16.706953968502425
+    // is the far field's own corner between the straight top (which runs from
+    // (1, 10) to (0, 10) with a point every 0.25) and the radius-10 arc, so the
+    // split sits on a point of the polyline and on the shape's own break. It is
+    // also, measured, within 0.026 of where the four-block case's own grid line
+    // from the mid-chord reaches the far field, so the two outer nose blocks
+    // tile that case's one block rather than cutting across it.
+    {"id": "wk", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 0, "t": 0.0},
+    {"id": "sw_up", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 0, "t": 0.1},
+    {"id": "fu", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 1, "t": 0.0},
+    {"id": "f1", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 2, "t": 0.0},
+    {"id": "fm_up", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 2,
+     "t": 0.059855315450399},
+    {"id": "f2", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 3, "t": 0.0},
+    {"id": "fm_lo", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 3,
+     "t": 0.940144684549602},
+    {"id": "f3", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 4, "t": 0.0},
+    {"id": "fl", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 5, "t": 0.0},
+    {"id": "sw_lo", "kind": "on_geometry", "geom": "cgrid_farfield.dat", "seg": 5, "t": 0.9},
+
+    // On the seam, which is not a boundary of anything, so these are free
+    // coordinates. `s_te_up` and `s_te_lo` sit on the two trailing-edge radials
+    // one chord out; `s_le` dead ahead of the nose, one chord out.
+    //
+    // `s_mid_up` and `s_mid_lo` are THE CHAIN JUNCTIONS, and that is the one
+    // position in this document that is derived rather than chosen. A chain of
+    // two 49-node members puts its junction at node 49 of a 97-node side, and
+    // node 49 of `af_up` is its arc-length midpoint, measured at (0.48364,
+    // 0.05387) on the aerofoil. The ellipse at t = 105 degrees is at x =
+    // 0.48236 — within 0.0013 of straight above it — so the grid line that
+    // leaves the body there reaches the seam without shear. Both lie ON the
+    // ellipse, which is what `curve` requires of an edge's corners.
+    {"id": "s_te_up", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "s_mid_up", "kind": "free", "xy": [0.482361910241769, 0.965925826289068]},
+    {"id": "s_le", "kind": "free", "xy": [-1.0, 0.0]},
+    {"id": "s_mid_lo", "kind": "free", "xy": [0.482361910241769, -0.965925826289068]},
+    {"id": "s_te_lo", "kind": "free", "xy": [1.0, -1.0]}
+  ],
+
+  "edges": [
+    // ── The wake cut ──────────────────────────────────────────────────────
+    // Unchanged from the four-block case in every respect including its count:
+    // ONE declared line that is the west of BOTH inner wake blocks, exporting no
+    // face. The radial split does not touch it — it is a j-direction side, and
+    // the split is along i.
+    {"id": "wake", "corners": ["te", "wk"], "kind": "cut", "count": 25,
+     "spacing": {"ds_start": 0.005}},
+
+    // ── The aerofoil. 97 against the four-block case's 49. ────────────────
+    // The one count this document raises. Everything else about these two edges
+    // is that case's, including the clustering at both ends, so the comparison
+    // isolates the count.
+    {"id": "af_up", "corners": ["te", "le"], "kind": "wall", "count": 97,
+     "binding": {"geom": "naca0012_cgrid.dat", "seg": 0},
+     "spacing": {"ds_start": 0.005, "ds_end": 0.005}},
+    {"id": "af_lo", "corners": ["le", "te"], "kind": "wall", "count": 97,
+     "binding": {"geom": "naca0012_cgrid.dat", "seg": 1},
+     "spacing": {"ds_start": 0.005, "ds_end": 0.005}},
+
+    // ── The INNER band's radials, body -> seam. One class of five. ────────
+    // 29 nodes over a span that is 1.0 long on every one of them, which is what
+    // makes ONE continuation number below correct for all of them. Each declares
+    // its start — the corner on the body, or on the wake cut for the two on the
+    // outlet plane — a wall end, so its first cell is the run's
+    // BL_INITIAL_THICKNESS and the tanh law solves for the clustering.
+    {"id": "r_te_up_in", "corners": ["te", "s_te_up"], "kind": "interface", "count": 29,
+     "spacing": {"wall_ends": "start"}},
+    {"id": "r_le_in", "corners": ["le", "s_le"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "r_te_lo_in", "corners": ["te", "s_te_lo"], "kind": "interface",
+     "spacing": {"wall_ends": "start"}},
+    {"id": "e_out_up_in", "corners": ["wk", "sw_up"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 0},
+     "spacing": {"wall_ends": "start"}},
+    {"id": "e_out_lo_in", "corners": ["wk", "sw_lo"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 5},
+     "spacing": {"wall_ends": "start"}},
+
+    // ── The OUTER region's radials, seam -> far field. A SECOND class. ────
+    // 13 nodes, and no block has an inner radial and an outer radial as its two
+    // i-sides, which is what makes this a class of its own: these 12 intervals
+    // answer to the far field and those 28 answer to the wall. 29 + 13 - 1 = 41,
+    // the four-block case's single class exactly.
+    //
+    // They cluster at their start — the corner on the SEAM — to the height the
+    // inner band finishes at. Not `wall_ends`: that end is not a wall and the
+    // number is not BL_INITIAL_THICKNESS. 0.11082851 is the inner band's own
+    // arithmetic read off an unsmoothed run, not a value anyone liked the look
+    // of: change the inner band's count, its span or the run's wall height and
+    // this number is wrong and the seam shows as a jump in cell size.
+    {"id": "r_te_up_out", "corners": ["s_te_up", "f1"], "kind": "interface", "count": 13,
+     "spacing": {"ds_start": 0.11082851}},
+    {"id": "r_mid_up", "corners": ["s_mid_up", "fm_up"], "kind": "interface",
+     "spacing": {"ds_start": 0.11082851}},
+    {"id": "r_le_out", "corners": ["s_le", "f2"], "kind": "interface",
+     "spacing": {"ds_start": 0.11082851}},
+    {"id": "r_mid_lo", "corners": ["s_mid_lo", "fm_lo"], "kind": "interface",
+     "spacing": {"ds_start": 0.11082851}},
+    {"id": "r_te_lo_out", "corners": ["s_te_lo", "f3"], "kind": "interface",
+     "spacing": {"ds_start": 0.11082851}},
+    {"id": "e_out_up_out", "corners": ["sw_up", "fu"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 0},
+     "spacing": {"ds_start": 0.11082851}},
+    {"id": "e_out_lo_out", "corners": ["sw_lo", "fl"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 5},
+     "spacing": {"ds_start": 0.11082851}},
+
+    // ── The seam over the wake. Straight, and no chain. ───────────────────
+    // The wake's count is not being raised, so there is nothing here for a chain
+    // to buy: one edge above each inner wake block, one outer block above it.
+    // Clustered at its trailing-edge end to the wake cut's own 0.005.
+    {"id": "m_wake_up", "corners": ["s_te_up", "sw_up"], "kind": "interface",
+     "spacing": {"ds_start": 0.005}},
+    {"id": "m_wake_lo", "corners": ["s_te_lo", "sw_lo"], "kind": "interface",
+     "spacing": {"ds_start": 0.005}},
+
+    // ── THE CHAIN MEMBERS. Four arcs of one ellipse. ──────────────────────
+    // `m1` + `m2` are `i_upper`'s east and `m3` + `m4` are `i_lower`'s, each
+    // pair joined end to end at a declared corner that is allocated ONCE — so
+    // the junction is one node both members read, not two that were found to
+    // agree. Each is also the west of one outer block, which is the ordinary
+    // arity of an interior line and is what makes a chain member satisfy the
+    // arity rule without widening it.
+    //
+    // Their counts come from the outer blocks (49 each, off `ff1`..`ff4`) and
+    // their sum decides `af_up` and `af_lo`. Seeding a count here as well would
+    // be a second statement of the same thing; seeding one on the aerofoil that
+    // contradicted the sum would be refused by name.
+    //
+    // The two spacings that are not 0.005 are continuations, read off the same
+    // unsmoothed run as the radial one above: 0.01537496 is `m1`'s final
+    // interval, so `m2` starts where `m1` stops and the junction is not visible.
+    {"id": "m1", "corners": ["s_te_up", "s_mid_up"], "kind": "interface",
+     "curve": {"kind": "ellipse", "centre": [1.0, 0.0], "a": 2.0, "b": 1.0},
+     "spacing": {"ds_start": 0.005}},
+    {"id": "m2", "corners": ["s_mid_up", "s_le"], "kind": "interface",
+     "curve": {"kind": "ellipse", "centre": [1.0, 0.0], "a": 2.0, "b": 1.0},
+     "spacing": {"ds_start": 0.01537496}},
+    {"id": "m3", "corners": ["s_le", "s_mid_lo"], "kind": "interface",
+     "curve": {"kind": "ellipse", "centre": [1.0, 0.0], "a": 2.0, "b": 1.0},
+     "spacing": {"ds_end": 0.01537496}},
+    {"id": "m4", "corners": ["s_mid_lo", "s_te_lo"], "kind": "interface",
+     "curve": {"kind": "ellipse", "centre": [1.0, 0.0], "a": 2.0, "b": 1.0},
+     "spacing": {"ds_end": 0.005}},
+
+    // ── The far field. Every count here is the four-block case's. ─────────
+    // `e_ff_up` and `e_ff_lo` carry 25 by propagation from the wake cut, exactly
+    // as they do there. `ff1`..`ff4` each declare 49, which is what
+    // `e_ff_nose_up` and `e_ff_nose_lo` declare there — and the two halves of
+    // each nose segment bind to the SAME source segment, so they take the same
+    // condition out of the same sidecar.
+    //
+    // 0.03757995 is `ff1`'s final interval, so `ff2` starts where it stops.
+    {"id": "e_ff_up", "corners": ["fu", "f1"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 1},
+     "spacing": {"ds_end": 0.005}},
+    {"id": "ff1", "corners": ["f1", "fm_up"], "kind": "wall", "count": 49,
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 2},
+     "spacing": {"ds_start": 0.005}},
+    {"id": "ff2", "corners": ["fm_up", "f2"], "kind": "wall", "count": 49,
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 2},
+     "spacing": {"ds_start": 0.03757995}},
+    {"id": "ff3", "corners": ["f2", "fm_lo"], "kind": "wall", "count": 49,
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 3},
+     "spacing": {"ds_end": 0.03757995}},
+    {"id": "ff4", "corners": ["fm_lo", "f3"], "kind": "wall", "count": 49,
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 3},
+     "spacing": {"ds_end": 0.005}},
+    {"id": "e_ff_lo", "corners": ["f3", "fl"], "kind": "wall",
+     "binding": {"geom": "cgrid_farfield.dat", "seg": 4},
+     "spacing": {"ds_start": 0.005}}
+  ],
+
+  // [south, east, north, west] = [radial in, far side, radial out, body side].
+  // An entry that is a LIST is a chain, in order; a bare id is an ordinary side
+  // and means exactly what it means in every other document here.
+  "blocks": [
+    {"id": "i_wake_up", "edges": ["e_out_up_in", "m_wake_up", "r_te_up_in", "wake"]},
+    {"id": "i_upper",   "edges": ["r_te_up_in", ["m1", "m2"], "r_le_in", "af_up"]},
+    {"id": "i_lower",   "edges": ["r_le_in", ["m3", "m4"], "r_te_lo_in", "af_lo"]},
+    {"id": "i_wake_lo", "edges": ["r_te_lo_in", "m_wake_lo", "e_out_lo_in", "wake"]},
+
+    {"id": "o_wake_up", "edges": ["e_out_up_out", "e_ff_up", "r_te_up_out", "m_wake_up"]},
+    {"id": "o_nose_up_aft", "edges": ["r_te_up_out", "ff1", "r_mid_up", "m1"]},
+    {"id": "o_nose_up_fwd", "edges": ["r_mid_up", "ff2", "r_le_out", "m2"]},
+    {"id": "o_nose_lo_fwd", "edges": ["r_le_out", "ff3", "r_mid_lo", "m3"]},
+    {"id": "o_nose_lo_aft", "edges": ["r_mid_lo", "ff4", "r_te_lo_out", "m4"]},
+    {"id": "o_wake_lo", "edges": ["r_te_lo_out", "e_ff_lo", "e_out_lo_out", "m_wake_lo"]}
+  ]
+}
