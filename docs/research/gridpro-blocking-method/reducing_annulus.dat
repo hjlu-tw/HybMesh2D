@@ -1,0 +1,7 @@
+# Written by make_reducing_annulus.py — see that file. #192 step 2.
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/reducing_annulus.json
+MB_SPLIT_QUADS 0
+MB_SMOOTH_ITERS 0
+EXPORT_VTK 1
+EXPORT_STARCD 0

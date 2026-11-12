@@ -1,0 +1,297 @@
+// A COUNT-REDUCING ANNULUS (issue #192 step 2) — WRITTEN BY
+// docs/research/gridpro-blocking-method/make_reducing_annulus.py.
+// Do not hand-edit; re-run the generator.
+//
+// 1 corner block(s) and 3 ordinary one(s) between two circles. A corner
+// block has two sides on the inner circle and none on the outer, so its
+// apex is a corner of three blocks and the count FALLS across the ring:
+// inner = 72 intervals, outer = 48, reduction = 24.
+{
+  "format_version": 1,
+  "corners": [
+    {
+      "id": "a0",
+      "kind": "free",
+      "xy": [
+        0.5,
+        -0.866025403784
+      ]
+    },
+    {
+      "id": "c0",
+      "kind": "free",
+      "xy": [
+        1.0,
+        0.0
+      ]
+    },
+    {
+      "id": "p0",
+      "kind": "free",
+      "xy": [
+        0.5,
+        0.866025403784
+      ]
+    },
+    {
+      "id": "d0_1",
+      "kind": "free",
+      "xy": [
+        -0.766044443119,
+        0.642787609687
+      ]
+    },
+    {
+      "id": "d0_2",
+      "kind": "free",
+      "xy": [
+        -0.766044443119,
+        -0.642787609687
+      ]
+    },
+    {
+      "id": "X0",
+      "kind": "free",
+      "xy": [
+        3.0,
+        0.0
+      ]
+    },
+    {
+      "id": "Y0_1",
+      "kind": "free",
+      "xy": [
+        -1.5,
+        2.598076211353
+      ]
+    },
+    {
+      "id": "Y0_2",
+      "kind": "free",
+      "xy": [
+        -1.5,
+        -2.598076211353
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "wL0",
+      "corners": [
+        "a0",
+        "c0"
+      ],
+      "kind": "wall",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.0,
+        "b": 1.0,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "wR0",
+      "corners": [
+        "c0",
+        "p0"
+      ],
+      "kind": "wall",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.0,
+        "b": 1.0,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "rA0",
+      "corners": [
+        "a0",
+        "X0"
+      ],
+      "kind": "interface",
+      "count": 13
+    },
+    {
+      "id": "rB0",
+      "corners": [
+        "p0",
+        "X0"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD0_1",
+      "corners": [
+        "d0_1",
+        "Y0_1"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD0_2",
+      "corners": [
+        "d0_2",
+        "Y0_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "wo0_0",
+      "corners": [
+        "p0",
+        "d0_1"
+      ],
+      "kind": "wall",
+      "count": 17,
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.0,
+        "b": 1.0,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "o0_0",
+      "corners": [
+        "X0",
+        "Y0_1"
+      ],
+      "kind": "wall",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.0,
+        "b": 3.0,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "wo0_1",
+      "corners": [
+        "d0_1",
+        "d0_2"
+      ],
+      "kind": "wall",
+      "count": 17,
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.0,
+        "b": 1.0,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "o0_1",
+      "corners": [
+        "Y0_1",
+        "Y0_2"
+      ],
+      "kind": "wall",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.0,
+        "b": 3.0,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "wo0_2",
+      "corners": [
+        "d0_2",
+        "a0"
+      ],
+      "kind": "wall",
+      "count": 17,
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.0,
+        "b": 1.0,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "o0_2",
+      "corners": [
+        "Y0_2",
+        "X0"
+      ],
+      "kind": "wall",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.0,
+        "b": 3.0,
+        "sweep": "ccw"
+      }
+    }
+  ],
+  "blocks": [
+    {
+      "id": "Q0_0",
+      "edges": [
+        "rB0",
+        "o0_0",
+        "rD0_1",
+        "wo0_0"
+      ]
+    },
+    {
+      "id": "Q0_1",
+      "edges": [
+        "rD0_1",
+        "o0_1",
+        "rD0_2",
+        "wo0_1"
+      ]
+    },
+    {
+      "id": "Q0_2",
+      "edges": [
+        "rD0_2",
+        "o0_2",
+        "rA0",
+        "wo0_2"
+      ]
+    },
+    {
+      "id": "C0",
+      "edges": [
+        "rA0",
+        "rB0",
+        "wR0",
+        "wL0"
+      ]
+    }
+  ]
+}

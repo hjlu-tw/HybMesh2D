@@ -1,0 +1,11 @@
+# Written by make_reducing_cgrid.py — see that file. #192 step 3.
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/reducing_cgrid_control.json
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+DOMAIN_FILE examples/geometries/cgrid_farfield.dat nobl
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 0
+MB_SMOOTH_ITERS 0
+BC_GEOM wall
+EXPORT_VTK 1
+EXPORT_STARCD 0

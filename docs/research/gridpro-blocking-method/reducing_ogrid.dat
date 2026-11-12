@@ -1,0 +1,10 @@
+# Written by make_reducing_annulus.py — see that file. #192 step 2.
+MESH_MODE 1
+GEOM_FILE examples/geometries/circle_body.dat
+DOMAIN_FILE examples/geometries/circle_farfield.dat nobl
+BL_INITIAL_THICKNESS 0.001
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/reducing_ogrid.json
+MB_SPLIT_QUADS 0
+MB_SMOOTH_ITERS 20
+EXPORT_VTK 1
+EXPORT_STARCD 0

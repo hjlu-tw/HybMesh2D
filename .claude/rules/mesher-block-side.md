@@ -165,11 +165,31 @@ is this file's.
     seeds and the four-block square FOUR. A document seeding one of three is refused, naming
     the size of the group with no count. This is the only thing about the arrangement an
     author has to learn, and it is the thing a change to the propagation would break first.
-  - **NOTHING IS CLAIMED HERE ABOUT A COUNT REDUCTION.** Each irregular node ends exactly ONE
-    grid line, and what a useful reduction costs in blocks per line ended is UNMEASURED —
-    #192's steps 2-4. Taking the shipped C-grid's aerofoil from 97 nodes to 193 while holding
-    the far field at 145 would need 96 of them. **Do not read "the device exists" as "the
-    capability is available."**
+  - **A COUNT REDUCTION COSTS TWICE THE RING'S RADIAL DEPTH PER CORNER BLOCK, NOT ONE LINE PER
+    IRREGULAR NODE** (#192 steps 2-4). A CORNER BLOCK has two sides on a ring's inner boundary
+    and none on its outer, so both of its radials end at one apex — the three-block corner above
+    — and a ring of K of them with `a` radial intervals turns `K(2a + qm)` inner intervals into
+    `Kqm` outer ones. Measured at four depths on the smallest such ring: the reduction is `2Ka`
+    exactly. So 96 lines is TWO corner blocks at depth 24, not 96 of anything. **K corner blocks
+    make K RADIAL classes**, because each links a radial to one of its own inner arcs rather than
+    to the other radial; a ring seeded once is refused.
+    - **THE SMALLEST REDUCING ANNULUS HAS NO INTERIOR IRREGULAR NODE AT ALL.** Its apex is a
+      valence-4 BOUNDARY node and its FOLD — between the corner block's two inner arcs — is a
+      valence-**2** one, whose single cell spans the boundary's own 180 degrees. No smoothing and
+      no embedding removes that; only NOTCHING the fold inward so the boundary turns does, which
+      a ring whose inner boundary is the WALL cannot do.
+    - **ONE REDUCING MESH PASSES GATE 2 AND ONE DOES NOT.** The reducing O-grid (shipped circle
+      geometries, body 192 intervals, far field 96, 0 inverted) runs the solver at the C-grid's
+      operating point with no NaN; the reducing C-grid goes to `Average norm is a nan` — and so
+      does its own no-corner-block CONTROL at the same iteration, so that is the construction and
+      not the device. On the C-grid the reduction adds 2688 quads where every other way of putting
+      97 nodes on that aerofoil adds 3840.
+    - **NOTHING IS SHIPPED AND NOTHING IS GATED.** The documents, the generators and every figure
+      are `docs/research/gridpro-blocking-method/make_reducing_annulus.py`,
+      `make_reducing_cgrid.py` and `docs/research/nesting-blocks-at-a-complicated-leading-edge.md`
+      §16; no shipped case carries a corner block, no topology family emits one, and the best
+      worst cell measured anywhere is 53.6 degrees off orthogonal against a plain O-grid's 2.02.
+      **Do not read "the device exists" as "the capability is available."**
   - **A VALENCE-5 CORNER IS THE SAME DEVICE RUN THE OTHER WAY** and this repo already ships
     one: the C-grid's `te`, where five edges end and four blocks meet. It ADDS a line.
   - Gated by check 66 (with 66b for the seeds and 66c, a four-block corner, as the negative

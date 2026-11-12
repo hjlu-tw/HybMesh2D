@@ -6228,6 +6228,60 @@ is unknown with a bad prior: §12c of the nesting note records the last local to
 repo passing gate 1, looking fine, and going to 32 NaN. **The device existing is not the capability
 being available**, and #192's steps 2-4 are where that distinction gets priced.
 
+> **THE 96 IS WRONG, and the next block measures it.** The cost is not one line per irregular node;
+> it is twice the reducing ring's own radial depth per CORNER BLOCK, so 96 lines is two corner
+> blocks at depth 24 or four at depth 12. The paragraph is kept as it stands, following #43's rule
+> that a dated claim is annotated and not edited, and because the error is instructive: it reads a
+> LOCAL property of one node as the global bookkeeping of a ring.
+
+**THE PRICE, MEASURED — #192 steps 2 to 4, 2026-11-12.** Three questions were open above and all
+three now have numbers. The full record, the generators and every figure are
+`docs/research/nesting-blocks-at-a-complicated-leading-edge.md` §16; what belongs here is what a
+rule now rests on.
+
+**THE LAW.** A reducing ring is K repeats of one CORNER BLOCK — two sides on the ring's inner
+boundary, none on the outer, both radials ending at one APEX where three blocks meet — plus ordinary
+blocks. Opposite sides carry equal counts, so the ring's inner boundary holds `K(2a + qm)` intervals
+and its outer `Kqm`: **the reduction is `2Ka`, twice the ring's radial depth per corner block.**
+Measured through the real binary at four depths on the smallest such ring (4 blocks, 2 circles), it
+is `2a` exactly every time: 8, 16, 24 and 48 lines ended. **K corner blocks make K RADIAL classes**,
+because a corner block links each radial to one of its own inner arcs rather than to the other
+radial — step 1's "N blocks at a corner make N count classes" arriving from the other side, and a
+ring seeded once is refused naming the group with no count.
+
+**THE SMALLEST ONE CONTAINS NO INTERIOR IRREGULAR NODE AT ALL**, which is worth knowing before
+building on the word. Its two off-valence nodes are both on the BOUNDARY: the apex at valence 4 on
+the outer circle, and the FOLD between the corner block's two inner arcs at valence **2** on the
+inner one. A valence-2 node on a smooth boundary has ONE cell spanning that boundary's own 180
+degrees — an 89.5-degree non-orthogonality that no smoothing and no embedding removes, and that is
+removed only by NOTCHING the fold inward so the boundary turns there. A ring whose inner boundary is
+the WALL therefore cannot have the notch, and a reduction against a wall costs that cell.
+
+**N(r) DOES NOT REGISTER THE SMALLEST ONE.** The nesting note's §15a instrument stays FLAT at 4
+across the smallest reducing annulus while its node count falls 72 to 48, because the count falls
+INSIDE the corner block rather than by a block boundary ending. The embedded reducing O-grid DOES
+fall — 16 to 8 — and is the first blocking in this repo that does. Both readings are kept: N(r) is
+necessary for a nest and is not sufficient for a count reduction.
+
+**GATE 2 PASSES ON ONE MESH AND FAILS ON THE OTHER, AND THE CONTROL IS WHAT SAYS WHICH.** The
+reducing O-grid on the shipped circle geometries — body 192 intervals against the shipped O-grid's
+96, far field 96, 36 blocks, 7872 quads, 0 inverted, 8 interior irregular nodes (four valence 3,
+four valence 5) — runs mesher, `getPGrid` and `unicones` at M 0.2, Re 200, cfl 0.6, 100 iterations
+with no NaN. The reducing C-GRID goes to `Average norm is a nan` at iteration 20 — **and so does its
+own no-corner-block control, at the same iteration**, so what that measures is the three-band C-grid
+construction and not the reduction. Blocks per grid line ended is `9/(2a)` for this family: **0.375**
+at four folds of depth 12, rising to 2.25 at twenty-four folds of depth 2, with the mean
+non-orthogonality falling and the MAXIMUM rising along that row until the last row inverts cells
+under the smoother — so the CHEAPEST blocking is also the best one. Every row is an order of
+magnitude worse at its worst cell (53.6 degrees at best) than the shipped O-grid's 2.02.
+
+**WHAT THE REDUCTION BUYS IN CELLS, on the shipped C-grid and against #191's own three-row table in
+the same bins with the same ruler:** 2688 added quads where every other way of putting 97 nodes on
+that aerofoil adds 3840, and 89.4% of them inside one chord against the chain case's 79.2%. That is
+#188's user story 1, delivered and measured — on a mesh that does not solve. **Nothing is shipped**:
+per step 4 no reduction leaves `docs/research/`, no topology family emits a corner block, and the
+one reducing mesh that passed gate 2 is a research document.
+
 **THE INJECTION ROUND IS WHERE THE WORK WAS**, and two of its three findings are about injections
 rather than about the code. IR1 — a fresh node per edge end instead of the shared declared corner —
 is INERT as an injection into check 66: it reddens 35 checks from group 1 onward and then segfaults

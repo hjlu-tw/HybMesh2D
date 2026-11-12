@@ -902,6 +902,11 @@ no measurable chord (§8b). Tool: `measure_block_partition.py`. It reads the `bl
 **Both are flat.** The C/H holds 68 lines from the body out to four chords; its fall at r = 5 is
 the domain ending (body-to-far is 6.5), not termination. Figure `blocking_termination.png`.
 
+> **A FALLING ROW EXISTS NOW — §16c, 2026-11-12.** The reducing O-grid built for #192 goes 16 at
+> r = 0.6 to 8 at r = 3 and is the first blocking in this repo that does. §16c also measures that
+> N(r) is NOT sufficient: the smallest count-reducing annulus is FLAT at 4 while its node count
+> falls 72 to 48.
+
 **And §12's nest moves that curve at ONE radius in 260** — +1 line at r = 1.08, a chord out,
 not at the feature. §12a had to put it in the OUTERMOST layer; 15d says why that was never a
 quirk of that case.
@@ -962,6 +967,12 @@ decision, not a parameter.
 > case for, and a declined method is not its consumer. Rules:
 > `.claude/rules/mesher-block-side.md`. Decision and the rejected alternatives:
 > `docs/adr/0003-a-block-side-may-be-a-chain-and-counts-propagate-out-of-it-never-into-it.md`.
+>
+> **AND SUPERSEDED IN FULL, 2026-11-12 (#192 steps 2-4), by §16.** The half #190 left standing —
+> that this model cannot make a count FALL — is false too. The device is a corner shared by three
+> blocks, the reduction is twice the ring's radial depth per corner block, and one such mesh runs
+> the solver at the C-grid's operating point without NaN. The arity rule was not touched for that
+> either, and the one-edge spelling above still produces the refusal quoted.
 
 ### 15e. The three zones, and where ours stops being like theirs **[V]** on ours, **[I]** on theirs
 
@@ -987,6 +998,9 @@ corner graph from which blocks are inferred, rather than a per-block list of fou
   known to be downstream of a construction that was never the method.
 - **The restart condition in §14b gains a prerequisite**: before a named target geometry is even
   worth discussing, the model would need a side that is a chain of edges.
+- **§16 is the continuation**, written after #190 took the chain and #192 step 1 wrote down the
+  three-block corner: it builds the count-reducing ring this section said could not exist, prices
+  it in blocks per line ended, and runs one of them through gate 2.
 
 ### 15g. Named limits of this section
 
@@ -1012,6 +1026,197 @@ corner graph from which blocks are inferred, rather than a per-block list of fou
 
 
 ---
+
+## 16. The count-reducing blocking, BUILT and PRICED — #192 steps 2 to 4
+
+**2026-11-12.** §15d said this model cannot express a count-reducing termination and #190
+superseded half of that. #192 step 1 then wrote down the device that can — a corner shared by
+THREE blocks — and left the price unmeasured. This section is the price, and it supersedes §15d's
+remaining half: **a count-reducing annulus is expressible, it meshes with zero inverted cells, its
+N(r) falls, and one of them runs the solver at the C-grid's own operating point without NaN.**
+Generators: `gridpro-blocking-method/make_reducing_annulus.py` and `make_reducing_cgrid.py`.
+Nothing in `config/`, `examples/`, `src/` or `include/` was changed to write any of it. **[V]**
+
+### 16a. The construction, and the law it obeys **[V]**
+
+One UNIT of a reducing ring is two kinds of block:
+
+- the **CORNER BLOCK** — two of its four sides are on the ring's INNER boundary and none is on the
+  outer, so both of its radials end at one APEX and the three blocks that meet there are #192
+  step 1's device;
+- the **ORDINARY BLOCK** — one inner side, one outer side, two radials.
+
+Opposite sides carry equal counts, so with *a* radial intervals and *m* on an ordinary side, a
+ring of *K* units carries `K(2a + qm)` intervals on the inside and `Kqm` on the outside:
+
+> **The reduction is `2 x K x a` — TWICE THE RING'S OWN RADIAL DEPTH, PER CORNER BLOCK.**
+
+That is **not** one line per irregular node, and the correction matters because #192's body, the
+step-1 rule and the step-1 design note all state the cost the other way. Taking the shipped
+C-grid's aerofoil from 97 nodes to 193 while holding the far field at 145 needs 96 lines ended,
+and that is **two corner blocks at depth 24, or four at depth 12** — not 96 of anything. The
+smallest ring measured here ends **24** lines with **ONE** corner block and 2 off-valence nodes.
+
+**K CORNER BLOCKS MAKE K RADIAL CLASSES**, which is step 1's "N blocks at a corner make N count
+classes" arriving a second time and from the other side: a corner block links each of its radials
+to one of its own inner arcs rather than to the other radial, so the relation does not pass
+through it. A ring of four units seeded once is refused, naming the group with no count. **[V]**
+
+### 16b. The SMALLEST count-reducing annulus, and what it does NOT contain **[V]**
+
+`reducing_annulus.json` — 4 blocks between two circles, one corner block and three ordinary,
+inner 72 intervals and outer 48. Through the real binary at `MB_SPLIT_QUADS 0`:
+
+| ring depth *a* | inner | outer | reduction | cells | inverted | nonortho max |
+|---|---|---|---|---|---|---|
+| 4 | 56 | 48 | 8 | 208 | 1 | 83.6 |
+| 8 | 64 | 48 | 16 | 448 | 1 | 84.4 |
+| 12 | 72 | 48 | 24 | 720 | 3 | 89.5 |
+| 24 | 96 | 48 | 48 | 1728 | 171 | 90.0 |
+
+The reduction is `2a` at every row, exactly. **It contains NO interior irregular node at all** —
+every interior node is valence 4, and the two nodes off the regular valence are both on the
+BOUNDARY: the apex, where three blocks meet, at valence 4 on the outer circle, and the FOLD
+between the corner block's two inner arcs, at valence **2** on the inner one. A valence-2 node on
+a smooth boundary has exactly ONE cell spanning that boundary's own 180 degrees, which is the
+89.5-degree non-orthogonality above. **No smoother removes it** (20 sweeps take 3 inverted cells
+to 1 and 85 degrees; 100 sweeps give 35 and 90, which is §12's "converging is worse" again) and
+**no embedding removes it either**: wrapping the ring in two ordinary rings leaves the fold cell
+still spanning 180 of the 360 degrees at that node. What removes it is NOTCHING the fold inward
+so the boundary TURNS there — available only when the ring's inner boundary is an INTERFACE,
+never when it is the wall. **[V]**
+
+**THE RING'S THICKNESS IS A QUALITY KNOB AND IT WAS NEARLY MISSED.** The same document at an outer
+radius of 1.8 instead of 3.0 gives **48** inverted cells and a mean of 39.7 degrees against 3 and
+23.8 — the corner block tapers from two inner arcs to one point across the ring, so a thin ring
+taper is a sharp one. The figures in the table are at radius 3.0 and the generator carries
+`--r-out` so they are reproducible. **[V]**
+
+### 16c. N(r) DOES NOT REGISTER THE SMALLEST ONE, and that is a finding about the instrument **[V]**
+
+`reduction_termination.png`. The smallest reducing annulus is **FLAT at 4** while its node count
+falls 72 to 48, because all four of its block-partition lines do reach the outer boundary: the
+count falls INSIDE the corner block, where the grid lines leaving its two inner arcs turn and
+leave through its two radials. §15a's instrument measures where block BOUNDARIES end, and that is
+not the same question as where grid LINES end.
+
+The embedded reducing O-grid below **does** fall — **16 at r = 0.6, 12 at r = 1.2, 8 at r = 3 and
+beyond** — and is **the first blocking in this repo whose N(r) falls**, against the FLAT rows
+§15b records for the shipped C-grid and the 160-block C/H. So the two reducing documents disagree
+with each other on the instrument, which is the honest reading of both: N(r) is necessary for a
+nest and is not sufficient for a count reduction.
+
+### 16d. PRICED on a complete mesh: the reducing O-grid, and gate 2 PASSES **[V]**
+
+`reducing_ogrid.json` — the shipped `circle_body.dat` and `circle_farfield.dat`, unchanged and
+with their own boundary conditions, a body ring, a reducing ring and a far ring. The body carries
+**192** intervals, twice the shipped O-grid's, and the far field carries the shipped O-grid's
+**96**: #188's user story 1, on a circle. 36 blocks, 7872 quads, **0 inverted**, non-orthogonality
+max 53.6 and mean 4.70 degrees, and exactly **8 interior irregular nodes — four of valence 3 at
+the folds and four of valence 5 at the apexes**, which is the equation
+`sum_interior (4 - d) = sum_boundary (d - 3)` balancing with nothing left on the boundary.
+
+Blocks per grid line ended, measured rather than estimated, holding body 192 and far field 96, all
+rows at `MB_SMOOTH_ITERS` 20 (the shipped default) and each at the best of four notch depths:
+
+| folds *K* | depth *a* | blocks | **blocks per line ended** | cells | inverted | nonortho max / mean |
+|---|---|---|---|---|---|---|
+| 4 | 12 | 36 | **0.375** | 7872 | 0 | 53.6 / 4.70 |
+| 8 | 6 | 72 | 0.750 | 7008 | 0 | 68.3 / 3.65 |
+| 12 | 4 | 108 | 1.125 | 6720 | 0 | 78.4 / 3.09 |
+| 16 | 3 | 144 | 1.500 | 6576 | 0 | 81.9 / 2.89 |
+| 24 | 2 | 216 | 2.250 | 6432 | **144** | 87.6 / 6.88 |
+
+Blocks per line ended is `9 / (2a)` for this family and depends on the ring's DEPTH alone, not on
+how many folds it is spread over. More folds buy a lower MEAN and cost a higher MAX, until at 24
+folds of depth 2 no notch tried keeps the smoother from inverting cells. **The cheapest row is
+also the best one**, which is not what the quality trend alone would predict and is why the table
+is here rather than one row of it. The shipped four-block O-grid's own figures for scale are 4608
+quads, 2.02 max and 1.88 mean — so every row above is an order of magnitude worse at the worst
+cell, and buys twice the body resolution for 1.4 to 1.7 times the cells.
+
+**GATE 2, run 2026-11-12** through `reducing_ogrid_demo.json`, at the C-grid's own operating point
+— M 0.2, Re 200, zero incidence, cfl 0.6 constant, `num_half_iter` 100, `print_convg_per_niter`
+10, laminar NS:
+
+    mesher    EXIT 0   15744 triangles, 0 inverted, nonortho max 53.58 mean 4.70
+    getPGrid  EXIT 0   8016 vertices, 15744 elements, 288 boundary elements,
+                       288 boundary condition flags
+    unicones  EXIT 0   last printed "Global Iteration count 90" at
+                       print_convg_per_niter 10 with num_half_iter 100 — 100
+                       iterations. Residuals finite and O(1e-4) at 90. NO NaN.
+
+The one NAN anywhere is in `tWall_values`' zeroth record, at t = 0 before any iteration — and the
+shipped four-block C-grid, re-run the same day through `config/pipeline/multiblock_cgrid_demo.json`,
+writes **the same NAN on the same line**. It is the solver's, not this mesh's. **[V]**
+
+### 16e. PRICED on the shipped C-GRID: the cells are bought, gate 2 is NOT **[V]**
+
+`reducing_cgrid.json` — the shipped `naca0012_cgrid.dat` and `cgrid_farfield.dat`, the chain
+case's own seam ellipse (centre (1, 0), a = 2, b = 1) cut at 24 stations, a reducing band of 6
+units out to a second ellipse, and an ordinary band to the far field. 97 nodes per aerofoil
+surface, the four-block case's far-field counts, 40 radial intervals in all — the same budget the
+shipped cases spend. 60 blocks. Against #191's own three-row table, in **the same bins and with
+the same ruler** (that gate's `_bin_cells` and `_body_polyline`, imported rather than
+re-implemented; the shipped chain row below reproduces #191's figures to the cell, which is what
+makes the new rows comparable):
+
+| | added | < 1 chord | 1-5 chords | > 5 chords |
+|---|---|---|---|---|
+| #191's CONTROL (four blocks, aerofoil raised to 97) | 3840 | 2480 (64.6%) | 880 (22.9%) | 480 (12.5%) |
+| #191's SHIPPED CHAIN CASE | 3840 | 3042 (79.2%) | 772 (20.1%) | 26 (0.7%) |
+| this work's own CONTROL (the same three bands, NO corner block) | 3840 | 2400 (62.5%) | 948 (24.7%) | 492 (12.8%) |
+| **the REDUCING C-grid** | **2688** | **2402 (89.4%)** | **274 (10.2%)** | **12 (0.4%)** |
+
+**The reduction buys 1152 quads, 30% of what the refinement costs**, and it is the first row in
+this chain that adds FEWER cells rather than the same 3840 moved about. 89.4% of what it does add
+lands within one chord. Its own control — the same three bands, the same radial counts, the same
+curves and station placement, with the corner blocks replaced by ordinary ones — adds the same
+3840 as every other row, which is what makes the 2688 the REDUCTION's and not the construction's.
+
+**GATE 1 passes only with the smoother OFF.** At `MB_SMOOTH_ITERS 0` the reducing document has 0
+inverted cells; at the shipped default of 20 it has 120. The figures above are at 0.
+
+**GATE 2 FAILS: `Average norm is a nan, exiting....` at iteration 20** — and **so does its
+control, at the same iteration**, which is the whole of what that measures. The NaN belongs to
+this three-band C-grid construction and not to the reduction: both meshes carry a mean
+non-orthogonality of 22 to 24 degrees against the shipped cases' 3.8 and 5.3, both report
+`wall_first_cell_worst_rel` 0.924 against their 0.001, and that figure does not move when the
+radial budget is raised from 40 to 64, so it is a defect in how this document places its wall
+spacing rather than a resolution. **It was not chased.** Per #192 step 4, **no reduction on the
+C-grid leaves `docs/research/`**; the reducing O-GRID is the one that passed, and it is the one
+the device is cleared on.
+
+### 16f. What this supersedes, and what it does not
+
+- **SUPERSEDES the rest of §15d.** "The model cannot express a count-reducing termination" is now
+  false in both halves: #190 took the chain, and this section builds the reduction the chain
+  cannot deliver. The arity rule was not touched for either.
+- **Does NOT supersede §14.** Local nesting stays declined on §14's own grounds. This is the
+  general capability #188 asked for; a declined method is not its consumer, and nothing here
+  nests anything into anything.
+- **Does NOT make the capability available.** One reducing mesh passes gate 2 and one does not,
+  no topology family emits a corner block, no shipped case carries one, and the best worst cell
+  measured anywhere here is 52.8 degrees off orthogonal against a plain O-grid's 2.0.
+
+### 16g. Named limits of this section
+
+- **ONE operating point, and the claim is "the solver runs on this mesh".** Not convergence, not
+  accuracy; no force is compared with anything, for the reason #157 recorded — no shipped case in
+  this repo reaches a settled force here.
+- **The C-grid construction is mine and it is not a good one**, which 16e's control is what
+  establishes. A better station correspondence — derived from the four-block mesh's own grid lines
+  the way #191's one seam station was, rather than placed by arc length — was not tried, and the
+  wall-spacing defect behind `wall_first_cell_worst_rel` 0.924 was not diagnosed.
+- **The notch depth was swept, not solved for.** 16b's claim that a fold needs the boundary to
+  turn is a measurement over four values of one knob on two documents; no analysis says what the
+  turn should be, and the three-cells-at-120-degrees ideal is argued from the valence, not
+  measured.
+- **Nothing here is gated.** These are research documents under `docs/research/`; no C++ check and
+  no surface gate reads them, and they will rot exactly as §11's two figures did unless something
+  does. That is the same state #192 step 1 closed for the three-block corner itself, and it is
+  deliberate for this half: the ticket's step 4 is what decides whether a reduction becomes a
+  shipped case, and it said no on the C-grid.
 
 ## Sources
 
