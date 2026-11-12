@@ -1455,9 +1455,12 @@ int hybmesh::runCli(int argc, char* argv[]) {
     }
 
     // THE REFUSAL, and it fires on one shape only: a bare token was discarded
-    // above AND no `-conf` anywhere on the line names the configuration. Then the
-    // document the whole run is built from would be the built-in default, chosen
-    // by accident, while the file the user typed was dropped. #186 is advisory
+    // above AND nothing EARLIER on the line had already named the configuration --
+    // neither a `-conf` nor a bare positional taken before the unknown flag, which
+    // is what `confExplicit` records. Then the document the whole run is built from
+    // would be the built-in default, chosen by accident, while the file the user
+    // typed was dropped. A `-conf` LATER on the line also disarms it, because by
+    // the end of phase 1 the configuration is named either way. #186 is advisory
     // because an unrecognised flag there DOES nothing; the same rule reaching the
     // token beside it can decide the entire input, which is not a thing to warn
     // about and carry on from. An explicit `-conf` leaves the run unambiguous, so

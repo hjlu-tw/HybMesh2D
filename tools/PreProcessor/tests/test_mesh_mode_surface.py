@@ -428,6 +428,23 @@ OUTPUT_FILENAME {out_name}
         check("7b. ...and the flag is still named, so suppressing the refusal did "
               f"not suppress #186 ({sorted(unknown_args(out))})",
               unknown_args(out) == {"-bogus_flag"})
+        # A BARE POSITIONAL ALREADY TAKEN disarms the refusal just as a `-conf`
+        # does, and this shape had no check until the Spec review axis RAN it: the
+        # condition was written as "no `-conf` anywhere on the line" in five places
+        # -- the refusal's own comment, the rule file, the design note and both
+        # READMEs -- and that sentence is FALSE here. The guard is `confExplicit`,
+        # which an earlier bare positional sets. Behaviour was right; the claim was
+        # not, and what makes a claim like that cheap to get wrong is having no
+        # check that drives it.
+        rc, out = run(tmp, plain("settled"),
+                      argv_tail=["@DAT@", "-bogus_flag", "other.dat"])
+        check("7b. a bare positional config taken BEFORE the invented flag disarms "
+              "the refusal exactly as a -conf does: the configuration was settled "
+              f"before that flag was reached (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "settled.vtk")))
+        check("7b. ...and the token behind the invented flag is NAMED rather than "
+              f"promoted or refused ({sorted(unknown_args(out))})",
+              unknown_args(out) == {"-bogus_flag", "other.dat"})
         rc, out = run(tmp, plain("switch"), argv_tail=["-domain_bl", "@DAT@"])
         check("7b. a RECOGNISED switch that takes no value, with the config path "
               "behind it, still promotes that path -- the table says -domain_bl "

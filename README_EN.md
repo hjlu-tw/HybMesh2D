@@ -81,11 +81,14 @@ The config file may also be passed as the first bare argument, with no `-conf`
 
 **An unrecognised argument is NAMED** and stated to have been ignored and had no effect on the
 run, which still finishes normally (exit 0, mesh written). The one exception: an unrecognised
-argument followed by a bare token, with no `-conf` anywhere on the line. That token is either the
-flag's value or the configuration path, the two readings select **different input documents**, and
-nothing says which — so the run is refused (exit 2) rather than meshing a configuration that was
-never knowingly chosen. The message names both ways out: pass `-conf <path>`, or drop the
-mistyped argument.
+argument followed by a bare token, when **nothing else on the line names the configuration** —
+no `-conf` either before or after it, and no bare config path already taken before it. That token
+is then either the flag's value or the configuration path, the two readings select **different
+input documents**, and nothing says which — so the run is refused (exit 2) rather than meshing a
+configuration that was never knowingly chosen. The message names both ways out: pass
+`-conf <path>`, or drop the mistyped argument. By contrast `mycase.dat -bogus other.dat` runs:
+the configuration was settled before the unrecognised flag was reached, and `other.dat` is merely
+named as unrecognised.
 
 ### Execution Example (Using Example Files)
 

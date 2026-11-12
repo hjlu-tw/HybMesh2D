@@ -4412,10 +4412,18 @@ rather than fixed.
     exit-0 result. #186 is advisory because an unrecognised flag there DOES nothing —
     the blast radius is the setting. Here the blast radius is the whole case.
   - **Why not refuse more broadly.** The refusal fires only when a bare token was
-    discarded AND no `-conf` anywhere on the line names the configuration. With an
-    explicit `-conf`, the run is unambiguous whatever the stray flag was, so it is still
-    only warned about — in BOTH orders, which is itself an improvement, since
-    `-bogus 0 -conf x.dat` used to promote `0` and go silent.
+    discarded AND nothing else on the line named the configuration. Three things
+    disarm it, and the honest statement is the third rather than "no `-conf`": a `-conf`
+    BEFORE the unknown flag, a `-conf` AFTER it (by the end of phase 1 the configuration
+    is named either way), and **a bare positional taken BEFORE the unknown flag** —
+    `mycase.dat -bogus other.dat` runs on `mycase.dat` and merely names `other.dat`,
+    because the configuration was settled before the unknown flag was ever reached. The
+    guard is `confExplicit`, which all three set. **The first cut said "no `-conf`
+    anywhere on the line" in five places — this note, the refusal's own comment, the
+    rule file and both READMEs — and that is FALSE of the third**, found by the Spec
+    review axis by RUNNING the command rather than reading the sentence. The `-conf`
+    orders are themselves an improvement: `-bogus 0 -conf x.dat` used to promote `0`
+    and go silent.
   - **Why refusing is cheap, measured.** The shape requires an unrecognised argument,
     which by definition no correct command line has. Measured across this repo's scripts,
     shipped examples, configs, workflows and docs: **ZERO mesher command lines carry a

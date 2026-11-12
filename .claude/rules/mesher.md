@@ -120,8 +120,9 @@ everywhere else the warning is the whole consequence.
   it unknown would be false and would send a user looking for a flag they spelled correctly.
 - **AN UNKNOWN FLAG'S VALUE IS NEVER PROMOTED TO THE CONFIG PATH, AND THE SHAPE THAT CANNOT BE
   RESOLVED REFUSES** (#187, the same rule's second consequence). A bare token standing behind an
-  unrecognised flag is not taken as the positional config (`orphanIdx` in phase 1); if no `-conf`
-  anywhere on the line then names the configuration, the run STOPS before loading anything:
+  unrecognised flag is not taken as the positional config (`orphanIdx` in phase 1); if NOTHING
+  ELSE on the line names the configuration — no `-conf` before or after, and no bare positional
+  taken BEFORE the unknown flag (`confExplicit`) — the run STOPS before loading anything:
   `[ERROR] Unknown command-line argument '-bogus_flag', and the bare token 'mycase.dat' after it
   was NOT taken as the configuration: … pass '-conf mycase.dat' to name it, or drop
   '-bogus_flag'.` — then `HYBMESH_ERROR 2 CONFIG <token>`, the EXISTING code, and no mesh. **This
@@ -135,7 +136,9 @@ everywhere else the warning is the whole consequence.
   `'-bogus'` AND `'0'` and runs (#186, unchanged). `-bogus 0 -conf x.dat` now names BOTH as well
   and runs — the later `-conf` makes the line unambiguous, so naming the token is not refusing it;
   before #187 `0` was promoted to the config path and silent. `mycase.dat -bogus` runs: nothing
-  preceded the path, so there was never a question about what it is. `-domain_bl mycase.dat` runs
+  preceded the path, so there was never a question about what it is — and the same line with a
+  second bare token, `mycase.dat -bogus other.dat`, runs TOO and names `other.dat`, because the
+  configuration was settled before the unknown flag was reached. `-domain_bl mycase.dat` runs
   and is SILENT — the table says that flag eats nothing — which is the false positive the refusal
   would have had if phase 1 had kept a list of its own.
 - **A RECOGNISED FLAG ENDS AN UNRECOGNISED ONE'S REACH; a BARE token does not.**
