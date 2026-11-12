@@ -1,0 +1,4102 @@
+// A STACK OF COUNT-REDUCING RINGS (issue #192, follow-up) — GENERATED
+// by make_reducing_stack.py --stages 2 --notch 0.14 --radii 0.5 1.1 1.6 2.6 3.8 10.0 --stem reducing_stack
+// beside this file. Do not hand-edit; re-run that command.
+//
+// 2 stages, folds 8/4, 92 blocks. The body carries 192 intervals and
+// the far field 48, halving at each stage.
+{
+  "format_version": 1,
+  "corners": [
+    {
+      "id": "n0_0",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 3,
+      "t": 0.625
+    },
+    {
+      "id": "n0_1",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 3,
+      "t": 0.75
+    },
+    {
+      "id": "n0_2",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 3,
+      "t": 0.875
+    },
+    {
+      "id": "n0_3",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 0,
+      "t": 0.0
+    },
+    {
+      "id": "n0_4",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 0,
+      "t": 0.125
+    },
+    {
+      "id": "n0_5",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 0,
+      "t": 0.25
+    },
+    {
+      "id": "n0_6",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 0,
+      "t": 0.375
+    },
+    {
+      "id": "n0_7",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 0,
+      "t": 0.5
+    },
+    {
+      "id": "n0_8",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 0,
+      "t": 0.625
+    },
+    {
+      "id": "n0_9",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 0,
+      "t": 0.75
+    },
+    {
+      "id": "n0_10",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 0,
+      "t": 0.875
+    },
+    {
+      "id": "n0_11",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 1,
+      "t": 0.0
+    },
+    {
+      "id": "n0_12",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 1,
+      "t": 0.125
+    },
+    {
+      "id": "n0_13",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 1,
+      "t": 0.25
+    },
+    {
+      "id": "n0_14",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 1,
+      "t": 0.375
+    },
+    {
+      "id": "n0_15",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 1,
+      "t": 0.5
+    },
+    {
+      "id": "n0_16",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 1,
+      "t": 0.625
+    },
+    {
+      "id": "n0_17",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 1,
+      "t": 0.75
+    },
+    {
+      "id": "n0_18",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 1,
+      "t": 0.875
+    },
+    {
+      "id": "n0_19",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 2,
+      "t": 0.0
+    },
+    {
+      "id": "n0_20",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 2,
+      "t": 0.125
+    },
+    {
+      "id": "n0_21",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 2,
+      "t": 0.25
+    },
+    {
+      "id": "n0_22",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 2,
+      "t": 0.375
+    },
+    {
+      "id": "n0_23",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 2,
+      "t": 0.5
+    },
+    {
+      "id": "n0_24",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 2,
+      "t": 0.625
+    },
+    {
+      "id": "n0_25",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 2,
+      "t": 0.75
+    },
+    {
+      "id": "n0_26",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 2,
+      "t": 0.875
+    },
+    {
+      "id": "n0_27",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 3,
+      "t": 0.0
+    },
+    {
+      "id": "n0_28",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 3,
+      "t": 0.125
+    },
+    {
+      "id": "n0_29",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 3,
+      "t": 0.25
+    },
+    {
+      "id": "n0_30",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 3,
+      "t": 0.375
+    },
+    {
+      "id": "n0_31",
+      "kind": "on_geometry",
+      "geom": "circle_body.dat",
+      "seg": 3,
+      "t": 0.5
+    },
+    {
+      "id": "n1_0",
+      "kind": "free",
+      "xy": [
+        0.914616573533,
+        -0.611127256322
+      ]
+    },
+    {
+      "id": "n1_1",
+      "kind": "free",
+      "xy": [
+        0.873990037756,
+        -0.362018527017
+      ]
+    },
+    {
+      "id": "n1_2",
+      "kind": "free",
+      "xy": [
+        1.078863808444,
+        -0.214599354218
+      ]
+    },
+    {
+      "id": "n1_3",
+      "kind": "free",
+      "xy": [
+        1.1,
+        0.0
+      ]
+    },
+    {
+      "id": "n1_4",
+      "kind": "free",
+      "xy": [
+        1.078863808444,
+        0.214599354218
+      ]
+    },
+    {
+      "id": "n1_5",
+      "kind": "free",
+      "xy": [
+        0.873990037756,
+        0.362018527017
+      ]
+    },
+    {
+      "id": "n1_6",
+      "kind": "free",
+      "xy": [
+        0.914616573533,
+        0.611127256322
+      ]
+    },
+    {
+      "id": "n1_7",
+      "kind": "free",
+      "xy": [
+        0.777817459305,
+        0.777817459305
+      ]
+    },
+    {
+      "id": "n1_8",
+      "kind": "free",
+      "xy": [
+        0.611127256322,
+        0.914616573533
+      ]
+    },
+    {
+      "id": "n1_9",
+      "kind": "free",
+      "xy": [
+        0.362018527017,
+        0.873990037756
+      ]
+    },
+    {
+      "id": "n1_10",
+      "kind": "free",
+      "xy": [
+        0.214599354218,
+        1.078863808444
+      ]
+    },
+    {
+      "id": "n1_11",
+      "kind": "free",
+      "xy": [
+        0.0,
+        1.1
+      ]
+    },
+    {
+      "id": "n1_12",
+      "kind": "free",
+      "xy": [
+        -0.214599354218,
+        1.078863808444
+      ]
+    },
+    {
+      "id": "n1_13",
+      "kind": "free",
+      "xy": [
+        -0.362018527017,
+        0.873990037756
+      ]
+    },
+    {
+      "id": "n1_14",
+      "kind": "free",
+      "xy": [
+        -0.611127256322,
+        0.914616573533
+      ]
+    },
+    {
+      "id": "n1_15",
+      "kind": "free",
+      "xy": [
+        -0.777817459305,
+        0.777817459305
+      ]
+    },
+    {
+      "id": "n1_16",
+      "kind": "free",
+      "xy": [
+        -0.914616573533,
+        0.611127256322
+      ]
+    },
+    {
+      "id": "n1_17",
+      "kind": "free",
+      "xy": [
+        -0.873990037756,
+        0.362018527017
+      ]
+    },
+    {
+      "id": "n1_18",
+      "kind": "free",
+      "xy": [
+        -1.078863808444,
+        0.214599354218
+      ]
+    },
+    {
+      "id": "n1_19",
+      "kind": "free",
+      "xy": [
+        -1.1,
+        0.0
+      ]
+    },
+    {
+      "id": "n1_20",
+      "kind": "free",
+      "xy": [
+        -1.078863808444,
+        -0.214599354218
+      ]
+    },
+    {
+      "id": "n1_21",
+      "kind": "free",
+      "xy": [
+        -0.873990037756,
+        -0.362018527017
+      ]
+    },
+    {
+      "id": "n1_22",
+      "kind": "free",
+      "xy": [
+        -0.914616573533,
+        -0.611127256322
+      ]
+    },
+    {
+      "id": "n1_23",
+      "kind": "free",
+      "xy": [
+        -0.777817459305,
+        -0.777817459305
+      ]
+    },
+    {
+      "id": "n1_24",
+      "kind": "free",
+      "xy": [
+        -0.611127256322,
+        -0.914616573533
+      ]
+    },
+    {
+      "id": "n1_25",
+      "kind": "free",
+      "xy": [
+        -0.362018527017,
+        -0.873990037756
+      ]
+    },
+    {
+      "id": "n1_26",
+      "kind": "free",
+      "xy": [
+        -0.214599354218,
+        -1.078863808444
+      ]
+    },
+    {
+      "id": "n1_27",
+      "kind": "free",
+      "xy": [
+        -0.0,
+        -1.1
+      ]
+    },
+    {
+      "id": "n1_28",
+      "kind": "free",
+      "xy": [
+        0.214599354218,
+        -1.078863808444
+      ]
+    },
+    {
+      "id": "n1_29",
+      "kind": "free",
+      "xy": [
+        0.362018527017,
+        -0.873990037756
+      ]
+    },
+    {
+      "id": "n1_30",
+      "kind": "free",
+      "xy": [
+        0.611127256322,
+        -0.914616573533
+      ]
+    },
+    {
+      "id": "n1_31",
+      "kind": "free",
+      "xy": [
+        0.777817459305,
+        -0.777817459305
+      ]
+    },
+    {
+      "id": "n2_0",
+      "kind": "free",
+      "xy": [
+        1.478207252018,
+        -0.612293491784
+      ]
+    },
+    {
+      "id": "n2_1",
+      "kind": "free",
+      "xy": [
+        1.6,
+        0.0
+      ]
+    },
+    {
+      "id": "n2_2",
+      "kind": "free",
+      "xy": [
+        1.478207252018,
+        0.612293491784
+      ]
+    },
+    {
+      "id": "n2_3",
+      "kind": "free",
+      "xy": [
+        1.131370849898,
+        1.131370849898
+      ]
+    },
+    {
+      "id": "n2_4",
+      "kind": "free",
+      "xy": [
+        0.612293491784,
+        1.478207252018
+      ]
+    },
+    {
+      "id": "n2_5",
+      "kind": "free",
+      "xy": [
+        0.0,
+        1.6
+      ]
+    },
+    {
+      "id": "n2_6",
+      "kind": "free",
+      "xy": [
+        -0.612293491784,
+        1.478207252018
+      ]
+    },
+    {
+      "id": "n2_7",
+      "kind": "free",
+      "xy": [
+        -1.131370849898,
+        1.131370849898
+      ]
+    },
+    {
+      "id": "n2_8",
+      "kind": "free",
+      "xy": [
+        -1.478207252018,
+        0.612293491784
+      ]
+    },
+    {
+      "id": "n2_9",
+      "kind": "free",
+      "xy": [
+        -1.6,
+        0.0
+      ]
+    },
+    {
+      "id": "n2_10",
+      "kind": "free",
+      "xy": [
+        -1.478207252018,
+        -0.612293491784
+      ]
+    },
+    {
+      "id": "n2_11",
+      "kind": "free",
+      "xy": [
+        -1.131370849898,
+        -1.131370849898
+      ]
+    },
+    {
+      "id": "n2_12",
+      "kind": "free",
+      "xy": [
+        -0.612293491784,
+        -1.478207252018
+      ]
+    },
+    {
+      "id": "n2_13",
+      "kind": "free",
+      "xy": [
+        -0.0,
+        -1.6
+      ]
+    },
+    {
+      "id": "n2_14",
+      "kind": "free",
+      "xy": [
+        0.612293491784,
+        -1.478207252018
+      ]
+    },
+    {
+      "id": "n2_15",
+      "kind": "free",
+      "xy": [
+        1.131370849898,
+        -1.131370849898
+      ]
+    },
+    {
+      "id": "n3_0",
+      "kind": "free",
+      "xy": [
+        2.402086784529,
+        -0.994976924149
+      ]
+    },
+    {
+      "id": "n3_1",
+      "kind": "free",
+      "xy": [
+        2.236,
+        0.0
+      ]
+    },
+    {
+      "id": "n3_2",
+      "kind": "free",
+      "xy": [
+        2.402086784529,
+        0.994976924149
+      ]
+    },
+    {
+      "id": "n3_3",
+      "kind": "free",
+      "xy": [
+        1.838477631085,
+        1.838477631085
+      ]
+    },
+    {
+      "id": "n3_4",
+      "kind": "free",
+      "xy": [
+        0.994976924149,
+        2.402086784529
+      ]
+    },
+    {
+      "id": "n3_5",
+      "kind": "free",
+      "xy": [
+        0.0,
+        2.236
+      ]
+    },
+    {
+      "id": "n3_6",
+      "kind": "free",
+      "xy": [
+        -0.994976924149,
+        2.402086784529
+      ]
+    },
+    {
+      "id": "n3_7",
+      "kind": "free",
+      "xy": [
+        -1.838477631085,
+        1.838477631085
+      ]
+    },
+    {
+      "id": "n3_8",
+      "kind": "free",
+      "xy": [
+        -2.402086784529,
+        0.994976924149
+      ]
+    },
+    {
+      "id": "n3_9",
+      "kind": "free",
+      "xy": [
+        -2.236,
+        0.0
+      ]
+    },
+    {
+      "id": "n3_10",
+      "kind": "free",
+      "xy": [
+        -2.402086784529,
+        -0.994976924149
+      ]
+    },
+    {
+      "id": "n3_11",
+      "kind": "free",
+      "xy": [
+        -1.838477631085,
+        -1.838477631085
+      ]
+    },
+    {
+      "id": "n3_12",
+      "kind": "free",
+      "xy": [
+        -0.994976924149,
+        -2.402086784529
+      ]
+    },
+    {
+      "id": "n3_13",
+      "kind": "free",
+      "xy": [
+        -0.0,
+        -2.236
+      ]
+    },
+    {
+      "id": "n3_14",
+      "kind": "free",
+      "xy": [
+        0.994976924149,
+        -2.402086784529
+      ]
+    },
+    {
+      "id": "n3_15",
+      "kind": "free",
+      "xy": [
+        1.838477631085,
+        -1.838477631085
+      ]
+    },
+    {
+      "id": "n4_0",
+      "kind": "free",
+      "xy": [
+        3.8,
+        0.0
+      ]
+    },
+    {
+      "id": "n4_1",
+      "kind": "free",
+      "xy": [
+        2.687005768509,
+        2.687005768509
+      ]
+    },
+    {
+      "id": "n4_2",
+      "kind": "free",
+      "xy": [
+        0.0,
+        3.8
+      ]
+    },
+    {
+      "id": "n4_3",
+      "kind": "free",
+      "xy": [
+        -2.687005768509,
+        2.687005768509
+      ]
+    },
+    {
+      "id": "n4_4",
+      "kind": "free",
+      "xy": [
+        -3.8,
+        0.0
+      ]
+    },
+    {
+      "id": "n4_5",
+      "kind": "free",
+      "xy": [
+        -2.687005768509,
+        -2.687005768509
+      ]
+    },
+    {
+      "id": "n4_6",
+      "kind": "free",
+      "xy": [
+        -0.0,
+        -3.8
+      ]
+    },
+    {
+      "id": "n4_7",
+      "kind": "free",
+      "xy": [
+        2.687005768509,
+        -2.687005768509
+      ]
+    },
+    {
+      "id": "n5_0",
+      "kind": "on_geometry",
+      "geom": "circle_farfield.dat",
+      "seg": 0,
+      "t": 0.0
+    },
+    {
+      "id": "n5_1",
+      "kind": "on_geometry",
+      "geom": "circle_farfield.dat",
+      "seg": 0,
+      "t": 0.5
+    },
+    {
+      "id": "n5_2",
+      "kind": "on_geometry",
+      "geom": "circle_farfield.dat",
+      "seg": 1,
+      "t": 0.0
+    },
+    {
+      "id": "n5_3",
+      "kind": "on_geometry",
+      "geom": "circle_farfield.dat",
+      "seg": 1,
+      "t": 0.5
+    },
+    {
+      "id": "n5_4",
+      "kind": "on_geometry",
+      "geom": "circle_farfield.dat",
+      "seg": 2,
+      "t": 0.0
+    },
+    {
+      "id": "n5_5",
+      "kind": "on_geometry",
+      "geom": "circle_farfield.dat",
+      "seg": 2,
+      "t": 0.5
+    },
+    {
+      "id": "n5_6",
+      "kind": "on_geometry",
+      "geom": "circle_farfield.dat",
+      "seg": 3,
+      "t": 0.0
+    },
+    {
+      "id": "n5_7",
+      "kind": "on_geometry",
+      "geom": "circle_farfield.dat",
+      "seg": 3,
+      "t": 0.5
+    }
+  ],
+  "edges": [
+    {
+      "id": "c0_0",
+      "corners": [
+        "n0_0",
+        "n0_1"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c0_1",
+      "corners": [
+        "n0_1",
+        "n0_2"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c0_2",
+      "corners": [
+        "n0_2",
+        "n0_3"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c0_3",
+      "corners": [
+        "n0_3",
+        "n0_4"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c0_4",
+      "corners": [
+        "n0_4",
+        "n0_5"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c0_5",
+      "corners": [
+        "n0_5",
+        "n0_6"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c0_6",
+      "corners": [
+        "n0_6",
+        "n0_7"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c0_7",
+      "corners": [
+        "n0_7",
+        "n0_8"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c0_8",
+      "corners": [
+        "n0_8",
+        "n0_9"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c0_9",
+      "corners": [
+        "n0_9",
+        "n0_10"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c0_10",
+      "corners": [
+        "n0_10",
+        "n0_11"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c0_11",
+      "corners": [
+        "n0_11",
+        "n0_12"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c0_12",
+      "corners": [
+        "n0_12",
+        "n0_13"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c0_13",
+      "corners": [
+        "n0_13",
+        "n0_14"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c0_14",
+      "corners": [
+        "n0_14",
+        "n0_15"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c0_15",
+      "corners": [
+        "n0_15",
+        "n0_16"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c0_16",
+      "corners": [
+        "n0_16",
+        "n0_17"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c0_17",
+      "corners": [
+        "n0_17",
+        "n0_18"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c0_18",
+      "corners": [
+        "n0_18",
+        "n0_19"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c0_19",
+      "corners": [
+        "n0_19",
+        "n0_20"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c0_20",
+      "corners": [
+        "n0_20",
+        "n0_21"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c0_21",
+      "corners": [
+        "n0_21",
+        "n0_22"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c0_22",
+      "corners": [
+        "n0_22",
+        "n0_23"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c0_23",
+      "corners": [
+        "n0_23",
+        "n0_24"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c0_24",
+      "corners": [
+        "n0_24",
+        "n0_25"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c0_25",
+      "corners": [
+        "n0_25",
+        "n0_26"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c0_26",
+      "corners": [
+        "n0_26",
+        "n0_27"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c0_27",
+      "corners": [
+        "n0_27",
+        "n0_28"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c0_28",
+      "corners": [
+        "n0_28",
+        "n0_29"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c0_29",
+      "corners": [
+        "n0_29",
+        "n0_30"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c0_30",
+      "corners": [
+        "n0_30",
+        "n0_31"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c0_31",
+      "corners": [
+        "n0_31",
+        "n0_0"
+      ],
+      "kind": "wall",
+      "count": 7,
+      "binding": {
+        "geom": "circle_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c1_0",
+      "corners": [
+        "n1_0",
+        "n1_1"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_1",
+      "corners": [
+        "n1_1",
+        "n1_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_2",
+      "corners": [
+        "n1_2",
+        "n1_3"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_3",
+      "corners": [
+        "n1_3",
+        "n1_4"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_4",
+      "corners": [
+        "n1_4",
+        "n1_5"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_5",
+      "corners": [
+        "n1_5",
+        "n1_6"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_6",
+      "corners": [
+        "n1_6",
+        "n1_7"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_7",
+      "corners": [
+        "n1_7",
+        "n1_8"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_8",
+      "corners": [
+        "n1_8",
+        "n1_9"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_9",
+      "corners": [
+        "n1_9",
+        "n1_10"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_10",
+      "corners": [
+        "n1_10",
+        "n1_11"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_11",
+      "corners": [
+        "n1_11",
+        "n1_12"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_12",
+      "corners": [
+        "n1_12",
+        "n1_13"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_13",
+      "corners": [
+        "n1_13",
+        "n1_14"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_14",
+      "corners": [
+        "n1_14",
+        "n1_15"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_15",
+      "corners": [
+        "n1_15",
+        "n1_16"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_16",
+      "corners": [
+        "n1_16",
+        "n1_17"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_17",
+      "corners": [
+        "n1_17",
+        "n1_18"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_18",
+      "corners": [
+        "n1_18",
+        "n1_19"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_19",
+      "corners": [
+        "n1_19",
+        "n1_20"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_20",
+      "corners": [
+        "n1_20",
+        "n1_21"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_21",
+      "corners": [
+        "n1_21",
+        "n1_22"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_22",
+      "corners": [
+        "n1_22",
+        "n1_23"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_23",
+      "corners": [
+        "n1_23",
+        "n1_24"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_24",
+      "corners": [
+        "n1_24",
+        "n1_25"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_25",
+      "corners": [
+        "n1_25",
+        "n1_26"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_26",
+      "corners": [
+        "n1_26",
+        "n1_27"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_27",
+      "corners": [
+        "n1_27",
+        "n1_28"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_28",
+      "corners": [
+        "n1_28",
+        "n1_29"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_29",
+      "corners": [
+        "n1_29",
+        "n1_30"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c1_30",
+      "corners": [
+        "n1_30",
+        "n1_31"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c1_31",
+      "corners": [
+        "n1_31",
+        "n1_0"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.1,
+        "b": 1.1,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_0",
+      "corners": [
+        "n2_0",
+        "n2_1"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_1",
+      "corners": [
+        "n2_1",
+        "n2_2"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_2",
+      "corners": [
+        "n2_2",
+        "n2_3"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_3",
+      "corners": [
+        "n2_3",
+        "n2_4"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_4",
+      "corners": [
+        "n2_4",
+        "n2_5"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_5",
+      "corners": [
+        "n2_5",
+        "n2_6"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_6",
+      "corners": [
+        "n2_6",
+        "n2_7"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_7",
+      "corners": [
+        "n2_7",
+        "n2_8"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_8",
+      "corners": [
+        "n2_8",
+        "n2_9"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_9",
+      "corners": [
+        "n2_9",
+        "n2_10"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_10",
+      "corners": [
+        "n2_10",
+        "n2_11"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_11",
+      "corners": [
+        "n2_11",
+        "n2_12"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_12",
+      "corners": [
+        "n2_12",
+        "n2_13"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_13",
+      "corners": [
+        "n2_13",
+        "n2_14"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_14",
+      "corners": [
+        "n2_14",
+        "n2_15"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c2_15",
+      "corners": [
+        "n2_15",
+        "n2_0"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 1.6,
+        "b": 1.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c3_0",
+      "corners": [
+        "n3_0",
+        "n3_1"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c3_1",
+      "corners": [
+        "n3_1",
+        "n3_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c3_2",
+      "corners": [
+        "n3_2",
+        "n3_3"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 2.6,
+        "b": 2.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c3_3",
+      "corners": [
+        "n3_3",
+        "n3_4"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 2.6,
+        "b": 2.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c3_4",
+      "corners": [
+        "n3_4",
+        "n3_5"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c3_5",
+      "corners": [
+        "n3_5",
+        "n3_6"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c3_6",
+      "corners": [
+        "n3_6",
+        "n3_7"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 2.6,
+        "b": 2.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c3_7",
+      "corners": [
+        "n3_7",
+        "n3_8"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 2.6,
+        "b": 2.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c3_8",
+      "corners": [
+        "n3_8",
+        "n3_9"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c3_9",
+      "corners": [
+        "n3_9",
+        "n3_10"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c3_10",
+      "corners": [
+        "n3_10",
+        "n3_11"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 2.6,
+        "b": 2.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c3_11",
+      "corners": [
+        "n3_11",
+        "n3_12"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 2.6,
+        "b": 2.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c3_12",
+      "corners": [
+        "n3_12",
+        "n3_13"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c3_13",
+      "corners": [
+        "n3_13",
+        "n3_14"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "c3_14",
+      "corners": [
+        "n3_14",
+        "n3_15"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 2.6,
+        "b": 2.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c3_15",
+      "corners": [
+        "n3_15",
+        "n3_0"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 2.6,
+        "b": 2.6,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c4_0",
+      "corners": [
+        "n4_0",
+        "n4_1"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.8,
+        "b": 3.8,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c4_1",
+      "corners": [
+        "n4_1",
+        "n4_2"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.8,
+        "b": 3.8,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c4_2",
+      "corners": [
+        "n4_2",
+        "n4_3"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.8,
+        "b": 3.8,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c4_3",
+      "corners": [
+        "n4_3",
+        "n4_4"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.8,
+        "b": 3.8,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c4_4",
+      "corners": [
+        "n4_4",
+        "n4_5"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.8,
+        "b": 3.8,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c4_5",
+      "corners": [
+        "n4_5",
+        "n4_6"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.8,
+        "b": 3.8,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c4_6",
+      "corners": [
+        "n4_6",
+        "n4_7"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.8,
+        "b": 3.8,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c4_7",
+      "corners": [
+        "n4_7",
+        "n4_0"
+      ],
+      "kind": "interface",
+      "curve": {
+        "kind": "ellipse",
+        "centre": [
+          0.0,
+          0.0
+        ],
+        "a": 3.8,
+        "b": 3.8,
+        "sweep": "ccw"
+      }
+    },
+    {
+      "id": "c5_0",
+      "corners": [
+        "n5_0",
+        "n5_1"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "circle_farfield.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c5_1",
+      "corners": [
+        "n5_1",
+        "n5_2"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "circle_farfield.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "c5_2",
+      "corners": [
+        "n5_2",
+        "n5_3"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "circle_farfield.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c5_3",
+      "corners": [
+        "n5_3",
+        "n5_4"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "circle_farfield.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "c5_4",
+      "corners": [
+        "n5_4",
+        "n5_5"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "circle_farfield.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c5_5",
+      "corners": [
+        "n5_5",
+        "n5_6"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "circle_farfield.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "c5_6",
+      "corners": [
+        "n5_6",
+        "n5_7"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "circle_farfield.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "c5_7",
+      "corners": [
+        "n5_7",
+        "n5_0"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "circle_farfield.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "r0_0",
+      "corners": [
+        "n0_0",
+        "n1_0"
+      ],
+      "kind": "interface",
+      "count": 25,
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_1",
+      "corners": [
+        "n0_1",
+        "n1_1"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_2",
+      "corners": [
+        "n0_2",
+        "n1_2"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_3",
+      "corners": [
+        "n0_3",
+        "n1_3"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_4",
+      "corners": [
+        "n0_4",
+        "n1_4"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_5",
+      "corners": [
+        "n0_5",
+        "n1_5"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_6",
+      "corners": [
+        "n0_6",
+        "n1_6"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_7",
+      "corners": [
+        "n0_7",
+        "n1_7"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_8",
+      "corners": [
+        "n0_8",
+        "n1_8"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_9",
+      "corners": [
+        "n0_9",
+        "n1_9"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_10",
+      "corners": [
+        "n0_10",
+        "n1_10"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_11",
+      "corners": [
+        "n0_11",
+        "n1_11"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_12",
+      "corners": [
+        "n0_12",
+        "n1_12"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_13",
+      "corners": [
+        "n0_13",
+        "n1_13"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_14",
+      "corners": [
+        "n0_14",
+        "n1_14"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_15",
+      "corners": [
+        "n0_15",
+        "n1_15"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_16",
+      "corners": [
+        "n0_16",
+        "n1_16"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_17",
+      "corners": [
+        "n0_17",
+        "n1_17"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_18",
+      "corners": [
+        "n0_18",
+        "n1_18"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_19",
+      "corners": [
+        "n0_19",
+        "n1_19"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_20",
+      "corners": [
+        "n0_20",
+        "n1_20"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_21",
+      "corners": [
+        "n0_21",
+        "n1_21"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_22",
+      "corners": [
+        "n0_22",
+        "n1_22"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_23",
+      "corners": [
+        "n0_23",
+        "n1_23"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_24",
+      "corners": [
+        "n0_24",
+        "n1_24"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_25",
+      "corners": [
+        "n0_25",
+        "n1_25"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_26",
+      "corners": [
+        "n0_26",
+        "n1_26"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_27",
+      "corners": [
+        "n0_27",
+        "n1_27"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_28",
+      "corners": [
+        "n0_28",
+        "n1_28"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_29",
+      "corners": [
+        "n0_29",
+        "n1_29"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_30",
+      "corners": [
+        "n0_30",
+        "n1_30"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r0_31",
+      "corners": [
+        "n0_31",
+        "n1_31"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "rA1_0",
+      "corners": [
+        "n1_0",
+        "n2_0"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB1_0",
+      "corners": [
+        "n1_2",
+        "n2_0"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD1_0",
+      "corners": [
+        "n1_3",
+        "n2_1"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA1_1",
+      "corners": [
+        "n1_4",
+        "n2_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB1_1",
+      "corners": [
+        "n1_6",
+        "n2_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD1_1",
+      "corners": [
+        "n1_7",
+        "n2_3"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA1_2",
+      "corners": [
+        "n1_8",
+        "n2_4"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB1_2",
+      "corners": [
+        "n1_10",
+        "n2_4"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD1_2",
+      "corners": [
+        "n1_11",
+        "n2_5"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA1_3",
+      "corners": [
+        "n1_12",
+        "n2_6"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB1_3",
+      "corners": [
+        "n1_14",
+        "n2_6"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD1_3",
+      "corners": [
+        "n1_15",
+        "n2_7"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA1_4",
+      "corners": [
+        "n1_16",
+        "n2_8"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB1_4",
+      "corners": [
+        "n1_18",
+        "n2_8"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD1_4",
+      "corners": [
+        "n1_19",
+        "n2_9"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA1_5",
+      "corners": [
+        "n1_20",
+        "n2_10"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB1_5",
+      "corners": [
+        "n1_22",
+        "n2_10"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD1_5",
+      "corners": [
+        "n1_23",
+        "n2_11"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA1_6",
+      "corners": [
+        "n1_24",
+        "n2_12"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB1_6",
+      "corners": [
+        "n1_26",
+        "n2_12"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD1_6",
+      "corners": [
+        "n1_27",
+        "n2_13"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA1_7",
+      "corners": [
+        "n1_28",
+        "n2_14"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB1_7",
+      "corners": [
+        "n1_30",
+        "n2_14"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD1_7",
+      "corners": [
+        "n1_31",
+        "n2_15"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_0",
+      "corners": [
+        "n2_0",
+        "n3_0"
+      ],
+      "kind": "interface",
+      "count": 9
+    },
+    {
+      "id": "r2_1",
+      "corners": [
+        "n2_1",
+        "n3_1"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_2",
+      "corners": [
+        "n2_2",
+        "n3_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_3",
+      "corners": [
+        "n2_3",
+        "n3_3"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_4",
+      "corners": [
+        "n2_4",
+        "n3_4"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_5",
+      "corners": [
+        "n2_5",
+        "n3_5"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_6",
+      "corners": [
+        "n2_6",
+        "n3_6"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_7",
+      "corners": [
+        "n2_7",
+        "n3_7"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_8",
+      "corners": [
+        "n2_8",
+        "n3_8"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_9",
+      "corners": [
+        "n2_9",
+        "n3_9"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_10",
+      "corners": [
+        "n2_10",
+        "n3_10"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_11",
+      "corners": [
+        "n2_11",
+        "n3_11"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_12",
+      "corners": [
+        "n2_12",
+        "n3_12"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_13",
+      "corners": [
+        "n2_13",
+        "n3_13"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_14",
+      "corners": [
+        "n2_14",
+        "n3_14"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r2_15",
+      "corners": [
+        "n2_15",
+        "n3_15"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA3_0",
+      "corners": [
+        "n3_0",
+        "n4_0"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB3_0",
+      "corners": [
+        "n3_2",
+        "n4_0"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD3_0",
+      "corners": [
+        "n3_3",
+        "n4_1"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA3_1",
+      "corners": [
+        "n3_4",
+        "n4_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB3_1",
+      "corners": [
+        "n3_6",
+        "n4_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD3_1",
+      "corners": [
+        "n3_7",
+        "n4_3"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA3_2",
+      "corners": [
+        "n3_8",
+        "n4_4"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB3_2",
+      "corners": [
+        "n3_10",
+        "n4_4"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD3_2",
+      "corners": [
+        "n3_11",
+        "n4_5"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rA3_3",
+      "corners": [
+        "n3_12",
+        "n4_6"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rB3_3",
+      "corners": [
+        "n3_14",
+        "n4_6"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "rD3_3",
+      "corners": [
+        "n3_15",
+        "n4_7"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r4_0",
+      "corners": [
+        "n4_0",
+        "n5_0"
+      ],
+      "kind": "interface",
+      "count": 7
+    },
+    {
+      "id": "r4_1",
+      "corners": [
+        "n4_1",
+        "n5_1"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r4_2",
+      "corners": [
+        "n4_2",
+        "n5_2"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r4_3",
+      "corners": [
+        "n4_3",
+        "n5_3"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r4_4",
+      "corners": [
+        "n4_4",
+        "n5_4"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r4_5",
+      "corners": [
+        "n4_5",
+        "n5_5"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r4_6",
+      "corners": [
+        "n4_6",
+        "n5_6"
+      ],
+      "kind": "interface"
+    },
+    {
+      "id": "r4_7",
+      "corners": [
+        "n4_7",
+        "n5_7"
+      ],
+      "kind": "interface"
+    }
+  ],
+  "blocks": [
+    {
+      "id": "B0_0",
+      "edges": [
+        "r0_0",
+        "c1_0",
+        "r0_1",
+        "c0_0"
+      ]
+    },
+    {
+      "id": "B0_1",
+      "edges": [
+        "r0_1",
+        "c1_1",
+        "r0_2",
+        "c0_1"
+      ]
+    },
+    {
+      "id": "B0_2",
+      "edges": [
+        "r0_2",
+        "c1_2",
+        "r0_3",
+        "c0_2"
+      ]
+    },
+    {
+      "id": "B0_3",
+      "edges": [
+        "r0_3",
+        "c1_3",
+        "r0_4",
+        "c0_3"
+      ]
+    },
+    {
+      "id": "B0_4",
+      "edges": [
+        "r0_4",
+        "c1_4",
+        "r0_5",
+        "c0_4"
+      ]
+    },
+    {
+      "id": "B0_5",
+      "edges": [
+        "r0_5",
+        "c1_5",
+        "r0_6",
+        "c0_5"
+      ]
+    },
+    {
+      "id": "B0_6",
+      "edges": [
+        "r0_6",
+        "c1_6",
+        "r0_7",
+        "c0_6"
+      ]
+    },
+    {
+      "id": "B0_7",
+      "edges": [
+        "r0_7",
+        "c1_7",
+        "r0_8",
+        "c0_7"
+      ]
+    },
+    {
+      "id": "B0_8",
+      "edges": [
+        "r0_8",
+        "c1_8",
+        "r0_9",
+        "c0_8"
+      ]
+    },
+    {
+      "id": "B0_9",
+      "edges": [
+        "r0_9",
+        "c1_9",
+        "r0_10",
+        "c0_9"
+      ]
+    },
+    {
+      "id": "B0_10",
+      "edges": [
+        "r0_10",
+        "c1_10",
+        "r0_11",
+        "c0_10"
+      ]
+    },
+    {
+      "id": "B0_11",
+      "edges": [
+        "r0_11",
+        "c1_11",
+        "r0_12",
+        "c0_11"
+      ]
+    },
+    {
+      "id": "B0_12",
+      "edges": [
+        "r0_12",
+        "c1_12",
+        "r0_13",
+        "c0_12"
+      ]
+    },
+    {
+      "id": "B0_13",
+      "edges": [
+        "r0_13",
+        "c1_13",
+        "r0_14",
+        "c0_13"
+      ]
+    },
+    {
+      "id": "B0_14",
+      "edges": [
+        "r0_14",
+        "c1_14",
+        "r0_15",
+        "c0_14"
+      ]
+    },
+    {
+      "id": "B0_15",
+      "edges": [
+        "r0_15",
+        "c1_15",
+        "r0_16",
+        "c0_15"
+      ]
+    },
+    {
+      "id": "B0_16",
+      "edges": [
+        "r0_16",
+        "c1_16",
+        "r0_17",
+        "c0_16"
+      ]
+    },
+    {
+      "id": "B0_17",
+      "edges": [
+        "r0_17",
+        "c1_17",
+        "r0_18",
+        "c0_17"
+      ]
+    },
+    {
+      "id": "B0_18",
+      "edges": [
+        "r0_18",
+        "c1_18",
+        "r0_19",
+        "c0_18"
+      ]
+    },
+    {
+      "id": "B0_19",
+      "edges": [
+        "r0_19",
+        "c1_19",
+        "r0_20",
+        "c0_19"
+      ]
+    },
+    {
+      "id": "B0_20",
+      "edges": [
+        "r0_20",
+        "c1_20",
+        "r0_21",
+        "c0_20"
+      ]
+    },
+    {
+      "id": "B0_21",
+      "edges": [
+        "r0_21",
+        "c1_21",
+        "r0_22",
+        "c0_21"
+      ]
+    },
+    {
+      "id": "B0_22",
+      "edges": [
+        "r0_22",
+        "c1_22",
+        "r0_23",
+        "c0_22"
+      ]
+    },
+    {
+      "id": "B0_23",
+      "edges": [
+        "r0_23",
+        "c1_23",
+        "r0_24",
+        "c0_23"
+      ]
+    },
+    {
+      "id": "B0_24",
+      "edges": [
+        "r0_24",
+        "c1_24",
+        "r0_25",
+        "c0_24"
+      ]
+    },
+    {
+      "id": "B0_25",
+      "edges": [
+        "r0_25",
+        "c1_25",
+        "r0_26",
+        "c0_25"
+      ]
+    },
+    {
+      "id": "B0_26",
+      "edges": [
+        "r0_26",
+        "c1_26",
+        "r0_27",
+        "c0_26"
+      ]
+    },
+    {
+      "id": "B0_27",
+      "edges": [
+        "r0_27",
+        "c1_27",
+        "r0_28",
+        "c0_27"
+      ]
+    },
+    {
+      "id": "B0_28",
+      "edges": [
+        "r0_28",
+        "c1_28",
+        "r0_29",
+        "c0_28"
+      ]
+    },
+    {
+      "id": "B0_29",
+      "edges": [
+        "r0_29",
+        "c1_29",
+        "r0_30",
+        "c0_29"
+      ]
+    },
+    {
+      "id": "B0_30",
+      "edges": [
+        "r0_30",
+        "c1_30",
+        "r0_31",
+        "c0_30"
+      ]
+    },
+    {
+      "id": "B0_31",
+      "edges": [
+        "r0_31",
+        "c1_31",
+        "r0_0",
+        "c0_31"
+      ]
+    },
+    {
+      "id": "Q1_0_0",
+      "edges": [
+        "rB1_0",
+        "c2_0",
+        "rD1_0",
+        "c1_2"
+      ]
+    },
+    {
+      "id": "Q1_0_1",
+      "edges": [
+        "rD1_0",
+        "c2_1",
+        "rA1_1",
+        "c1_3"
+      ]
+    },
+    {
+      "id": "C1_0",
+      "edges": [
+        "rA1_0",
+        "rB1_0",
+        "c1_1",
+        "c1_0"
+      ]
+    },
+    {
+      "id": "Q1_1_0",
+      "edges": [
+        "rB1_1",
+        "c2_2",
+        "rD1_1",
+        "c1_6"
+      ]
+    },
+    {
+      "id": "Q1_1_1",
+      "edges": [
+        "rD1_1",
+        "c2_3",
+        "rA1_2",
+        "c1_7"
+      ]
+    },
+    {
+      "id": "C1_1",
+      "edges": [
+        "rA1_1",
+        "rB1_1",
+        "c1_5",
+        "c1_4"
+      ]
+    },
+    {
+      "id": "Q1_2_0",
+      "edges": [
+        "rB1_2",
+        "c2_4",
+        "rD1_2",
+        "c1_10"
+      ]
+    },
+    {
+      "id": "Q1_2_1",
+      "edges": [
+        "rD1_2",
+        "c2_5",
+        "rA1_3",
+        "c1_11"
+      ]
+    },
+    {
+      "id": "C1_2",
+      "edges": [
+        "rA1_2",
+        "rB1_2",
+        "c1_9",
+        "c1_8"
+      ]
+    },
+    {
+      "id": "Q1_3_0",
+      "edges": [
+        "rB1_3",
+        "c2_6",
+        "rD1_3",
+        "c1_14"
+      ]
+    },
+    {
+      "id": "Q1_3_1",
+      "edges": [
+        "rD1_3",
+        "c2_7",
+        "rA1_4",
+        "c1_15"
+      ]
+    },
+    {
+      "id": "C1_3",
+      "edges": [
+        "rA1_3",
+        "rB1_3",
+        "c1_13",
+        "c1_12"
+      ]
+    },
+    {
+      "id": "Q1_4_0",
+      "edges": [
+        "rB1_4",
+        "c2_8",
+        "rD1_4",
+        "c1_18"
+      ]
+    },
+    {
+      "id": "Q1_4_1",
+      "edges": [
+        "rD1_4",
+        "c2_9",
+        "rA1_5",
+        "c1_19"
+      ]
+    },
+    {
+      "id": "C1_4",
+      "edges": [
+        "rA1_4",
+        "rB1_4",
+        "c1_17",
+        "c1_16"
+      ]
+    },
+    {
+      "id": "Q1_5_0",
+      "edges": [
+        "rB1_5",
+        "c2_10",
+        "rD1_5",
+        "c1_22"
+      ]
+    },
+    {
+      "id": "Q1_5_1",
+      "edges": [
+        "rD1_5",
+        "c2_11",
+        "rA1_6",
+        "c1_23"
+      ]
+    },
+    {
+      "id": "C1_5",
+      "edges": [
+        "rA1_5",
+        "rB1_5",
+        "c1_21",
+        "c1_20"
+      ]
+    },
+    {
+      "id": "Q1_6_0",
+      "edges": [
+        "rB1_6",
+        "c2_12",
+        "rD1_6",
+        "c1_26"
+      ]
+    },
+    {
+      "id": "Q1_6_1",
+      "edges": [
+        "rD1_6",
+        "c2_13",
+        "rA1_7",
+        "c1_27"
+      ]
+    },
+    {
+      "id": "C1_6",
+      "edges": [
+        "rA1_6",
+        "rB1_6",
+        "c1_25",
+        "c1_24"
+      ]
+    },
+    {
+      "id": "Q1_7_0",
+      "edges": [
+        "rB1_7",
+        "c2_14",
+        "rD1_7",
+        "c1_30"
+      ]
+    },
+    {
+      "id": "Q1_7_1",
+      "edges": [
+        "rD1_7",
+        "c2_15",
+        "rA1_0",
+        "c1_31"
+      ]
+    },
+    {
+      "id": "C1_7",
+      "edges": [
+        "rA1_7",
+        "rB1_7",
+        "c1_29",
+        "c1_28"
+      ]
+    },
+    {
+      "id": "B2_0",
+      "edges": [
+        "r2_0",
+        "c3_0",
+        "r2_1",
+        "c2_0"
+      ]
+    },
+    {
+      "id": "B2_1",
+      "edges": [
+        "r2_1",
+        "c3_1",
+        "r2_2",
+        "c2_1"
+      ]
+    },
+    {
+      "id": "B2_2",
+      "edges": [
+        "r2_2",
+        "c3_2",
+        "r2_3",
+        "c2_2"
+      ]
+    },
+    {
+      "id": "B2_3",
+      "edges": [
+        "r2_3",
+        "c3_3",
+        "r2_4",
+        "c2_3"
+      ]
+    },
+    {
+      "id": "B2_4",
+      "edges": [
+        "r2_4",
+        "c3_4",
+        "r2_5",
+        "c2_4"
+      ]
+    },
+    {
+      "id": "B2_5",
+      "edges": [
+        "r2_5",
+        "c3_5",
+        "r2_6",
+        "c2_5"
+      ]
+    },
+    {
+      "id": "B2_6",
+      "edges": [
+        "r2_6",
+        "c3_6",
+        "r2_7",
+        "c2_6"
+      ]
+    },
+    {
+      "id": "B2_7",
+      "edges": [
+        "r2_7",
+        "c3_7",
+        "r2_8",
+        "c2_7"
+      ]
+    },
+    {
+      "id": "B2_8",
+      "edges": [
+        "r2_8",
+        "c3_8",
+        "r2_9",
+        "c2_8"
+      ]
+    },
+    {
+      "id": "B2_9",
+      "edges": [
+        "r2_9",
+        "c3_9",
+        "r2_10",
+        "c2_9"
+      ]
+    },
+    {
+      "id": "B2_10",
+      "edges": [
+        "r2_10",
+        "c3_10",
+        "r2_11",
+        "c2_10"
+      ]
+    },
+    {
+      "id": "B2_11",
+      "edges": [
+        "r2_11",
+        "c3_11",
+        "r2_12",
+        "c2_11"
+      ]
+    },
+    {
+      "id": "B2_12",
+      "edges": [
+        "r2_12",
+        "c3_12",
+        "r2_13",
+        "c2_12"
+      ]
+    },
+    {
+      "id": "B2_13",
+      "edges": [
+        "r2_13",
+        "c3_13",
+        "r2_14",
+        "c2_13"
+      ]
+    },
+    {
+      "id": "B2_14",
+      "edges": [
+        "r2_14",
+        "c3_14",
+        "r2_15",
+        "c2_14"
+      ]
+    },
+    {
+      "id": "B2_15",
+      "edges": [
+        "r2_15",
+        "c3_15",
+        "r2_0",
+        "c2_15"
+      ]
+    },
+    {
+      "id": "Q3_0_0",
+      "edges": [
+        "rB3_0",
+        "c4_0",
+        "rD3_0",
+        "c3_2"
+      ]
+    },
+    {
+      "id": "Q3_0_1",
+      "edges": [
+        "rD3_0",
+        "c4_1",
+        "rA3_1",
+        "c3_3"
+      ]
+    },
+    {
+      "id": "C3_0",
+      "edges": [
+        "rA3_0",
+        "rB3_0",
+        "c3_1",
+        "c3_0"
+      ]
+    },
+    {
+      "id": "Q3_1_0",
+      "edges": [
+        "rB3_1",
+        "c4_2",
+        "rD3_1",
+        "c3_6"
+      ]
+    },
+    {
+      "id": "Q3_1_1",
+      "edges": [
+        "rD3_1",
+        "c4_3",
+        "rA3_2",
+        "c3_7"
+      ]
+    },
+    {
+      "id": "C3_1",
+      "edges": [
+        "rA3_1",
+        "rB3_1",
+        "c3_5",
+        "c3_4"
+      ]
+    },
+    {
+      "id": "Q3_2_0",
+      "edges": [
+        "rB3_2",
+        "c4_4",
+        "rD3_2",
+        "c3_10"
+      ]
+    },
+    {
+      "id": "Q3_2_1",
+      "edges": [
+        "rD3_2",
+        "c4_5",
+        "rA3_3",
+        "c3_11"
+      ]
+    },
+    {
+      "id": "C3_2",
+      "edges": [
+        "rA3_2",
+        "rB3_2",
+        "c3_9",
+        "c3_8"
+      ]
+    },
+    {
+      "id": "Q3_3_0",
+      "edges": [
+        "rB3_3",
+        "c4_6",
+        "rD3_3",
+        "c3_14"
+      ]
+    },
+    {
+      "id": "Q3_3_1",
+      "edges": [
+        "rD3_3",
+        "c4_7",
+        "rA3_0",
+        "c3_15"
+      ]
+    },
+    {
+      "id": "C3_3",
+      "edges": [
+        "rA3_3",
+        "rB3_3",
+        "c3_13",
+        "c3_12"
+      ]
+    },
+    {
+      "id": "B4_0",
+      "edges": [
+        "r4_0",
+        "c5_0",
+        "r4_1",
+        "c4_0"
+      ]
+    },
+    {
+      "id": "B4_1",
+      "edges": [
+        "r4_1",
+        "c5_1",
+        "r4_2",
+        "c4_1"
+      ]
+    },
+    {
+      "id": "B4_2",
+      "edges": [
+        "r4_2",
+        "c5_2",
+        "r4_3",
+        "c4_2"
+      ]
+    },
+    {
+      "id": "B4_3",
+      "edges": [
+        "r4_3",
+        "c5_3",
+        "r4_4",
+        "c4_3"
+      ]
+    },
+    {
+      "id": "B4_4",
+      "edges": [
+        "r4_4",
+        "c5_4",
+        "r4_5",
+        "c4_4"
+      ]
+    },
+    {
+      "id": "B4_5",
+      "edges": [
+        "r4_5",
+        "c5_5",
+        "r4_6",
+        "c4_5"
+      ]
+    },
+    {
+      "id": "B4_6",
+      "edges": [
+        "r4_6",
+        "c5_6",
+        "r4_7",
+        "c4_6"
+      ]
+    },
+    {
+      "id": "B4_7",
+      "edges": [
+        "r4_7",
+        "c5_7",
+        "r4_0",
+        "c4_7"
+      ]
+    }
+  ]
+}

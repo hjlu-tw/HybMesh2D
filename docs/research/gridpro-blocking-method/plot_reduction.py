@@ -56,30 +56,48 @@ def curve(path, radii):
     return [np.nan if n > SPIKE else n for n in out]
 
 
+# label -> (lo, hi, style). A curve not listed here is drawn over the whole
+# domain in the next free colour.
+KNOWN = {
+    "shipped 4-block O-grid (96 -> 96 nodes)": (0.55, 9.5, "k--"),
+    "smallest reducing annulus (72 -> 48)": (1.02, 2.95, "C1-"),
+    "reducing O-grid, 4 folds (192 -> 96)": (0.55, 9.5, "C0-"),
+    "reducing STACK, 2 stages (192 -> 48)": (0.55, 9.5, "C2-"),
+    "reducing STACK, 3 stages (192 -> 24)": (0.55, 9.5, "C3-"),
+}
+
+
 def main():
-    ra, ro, og = sys.argv[1], sys.argv[2], sys.argv[3]
-    fig, ax = plt.subplots(figsize=(7.2, 4.4))
-    for path, label, lo, hi, style in (
-            (og, "shipped 4-block O-grid (96 -> 96 nodes)", 0.55, 9.5, "k--"),
-            (ra, "smallest reducing annulus (72 -> 48)", 1.02, 2.95, "C1-o"),
-            (ro, "reducing O-grid, 4 folds (192 -> 96)", 0.55, 9.5, "C0-o")):
+    args = [a for a in sys.argv[1:] if not a.startswith("--out=")]
+    out = next((a[6:] for a in sys.argv[1:] if a.startswith("--out=")),
+               os.path.join(HERE, "reduction_termination.png"))
+    pairs = []
+    for a in args:
+        label, _, path = a.rpartition("=")
+        pairs.append((path, label or path))
+    fig, ax = plt.subplots(figsize=(7.6, 4.6))
+    for i, (path, label) in enumerate(pairs):
+        lo, hi, style = KNOWN.get(label, (0.55, 9.5, "C%d-" % (4 + i)))
         # Dense, and deliberately INCLUDING the two interface radii rather than
         # stepping over them: `curve` blanks them and the dotted lines say why.
         radii = np.unique(np.r_[np.geomspace(lo, hi, 400), INTERFACE_R])
         radii = radii[(radii >= lo) & (radii <= hi)]
-        ax.plot(radii, curve(path, radii), style, ms=2, lw=1.1, label=label)
+        ax.plot(radii, curve(path, radii), style, lw=1.2, label=label)
     for r in INTERFACE_R:
         ax.axvline(r, color="0.6", ls=":", lw=1)
-    ax.text(0.015, 0.06, "dotted: the two ring interfaces, where N(r) counts "
-            "the whole circle (109 and 105) and means nothing",
+    ax.text(0.015, 0.05, "dotted: the SINGLE-RING case's two interfaces, where "
+            "N(r) counts the whole circle (109, 105) and means nothing. Every "
+            "stack has its own such radii, not drawn.",
             transform=ax.transAxes, fontsize=7, color="0.4")
     ax.set_xscale("log")
     ax.set_xlabel("radius r (the body is at 0.5, the far field at 10)")
     ax.set_ylabel("N(r): block-partition lines crossing the circle")
-    ax.set_title("A terminating blocking FALLS — and rises once first. #192 step 2")
+    ax.set_yscale("log"); ax.set_yticks([4, 8, 16, 32, 64])
+    ax.set_yticklabels(["4", "8", "16", "32", "64"])
+    ax.set_title("A terminating blocking FALLS. One ring is a step; a STACK is "
+                 "a staircase")
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8)
-    out = os.path.join(HERE, "reduction_termination.png")
     fig.tight_layout()
     fig.savefig(out, dpi=130)
     print("wrote %s" % out)

@@ -1215,6 +1215,42 @@ spacing rather than a resolution. **It was not chased.** Per #192 step 4, **no r
 C-grid leaves `docs/research/`**; the reducing O-GRID is the one that passed, and it is the one
 the device is cleared on.
 
+### 16h. ONE RING IS A STEP; A STACK IS A STAIRCASE **[V]**
+
+**2026-11-12, asked for on sight of 16d's own picture.** The reducing O-grid stops changing a
+chord and a half off the body: beyond r = 1.8 it is one ordinary band of 8 blocks running all the
+way to r = 10. The count falls ONCE. `make_reducing_stack.py` stacks the rings instead, with an
+ordinary band between each pair, and the question it answers is whether the device composes.
+
+**IT DOES, AND THE ARITHMETIC IS WHY IT CLOSES.** With two ordinary blocks per unit a reducing
+ring takes `K(2a + 2m)` inner intervals to `2Km`, and `4K` inner stations to `2K`. Setting the
+ring's radial depth `a` equal to its arc count `m` makes both exactly HALVE, so the next ring up
+needs `K/2` folds to meet it and a stack is K, K/2, K/4… **`a = m` is not a choice**: the corner
+block forces its two radials equal to the two inner arcs it carries, so a halving ring's depth is
+the one it gets. Every level's stations then coincide with its neighbour's by construction, with
+each ring offset half a unit from the one below — nothing is snapped and no tolerance appears.
+
+Two documents, both on the shipped circle geometries, both `MB_SMOOTH_ITERS` 20:
+
+| | blocks | quads | inverted | nonortho max / mean | body → far | N(r) |
+|---|---|---|---|---|---|---|
+| shipped 4-block O-grid | 4 | 4608 | 0 | 2.02 / 1.88 | 96 → 96 | 4 flat |
+| ONE ring (`reducing_ogrid`) | 36 | 7872 | 0 | 53.6 / 4.70 | 192 → 96 | 16, 20, 12, 8 |
+| `reducing_stack`, 2 stages | 92 | 6960 | 0 | 56.8 / 5.38 | 192 → 48 | 32, 24, 16, 12, 8 |
+| `reducing_stack_deep`, 3 stages | 204 | 6516 | 0 | 74.8 / 4.41 | 192 → 24 | 64, 48, 32, 24, 16, 12, 8 |
+
+**The stack is CHEAPER IN CELLS than the single ring it replaces** — 6516 against 7872 for the
+same body resolution — because the count keeps coming down instead of being carried to the far
+field at half strength. It costs blocks (204 against 36) and, at three stages, its worst cell.
+Figure: `reduction_termination.png`, where one ring is a step and a stack is a staircase.
+
+**K AT THE OUTERMOST RING IS THE BINDING CONSTRAINT, and it was found by it failing.** A stack of
+K = 8/4/2 leaves the last ring two folds, so each corner block eats a quarter of the circle, and
+that mesh has 6 inverted cells at the outermost fold at every notch tried. Starting at K = 16 so
+the last ring has FOUR gives 0 inverted. **A corner block's angular span is its quality**, which
+16b measured as the ring's thickness and this measures as the fold count; they are the same
+statement about the taper.
+
 ### 16f. What this supersedes, and what it does not
 
 - **SUPERSEDES the rest of §15d.** "The model cannot express a count-reducing termination" is now
@@ -1247,6 +1283,8 @@ the device is cleared on.
   `MB_SMOOTH_ITERS` 0, left behind when 16d's table was re-measured at the shipped 20. It is
   recorded rather than silently corrected because it is the shape every figure in this repo decays
   into: a number that was true of a measurement nobody re-ran after the measurement moved.
+- **16h's two stacks are gate-1 only.** Neither has been through `getPGrid` and `unicones`, so
+  nothing here says a staircase solves; only 16d's single ring has a gate-2 run behind it.
 - **Nothing here is gated.** These are research documents under `docs/research/`; no C++ check and
   no surface gate reads them, and they will rot exactly as §11's two figures did unless something
   does. That is the same state #192 step 1 closed for the three-block corner itself, and it is
