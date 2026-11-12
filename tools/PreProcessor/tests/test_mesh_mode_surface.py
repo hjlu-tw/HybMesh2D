@@ -49,6 +49,37 @@ What this pins down:
      it, because a refusal that fires on anything is worse than none: the flag
      AFTER the path, a recognised no-value switch before the path, and a
      recognised flag's value.
+  7c. A command line that selects NO geometry is said, at the TWO altitudes the
+     defect has (#193). A trailing ``-geom`` collects nothing and the flag is
+     still "provided", so the config's geometry list is OVERWRITTEN with an empty
+     one and the run meshes a 20x20 Cartesian box at exit 0 in silence. Both
+     halves here are ADVISORY -- no exit code, no mesh and no ``HYBMESH_*`` line
+     changes, which is what keeps the Cartesian fallback a documented, intended
+     path rather than a thing to refuse. ``-geom`` and ``-seed`` get a sentence
+     saying the list was CLEARED and naming what went, NOT #186's "it was IGNORED
+     and had no effect", which is true of a missing value and false here;
+     ``-geom_nobl`` APPENDS and so gets a fourth sentence of its own, measured per
+     flag rather than assumed from ``-geom``. The second altitude is keyed on the
+     STATE -- zero boundary edges leaving the exporter -- so the THIRD route into
+     an empty mesh, a config naming no geometry with no flag on the line at all,
+     is covered by something that already exists.
+
+     INJECTIONS, seven, hand runs on 2026-11-12, each applied to ``src/cli.cpp``,
+     rebuilt and run, none inert: I1 the ``-geom`` warning never fires (3 red);
+     I2 it reuses #186's sentence instead of its own (5 red); I3 it drops the
+     names of what it deleted (2 red); I4 the export warning is keyed on the
+     CAUSE (``-geom`` collected nothing) rather than on the state (1 red -- the
+     third-route check, alone, which is the whole argument for the state); I5 it
+     fires unconditionally (2 red, both directions of "fires on everything");
+     I6 ``-geom_nobl`` goes through the CLEARED sentence (2 red); I7 ``-seed``
+     never warns (2 red).
+
+     BLIND SPOT, named rather than papered over: removing the ``MESH_MODE_HYBRID``
+     guard ALONE would be inert here. No topology this repo ships can produce a
+     mesh with zero boundary edges -- a block's sides have to close -- so the
+     ``MESH_MODE 1`` negative control below passes on its edge count rather than
+     on the mode test. What I5 shows is that the STATE half of the condition is
+     load bearing; the MODE half is a decision held by a comment.
 
 THE GOLDEN BASELINE, recorded here because #49's first acceptance item is that the
 existing path is untouched and because a procedure nobody wrote down is one nobody
@@ -150,6 +181,35 @@ def novalue_args(out: str) -> set:
     value off" -- and a single regex over both would let one be reported as the
     other."""
     return set(re.findall(r"Command-line argument '([^']*)' expects a value", out))
+
+
+def cleared_args(out: str) -> set:
+    """The collectors reported as having OVERWRITTEN their config list (#193).
+
+    A THIRD sentence, matched separately for the same reason the two above are,
+    and this one is the whole point of the ticket: "it was IGNORED and had no
+    effect" is true of a missing value and FALSE of `-geom`, which deleted the
+    user's input. A single regex over all three would let the two be reported as
+    each other, which is exactly the confusion the sentences exist to prevent."""
+    return set(re.findall(
+        r"Command-line argument '([^']*)' was followed by no paths; it OVERWROTE",
+        out))
+
+
+def noadd_args(out: str) -> set:
+    """The collectors reported as having APPENDED nothing (#193).
+
+    `-geom_nobl` is the one of the three that really does nothing when handed no
+    paths -- it appends -- so it gets a FOURTH sentence rather than being folded
+    into the one above, which would claim it overwrote something."""
+    return set(re.findall(
+        r"Command-line argument '([^']*)' was followed by no paths; it APPENDS",
+        out))
+
+
+def no_boundary_edge(out: str) -> bool:
+    """Whether the export-side warning fired: a mesh with zero boundary edges."""
+    return "This mesh has NO boundary edge" in out
 
 
 #: A square duct so the DEFAULT mode has something real to mesh. Written here
@@ -586,10 +646,138 @@ OUTPUT_FILENAME {out_name}
               f"too ({sorted(novalue_args(out))})", novalue_args(out) == {"-conf"})
         check(f"7. ...and is not called unknown either ({sorted(unknown_args(out))})",
               not unknown_args(out))
-        check("7. ...and the three multi-value collectors are still silent when "
-              "handed nothing, which is pre-existing and named rather than claimed "
-              f"fixed ({sorted(novalue_args(out))})",
+        check("7. ...and none of the three multi-value collectors is reported "
+              "through THAT sentence, which #193 left alone deliberately: they "
+              "get their own, because 'it was IGNORED and had no effect' is false "
+              f"of `-geom` ({sorted(novalue_args(out))})",
               not ({"-geom", "-seed", "-geom_nobl"} & novalue_args(out)))
+
+        # ── 7c. #193: a flag that selected NO geometry is said, at the two
+        # altitudes the defect has. A trailing `-geom` collects nothing, yet the
+        # flag is still "provided", so the config's list is OVERWRITTEN with an
+        # empty one and the run meshes a 20x20 Cartesian box at exit 0 with not
+        # one word of warning. The fallback itself is a documented, intended path
+        # and stays; what was wrong is that nothing said it happened. Both halves
+        # are advisory, and both are driven in BOTH directions here.
+        seedcfg = f"""
+GEOM_FILE {geom}
+SEED_FILE {seed} 0.05 0.5 source
+DOMAIN_X_MIN -6
+DOMAIN_X_MAX 6
+DOMAIN_Y_MIN -6
+DOMAIN_Y_MAX 6
+BL_LAYERS 3
+EXPORT_VTK 1
+OUTPUT_FILENAME {os.path.join(tmp, "seedcfg")}
+"""
+        rc, out = run(tmp, plain("geomcleared"), argv_tail=["-conf", "@DAT@", "-geom"])
+        check("7c. a trailing `-geom` is reported as having OVERWRITTEN the "
+              f"config's geometry list ({sorted(cleared_args(out))})",
+              cleared_args(out) == {"-geom"})
+        check("7c. ...and it NAMES what it deleted -- the count and the entries -- "
+              "because the user's mental model is 'my flag did nothing' and the "
+              "truth is 'your flag deleted your input'",
+              "1 entry was discarded" in out and f"'{geom}'" in out)
+        check("7c. ...and does NOT claim the flag was ignored, which would be "
+              "false and would send the user looking in the wrong place",
+              "'-geom' expects a value" not in out
+              and not re.search(r"'-geom'[^\n]*IGNORED and had no effect", out))
+        check(f"7c. ...and is not called unknown either ({sorted(unknown_args(out))})",
+              not unknown_args(out))
+        check("7c. ...and it stays ADVISORY: still exit 0, still a mesh on disk, "
+              f"because the Cartesian fallback is an intended path (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "geomcleared.vtk")))
+        # The other direction, and the half that matters: a warning that fires on
+        # everything is as useless as one that fires on nothing.
+        rc, out = run(tmp, plain("geomgiven"), ["-geom", geom])
+        check("7c. a `-geom` WITH a path says nothing at all "
+              f"({sorted(cleared_args(out))})", not cleared_args(out))
+        # `-geom` need not be trailing to collect nothing: it stops at the next
+        # token starting with '-', so a flag behind it leaves the list empty too.
+        # The flag-shaped route, driven separately from the end-of-line one.
+        rc, out = run(tmp, plain("geomflag"),
+                      argv_tail=["-conf", "@DAT@", "-geom", "-domain_bl"])
+        check("7c. a `-geom` followed only by another FLAG collects nothing and is "
+              f"reported the same way ({sorted(cleared_args(out))})",
+              cleared_args(out) == {"-geom"})
+        # `-seed` CLEARS as well -- measured per flag rather than assumed from
+        # `-geom`, which is what the ticket asks for: the three collectors do not
+        # all do the same thing.
+        rc, out = run(tmp, seedcfg, argv_tail=["-conf", "@DAT@", "-seed"])
+        check("7c. a trailing `-seed` is reported as having OVERWRITTEN the "
+              f"config's refinement-seed list too ({sorted(cleared_args(out))})",
+              cleared_args(out) == {"-seed"})
+        check("7c. ...and names the seed it deleted, so the user is not left "
+              "quoting figures from a mesh with the refinement silently gone",
+              f"'{seed}'" in out and "refinement seed list" in out)
+        check("7c. ...and that run still meshes at exit 0", rc == 0)
+        rc, out = run(tmp, seedcfg, argv_tail=["-conf", "@DAT@", "-seed", seed])
+        check("7c. a `-seed` WITH a path says nothing "
+              f"({sorted(cleared_args(out))})", not cleared_args(out))
+        # `-geom_nobl` is the one of the three that genuinely does nothing: it
+        # APPENDS, so an empty collection leaves the list alone. Measured, not
+        # assumed -- and it gets its own sentence rather than the one above, which
+        # would claim it overwrote something.
+        rc, out = run(tmp, plain("noblempty"), argv_tail=["-conf", "@DAT@", "-geom_nobl"])
+        check("7c. a trailing `-geom_nobl` is reported through the APPENDS "
+              f"sentence ({sorted(noadd_args(out))})", noadd_args(out) == {"-geom_nobl"})
+        check("7c. ...and NOT through the overwrote one, because it cleared "
+              f"nothing ({sorted(cleared_args(out))})", not cleared_args(out))
+        check("7c. ...and that run still meshes at exit 0, its geometry untouched",
+              rc == 0 and os.path.exists(os.path.join(tmp, "noblempty.vtk")))
+        rc, out = run(tmp, plain("noblgiven"), ["-geom_nobl", nobl])
+        check("7c. a `-geom_nobl` WITH a path says nothing "
+              f"({sorted(noadd_args(out))})", not noadd_args(out))
+
+        # THE SECOND ALTITUDE. Keyed on the STATE -- zero boundary edges leaving
+        # the exporter -- and not on any cause, so a third route into an empty
+        # mesh is covered by something that already exists rather than by a
+        # warning somebody remembered to add at a fourth flag.
+        rc, out = run(tmp, plain("emptybox"), argv_tail=["-conf", "@DAT@", "-geom"])
+        check("7c. a mesh that leaves the exporter with ZERO boundary edges is "
+              "warned about", no_boundary_edge(out))
+        check("7c. ...and still exits 0 and still writes its mesh: the Cartesian "
+              f"fallback keeps working (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "emptybox.vtk")))
+        # THE THIRD ROUTE, which is the whole reason this half is keyed on the
+        # state: no flag is involved at all here, so neither warning above could
+        # fire, and the only thing that reaches the reader is this one.
+        nogeom = f"""
+DOMAIN_X_MIN -6
+DOMAIN_X_MAX 6
+DOMAIN_Y_MIN -6
+DOMAIN_Y_MAX 6
+EXPORT_VTK 1
+OUTPUT_FILENAME {os.path.join(tmp, "nogeom")}
+"""
+        rc, out = run(tmp, nogeom)
+        check("7c. a config naming NO geometry, with no flag on the line at all, "
+              "still gets that warning -- the half keyed on a cause could not "
+              "reach this run", no_boundary_edge(out))
+        check("7c. ...and no COLLECTOR is blamed for it, because none was typed "
+              f"({sorted(cleared_args(out) | noadd_args(out))})",
+              not (cleared_args(out) | noadd_args(out)))
+        check(f"7c. ...and it too exits 0 with a mesh (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "nogeom.vtk")))
+        # And the negative, on the ordinary case this whole file meshes: a real
+        # body has boundary edges, so the warning must be silent on every run
+        # anybody actually makes.
+        rc, out = run(tmp, plain("hasedges"))
+        check("7c. an ordinary run with a body in it is SILENT about boundary "
+              "edges", not no_boundary_edge(out))
+        # `MESH_MODE 1` is out of scope by decision: a topology declaring its own
+        # corners is a complete input with no geometry at all, so the warning must
+        # not reach that path. Driven on a real multi-block run rather than read
+        # off the guard, and on the SHIPPED document the decision names. (Its mesh
+        # has boundary edges anyway -- see the blind spot in this file's docstring.)
+        shipped_topo = os.path.join(_REPO, "examples", "topology",
+                                    "square_block.json")
+        rc, out = run(tmp, f"MESH_MODE 1\nMESH_TOPOLOGY_FILE {shipped_topo}\n"
+                           f"EXPORT_VTK 1\nOUTPUT_FILENAME {os.path.join(tmp, 'mbok')}\n")
+        check(f"7c. a MESH_MODE 1 run on the shipped square_block.json -- a "
+              f"topology declaring its own corners and naming no geometry at all "
+              f"-- is silent about boundary edges (rc={rc})",
+              rc == 0 and not no_boundary_edge(out))
 
     print()
     if failures:

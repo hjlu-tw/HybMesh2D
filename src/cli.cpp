@@ -1389,8 +1389,13 @@ int hybmesh::runCli(int argc, char* argv[]) {
     Config config;
     std::string configFile = "config/Background_para.dat";
     CliCollected collected;
-    bool geomProvided = false;
-    bool seedProvided = false;
+    // Which `PathList` flags APPEARED, as opposed to what they collected. The two
+    // are different facts and both are needed below: `-geom` with no paths after
+    // it has appeared and collected nothing, and that combination is what empties
+    // the config's list (#193). Held as the flag NAMES from the table rather than
+    // as a bool per flag, so a fourth collector needs no fourth bool -- #187's
+    // "one list of argument names" reaching the same place once more.
+    std::set<std::string> pathListSeen;
     bool confExplicit = false;
     int positionalConfigIdx = -1;   // argv slot phase 1 took as the config path
     int unknownFlagIdx = -1;        // most recent token starting with '-' that the table has no entry for
@@ -1407,8 +1412,7 @@ int hybmesh::runCli(int argc, char* argv[]) {
             // cannot disagree. `-conf` is the one argument phase 1 reads by name,
             // because finding the config path is what phase 1 is FOR.
             if (it->second.takes == ArgTakes::PathList) {
-                geomProvided = geomProvided || (arg == "-geom");
-                seedProvided = seedProvided || (arg == "-seed");
+                pathListSeen.insert(arg);
                 while (i + 1 < argc && argv[i+1][0] != '-') {
                     const char* v = argv[++i];
                     if (it->second.into) (collected.*(it->second.into)).push_back(v);
@@ -1488,17 +1492,67 @@ int hybmesh::runCli(int argc, char* argv[]) {
         // else: defaults are in use (loadFromFile already warned).
     }
 
+    // A `PathList` FLAG THAT COLLECTED NOTHING IS SAID, AND IT DOES NOT GET THE
+    // MISSING-VALUE SENTENCE (#193). `takeValueOrWarn` says a flag "was IGNORED
+    // and had no effect on this run", which is true of the fourteen `OneValue`
+    // arguments and FALSE of the two collectors below: they OVERWRITE their
+    // config list, so collecting nothing DELETES the user's input -- the flag
+    // they wrote to select their aerofoil is what removed it. Said here rather
+    // than in phase 1 because the count only exists once the config is loaded,
+    // and said per site rather than from the table because whether a flag clears
+    // or appends is exactly what these three blocks are.
+    //
+    // ADVISORY, for #186's reason: the exit code, the mesh and every
+    // machine-readable line are unchanged, and the Cartesian fallback this
+    // reaches is a documented, intended path.
+    auto warnCleared = [](const char* flag, const char* what,
+                          const std::vector<std::string>& cleared,
+                          const char* consequence) {
+        std::ostringstream msg;
+        msg << "Command-line argument '" << flag << "' was followed by no paths; "
+               "it OVERWROTE the configuration's " << what << " list with an empty "
+               "one rather than being ignored. ";
+        if (cleared.empty()) {
+            msg << "The configuration named no " << what << " either, so nothing "
+                   "was discarded. ";
+        } else {
+            msg << cleared.size() << (cleared.size() == 1 ? " entry was" : " entries were")
+                << " discarded: ";
+            for (size_t k = 0; k < cleared.size(); ++k)
+                msg << (k ? ", " : "") << '\'' << cleared[k] << '\'';
+            msg << ". ";
+        }
+        msg << consequence;
+        LOG_WARN(msg.str());
+    };
+
     // 如果命令列提供了 -geom，則覆蓋設定檔中的幾何物件
-    if (geomProvided) {
+    if (pathListSeen.count("-geom")) {
+        if (collected.geom.empty())
+            warnCleared("-geom", "geometry", config.geomFiles,
+                        "This run meshes no geometry.");
         config.geomFiles = collected.geom;
     }
     // -geom_nobl：附加不長 BL 的障礙物 (以遠場尺寸貼合)。
+    // It APPENDS, so an empty collection really does leave everything alone --
+    // the one of the three for which "no effect" is the true sentence, measured
+    // per flag rather than assumed from `-geom`.
+    if (pathListSeen.count("-geom_nobl") && collected.noBLGeom.empty())
+        LOG_WARN("Command-line argument '-geom_nobl' was followed by no paths; it "
+                 "APPENDS to the geometry list, so nothing was added and that list "
+                 "is unchanged. It had no effect on this run.");
     for (const auto& f : collected.noBLGeom) {
         config.geomFiles.push_back(f);
         config.noBLGeoms.insert(f);
     }
     // 如果命令列提供了 -seed，則覆蓋設定檔中的加密種子 (套用全域 size/radius/mode)
-    if (seedProvided) {
+    if (pathListSeen.count("-seed")) {
+        if (collected.seed.empty()) {
+            std::vector<std::string> clearedSeeds;
+            for (const auto& s : config.seedFiles) clearedSeeds.push_back(s.file);
+            warnCleared("-seed", "refinement seed", clearedSeeds,
+                        "No refinement seed is applied to this run.");
+        }
         config.seedFiles.clear();
         for (const auto& f : collected.seed) {
             Config::SeedSpec s; s.file = f; config.seedFiles.push_back(s);
@@ -2029,6 +2083,28 @@ int hybmesh::runCli(int argc, char* argv[]) {
     if (config.meshMode == MESH_MODE_HYBRID)
         printHybridQuality(mesh, meshQuality);
     std::cout << "\n";
+
+    // A MESH THAT LEAVES HERE WITH NO BOUNDARY EDGE IS SAID, AND IT IS SAID ON
+    // THE STATE RATHER THAN ON ANY CAUSE (#193). The two known routes into it are
+    // a `-geom` that collected nothing and a config naming no geometry at all,
+    // and both are already warned about one altitude up -- but a warning keyed on
+    // a cause covers only the routes somebody thought of, and this one is the
+    // count that is already printed on the line above. Advisory: the exit code,
+    // the mesh and the machine-readable line are unchanged, and the Cartesian
+    // fallback it fires on is an intended path rather than a failure.
+    //
+    // NAMED, not negated, for `printHybridQuality`'s own reason: the multi-block
+    // path is OUT OF SCOPE because a topology declaring its own corners is a
+    // complete input with no geometry in it, and `examples/topology/square_block.json`
+    // is a shipped case that does exactly that -- there the warning would fire on
+    // a correct run.
+    if (config.meshMode == MESH_MODE_HYBRID && mesh.edges.empty()) {
+        LOG_WARN("This mesh has NO boundary edge, so nothing in it carries a "
+                 "boundary condition and no solver can impose one. It is being "
+                 "exported anyway and the exit code is unchanged -- but if you "
+                 "expected a body or a far-field outline in it, nothing on this "
+                 "run selected one.");
+    }
 
     // Extension position in the FILE NAME (npos when there is none). Must ignore a
     // dot in a directory component — a path like ~/.claude/out would otherwise get a

@@ -4495,7 +4495,8 @@ rather than fixed.
     arguments; it is 14 now, and the three `PathList` collectors are still silent — `-geom`
     with no paths still overwrites the geometry list with an empty one and meshes an empty
     domain at exit 0, which is still a separate ticket, because "it was IGNORED and had no
-    effect" is FALSE of it.
+    effect" is FALSE of it. **CLOSED by #193, and the sentence above is why it got its own:
+    the three collectors speak now, in words of their own rather than in these.**
 
 - **THE THREE NEGATIVE CONTROLS, because a refusal that fires on anything is worse than
   none and only one of those looks broken.** Gated in `test_mesh_mode_surface.py` 7b, all
@@ -4554,6 +4555,124 @@ reported rather than counted as a mesh.
   command lines, not by a check of their own.** That each flag still does what it says is
   carried by 23 SAME plus the all-eighteen run, the same cover #186's restructured branches
   rested on.
+
+**A COMMAND LINE THAT SELECTS NO GEOMETRY MESHES AN EMPTY BOX AT EXIT 0** (#193, parent
+#184, the third child beside #185 and #187; measured 2026-11-12). The one this file and
+`.claude/rules/mesher.md` had both named as a follow-up with no ticket of its own.
+
+`-geom` takes paths until the next token starting with `-`, so a trailing `-geom`, or one
+followed only by another flag, collects nothing — and the flag is still recorded as having
+appeared, so `config.geomFiles = collected.geom` CLEARS whatever the config named. The
+user's aerofoil does not fail to load. It is deleted, by the flag they wrote to select it.
+Measured on the shipped demo, both through `./run.sh`:
+
+```
+-conf config/Background_para.dat -geom examples/geometries/naca0012.dat
+    EXIT 0   7757 vertices, 15237 elements, 205 boundary edges
+
+-conf config/Background_para.dat -out_name <tmp> -geom          # paths left off
+    EXIT 0   441 vertices, 400 elements, 0 boundary edges
+             0 warnings, and a .vtk and a .provenance.json written to disk
+```
+
+The 400 cells are the Cartesian quad fallback, which this note already documents as
+reachable and intended, **so this is not a proposal to refuse it**. What was wrong is that
+nothing said it happened — while the same run already printed `Geometry Files : NONE`,
+`Cell shape : not measured` and `tri_edge_ratio_median=-1.000000`, three independent
+statements that this mesh has no geometry, no measurable cell and no boundary edge, and
+nothing read any of them.
+
+- **TWO ALTITUDES, BECAUSE THE DEFECT HAS TWO.** At the FLAG, so the user who typed the
+  flag is told what it did; at the EXPORT, so the next route into the same state is covered
+  by something that already exists rather than by a warning somebody remembers to add at a
+  fourth flag. Neither changes an exit code, a mesh or a machine-readable line.
+- **ADVISORY, for #186's reason stated at `runCli`.** A refusal turns "your setting did
+  nothing" into "your case does not run", and this surface has an installed base. The
+  Cartesian fallback is documented as intended; refusing it would delete a feature to fix a
+  diagnostic.
+- **`-geom`'s SENTENCE IS ITS OWN, AND THAT IS THE POINT OF THE TICKET.** #186's "it was
+  IGNORED and had no effect on this run" is true of an unknown flag and of a missing value,
+  and FALSE here — the flag had a large effect. The warning says the list was OVERWRITTEN
+  with an empty one, names the count, and names the entries, because the user's mental model
+  is "my flag did nothing" and the truth is "your flag deleted your input". A shared string
+  is how two claims about one token come to disagree.
+- **THE THREE COLLECTORS WERE MEASURED SEPARATELY AND THEY ARE NOT THE SAME.** The ticket
+  asked for this rather than letting `-geom` stand for all three, and the measurement is why
+  there are two sentences and not one: `-geom` and `-seed` OVERWRITE their config list, so a
+  trailing one DELETES input — `-seed` against `config/hybrid_30p30n.dat` silently discards
+  that case's one `SEED_FILE` and meshes without the refinement — while `-geom_nobl` only
+  APPENDS, so an empty collection really does leave the list alone and "it had no effect on
+  this run" is the accurate sentence there.
+- **THE COUNT ONLY EXISTS AFTER THE CONFIG IS LOADED**, so the warning sits at the APPLY
+  site rather than in phase 1, and per site rather than in `cliArgSpecs()` — whether a flag
+  clears or appends is exactly what those three blocks ARE, and putting it in the table
+  would be a second home for a fact that already has one. **What DID move into the table's
+  vocabulary is which flags appeared**: `geomProvided` / `seedProvided`, two bools tested by
+  name, became one `std::set<std::string> pathListSeen` filled from the table's own `arg`,
+  so `-geom_nobl` needed no third bool. #187's one-list rule reaching one place further,
+  with no new list.
+- **THE EXPORT-SIDE WARNING IS ABOUT BOUNDARY EDGES, NOT ABOUT THE GEOMETRY LIST.** It fires
+  on a STATE — `mesh.edges.empty()` as the mesh leaves for the exporter — because a warning
+  keyed on a cause covers only the routes somebody thought of. Two are known; the third is
+  whatever comes next, and it is the one this half exists for. It needs no new detection: the
+  count is the `Boundary Edges (BND)` line that was already printed. Injection I4 is the
+  whole argument made falsifiable — keyed on `-geom` having collected nothing instead, every
+  check in 7c stays green except the one driving a config that names no geometry with no flag
+  on the line at all.
+- **`MESH_MODE 1` IS OUT OF SCOPE, AND IT IS NAMED RATHER THAN NEGATED.** A topology that
+  declares its own corners is a complete input with no geometry in it, and
+  `examples/topology/square_block.json` is a shipped case that does exactly that — a warning
+  there would fire on a correct run. The guard is `== MESH_MODE_HYBRID`, for
+  `printHybridQuality`'s own reason: `!=` would hand a third mode this path's sentence by
+  default.
+- **`-conf` WITH NO VALUE WAS ALREADY FIXED, AND THE TICKET'S OWN PROBLEM STATEMENT WAS
+  STALE ABOUT IT.** #193 was written saying `./run.sh -conf` alone is silent; re-measured on
+  the built binary at HEAD it prints `[WARN] Command-line argument '-conf' expects a value
+  and none followed; it was IGNORED and had no effect on this run.` — #187 collapsed the two
+  flag lists and `-conf` became the fourteenth argument that sentence reaches. **Nothing was
+  added**, and the sentence is accurate as it stands: with no value the configuration really
+  is the default document the run would have used anyway, so "no configuration was read"
+  would itself have been false. What serves that user story now is the EXPORT-side warning,
+  which fires on exactly that line because the mesh it produces has no boundary edge. The
+  ticket's acceptance item is met by a re-measurement rather than by code, which is recorded
+  here because a ticket's own figures are not evidence until something re-derives them.
+
+**SEVEN INJECTIONS, all biting, none inert, with the unmutated tree as the negative control
+at 0 FAIL.** Hand runs 2026-11-12, each mutating `src/cli.cpp`, rebuilding and running
+`tools/PreProcessor/tests/test_mesh_mode_surface.py`: the `-geom` warning never fires → 3
+FAIL; it reuses #186's sentence → 5 FAIL (it takes `-seed` down with it, both going through
+the one helper); it drops the names of what it deleted → 2 FAIL; the export warning keyed on
+the CAUSE → 1 FAIL, the third-route check alone; the export warning fires unconditionally →
+2 FAIL, the ordinary run and the multi-block run, which is the "fires on everything"
+direction; `-geom_nobl` routed through the CLEARED sentence → 2 FAIL; `-seed` never warns →
+2 FAIL.
+
+**GOLDEN: 23 cases, 23 SAME, 0 DIFF, worst coordinate deviation 0.000e+00**, captured from
+the pre-change binary built by `git archive HEAD` (`5cf8502`) into its own tree, so the
+baseline is not a capture from the tree about to be edited and no build directory is shared
+with the injection round. One of the 23 matched a NO-MESH outcome (`isolated_corner`) and is
+reported rather than counted as a mesh. **Every exit code and every `HYBMESH_*` line is
+unchanged**, which is what makes this ticket additive: a warning on stderr is the whole
+difference.
+
+**Blind spots, named.**
+- **Removing the `MESH_MODE_HYBRID` half of the export guard alone would be INERT.** No
+  topology this repo ships can produce a mesh with zero boundary edges — a block's four
+  sides have to close — so 7c's `MESH_MODE 1` negative control passes on its edge count and
+  not on the mode test. Injection I5 shows the STATE half is load bearing; the MODE half is a
+  decision held by a comment.
+- **A run that exports NOTHING still gets the export-side warning.** With `EXPORT_VTK 0`,
+  `EXPORT_STARCD 0` and `EXPORT_CGNS 0` there is no exporter to leave, and the sentence
+  "it is being exported anyway" is then false of a run nobody makes. Not guarded, because the
+  state it describes — a mesh with no boundary condition anywhere — is equally true.
+- **`-geom` with paths that are all INVALID is a different shape and is untouched.** That
+  one is already a hard error (`EXIT_ERR_GEOMETRY_LOAD`, "Requested geometry could not be
+  opened"), and nothing here reaches it; the ticket's subject is an EMPTY selection, not a
+  failed one.
+- **Nothing warns when `-geom` SHRINKS the list rather than emptying it.** `-geom a.dat` over
+  a config naming three geometries discards two, silently, and that is the flag doing its
+  documented job. The line between "overriding" and "deleting" is drawn at empty, which is
+  where the user gets no mesh of what they asked for.
 
 **AN INTERIOR LINE THAT FOLLOWS A CURVE** (#151, measured 2026-09-29). Until this
 ticket every `interface` and every `cut` was a straight CHORD between its two declared

@@ -153,15 +153,52 @@ everywhere else the warning is the whole consequence.
   class intact. `MB_SMOOTH_ITERS` is a `.dat` key and is how the gates set it.
 - **The missing-value sentence covers 14 of the 17 value-taking arguments** — 13 at #186, and
   `-conf` since #187 collapsed the lists: it is `OneValue` like the other thirteen and goes through
-  the same lambda instead of its own silent skip. The three `PathList` collectors (`-geom`,
-  `-seed`, `-geom_nobl`) are still SILENT when handed nothing, and `-geom` with no paths OVERWRITES
-  the config's geometry list with an empty one and meshes an empty domain at exit 0. Measured,
-  pre-existing, unchanged, and a follow-up under #184; "it was IGNORED and had no effect" would be
-  false of `-geom`.
-- Gate: `tests/test_mesh_mode_surface.py` sections 7 and 7b, through the real binary, in BOTH
+  the same lambda instead of its own silent skip. **The other three are the `PathList` collectors
+  and they are NOT this sentence's, by decision** (#193, below): "it was IGNORED and had no effect"
+  is true of a missing value and FALSE of `-geom`.
+- **A `PathList` FLAG THAT COLLECTED NOTHING IS SAID, AND NOT IN #186's WORDS** (#193, the third
+  child of #184). `-geom` takes paths until the next `-`, so a trailing one — or one followed only
+  by another flag — collects nothing while `pathListSeen` still records that it appeared, and
+  `config.geomFiles = collected.geom` OVERWRITES the config's list with an empty one: the user's
+  aerofoil does not fail to load, it is DELETED by the flag they wrote to select it, and the run
+  meshes a 20x20 Cartesian box at exit 0. **Two sentences, because the three collectors do not all
+  do the same thing, and that was MEASURED per flag rather than assumed from `-geom`**: `-geom`
+  and `-seed` OVERWRITE, so each says the list was CLEARED and names the count and the entries that
+  went (`warnCleared`); `-geom_nobl` APPENDS, so nothing was added and "it had no effect on this
+  run" is the true sentence there.
+  - **ADVISORY, never a refusal**, for #186's reason: the exit code, the mesh and every
+    machine-readable line are unchanged. **The Cartesian fallback it reaches is documented and
+    INTENDED and stays** — refusing it would delete a feature to fix a diagnostic.
+  - **The count only exists after the config is loaded, so the warning is at the APPLY site and not
+    in phase 1**, and it is per site rather than from the table because whether a flag clears or
+    appends is exactly what those three blocks ARE. **What DID move into the table's vocabulary is
+    which flags appeared**: `geomProvided` / `seedProvided` became one `std::set<std::string>
+    pathListSeen` of flag NAMES, so `-geom_nobl` needed no third bool — #187's one-list rule
+    reaching the same place once more.
+  - **`-conf` WITH NO VALUE WAS ALREADY COVERED by #187 and nothing was added for it.** #193's own
+    problem statement says that line is silent; RE-MEASURED 2026-11-12, it prints `[WARN]
+    Command-line argument '-conf' expects a value and none followed; it was IGNORED and had no
+    effect on this run.` — accurate, because the configuration then really is the default one the
+    run would have used anyway. A second sentence beside it is how two claims about one token come
+    to disagree.
+- **A MESH LEAVING THE EXPORTER WITH ZERO BOUNDARY EDGES IS SAID, ON THE STATE AND NOT ON A CAUSE**
+  (#193; the `mesh.edges.empty()` guard beside `printHybridQuality` in `src/cli.cpp`). Nothing in
+  it carries a boundary condition, so no solver can impose one. **It is keyed on the state because
+  a warning keyed on a cause covers only the routes somebody thought of**: the two known ones are
+  the flag above and a config naming no geometry, and the third is whatever comes next. It needs no
+  new detection — the count is already on the `Boundary Edges (BND)` line. Advisory, for the same
+  reason, and **`MESH_MODE 1` is OUT OF SCOPE, NAMED and not negated**: a topology declaring its own
+  corners is a complete input with no geometry at all, and `examples/topology/square_block.json` is
+  a shipped case that does exactly that, so the warning would fire on a correct run.
+- Gate: `tests/test_mesh_mode_surface.py` sections 7, 7b and 7c, through the real binary, in BOTH
   directions — a warning that fires on everything is as useless as one that fires on nothing, and a
   refusal that does is worse. 7b carries three negative controls for the refusal alone: the unknown
-  flag AFTER the path, a recognised no-value switch before it, and a recognised flag's value.
+  flag AFTER the path, a recognised no-value switch before it, and a recognised flag's value. 7c
+  drives each of the three collectors with AND without a path, the export warning on a route no
+  flag caused, and the shipped `square_block.json` as the `MESH_MODE 1` negative; its seven hand
+  injections and its one named blind spot — the MODE half of that guard is held by a comment, no
+  shipped topology being able to produce a mesh with no boundary edge — are dated in its docstring.
+  **23/23 golden SAME at exactly 0.000e+00** against a separately built HEAD binary, 2026-11-12.
 
 **`DOMAIN_FILE` AND `GEOM_FILE` ARE ONE KIND OF LINE UNDER `MESH_MODE 1`** (`buildMultiBlockMesh`
 in `src/cli.cpp`; #171). On the hybrid path the two decide different things — which outline the
