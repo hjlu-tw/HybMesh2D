@@ -184,12 +184,16 @@ is this file's.
       does its own no-corner-block CONTROL at the same iteration, so that is the construction and
       not the device. On the C-grid the reduction adds 2688 quads where every other way of putting
       97 nodes on that aerofoil adds 3840.
-    - **NOTHING IS SHIPPED AND NOTHING IS GATED.** The documents, the generators and every figure
-      are `docs/research/gridpro-blocking-method/make_reducing_annulus.py`,
-      `make_reducing_cgrid.py` and `docs/research/nesting-blocks-at-a-complicated-leading-edge.md`
-      §16; no shipped case carries a corner block, no topology family emits one, and the best
-      worst cell measured anywhere is 53.6 degrees off orthogonal against a plain O-grid's 2.02.
-      **Do not read "the device exists" as "the capability is available."**
+    - **NOTHING IS SHIPPED.** No shipped case carries a corner block, no topology family emits
+      one, and the best worst cell measured anywhere is 53.6 degrees off orthogonal against a
+      plain O-grid's 2.02. The documents and the generators are
+      `docs/research/gridpro-blocking-method/make_reducing_annulus.py`, `make_reducing_cgrid.py`
+      and `bin_added_cells.py`; each committed document carries the command that wrote it in its
+      own header. **Do not read "the device exists" as "the capability is available."**
+    - **SUPERSEDES #192 step 1's cost model**, which this file carried until this rule replaced
+      it: a reduction is not one line per irregular node, because the lines a corner block removes
+      TURN inside it rather than ending at its nodes.
+      Why: `docs/design_notes/mesher.md`, "THE PRICE, MEASURED — #192 steps 2 to 4".
   - **A VALENCE-5 CORNER IS THE SAME DEVICE RUN THE OTHER WAY** and this repo already ships
     one: the C-grid's `te`, where five edges end and four blocks meet. It ADDS a line.
   - Gated by check 66 (with 66b for the seeds and 66c, a four-block corner, as the negative
@@ -208,6 +212,13 @@ is this file's.
   firing with a chain in the document; 65 two facing chains.
 
 ## Named blind spots
+
+- **NOTHING GATES THE COUNT-REDUCTION RULES ABOVE.** Every figure in them — `2Ka`, the valences,
+  the gate-2 verdicts, the 2688 quads — is measured in research documents under `docs/research/`
+  that no C++ check and no surface gate reads, so they decay exactly as §11 of the nesting note's
+  two figures did. The three-block corner ITSELF is gated (check 66); what a ring of them COSTS
+  is not. #192's step 4 is why: it decided no reduction leaves `docs/research/`, so there is no
+  shipped case for a gate to pin.
 
 - **The `examples/topology/*.json` glob is the first of its kind and is UNMEASURED on this
   build.** #61 measured that a rule file arrives on a `Read` of a matching file, but no glob

@@ -6260,8 +6260,11 @@ the WALL therefore cannot have the notch, and a reduction against a wall costs t
 **N(r) DOES NOT REGISTER THE SMALLEST ONE.** The nesting note's §15a instrument stays FLAT at 4
 across the smallest reducing annulus while its node count falls 72 to 48, because the count falls
 INSIDE the corner block rather than by a block boundary ending. The embedded reducing O-grid DOES
-fall — 16 to 8 — and is the first blocking in this repo that does. Both readings are kept: N(r) is
-necessary for a nest and is not sufficient for a count reduction.
+fall — 16, then 20 over the folds, then 12, then 8 — and is the first blocking in this repo that
+does. Both readings are kept: N(r) is necessary for a nest and is not sufficient for a count
+reduction. The instrument also SPIKES to 109 where a ring interface is itself the circle, which is
+its artefact and not the blocking's, and a 40-point first draft of the figure missed both that and
+the rise to 20.
 
 **GATE 2 PASSES ON ONE MESH AND FAILS ON THE OTHER, AND THE CONTROL IS WHAT SAYS WHICH.** The
 reducing O-grid on the shipped circle geometries — body 192 intervals against the shipped O-grid's
@@ -6271,9 +6274,10 @@ with no NaN. The reducing C-GRID goes to `Average norm is a nan` at iteration 20
 own no-corner-block control, at the same iteration**, so what that measures is the three-band C-grid
 construction and not the reduction. Blocks per grid line ended is `9/(2a)` for this family: **0.375**
 at four folds of depth 12, rising to 2.25 at twenty-four folds of depth 2, with the mean
-non-orthogonality falling and the MAXIMUM rising along that row until the last row inverts cells
-under the smoother — so the CHEAPEST blocking is also the best one. Every row is an order of
-magnitude worse at its worst cell (53.6 degrees at best) than the shipped O-grid's 2.02.
+non-orthogonality falling (4.70 to 2.89) and the MAXIMUM rising (53.6 to 81.9) along that row until
+the last row inverts cells under the smoother — so the cheapest blocking is the best one ON THE
+WORST CELL and the dearest is the best one on the mean, and nothing here says which a solver cares
+about. Every row is an order of magnitude worse at its worst cell than the shipped O-grid's 2.02.
 
 **WHAT THE REDUCTION BUYS IN CELLS, on the shipped C-grid and against #191's own three-row table in
 the same bins with the same ruler:** 2688 added quads where every other way of putting 97 nodes on

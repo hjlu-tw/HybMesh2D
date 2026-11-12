@@ -34,8 +34,15 @@ through it the single cell there would have to span the seam's own 180 degrees.
 Pulled in, the seam TURNS there and that cell is an ordinary one; the two arcs
 either side stop being ellipse arcs and are declared as the chords they are.
 
-MEASURED 2026-11-12, at the defaults, against #191's three-row table in the same
-bins and with that gate's own ruler:
+MEASURED 2026-11-12, at the defaults — which are the committed documents', and
+the two commands that write them are in those files' own headers:
+
+    python3 .../make_reducing_cgrid.py --stem reducing_cgrid
+    python3 .../make_reducing_cgrid.py --control --stem reducing_cgrid_control
+
+Against #191's three-row table, in the same bins and with that gate's own ruler
+(`bin_added_cells.py` beside this file prints the table and imports those
+helpers rather than re-implementing them):
 
     the REDUCING document    8448 quads, 0 inverted, nonortho max 69.0 mean 24.4
                              2688 added over the shipped four-block C-grid, of
@@ -61,6 +68,7 @@ import itertools
 import json
 import math
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -90,7 +98,7 @@ def seg_table(name):
     return out
 
 
-def at_fraction(table, segs, frac):
+def station_at_fraction(table, segs, frac):
     """(seg, t) at `frac` of the TOTAL arc length over the listed segments."""
     lens = [table[s][1][-1] for s in segs]
     target = frac * sum(lens)
@@ -138,16 +146,19 @@ def ellipse_even(n, t0, t1, samples=20001):
     return out
 
 
-def build(folds=6, notch=0.12, far_iv=None, total_iv=40, wake=25,
-          gap=0.5, control=False):
+# The wake cut's node count, the shipped C-grid's own, which this document does
+# not vary: the reduction is over the AEROFOIL and the wake is carried through.
+WAKE_NODES = 25
+
+
+def build(folds=6, notch=0.12, total_iv=40, gap=0.6, control=False):
     MID = mid_curve(gap)
     far_t = seg_table(FAR)
     K = folds
     stations = 4 * K                      # seam and aerofoil arcs over the body
     per_arc = 192 // stations             # intervals on each of them
     red_iv = 48 // K                      # the reducing band's radial depth
-    if far_iv is None:
-        far_iv = red_iv
+    far_iv = red_iv                       # the ordinary band beyond it
     inner_iv = total_iv - red_iv - far_iv
     assert per_arc * stations == 192 and 2 * K * red_iv == 96 and inner_iv > 0
 
@@ -220,7 +231,7 @@ def build(folds=6, notch=0.12, far_iv=None, total_iv=40, wake=25,
         elif k == outer_arcs // 2:
             far.append("f2")
         else:
-            loc = at_fraction(far_t, [2, 3], k / float(outer_arcs))
+            loc = station_at_fraction(far_t, [2, 3], k / float(outer_arcs))
             far.append(add({"id": "x%d" % k, "kind": "on_geometry",
                             "geom": FAR, "seg": loc["seg"],
                             "t": round(loc["t"], 12)}))
@@ -300,7 +311,8 @@ def build(folds=6, notch=0.12, far_iv=None, total_iv=40, wake=25,
                                  "n%d" % k]})
 
     # ---- the wake column, three bands deep ---------------------------------
-    edge("wake", "te", "wk", "cut", wake, spacing={"ds_start": 0.005})
+    edge("wake", "te", "wk", "cut", WAKE_NODES,
+         spacing={"ds_start": 0.005})
     edge("w1_up", seam[0], "sw1_up", "interface", spacing={"ds_start": 0.005})
     edge("w1_lo", seam[stations], "sw1_lo", "interface",
          spacing={"ds_start": 0.005})
@@ -340,28 +352,35 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--notch", type=float, default=0.12)
     ap.add_argument("--folds", type=int, default=6)
-    ap.add_argument("--far-iv", type=int, default=None)
     ap.add_argument("--total-iv", type=int, default=40,
                     help="radial intervals from the body to the far field; the "
                          "shipped C-grid spends 40 and so does this by default")
     ap.add_argument("--control", action="store_true",
                     help="the same three bands with NO corner block, so the far "
                          "field inherits all 192 intervals")
-    ap.add_argument("--gap", type=float, default=0.5,
+    ap.add_argument("--gap", type=float, default=0.6,
                     help="how far the MID curve stands outside the seam; the "
                          "reducing band's whole radial span")
-    ap.add_argument("--smooth", type=int, default=20)
+    ap.add_argument("--smooth", type=int, default=0,
+                    help="MB_SMOOTH_ITERS for the written config. ZERO is the "
+                         "default here and not the shipped 20 because at 20 this "
+                         "document has 120 inverted cells and the shipped one "
+                         "has none — see the docstring")
     ap.add_argument("--stem", default="reducing_cgrid")
     a = ap.parse_args()
-    doc = build(folds=a.folds, notch=a.notch, far_iv=a.far_iv,
-                total_iv=a.total_iv, gap=a.gap, control=a.control)
+    doc = build(folds=a.folds, notch=a.notch, total_iv=a.total_iv, gap=a.gap,
+                control=a.control)
+    # The generating command goes in the file, as in make_reducing_annulus.py.
     header = (
         "// THE SHIPPED C-GRID WITH A COUNT REDUCTION IN IT (issue #192 step 3)\n"
-        "// — WRITTEN BY docs/research/gridpro-blocking-method/make_reducing_cgrid.py.\n"
-        "// Do not hand-edit; re-run the generator.\n")
+        "// — GENERATED by make_reducing_cgrid.py %s\n"
+        "// beside this file. Do not hand-edit; re-run that command.\n"
+        % " ".join(sys.argv[1:]))
     with open(os.path.join(HERE, a.stem + ".json"), "w", encoding="utf-8") as f:
         f.write(header + json.dumps(doc, indent=2) + "\n")
-    cfg = ("# Written by make_reducing_cgrid.py — see that file. #192 step 3.\n"
+    cfg = ("# GENERATED by make_reducing_cgrid.py "
+           + " ".join(sys.argv[1:]) + " — #192 step 3.\n"
+           
            "MESH_MODE 1\n"
            "MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/%s.json\n"
            "GEOM_FILE examples/geometries/%s\n"

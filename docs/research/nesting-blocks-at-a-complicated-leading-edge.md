@@ -1035,7 +1035,10 @@ THREE blocks — and left the price unmeasured. This section is the price, and i
 remaining half: **a count-reducing annulus is expressible, it meshes with zero inverted cells, its
 N(r) falls, and one of them runs the solver at the C-grid's own operating point without NaN.**
 Generators: `gridpro-blocking-method/make_reducing_annulus.py` and `make_reducing_cgrid.py`.
-Nothing in `config/`, `examples/`, `src/` or `include/` was changed to write any of it. **[V]**
+**Each committed document carries the command that wrote it in its own header**, because these
+four differ from the generators' defaults in up to seven flags and a figure recorded against one
+of them cannot be checked against another. Nothing in `config/`, `examples/`, `src/` or `include/`
+was changed to write any of it. **[V]**
 
 ### 16a. The construction, and the law it obeys **[V]**
 
@@ -1057,6 +1060,15 @@ C-grid's aerofoil from 97 nodes to 193 while holding the far field at 145 needs 
 and that is **two corner blocks at depth 24, or four at depth 12** — not 96 of anything. The
 smallest ring measured here ends **24** lines with **ONE** corner block and 2 off-valence nodes.
 
+**WHY THE NODE-LOCAL READING DOES NOT ADD UP, since it is the one a reader arrives with.** A
+valence-3 node is locally where one quad layer terminates, and that is not false. What is false is
+summing it: **the lines a corner block removes do not end AT its irregular nodes, they TURN inside
+it.** The corner block is the neighbouring blocks rotated a quarter turn — the grid lines entering
+its two inner arcs leave through its two radials and run circumferentially around the ring — and
+its two off-valence nodes are where that rotation is sewn to the blocks either side, not where
+anything stops. So the bookkeeping is the block's `2a`, and the eight irregular nodes of 16d's
+mesh account for 96 ended lines between them rather than eight.
+
 **K CORNER BLOCKS MAKE K RADIAL CLASSES**, which is step 1's "N blocks at a corner make N count
 classes" arriving a second time and from the other side: a corner block links each of its radials
 to one of its own inner arcs rather than to the other radial, so the relation does not pass
@@ -1074,7 +1086,9 @@ inner 72 intervals and outer 48. Through the real binary at `MB_SPLIT_QUADS 0`:
 | 12 | 72 | 48 | 24 | 720 | 3 | 89.5 |
 | 24 | 96 | 48 | 48 | 1728 | 171 | 90.0 |
 
-The reduction is `2a` at every row, exactly. **It contains NO interior irregular node at all** —
+The reduction is `2a` at every row, exactly, and at the committed row that is **4 blocks for 24
+lines ended — 0.167 blocks per line**, the cheapest figure anywhere in this section and the one
+16d's complete meshes have to be read against. **It contains NO interior irregular node at all** —
 every interior node is valence 4, and the two nodes off the regular valence are both on the
 BOUNDARY: the apex, where three blocks meet, at valence 4 on the outer circle, and the FOLD
 between the corner block's two inner arcs, at valence **2** on the inner one. A valence-2 node on
@@ -1089,8 +1103,8 @@ never when it is the wall. **[V]**
 **THE RING'S THICKNESS IS A QUALITY KNOB AND IT WAS NEARLY MISSED.** The same document at an outer
 radius of 1.8 instead of 3.0 gives **48** inverted cells and a mean of 39.7 degrees against 3 and
 23.8 — the corner block tapers from two inner arcs to one point across the ring, so a thin ring
-taper is a sharp one. The figures in the table are at radius 3.0 and the generator carries
-`--r-out` so they are reproducible. **[V]**
+taper is a sharp one. The figures in the table are at radius 3.0, which is the generator's default
+and is the value the committed document's own header records. **[V]**
 
 ### 16c. N(r) DOES NOT REGISTER THE SMALLEST ONE, and that is a finding about the instrument **[V]**
 
@@ -1100,11 +1114,20 @@ count falls INSIDE the corner block, where the grid lines leaving its two inner 
 leave through its two radials. §15a's instrument measures where block BOUNDARIES end, and that is
 not the same question as where grid LINES end.
 
-The embedded reducing O-grid below **does** fall — **16 at r = 0.6, 12 at r = 1.2, 8 at r = 3 and
-beyond** — and is **the first blocking in this repo whose N(r) falls**, against the FLAT rows
-§15b records for the shipped C-grid and the 160-block C/H. So the two reducing documents disagree
-with each other on the instrument, which is the honest reading of both: N(r) is necessary for a
-nest and is not sufficient for a count reduction.
+The embedded reducing O-grid below **does** fall, and its full shape is **16 out to r = 0.79, then
+20 to r = 0.99, then 12 to r = 1.79, then 8 to the far field** — it RISES once, over the notched
+folds, before it falls. It is **the first blocking in this repo whose N(r) falls**, against the
+FLAT rows §15b records for the shipped C-grid and the 160-block C/H. So the two reducing documents
+disagree with each other on the instrument, which is the honest reading of both: N(r) is necessary
+for a nest and is not sufficient for a count reduction.
+
+**AND THE INSTRUMENT SPIKES WHERE A BLOCK BOUNDARY *IS* THE CIRCLE — 109 at exactly r = 1 and 105
+at exactly r = 1.8**, the two ring interfaces, because every edge lying on the circle counts as
+crossing it. That is N(r)'s own artefact and not a property of the blocking. The first draft of
+`reduction_termination.png` sampled 40 points, missed both spikes AND the rise to 20, and showed a
+clean staircase that is not what the mesh does; the figure now samples 400 and draws the two
+interface radii as dotted lines with their values excluded. **A curve that looks tidy at the
+sample rate you chose is the sample rate's shape, not the mesh's.**
 
 ### 16d. PRICED on a complete mesh: the reducing O-grid, and gate 2 PASSES **[V]**
 
@@ -1158,8 +1181,13 @@ units out to a second ellipse, and an ordinary band to the far field. 97 nodes p
 surface, the four-block case's far-field counts, 40 radial intervals in all — the same budget the
 shipped cases spend. 60 blocks. Against #191's own three-row table, in **the same bins and with
 the same ruler** (that gate's `_bin_cells` and `_body_polyline`, imported rather than
-re-implemented; the shipped chain row below reproduces #191's figures to the cell, which is what
-makes the new rows comparable):
+re-implemented by `bin_added_cells.py` beside the generators, which is what makes the table
+re-derivable rather than quoted; the shipped chain row below reproduces #191's figures to the cell,
+which is what makes the new rows comparable). **The baseline is the shipped four-block C-grid AS
+SHIPPED, at `MB_SMOOTH_ITERS` 20, while the two rows this work adds are at 0** — because at 20 the
+reducing document has 120 inverted cells. The ADDED TOTALS cannot be affected by that, since a mesh
+has the cell count its counts give it; which BIN a cell near a boundary lands in can be, and nothing
+here corrects for it:
 
 | | added | < 1 chord | 1-5 chords | > 5 chords |
 |---|---|---|---|---|
@@ -1197,7 +1225,7 @@ the device is cleared on.
   nests anything into anything.
 - **Does NOT make the capability available.** One reducing mesh passes gate 2 and one does not,
   no topology family emits a corner block, no shipped case carries one, and the best worst cell
-  measured anywhere here is 52.8 degrees off orthogonal against a plain O-grid's 2.0.
+  measured anywhere here is 53.6 degrees off orthogonal against a plain O-grid's 2.02.
 
 ### 16g. Named limits of this section
 
@@ -1212,6 +1240,13 @@ the device is cleared on.
   turn is a measurement over four values of one knob on two documents; no analysis says what the
   turn should be, and the three-cells-at-120-degrees ideal is argued from the valence, not
   measured.
+- **N(r)'s two spikes are named in 16c and not FIXED.** `measure_block_partition.py` is #15a's
+  instrument and this work did not change it; a reader who samples it at a ring interface gets 109
+  and no warning. The plot excludes those radii; the tool does not.
+- **The 52.8 that stood in this section for one review round** was the best worst cell at
+  `MB_SMOOTH_ITERS` 0, left behind when 16d's table was re-measured at the shipped 20. It is
+  recorded rather than silently corrected because it is the shape every figure in this repo decays
+  into: a number that was true of a measurement nobody re-ran after the measurement moved.
 - **Nothing here is gated.** These are research documents under `docs/research/`; no C++ check and
   no surface gate reads them, and they will rot exactly as §11's two figures did unless something
   does. That is the same state #192 step 1 closed for the three-block corner itself, and it is
