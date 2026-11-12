@@ -440,6 +440,53 @@ OUTPUT_FILENAME {out_name}
         check("7b. a recognised flag's value is still its own and reaches the "
               f"config, not the refusal (rc={rc})",
               rc == 0 and not unknown_args(out))
+        # A RECOGNISED FLAG ENDS AN UNRECOGNISED ONE'S REACH, and this control is
+        # the one the first cut of #187 got wrong: `unknownFlagIdx` was set and
+        # never cleared, so an invented flag poisoned every bare token after it no
+        # matter what stood between. `-domain_bl` eats nothing, the parser has
+        # already committed to reading it as a flag, so the path behind it is not
+        # that invented flag's value and there is nothing to refuse. Found by
+        # review, measured on the built binary, gated here.
+        rc, out = run(tmp, plain("cleared"),
+                      argv_tail=["-bogus_flag", "-domain_bl", "@DAT@"])
+        check("7b. a recognised flag between the invented one and the config path "
+              "ENDS its reach: the path is still promoted and the run meshes "
+              f"(rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "cleared.vtk")))
+        check("7b. ...and only the invented flag is named, not the path it never "
+              f"governed ({sorted(unknown_args(out))})",
+              unknown_args(out) == {"-bogus_flag"})
+        # And the other direction, so clearing did not disarm the refusal: the
+        # recognised flag standing BEFORE the invented one leaves its reach intact.
+        rc, out = run(tmp, plain("stillrefused"),
+                      argv_tail=["-domain_bl", "-bogus_flag", "@DAT@"])
+        check("7b. ...while a recognised flag BEFORE the invented one changes "
+              f"nothing: that line still refuses (rc={rc})", rc == 2)
+        # A BARE token does not end that reach either, or the same defect would sit
+        # one slot over: the SECOND path would be promoted while the first was
+        # refused, which is the silence this ticket exists to remove wearing a hat.
+        rc, out = run(tmp, plain("tworun"),
+                      argv_tail=["-bogus_flag", "@DAT@", "@DAT@"])
+        check("7b. ...and a RUN of bare tokens behind the invented flag refuses as "
+              "one: the second is not promoted because the first was refused "
+              f"(rc={rc})",
+              rc == 2 and not os.path.exists(os.path.join(tmp, "tworun.vtk")))
+
+        # A `PathList` flag's values are consumed by phase 1 THROUGH THE TABLE,
+        # not through a second chain of names beside it -- the drift review found,
+        # in the shape a FUTURE PathList flag would take. What can be driven today
+        # is the live consequence: `-geom` swallows its path and stops at the next
+        # token starting with '-', so the bare path AFTER that one is still the
+        # config and is neither collected as geometry nor refused. (A bare path
+        # placed directly after `-geom` is a GEOMETRY, not a config -- that is what
+        # a greedy collector means, and it is unchanged by this ticket.)
+        rc, out = run(tmp, plain("pathlist"),
+                      argv_tail=["-geom", geom, "-domain_bl", "@DAT@"])
+        check("7b. a PathList flag's values are consumed by phase 1 from the "
+              f"table, so the config path behind it still lands (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "pathlist.vtk")))
+        check("7b. ...and nothing on that line is reported unknown "
+              f"({sorted(unknown_args(out))})", not unknown_args(out))
 
         # The two-sided half. A warning that fires on everything is as useless as
         # one that fires on nothing, and only one of the two looks broken.

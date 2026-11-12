@@ -103,13 +103,13 @@ a topology document this surface has an installed base. **ONE shape refuses, and
 where the flag's neighbour would otherwise have chosen the whole input document** (#187, below);
 everywhere else the warning is the whole consequence.
 - **THERE IS EXACTLY ONE LIST OF ARGUMENT NAMES, `cliArgSpecs()`, and it IS the parser** — the
-  name, what it consumes (`ArgTakes::Nothing` / `OneValue` / `PathList`) and what it does once the
-  config is loaded. BOTH phases read it, so a flag added to the parser is covered by both with no
-  copy free to drift. **REVERSED at #187**: #186 said the terminal branch introduces no list and
-  the chain of `arg == "-..."` comparisons IS the list — true of what that ticket ADDED, false of
-  the file, because `kValueFlags` already named the 13 value-taking flags in phase 1 and could
-  drift from the chain in BOTH directions, one of which was already live (`-domain_bl` takes
-  nothing and was absent from it). #187 collapsed the two into the table rather than adding a third.
+  name, what it CONSUMES (`ArgTakes::Nothing` / `OneValue` / `PathList`), where phase 1 collects a
+  `PathList` flag's values (`ArgSpec::into`, a `CliCollected` member pointer) and what it does to
+  the config once that file is loaded. BOTH phases take every argument's arity from it, so what a
+  flag eats in one cannot disagree with the other. **`-conf` is the ONE argument phase 1 also reads
+  by name**, because finding the config path is what phase 1 is for.
+  **REVERSES #186:** there is exactly one list of argument names and both phases read it.
+  Why: docs/design_notes/mesher.md, "ONE LIST, FINALLY — AND IT IS WHAT MADE THE FIX"
 - **The loop runs in TWO passes and the terminal branch respects both.** `-conf`, `-geom`, `-seed`
   and `-geom_nobl` are collected in phase 1 and their values stepped over in phase 2 by the table's
   own `PathList` / `OneValue` arity; the bare positional config path is skipped by INDEX
@@ -138,6 +138,13 @@ everywhere else the warning is the whole consequence.
   preceded the path, so there was never a question about what it is. `-domain_bl mycase.dat` runs
   and is SILENT — the table says that flag eats nothing — which is the false positive the refusal
   would have had if phase 1 had kept a list of its own.
+- **A RECOGNISED FLAG ENDS AN UNRECOGNISED ONE'S REACH; a BARE token does not.**
+  `-bogus -domain_bl mycase.dat` runs: the parser has committed to reading `-domain_bl` as a flag,
+  so that token is not `-bogus`'s value and the table says what this one eats. `-bogus a.dat b.dat`
+  refuses as ONE line — a run of bare tokens behind an unrecognised flag is all equally
+  unresolvable, and promoting the second would be this ticket's own defect one slot over. **The
+  first cut of #187 had `unknownFlagIdx` set and never cleared**, so an invented flag poisoned
+  every later bare token whatever stood between; found in review, and both directions are gated.
 - **No new override was added, `-mb_smooth_iters` least of all.** The defect is the SILENCE, not the
   absence; adding the one flag that happened to be imagined would fix a single instance and leave the
   class intact. `MB_SMOOTH_ITERS` is a `.dat` key and is how the gates set it.

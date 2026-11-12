@@ -1335,37 +1335,52 @@ enum class ArgTakes {
     PathList    // every following token until the next one that starts with '-'
 };
 
+// The paths phase 1 collects before the config file is loaded, so the three
+// `PathList` flags name their destination IN THE TABLE rather than in a second
+// chain of `arg == "-..."` tests beside it. A `PathList` entry added with no
+// destination is still STEPPED OVER by phase 1 -- it collects into nothing, which
+// is a flag that does not work yet, rather than a flag whose first value gets
+// promoted to the config path, which is the defect #187 exists to stop.
+struct CliCollected {
+    std::vector<std::string> geom;      // -geom: body-fitted boundaries that grow BL
+    std::vector<std::string> noBLGeom;  // -geom_nobl: obstacles that don't grow BL
+    std::vector<std::string> seed;      // -seed: refinement seeds
+};
+
 struct ArgSpec {
     ArgTakes takes;
     // Applied in phase 2, AFTER the config file has been loaded, so a command-line
     // override beats the file. `v` is the flag's value for OneValue and nullptr
-    // otherwise. A null `apply` means the flag was already consumed in phase 1
-    // (`-conf`, `-geom`, `-seed`, `-geom_nobl`); it still has to appear here,
-    // because phase 1 has to know what it eats and phase 2 has to tell it from a
-    // typo. Capture-free lambdas, so this is a plain function pointer.
+    // otherwise. A null `apply` means the flag is consumed in phase 1 (`-conf`,
+    // `-geom`, `-seed`, `-geom_nobl`); it still has to appear here, because phase 1
+    // has to know what it eats and phase 2 has to tell it from a typo. Capture-free
+    // lambdas, so this is a plain function pointer.
     void (*apply)(Config&, const char*);
+    // Where phase 1 puts the values of a `PathList` flag. Null for every other
+    // arity, and for a `PathList` flag that nothing collects yet.
+    std::vector<std::string> CliCollected::* into;
 };
 
 static const std::map<std::string, ArgSpec>& cliArgSpecs() {
     static const std::map<std::string, ArgSpec> kSpecs = {
-        {"-conf",        {ArgTakes::OneValue, nullptr}},
-        {"-geom",        {ArgTakes::PathList, nullptr}},
-        {"-seed",        {ArgTakes::PathList, nullptr}},
-        {"-geom_nobl",   {ArgTakes::PathList, nullptr}},
-        {"-domain",      {ArgTakes::OneValue, [](Config& c, const char* v) { c.domainFile = v; }}},
-        {"-domain_bl",   {ArgTakes::Nothing,  [](Config& c, const char*) { c.domainGrowBL = true; }}},
-        {"-bc_xmin",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcXMin = v; }}},
-        {"-bc_xmax",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcXMax = v; }}},
-        {"-bc_ymin",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcYMin = v; }}},
-        {"-bc_ymax",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcYMax = v; }}},
-        {"-bc_geom",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcGeom = v; }}},
-        {"-out_vtk",     {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportVTK = (n != 0); }}},
-        {"-out_starcd",  {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportStarCD = (n != 0); }}},
-        {"-out_cgns",    {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportCGNS = (n != 0); }}},
-        {"-out_name",    {ArgTakes::OneValue, [](Config& c, const char* v) { c.outputFilename = v; }}},
-        {"-seed_size",   {ArgTakes::OneValue, [](Config& c, const char* v) { parseDoubleArg(v, c.seedSize); }}},
-        {"-seed_radius", {ArgTakes::OneValue, [](Config& c, const char* v) { parseDoubleArg(v, c.seedRadius); }}},
-        {"-seed_mode",   {ArgTakes::OneValue, [](Config& c, const char* v) { std::string m = v; c.seedMode = (m == "embed" || m == "1") ? 1 : 0; }}},
+        {"-conf",        {ArgTakes::OneValue, nullptr, nullptr}},
+        {"-geom",        {ArgTakes::PathList, nullptr, &CliCollected::geom}},
+        {"-seed",        {ArgTakes::PathList, nullptr, &CliCollected::seed}},
+        {"-geom_nobl",   {ArgTakes::PathList, nullptr, &CliCollected::noBLGeom}},
+        {"-domain",      {ArgTakes::OneValue, [](Config& c, const char* v) { c.domainFile = v; }, nullptr}},
+        {"-domain_bl",   {ArgTakes::Nothing,  [](Config& c, const char*) { c.domainGrowBL = true; }, nullptr}},
+        {"-bc_xmin",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcXMin = v; }, nullptr}},
+        {"-bc_xmax",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcXMax = v; }, nullptr}},
+        {"-bc_ymin",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcYMin = v; }, nullptr}},
+        {"-bc_ymax",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcYMax = v; }, nullptr}},
+        {"-bc_geom",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcGeom = v; }, nullptr}},
+        {"-out_vtk",     {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportVTK = (n != 0); }, nullptr}},
+        {"-out_starcd",  {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportStarCD = (n != 0); }, nullptr}},
+        {"-out_cgns",    {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportCGNS = (n != 0); }, nullptr}},
+        {"-out_name",    {ArgTakes::OneValue, [](Config& c, const char* v) { c.outputFilename = v; }, nullptr}},
+        {"-seed_size",   {ArgTakes::OneValue, [](Config& c, const char* v) { parseDoubleArg(v, c.seedSize); }, nullptr}},
+        {"-seed_radius", {ArgTakes::OneValue, [](Config& c, const char* v) { parseDoubleArg(v, c.seedRadius); }, nullptr}},
+        {"-seed_mode",   {ArgTakes::OneValue, [](Config& c, const char* v) { std::string m = v; c.seedMode = (m == "embed" || m == "1") ? 1 : 0; }, nullptr}},
     };
     return kSpecs;
 }
@@ -1373,9 +1388,7 @@ static const std::map<std::string, ArgSpec>& cliArgSpecs() {
 int hybmesh::runCli(int argc, char* argv[]) {
     Config config;
     std::string configFile = "config/Background_para.dat";
-    std::vector<std::string> cmdGeomFiles;
-    std::vector<std::string> cmdNoBLGeomFiles;   // -geom_nobl: obstacles that don't grow BL
-    std::vector<std::string> cmdSeedFiles;
+    CliCollected collected;
     bool geomProvided = false;
     bool seedProvided = false;
     bool confExplicit = false;
@@ -1389,33 +1402,30 @@ int hybmesh::runCli(int argc, char* argv[]) {
         std::string arg = argv[i];
         auto it = cliArgSpecs().find(arg);
         if (it != cliArgSpecs().end()) {
-            // Four arguments are COLLECTED here, because the config path and the
-            // geometry lists have to exist before the file is loaded. Every other
-            // recognised flag only needs the slots it eats stepped over, so its
-            // value is never read as the bare positional config path -- the "1" in
-            // "-out_starcd 1", or the filename in "-domain outline.dat".
-            if (arg == "-conf") {
-                if (i + 1 < argc) {
-                    configFile = argv[++i];
-                    confExplicit = true;
-                }
-            } else if (arg == "-geom") {
-                geomProvided = true;
+            // The ARITY comes from the table, never from a second chain of names
+            // beside it, so what a flag eats here and what it eats in phase 2
+            // cannot disagree. `-conf` is the one argument phase 1 reads by name,
+            // because finding the config path is what phase 1 is FOR.
+            if (it->second.takes == ArgTakes::PathList) {
+                geomProvided = geomProvided || (arg == "-geom");
+                seedProvided = seedProvided || (arg == "-seed");
                 while (i + 1 < argc && argv[i+1][0] != '-') {
-                    cmdGeomFiles.push_back(argv[++i]);
-                }
-            } else if (arg == "-seed") {
-                seedProvided = true;
-                while (i + 1 < argc && argv[i+1][0] != '-') {
-                    cmdSeedFiles.push_back(argv[++i]);
-                }
-            } else if (arg == "-geom_nobl") {
-                while (i + 1 < argc && argv[i+1][0] != '-') {
-                    cmdNoBLGeomFiles.push_back(argv[++i]);
+                    const char* v = argv[++i];
+                    if (it->second.into) (collected.*(it->second.into)).push_back(v);
                 }
             } else if (it->second.takes == ArgTakes::OneValue && i + 1 < argc) {
-                ++i; // value belongs to a phase-2 flag, not the config path
+                // The value is stepped over so it is never read as the bare
+                // positional config path -- the "1" in "-out_starcd 1", or the
+                // filename in "-domain outline.dat".
+                ++i;
+                if (arg == "-conf") { configFile = argv[i]; confExplicit = true; }
             }
+            // A RECOGNISED flag ends an unrecognised one's reach. The parser has
+            // just committed to reading this token as a flag, so it cannot also be
+            // the previous unknown flag's value, and the table says exactly what
+            // THIS one eats -- which is what keeps `-bogus -domain_bl mycase.dat`
+            // out of the refusal below.
+            unknownFlagIdx = -1;
             continue;
         }
         if (arg[0] == '-') {
@@ -1477,17 +1487,17 @@ int hybmesh::runCli(int argc, char* argv[]) {
 
     // 如果命令列提供了 -geom，則覆蓋設定檔中的幾何物件
     if (geomProvided) {
-        config.geomFiles = cmdGeomFiles;
+        config.geomFiles = collected.geom;
     }
     // -geom_nobl：附加不長 BL 的障礙物 (以遠場尺寸貼合)。
-    for (const auto& f : cmdNoBLGeomFiles) {
+    for (const auto& f : collected.noBLGeom) {
         config.geomFiles.push_back(f);
         config.noBLGeoms.insert(f);
     }
     // 如果命令列提供了 -seed，則覆蓋設定檔中的加密種子 (套用全域 size/radius/mode)
     if (seedProvided) {
         config.seedFiles.clear();
-        for (const auto& f : cmdSeedFiles) {
+        for (const auto& f : collected.seed) {
             Config::SeedSpec s; s.file = f; config.seedFiles.push_back(s);
         }
     }

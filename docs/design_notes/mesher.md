@@ -4458,6 +4458,28 @@ rather than fixed.
   both with nothing free to drift. #186's "the terminal branch introduces no list" is
   REVERSED: true of what that ticket added, false of the file, and the honest form is "there
   is exactly one, and both phases read it".
+  - **TWO DEFECTS IN THE FIRST CUT, both found by the Standards review axis and both now
+    gated.** They are recorded because each is a claim this note made that the code did
+    not keep, which is the failure mode this repo keeps meeting.
+    1. **The table was not actually driving phase 1 for `PathList`.** Phase 1 still
+       switched on `arg == "-geom"/"-seed"/"-geom_nobl"` to collect, and read `takes` only
+       for `OneValue`. A `PathList` flag added to the table alone would have had its FIRST
+       VALUE promoted to the config path — this ticket's own defect, reintroduced by the
+       fix for it. Closed by putting the destination IN the table
+       (`ArgSpec::into`, a `std::vector<std::string> CliCollected::*`), so phase 1 branches
+       on arity and a `PathList` entry with no destination collects into nothing while
+       still being stepped over. `-conf` is the one remaining name phase 1 reads, and that
+       is its purpose rather than drift.
+    2. **`unknownFlagIdx` was set and never cleared**, so an unrecognised flag poisoned
+       every later bare token whatever stood between: `-bogus -domain_bl mycase.dat`
+       refused, with a message saying `mycase.dat` was "either that argument's value or
+       the positional config path" when `-domain_bl` stood between them and the table says
+       it eats nothing. That is the exact false positive this note claimed the design
+       avoided. **A RECOGNISED FLAG NOW ENDS AN UNRECOGNISED ONE'S REACH** — the parser has
+       committed to reading that token as a flag, so it cannot also be the unknown flag's
+       value — **while a BARE token does not**, because a run of bare tokens behind an
+       unrecognised flag is all equally unresolvable and promoting the second would be the
+       same defect one slot over. Both directions are gated, and so is the run of two.
   - **One consequence fell out and is recorded rather than discovered later**: `-conf` is
     `OneValue` like the other thirteen, so it goes through `takeValueOrWarn` instead of its
     own silent `if (i + 1 < argc) ++i`. A trailing `-conf` with no path is now reported as
@@ -4475,7 +4497,7 @@ rather than fixed.
   having said that flag eats nothing; (c) a recognised flag's value still reaches the
   config. Each one is a line that LOOKS like the refused shape and is not it.
 
-**EIGHT INJECTIONS, all biting, with the unmutated tree as the negative control at 0 FAIL.**
+**ELEVEN INJECTIONS, all biting, with the unmutated tree as the negative control at 0 FAIL.**
 Each mutates `src/cli.cpp`, rebuilds and runs the gate. Restoring the pre-#187 promotion →
 **6 FAIL** (that is the world this ticket changes, and it includes "wrote no mesh", which is
 the check that would otherwise have been satisfied for the wrong reason). Dropping the
@@ -4490,7 +4512,13 @@ that control bites rather than passing by construction. **One check was weak and
 tightened rather than reported**: "the message opens in #186's own words" originally
 matched `Unknown command-line argument '-bogus_flag'` anywhere in the output, which #186's
 own WARNING satisfies, so it survived the first injection; it now matches the refusal's own
-sentence.
+sentence. **Three more injections were added for the two review findings**: never ending an
+unrecognised flag's reach → 1 FAIL; taking `PathList` out of phase 1's table branch → 2
+FAIL; letting a BARE token end that reach, which is the defect one slot over → 1 FAIL.
+The companion check beside the first ("only the invented flag is named") passes under
+that injection for the wrong reason — the refused run never reaches phase 2, so the only
+named token is the one in the ERROR line — and is reported as a companion rather than as
+a second biting check.
 
 **GOLDEN: 23 cases, 23 SAME, 0 DIFF, worst coordinate deviation 0.000e+00**, captured from
 the pre-change binary built by `git archive 2b4ac4a` into its own tree, so the baseline is
@@ -4505,10 +4533,11 @@ reported rather than counted as a mesh.
   flag precedes it (`std::string::operator[]` returns `'\0'` on an empty string, so the
   `arg[0] == '-'` test is false) — pre-existing, unchanged, and now refused if an unknown
   flag DOES precede it, which is the only part of it this ticket touches.
-- **Only the FIRST discarded token is named**, and only the unrecognised flag immediately
-  governing it. `-bogus a.dat b.dat` names `-bogus` and `a.dat`; `b.dat` is not reported in
-  the same breath. The refusal is the whole outcome, so the user fixes the line and runs
-  again rather than needing a complete inventory first.
+- **Only the FIRST discarded token is named**, and only the unrecognised flag governing
+  it. `-bogus a.dat b.dat` refuses naming `-bogus` and `a.dat`; `b.dat` is not reported in
+  the same breath, although it is equally unresolved and is equally not promoted. The
+  refusal is the whole outcome, so the user fixes the line and runs again rather than
+  needing a complete inventory first.
 - **`-h` / `--help` followed by a path now REFUSES** rather than meshing. There is still no
   help flag and none was added; a user typing `HybMesh2D --help case.dat` gets the
   unresolved-token message, which at least names the flag. Adding real help is #184's
