@@ -40,6 +40,15 @@ What this pins down:
      shipped default of 20 and agreed to six decimals, which reads as a clean
      negative result. A flag that exists but was handed no value gets a DIFFERENT
      sentence, because calling it unknown would be false.
+  7b. An unknown flag's VALUE is not promoted into something else (#187). A bare
+     token behind an unrecognised flag, with no `-conf` anywhere to say what the
+     configuration is, used to be loaded as the whole input document in silence.
+     It now REFUSES -- the two readings of that token select different input
+     documents, and a run built from a file nobody knowingly chose is not
+     something to warn about and carry on from. Three negative controls sit beside
+     it, because a refusal that fires on anything is worse than none: the flag
+     AFTER the path, a recognised no-value switch before the path, and a
+     recognised flag's value.
 
 THE GOLDEN BASELINE, recorded here because #49's first acceptance item is that the
 existing path is untouched and because a procedure nobody wrote down is one nobody
@@ -359,22 +368,78 @@ OUTPUT_FILENAME {out_name}
         check("7. ...and the invented flag's value is named on its own, having had "
               f"no effect of its own ({sorted(unknown_args(out))})",
               unknown_args(out) == {"-mb_smooth_iters", "0"})
-        # Put the invented flag FIRST and its value is NOT named: phase 1 reached it
-        # before any -conf, took it as the bare positional config path and skipped
-        # that slot by index. Here the later -conf overwrites the path so the run is
-        # still right, but the token that could have decided the whole input document
-        # is silent -- which is #184's user story 5 and the whole of #187. Pinned so
-        # that the claim "an unknown flag's value is named" cannot be quoted without
-        # the condition it holds under.
+        # Put the invented flag FIRST and the token behind it is named TOO (#187).
+        # Before that ticket phase 1 reached it before any -conf, promoted it to the
+        # bare positional config path and phase 2 skipped that slot by index, so the
+        # token that could have decided the whole input document was silent. Here a
+        # later -conf names the configuration, so the run is unambiguous and is still
+        # only warned about -- the refusal below is for the line where nothing does.
         rc, out = run(tmp, plain("ordering"),
                       argv_tail=["-bogus_flag", "@DAT@", "-conf", "@DAT@"])
-        check("7. ...but NOT when the invented flag comes before the config: phase 1 "
-              "promoted its value to the positional path, so only the flag is named "
-              f"({sorted(unknown_args(out))}) -- #187's subject, open here",
-              unknown_args(out) == {"-bogus_flag"})
-        check("7. ...and that run still meshed, so the silence is a token consumed "
-              "rather than a run that failed",
+        dat = os.path.join(tmp, "mode.dat")
+        check("7. ...and when the invented flag comes BEFORE the config path, the "
+              "token behind it is named as well, instead of being promoted to the "
+              f"positional config in silence ({sorted(unknown_args(out))})",
+              unknown_args(out) == {"-bogus_flag", dat})
+        check("7. ...and that run still meshed, because a later -conf says which "
+              "file the configuration is: naming it is not refusing it",
               rc == 0 and os.path.exists(os.path.join(tmp, "ordering.vtk")))
+
+        # ── 7b. #187: an unknown flag's VALUE is not promoted, and the one shape
+        # that cannot be resolved REFUSES. `-bogus_flag mycase.dat` with no -conf
+        # anywhere used to load mycase.dat as the whole input document and say
+        # nothing -- #184's user story 5. The two readings (that flag's value, or
+        # the configuration) select DIFFERENT input documents, and nothing on the
+        # line decides between them, so the run stops rather than meshing a
+        # configuration nobody knowingly chose. Measured before choosing: NO command
+        # line in this repo's scripts, shipped examples or docs carries a token the
+        # parser does not have, so no working line changes behaviour.
+        rc, out = run(tmp, plain("refused"),
+                      argv_tail=["-bogus_flag", "@DAT@"])
+        check("7b. an unknown flag followed by a bare path, with no -conf, REFUSES "
+              f"with the CONFIG code (2) rather than loading it (rc={rc})", rc == 2)
+        check("7b. ...and wrote no mesh, so the refusal is the whole outcome and "
+              "not a warning beside a mesh built from the wrong file",
+              not os.path.exists(os.path.join(tmp, "refused.vtk")))
+        check("7b. ...and the REFUSAL ITSELF opens in #186's own words, because "
+              "this is one rule reaching a second consequence rather than a second "
+              f"rule ({sorted(unknown_args(out))})",
+              "Unknown command-line argument '-bogus_flag', and the bare token"
+              in out)
+        check("7b. ...and names the token it refused to resolve, which is the one "
+              "the user has to do something about",
+              f"the bare token '{dat}' after it was NOT taken as the configuration"
+              in out)
+        check("7b. ...and says what to type instead, both ways out",
+              f"pass '-conf {dat}' to name it" in out
+              and "drop '-bogus_flag'" in out)
+        check("7b. ...and emits the machine-readable line the GUI parses, with the "
+              "existing CONFIG token rather than a new one",
+              f"HYBMESH_ERROR 2 CONFIG {dat}" in out)
+
+        # The three negative controls, which are what stop this from being a refusal
+        # that fires on anything. Each is a command line that LOOKS like the shape
+        # above and is not it.
+        rc, out = run(tmp, plain("after"), argv_tail=["@DAT@", "-bogus_flag"])
+        check("7b. a bare positional config with the invented flag AFTER it is NOT "
+              "refused: nothing preceded the path, so there was never a question "
+              f"about what it is (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "after.vtk")))
+        check("7b. ...and the flag is still named, so suppressing the refusal did "
+              f"not suppress #186 ({sorted(unknown_args(out))})",
+              unknown_args(out) == {"-bogus_flag"})
+        rc, out = run(tmp, plain("switch"), argv_tail=["-domain_bl", "@DAT@"])
+        check("7b. a RECOGNISED switch that takes no value, with the config path "
+              "behind it, still promotes that path -- the table says -domain_bl "
+              f"eats nothing, so there is no ambiguity to refuse (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "switch.vtk")))
+        check("7b. ...and nothing on that line is reported unknown "
+              f"({sorted(unknown_args(out))})", not unknown_args(out))
+        rc, out = run(tmp, plain("valueflag"),
+                      argv_tail=["-conf", "@DAT@", "-bc_geom", "wall"])
+        check("7b. a recognised flag's value is still its own and reaches the "
+              f"config, not the refusal (rc={rc})",
+              rc == 0 and not unknown_args(out))
 
         # The two-sided half. A warning that fires on everything is as useless as
         # one that fires on nothing, and only one of the two looks broken.
@@ -445,6 +510,22 @@ OUTPUT_FILENAME {out_name}
               f"({sorted(unknown_args(out))})", not unknown_args(out))
         check("7. ...and that is advisory too: still exit 0, still a mesh",
               rc == 0 and os.path.exists(os.path.join(tmp, "novalue.vtk")))
+        # `-conf` is the FOURTEENTH flag that sentence now reaches, and it reaches
+        # it because #187 collapsed phase 1's flag list and phase 2's chain into one
+        # table: `-conf` takes one value like the other thirteen, so it goes through
+        # the same lambda instead of its own silent `if (i + 1 < argc) ++i`. #186
+        # measured it at 13 of 17 and named the other four; three remain, all of
+        # them the multi-value collectors, for which "it was IGNORED and had no
+        # effect" would be false of `-geom`.
+        rc, out = run(tmp, plain("confnovalue"), argv_tail=["-conf"])
+        check(f"7. a trailing `-conf` with no path is reported as a MISSING VALUE "
+              f"too ({sorted(novalue_args(out))})", novalue_args(out) == {"-conf"})
+        check(f"7. ...and is not called unknown either ({sorted(unknown_args(out))})",
+              not unknown_args(out))
+        check("7. ...and the three multi-value collectors are still silent when "
+              "handed nothing, which is pre-existing and named rather than claimed "
+              f"fixed ({sorted(novalue_args(out))})",
+              not ({"-geom", "-seed", "-geom_nobl"} & novalue_args(out)))
 
     print()
     if failures:

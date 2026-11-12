@@ -95,39 +95,63 @@ the old and new trees:
 **An unrecognised per-geometry `KEY=VALUE` override is NAMED, not dropped**
 (`parseBLOverrideToken` asks `isBLParam` and warns) — same "the setting does nothing" failure class.
 
-**AN UNRECOGNISED COMMAND-LINE ARGUMENT IS NAMED** (`hybmesh::runCli` in `src/cli.cpp`; #186):
-`[WARN] Unknown command-line argument '-mb_smooth_iters'; it was IGNORED and had no effect on this
-run.` Advisory, never a refusal — the exit code, the machine-readable line and the mesh are all
-unchanged — because a refusal would turn "your setting does nothing" into "your case does not run",
-and unlike a topology document this surface has an installed base.
-- **The terminal branch introduces NO list of argument names, and that is a refusal rather than an
-  omission.** It asks the chain of `arg == "-..."` comparisons, which IS the list, so a flag added
-  to the parser is covered with no new copy free to drift from it. **One list does exist and
-  PREDATES this**: `kValueFlags` in phase 1 names the same 13 value-taking flags so their values are
-  not mistaken for the positional config path. It can drift — a value-taking flag added to the
-  chain alone has its value promoted to that path — and that promotion is #187's subject.
+**AN UNRECOGNISED COMMAND-LINE ARGUMENT IS NAMED** (`hybmesh::runCli` in `src/cli.cpp`; #186,
+#187): `[WARN] Unknown command-line argument '-mb_smooth_iters'; it was IGNORED and had no effect
+on this run.` Advisory — the exit code, the machine-readable line and the mesh are all unchanged —
+because a refusal would turn "your setting does nothing" into "your case does not run", and unlike
+a topology document this surface has an installed base. **ONE shape refuses, and it is the one
+where the flag's neighbour would otherwise have chosen the whole input document** (#187, below);
+everywhere else the warning is the whole consequence.
+- **THERE IS EXACTLY ONE LIST OF ARGUMENT NAMES, `cliArgSpecs()`, and it IS the parser** — the
+  name, what it consumes (`ArgTakes::Nothing` / `OneValue` / `PathList`) and what it does once the
+  config is loaded. BOTH phases read it, so a flag added to the parser is covered by both with no
+  copy free to drift. **REVERSED at #187**: #186 said the terminal branch introduces no list and
+  the chain of `arg == "-..."` comparisons IS the list — true of what that ticket ADDED, false of
+  the file, because `kValueFlags` already named the 13 value-taking flags in phase 1 and could
+  drift from the chain in BOTH directions, one of which was already live (`-domain_bl` takes
+  nothing and was absent from it). #187 collapsed the two into the table rather than adding a third.
 - **The loop runs in TWO passes and the terminal branch respects both.** `-conf`, `-geom`, `-seed`
-  and `-geom_nobl` are collected in phase 1 and skipped in phase 2 by their own branches; the bare
-  positional config path is skipped by INDEX (`positionalConfigIdx`), because phase 2 cannot tell a
-  consumed positional from an unknown token by looking at the token.
-- **A flag's NAME decides the branch and its value is taken INSIDE it** (`takeValueOrWarn`). A recognised
-  flag handed no value gets its own sentence — `expects a value and none followed` — because calling
+  and `-geom_nobl` are collected in phase 1 and their values stepped over in phase 2 by the table's
+  own `PathList` / `OneValue` arity; the bare positional config path is skipped by INDEX
+  (`positionalConfigIdx`), because phase 2 cannot tell a consumed positional from an unknown token
+  by looking at the token.
+- **A flag's NAME finds its table entry and its value is taken ONCE that entry is in hand**
+  (`takeValueOrWarn`, called from one place since #187). A recognised flag handed no value gets its own sentence — `expects a value and none followed` — because calling
   it unknown would be false and would send a user looking for a flag they spelled correctly.
-- **An unknown flag's VALUE is named on its own ONLY when a `-conf` already stood before it.**
-  `-conf x.dat -bogus 0` names `'-bogus'` AND `'0'`, both truthfully. `-bogus 0` with no earlier
-  `-conf` names only `'-bogus'`: phase 1 took `0` as the positional config path, so phase 2 skips
-  that slot by index and the token that decided the whole input document is silent. Measured, and
-  it is #187's subject — this rule does not claim to have closed it.
+- **AN UNKNOWN FLAG'S VALUE IS NEVER PROMOTED TO THE CONFIG PATH, AND THE SHAPE THAT CANNOT BE
+  RESOLVED REFUSES** (#187, the same rule's second consequence). A bare token standing behind an
+  unrecognised flag is not taken as the positional config (`orphanIdx` in phase 1); if no `-conf`
+  anywhere on the line then names the configuration, the run STOPS before loading anything:
+  `[ERROR] Unknown command-line argument '-bogus_flag', and the bare token 'mycase.dat' after it
+  was NOT taken as the configuration: … pass '-conf mycase.dat' to name it, or drop
+  '-bogus_flag'.` — then `HYBMESH_ERROR 2 CONFIG <token>`, the EXISTING code, and no mesh. **This
+  is the one place this rule refuses, and the exception is principled rather than a mood**: #186 is
+  advisory because an unrecognised flag DOES nothing, while the token beside it can decide the
+  entire input document, and the two readings of it — that flag's value, or the configuration —
+  select different ones. Measured before choosing: **NO command line in this repo's scripts,
+  shipped examples or docs carries a token the parser does not have**, so no working line changes
+  behaviour.
+- **Everything that is not that one shape still only WARNS.** `-conf x.dat -bogus 0` names
+  `'-bogus'` AND `'0'` and runs (#186, unchanged). `-bogus 0 -conf x.dat` now names BOTH as well
+  and runs — the later `-conf` makes the line unambiguous, so naming the token is not refusing it;
+  before #187 `0` was promoted to the config path and silent. `mycase.dat -bogus` runs: nothing
+  preceded the path, so there was never a question about what it is. `-domain_bl mycase.dat` runs
+  and is SILENT — the table says that flag eats nothing — which is the false positive the refusal
+  would have had if phase 1 had kept a list of its own.
 - **No new override was added, `-mb_smooth_iters` least of all.** The defect is the SILENCE, not the
   absence; adding the one flag that happened to be imagined would fix a single instance and leave the
   class intact. `MB_SMOOTH_ITERS` is a `.dat` key and is how the gates set it.
-- **The missing-value sentence covers 13 of the 17 value-taking arguments.** `-conf`, `-geom`,
-  `-seed` and `-geom_nobl` match their own phase-2 branch, so they are never called unknown — but
-  they are SILENT when handed nothing, and `-geom` with no paths OVERWRITES the config's geometry
-  list with an empty one and meshes an empty domain at exit 0. Measured, pre-existing, unchanged
-  here, and a follow-up under #184; "it was IGNORED and had no effect" would be false of `-geom`.
-- Gate: `tests/test_mesh_mode_surface.py` section 7, through the real binary, in BOTH directions — a
-  warning that fires on everything is as useless as one that fires on nothing.
+- **The missing-value sentence covers 14 of the 17 value-taking arguments** — 13 at #186, and
+  `-conf` since #187 collapsed the lists: it is `OneValue` like the other thirteen and goes through
+  the same lambda instead of its own silent skip. The three `PathList` collectors (`-geom`,
+  `-seed`, `-geom_nobl`) are still SILENT when handed nothing, and `-geom` with no paths OVERWRITES
+  the config's geometry list with an empty one and meshes an empty domain at exit 0. Measured,
+  pre-existing, unchanged, and a follow-up under #184; "it was IGNORED and had no effect" would be
+  false of `-geom`.
+- Gate: `tests/test_mesh_mode_surface.py` sections 7 and 7b, through the real binary, in BOTH
+  directions — a warning that fires on everything is as useless as one that fires on nothing, and a
+  refusal that does is worse. 7b carries three negative controls for the refusal alone: the unknown
+  flag AFTER the path, a recognised no-value switch before it, and a recognised flag's value.
 
 **`DOMAIN_FILE` AND `GEOM_FILE` ARE ONE KIND OF LINE UNDER `MESH_MODE 1`** (`buildMultiBlockMesh`
 in `src/cli.cpp`; #171). On the hybrid path the two decide different things — which outline the

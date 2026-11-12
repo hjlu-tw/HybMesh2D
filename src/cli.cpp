@@ -1317,6 +1317,59 @@ static void printHybridQuality(const Mesh& mesh, hybmesh::MeshQuality& quality) 
     quality.bulk = rep.bulk;
 }
 
+// ONE DECLARATION OF WHAT EACH COMMAND-LINE ARGUMENT TAKES (#187). Until this
+// ticket there were TWO, and #186's own design note named the drift between them
+// as this one's to close: `kValueFlags` inside phase 1 listed the 13 value-taking
+// flags so their values were never mistaken for the bare positional config path,
+// while the chain of `arg == "-..."` comparisons in phase 2 listed all eighteen.
+// A value-taking flag added to the chain alone had its value promoted to that
+// path -- the very promotion #187 exists to stop -- and `-domain_bl`, which takes
+// nothing, was already absent from phase 1 for the opposite reason. Two lists for
+// one fact is a shape this repo has recorded more than once. The fix is ONE list,
+// not a third: the table below IS the parser, holding the name, what it consumes
+// and what it does once the config is loaded. #186's refusal to ADD a list stands
+// -- nothing here is a second copy of anything.
+enum class ArgTakes {
+    Nothing,    // a switch; consumes no further slot
+    OneValue,   // exactly one token, whatever that token looks like
+    PathList    // every following token until the next one that starts with '-'
+};
+
+struct ArgSpec {
+    ArgTakes takes;
+    // Applied in phase 2, AFTER the config file has been loaded, so a command-line
+    // override beats the file. `v` is the flag's value for OneValue and nullptr
+    // otherwise. A null `apply` means the flag was already consumed in phase 1
+    // (`-conf`, `-geom`, `-seed`, `-geom_nobl`); it still has to appear here,
+    // because phase 1 has to know what it eats and phase 2 has to tell it from a
+    // typo. Capture-free lambdas, so this is a plain function pointer.
+    void (*apply)(Config&, const char*);
+};
+
+static const std::map<std::string, ArgSpec>& cliArgSpecs() {
+    static const std::map<std::string, ArgSpec> kSpecs = {
+        {"-conf",        {ArgTakes::OneValue, nullptr}},
+        {"-geom",        {ArgTakes::PathList, nullptr}},
+        {"-seed",        {ArgTakes::PathList, nullptr}},
+        {"-geom_nobl",   {ArgTakes::PathList, nullptr}},
+        {"-domain",      {ArgTakes::OneValue, [](Config& c, const char* v) { c.domainFile = v; }}},
+        {"-domain_bl",   {ArgTakes::Nothing,  [](Config& c, const char*) { c.domainGrowBL = true; }}},
+        {"-bc_xmin",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcXMin = v; }}},
+        {"-bc_xmax",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcXMax = v; }}},
+        {"-bc_ymin",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcYMin = v; }}},
+        {"-bc_ymax",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcYMax = v; }}},
+        {"-bc_geom",     {ArgTakes::OneValue, [](Config& c, const char* v) { c.bcGeom = v; }}},
+        {"-out_vtk",     {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportVTK = (n != 0); }}},
+        {"-out_starcd",  {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportStarCD = (n != 0); }}},
+        {"-out_cgns",    {ArgTakes::OneValue, [](Config& c, const char* v) { int n; if (parseIntArg(v, n)) c.exportCGNS = (n != 0); }}},
+        {"-out_name",    {ArgTakes::OneValue, [](Config& c, const char* v) { c.outputFilename = v; }}},
+        {"-seed_size",   {ArgTakes::OneValue, [](Config& c, const char* v) { parseDoubleArg(v, c.seedSize); }}},
+        {"-seed_radius", {ArgTakes::OneValue, [](Config& c, const char* v) { parseDoubleArg(v, c.seedRadius); }}},
+        {"-seed_mode",   {ArgTakes::OneValue, [](Config& c, const char* v) { std::string m = v; c.seedMode = (m == "embed" || m == "1") ? 1 : 0; }}},
+    };
+    return kSpecs;
+}
+
 int hybmesh::runCli(int argc, char* argv[]) {
     Config config;
     std::string configFile = "config/Background_para.dat";
@@ -1327,47 +1380,88 @@ int hybmesh::runCli(int argc, char* argv[]) {
     bool seedProvided = false;
     bool confExplicit = false;
     int positionalConfigIdx = -1;   // argv slot phase 1 took as the config path
-
-    // Phase-2 flags that consume exactly one value. Phase 1 must skip their value
-    // so it is never mistaken for the bare positional config path (e.g. the "1" in
-    // "-out_starcd 1", or the filename in "-domain outline.dat").
-    static const std::set<std::string> kValueFlags = {
-        "-bc_xmin", "-bc_xmax", "-bc_ymin", "-bc_ymax", "-bc_geom",
-        "-out_vtk", "-out_starcd", "-out_cgns", "-out_name",
-        "-domain", "-seed_size", "-seed_radius", "-seed_mode"
-    };
+    int unknownFlagIdx = -1;        // most recent token starting with '-' that the table has no entry for
+    int orphanIdx = -1;             // first bare token phase 1 REFUSED to promote because one stood before it
+    int orphanFlagIdx = -1;         // the unrecognised flag that one stood behind
 
     // 第一階段：掃描以找出設定檔路徑與 -geom / -seed 參數
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "-conf" && i + 1 < argc) {
-            configFile = argv[++i];
-            confExplicit = true;
-        } else if (arg == "-geom") {
-            geomProvided = true;
-            while (i + 1 < argc && argv[i+1][0] != '-') {
-                cmdGeomFiles.push_back(argv[++i]);
+        auto it = cliArgSpecs().find(arg);
+        if (it != cliArgSpecs().end()) {
+            // Four arguments are COLLECTED here, because the config path and the
+            // geometry lists have to exist before the file is loaded. Every other
+            // recognised flag only needs the slots it eats stepped over, so its
+            // value is never read as the bare positional config path -- the "1" in
+            // "-out_starcd 1", or the filename in "-domain outline.dat".
+            if (arg == "-conf") {
+                if (i + 1 < argc) {
+                    configFile = argv[++i];
+                    confExplicit = true;
+                }
+            } else if (arg == "-geom") {
+                geomProvided = true;
+                while (i + 1 < argc && argv[i+1][0] != '-') {
+                    cmdGeomFiles.push_back(argv[++i]);
+                }
+            } else if (arg == "-seed") {
+                seedProvided = true;
+                while (i + 1 < argc && argv[i+1][0] != '-') {
+                    cmdSeedFiles.push_back(argv[++i]);
+                }
+            } else if (arg == "-geom_nobl") {
+                while (i + 1 < argc && argv[i+1][0] != '-') {
+                    cmdNoBLGeomFiles.push_back(argv[++i]);
+                }
+            } else if (it->second.takes == ArgTakes::OneValue && i + 1 < argc) {
+                ++i; // value belongs to a phase-2 flag, not the config path
             }
-        } else if (arg == "-seed") {
-            seedProvided = true;
-            while (i + 1 < argc && argv[i+1][0] != '-') {
-                cmdSeedFiles.push_back(argv[++i]);
-            }
-        } else if (arg == "-geom_nobl") {
-            while (i + 1 < argc && argv[i+1][0] != '-') {
-                cmdNoBLGeomFiles.push_back(argv[++i]);
-            }
-        } else if (kValueFlags.count(arg) && i + 1 < argc) {
-            ++i; // value belongs to a phase-2 flag, not the config path
-        } else if (arg[0] != '-' && !confExplicit) {
-            // Bare positional config path (only the first one; guarded so a stray
-            // value can't override it). The INDEX is remembered, not just the
-            // string: phase 2 cannot tell a consumed positional from an unknown
-            // token by looking at the token (#186).
-            configFile = arg;
-            confExplicit = true;
-            positionalConfigIdx = i;
+            continue;
         }
+        if (arg[0] == '-') {
+            // Unrecognised. Phase 2 names it (#186); remembered here because the
+            // token AFTER it can no longer be read as anything in particular.
+            unknownFlagIdx = i;
+            continue;
+        }
+        if (confExplicit) continue;
+        if (unknownFlagIdx >= 0) {
+            // AN UNKNOWN FLAG'S VALUE IS NOT PROMOTED TO THE CONFIG PATH (#187).
+            // The table above says what every argument the parser HAS consumes;
+            // an argument it does not have could consume anything, so this token
+            // is either that flag's value or the configuration -- and the two
+            // readings select different input documents. Refused below rather
+            // than guessed, and never taken silently.
+            if (orphanIdx < 0) { orphanIdx = i; orphanFlagIdx = unknownFlagIdx; }
+            continue;
+        }
+        // Bare positional config path (only the first one; guarded so a stray
+        // value can't override it). The INDEX is remembered, not just the
+        // string: phase 2 cannot tell a consumed positional from an unknown
+        // token by looking at the token (#186).
+        configFile = arg;
+        confExplicit = true;
+        positionalConfigIdx = i;
+    }
+
+    // THE REFUSAL, and it fires on one shape only: a bare token was discarded
+    // above AND no `-conf` anywhere on the line names the configuration. Then the
+    // document the whole run is built from would be the built-in default, chosen
+    // by accident, while the file the user typed was dropped. #186 is advisory
+    // because an unrecognised flag there DOES nothing; the same rule reaching the
+    // token beside it can decide the entire input, which is not a thing to warn
+    // about and carry on from. An explicit `-conf` leaves the run unambiguous, so
+    // it is still only warned about -- in both orders, and that is unchanged here.
+    if (!confExplicit && orphanIdx >= 0) {
+        LOG_ERROR("Unknown command-line argument '" << argv[orphanFlagIdx]
+                  << "', and the bare token '" << argv[orphanIdx]
+                  << "' after it was NOT taken as the configuration: it is either "
+                     "that argument's value or the positional config path, and "
+                     "nothing on this command line says which. Refusing rather "
+                     "than meshing a configuration that was never knowingly "
+                     "chosen -- pass '-conf " << argv[orphanIdx]
+                  << "' to name it, or drop '" << argv[orphanFlagIdx] << "'.");
+        return reportError(EXIT_ERR_CONFIG, argv[orphanIdx]);
     }
 
     // loadFromFile now returns false when the file cannot be opened. An
@@ -1398,13 +1492,14 @@ int hybmesh::runCli(int argc, char* argv[]) {
         }
     }
 
-    // An argument that matches NOTHING below is NAMED rather than dropped (#186).
-    // No list of argument names is introduced: the chain of comparisons IS the
-    // list, so a flag added to the parser is covered without a second copy free
-    // to drift from it. The flag's NAME decides the branch and the value is taken
-    // inside it, which keeps the two sentences apart -- a flag that exists but was
-    // handed no value is a missing value, and calling it unknown would be false
-    // and would send the user looking for a flag they spelled correctly.
+    // An argument the table has no entry for is NAMED rather than dropped (#186).
+    // The table IS the list of argument names -- there is exactly one, and #187
+    // collapsed the two that used to exist into it, so a flag added to the parser
+    // is covered by both phases with no copy free to drift. The NAME decides the
+    // entry and the value is taken once that entry is in hand, which keeps the two
+    // sentences apart: a flag that exists but was handed no value is a missing
+    // value, and calling it unknown would be false and would send the user looking
+    // for a flag they spelled correctly.
     auto takeValueOrWarn = [&](const std::string& flag, int& idx) -> const char* {
         if (idx + 1 < argc) return argv[++idx];
         LOG_WARN("Command-line argument '" << flag << "' expects a value and none "
@@ -1418,46 +1513,28 @@ int hybmesh::runCli(int argc, char* argv[]) {
         // Phase 1 consumed this slot as the bare positional config path. It is
         // not a token phase 2 can recognise, so it is skipped by INDEX.
         if (i == positionalConfigIdx) continue;
-        if (arg == "-bc_xmin") { if (const char* v = takeValueOrWarn(arg, i)) config.bcXMin = v; }
-        else if (arg == "-bc_xmax") { if (const char* v = takeValueOrWarn(arg, i)) config.bcXMax = v; }
-        else if (arg == "-bc_ymin") { if (const char* v = takeValueOrWarn(arg, i)) config.bcYMin = v; }
-        else if (arg == "-bc_ymax") { if (const char* v = takeValueOrWarn(arg, i)) config.bcYMax = v; }
-        else if (arg == "-bc_geom") { if (const char* v = takeValueOrWarn(arg, i)) config.bcGeom = v; }
-        else if (arg == "-out_vtk") { if (const char* v = takeValueOrWarn(arg, i)) { int n; if (parseIntArg(v, n)) config.exportVTK = (n != 0); } }
-        else if (arg == "-out_starcd") { if (const char* v = takeValueOrWarn(arg, i)) { int n; if (parseIntArg(v, n)) config.exportStarCD = (n != 0); } }
-        else if (arg == "-out_cgns") { if (const char* v = takeValueOrWarn(arg, i)) { int n; if (parseIntArg(v, n)) config.exportCGNS = (n != 0); } }
-        else if (arg == "-out_name") { if (const char* v = takeValueOrWarn(arg, i)) config.outputFilename = v; }
-        else if (arg == "-domain") { if (const char* v = takeValueOrWarn(arg, i)) config.domainFile = v; }
-        else if (arg == "-domain_bl") config.domainGrowBL = true; // domain wall grows BL inward (internal flow)
-        else if (arg == "-geom_nobl") { // already collected in phase 1; skip its values here
-            while (i + 1 < argc && argv[i+1][0] != '-') ++i;
-        }
-        else if (arg == "-seed_size") { if (const char* v = takeValueOrWarn(arg, i)) parseDoubleArg(v, config.seedSize); }
-        else if (arg == "-seed_radius") { if (const char* v = takeValueOrWarn(arg, i)) parseDoubleArg(v, config.seedRadius); }
-        else if (arg == "-seed_mode") {
-            if (const char* v = takeValueOrWarn(arg, i)) {
-                std::string m = v; config.seedMode = (m == "embed" || m == "1") ? 1 : 0;
-            }
-        }
-        // -geom / -seed / -conf 已經處理過，但在這裡跳過它們的參數以避免干擾
-        else if (arg == "-geom") {
-            while (i + 1 < argc && argv[i+1][0] != '-') ++i;
-        }
-        else if (arg == "-seed") {
-            while (i + 1 < argc && argv[i+1][0] != '-') ++i;
-        }
-        else if (arg == "-conf") {
-            if (i + 1 < argc) ++i;
-        }
-        else {
+        auto it = cliArgSpecs().find(arg);
+        if (it == cliArgSpecs().end()) {
             // Advisory, never a refusal: the exit code, the machine-readable line
             // and the mesh are all unchanged. A user who invents a flag has to be
             // told on THIS run, because the numbers they are about to quote came
             // from it -- #183's `-mb_smooth_iters 0` control arm ran at the
-            // default 20 and read as a clean negative result.
+            // default 20 and read as a clean negative result. The one shape that
+            // does refuse is handled in phase 1, before anything is loaded.
             LOG_WARN("Unknown command-line argument '" << arg << "'; it was "
                      "IGNORED and had no effect on this run.");
+            continue;
         }
+        const char* v = nullptr;
+        if (it->second.takes == ArgTakes::OneValue) {
+            v = takeValueOrWarn(arg, i);
+            if (!v) continue;
+        } else if (it->second.takes == ArgTakes::PathList) {
+            // Collected in phase 1; step over the values so they are not reported
+            // as arguments of their own.
+            while (i + 1 < argc && argv[i+1][0] != '-') ++i;
+        }
+        if (it->second.apply) it->second.apply(config, v);
     }
 
     // ".*" is the GUI's "whichever formats are enabled" placeholder — its Output

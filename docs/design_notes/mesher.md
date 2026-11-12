@@ -4263,7 +4263,9 @@ argument loop and not a note in a document.
   not have that property, and a refusal would turn "your setting does nothing" into
   "your case does not run" for the same mistake. Nothing here prevents a later ticket
   promoting it. Measured: exit code unchanged, `HYBMESH_ERROR` line unchanged, mesh
-  still written.
+  still written. **#187 promoted exactly ONE shape** — the unrecognised flag whose
+  neighbour would otherwise have been loaded as the whole configuration — and left every
+  other one advisory; its section is below.
 - **NO LIST OF ARGUMENT NAMES WAS INTRODUCED, and that is a refusal rather than an
   omission.** A predicate enumerating the known flags would be a second copy of the
   chain, free to drift from it — the "two sufficient conditions for one rule mask each
@@ -4279,6 +4281,8 @@ argument loop and not a note in a document.
   `{name, setter}` table collapsing `kValueFlags` and the 13 branches into one list is
   the obvious shape and was left to that ticket rather than taken here. This is the
   "enumerate before every / no / only" rule, failed in the one sentence that asserted it.
+  **#187 took that shape** (`cliArgSpecs()`), so today's claim is "there is exactly ONE
+  list and both phases read it" rather than "no list was added".
 - **THE TWO PASSES ARE THE WHOLE DIFFICULTY.** Phase 1 collects `-conf`, `-geom`,
   `-seed` and `-geom_nobl` and skips every phase-2 flag's value so it cannot be mistaken
   for the bare positional config path; phase 2 re-walks the same `argv`. Three kinds of
@@ -4310,7 +4314,9 @@ argument loop and not a note in a document.
   `-bogus mycase.dat` with no `-conf` anywhere loads `mycase.dat` as the configuration
   and says nothing about it, which is #184's user story 5 verbatim and the whole of
   #187. **This ticket does not close that**, and the gate now pins the measured
-  behaviour rather than the sentence that was convenient.
+  behaviour rather than the sentence that was convenient. **SUPERSEDED by #187 in both
+  orders**: `-bogus 0 -conf x.dat` now names BOTH tokens, and `-bogus mycase.dat` with no
+  `-conf` refuses instead of loading it.
 - **NO NEW OVERRIDE WAS ADDED.** `-mb_smooth_iters` is still not a flag. The defect is
   the silence, not the absence; adding the one flag that happened to be imagined would
   fix a single instance and leave the class intact, and `MB_SMOOTH_ITERS` already exists
@@ -4363,8 +4369,11 @@ that case is for and is reported rather than counted as a mesh.
 - **`-mb_smooth_iters 0`'s second warning is order-dependent**, as above: the value is
   named only because the gate puts `-conf` first, which is also where every command line
   in this repo puts it. A user who writes the invented flag before the config gets one
-  warning, not two.
-- **THE MISSING-VALUE SENTENCE COVERS 13 OF THE 17 VALUE-TAKING ARGUMENTS.** `-conf`,
+  warning, not two. **CLOSED by #187**: the value is no longer promoted, so it is named in
+  either order — and when nothing else names the configuration, the run refuses.
+- **THE MISSING-VALUE SENTENCE COVERS 13 OF THE 17 VALUE-TAKING ARGUMENTS** — 14 after
+  #187, which put `-conf` through the same lambda as the other thirteen, leaving the three
+  collectors below. `-conf`,
   `-geom`, `-seed` and `-geom_nobl` match their own phase-2 branch, so they are never
   reported unknown and are never lied about — they are simply silent, exactly as they
   were before this ticket, and nothing here made them worse. They are also the same
@@ -4383,6 +4392,131 @@ that case is for and is reported rather than counted as a mesh.
   flag still does what it says is not this gate's claim, and the restructured
   value-taking branches rest on the golden comparator plus the shipped command lines for
   that.
+
+**AN UNKNOWN FLAG'S VALUE IS NOT PROMOTED TO THE CONFIG PATH, AND THE ONE SHAPE THAT
+CANNOT BE RESOLVED REFUSES** (#187, parent #184, blocked by #186; measured 2026-11-12).
+The same rule as above reaching its second consequence. There, an invented flag did
+nothing; here, the token BESIDE it did something nobody asked for. `-bogus mycase.dat`
+with no `-conf` anywhere used to load `mycase.dat` as the entire input document and say
+nothing about it — the user meant it as the flag's argument, the tool used it as the
+configuration, and the run then SUCCEEDED, on a config that was never knowingly selected.
+That is #184's user story 5, and #186's own acceptance notes recorded it as left open
+rather than fixed.
+
+- **THE DECISION, AND IT IS NAMED RATHER THAN LEFT IN THE CODE: report AND REFUSE, for
+  one shape only.** The ticket required the choice to be made explicitly because it is a
+  real trade-off, and both halves of the trade are stated here.
+  - **Why not report only.** A warning beside a mesh built from the wrong input document
+    is the #183 failure again in a thinner disguise: the numbers still exist, they are
+    still quotable, and the caveat is one line of stderr away from a complete, valid,
+    exit-0 result. #186 is advisory because an unrecognised flag there DOES nothing —
+    the blast radius is the setting. Here the blast radius is the whole case.
+  - **Why not refuse more broadly.** The refusal fires only when a bare token was
+    discarded AND no `-conf` anywhere on the line names the configuration. With an
+    explicit `-conf`, the run is unambiguous whatever the stray flag was, so it is still
+    only warned about — in BOTH orders, which is itself an improvement, since
+    `-bogus 0 -conf x.dat` used to promote `0` and go silent.
+  - **Why refusing is cheap, measured.** The shape requires an unrecognised argument,
+    which by definition no correct command line has. Measured across this repo's scripts,
+    shipped examples, configs, workflows and docs: **ZERO mesher command lines carry a
+    token the parser does not have.** Every real invocation — the GUI worker
+    `mesh_gen_run.py`, `services/pipeline_runner.py`, both shapes in `golden_mesh.py`,
+    `run.sh`'s passthrough, and the two READMEs' documented lines — passes `-conf`
+    explicitly, which is also the half of the condition that disarms the refusal. The
+    only lines in the tree carrying an unknown flag are the gate's own deliberately
+    invented ones. **No working command line changes behaviour**; what changes is a line
+    that was already broken, from succeeding wrongly to failing loudly.
+  - **What a user sees.** `[ERROR] Unknown command-line argument '-bogus_flag', and the
+    bare token 'mycase.dat' after it was NOT taken as the configuration: it is either
+    that argument's value or the positional config path, and nothing on this command line
+    says which. Refusing rather than meshing a configuration that was never knowingly
+    chosen -- pass '-conf mycase.dat' to name it, or drop '-bogus_flag'.` It opens in
+    #186's exact words because this is ONE rule with two consequences, not two rules;
+    then `HYBMESH_ERROR 2 CONFIG <token>`, the EXISTING code, so no GUI or CI parser
+    learns a new token. It names both ways out, because the tool genuinely does not know
+    which the user meant and saying so is the honest message.
+
+- **THE AMBIGUITY IS REAL, NOT RHETORICAL, AND THAT IS THE WHOLE ARGUMENT FOR REFUSING.**
+  A human reads `-bogus_flag mycase.dat` as "a stray flag, and my config". But `-bogus_flag`
+  could as easily be `-doamin` — a typo of `-domain`, which TAKES a value — in which case
+  `mycase.dat` is that flag's argument and the configuration is the built-in default. Both
+  readings are live, they select DIFFERENT input documents, and nothing on the line decides
+  between them. Promoting is a guess; falling back to the default and warning is a different
+  guess with the same failure mode (a mesh from a file nobody chose). Refusing is the only
+  answer that does not guess.
+
+- **ONE LIST, FINALLY — AND IT IS WHAT MADE THE FIX POSSIBLE AT ALL.** To refuse the
+  promotion, phase 1 has to know whether a `-` token is recognised. It did not: it carried
+  `kValueFlags`, naming the 13 value-taking flags, while phase 2's `arg == "-..."` chain
+  named all eighteen. `-domain_bl` was in the chain and NOT in `kValueFlags` — it takes
+  nothing, so phase 1 never needed to skip for it — and that absence is exactly the false
+  positive a narrow fix would have shipped: `-domain_bl mycase.dat`, a legitimate line,
+  would have been refused. Adding `-domain_bl` to a second set would have been a third
+  list. Instead `cliArgSpecs()` is now a single `{name, ArgTakes, apply}` table that IS the
+  parser — the shape #186's own note predicted and deferred here — read by phase 1 for
+  arity and by phase 2 for arity AND behaviour, so a flag added to the parser is covered by
+  both with nothing free to drift. #186's "the terminal branch introduces no list" is
+  REVERSED: true of what that ticket added, false of the file, and the honest form is "there
+  is exactly one, and both phases read it".
+  - **One consequence fell out and is recorded rather than discovered later**: `-conf` is
+    `OneValue` like the other thirteen, so it goes through `takeValueOrWarn` instead of its
+    own silent `if (i + 1 < argc) ++i`. A trailing `-conf` with no path is now reported as
+    a MISSING VALUE, which it is. #186 measured that sentence at 13 of 17 value-taking
+    arguments; it is 14 now, and the three `PathList` collectors are still silent — `-geom`
+    with no paths still overwrites the geometry list with an empty one and meshes an empty
+    domain at exit 0, which is still a separate ticket, because "it was IGNORED and had no
+    effect" is FALSE of it.
+
+- **THE THREE NEGATIVE CONTROLS, because a refusal that fires on anything is worse than
+  none and only one of those looks broken.** Gated in `test_mesh_mode_surface.py` 7b, all
+  through the real binary: (a) `mycase.dat -bogus_flag` — the flag AFTER the path — meshes,
+  and the flag is still named, since nothing preceded the path and there was never a
+  question about what it is; (b) `-domain_bl mycase.dat` meshes and is SILENT, the table
+  having said that flag eats nothing; (c) a recognised flag's value still reaches the
+  config. Each one is a line that LOOKS like the refused shape and is not it.
+
+**EIGHT INJECTIONS, all biting, with the unmutated tree as the negative control at 0 FAIL.**
+Each mutates `src/cli.cpp`, rebuilds and runs the gate. Restoring the pre-#187 promotion →
+**6 FAIL** (that is the world this ticket changes, and it includes "wrote no mesh", which is
+the check that would otherwise have been satisfied for the wrong reason). Dropping the
+refusal and carrying on → 5 FAIL. Refusing even when a `-conf` names the configuration →
+2 FAIL, both in the ordering case. Removing `-domain_bl` from the table — the drift the one
+list exists to prevent → 3 FAIL, one of them the all-eighteen silence check. Replacing the
+refusal's opening clause with words of its own → 1 FAIL, on the shared-vocabulary check.
+Returning the code without `reportError` → 1 FAIL, on the machine-readable line. Making
+`-conf` `Nothing` instead of `OneValue` → 6 FAIL. Refusing on order-blind grounds (any
+unknown flag plus any positional) → 6 FAIL, including control (a), which is what proves
+that control bites rather than passing by construction. **One check was weak and was
+tightened rather than reported**: "the message opens in #186's own words" originally
+matched `Unknown command-line argument '-bogus_flag'` anywhere in the output, which #186's
+own WARNING satisfies, so it survived the first injection; it now matches the refusal's own
+sentence.
+
+**GOLDEN: 23 cases, 23 SAME, 0 DIFF, worst coordinate deviation 0.000e+00**, captured from
+the pre-change binary built by `git archive 2b4ac4a` into its own tree, so the baseline is
+not a capture from the tree about to be edited and no build directory is shared with the
+injection round. One of the 23 matched a NO-MESH outcome (`isolated_corner`) and is
+reported rather than counted as a mesh.
+
+**Blind spots, named.**
+- **The refusal's message is stderr, like every other diagnostic here**; the machine-readable
+  `HYBMESH_ERROR 2 CONFIG <token>` line is stdout and is what a wrapper should read.
+- **An EMPTY argv token is still promoted** to the positional config path when no unknown
+  flag precedes it (`std::string::operator[]` returns `'\0'` on an empty string, so the
+  `arg[0] == '-'` test is false) — pre-existing, unchanged, and now refused if an unknown
+  flag DOES precede it, which is the only part of it this ticket touches.
+- **Only the FIRST discarded token is named**, and only the unrecognised flag immediately
+  governing it. `-bogus a.dat b.dat` names `-bogus` and `a.dat`; `b.dat` is not reported in
+  the same breath. The refusal is the whole outcome, so the user fixes the line and runs
+  again rather than needing a complete inventory first.
+- **`-h` / `--help` followed by a path now REFUSES** rather than meshing. There is still no
+  help flag and none was added; a user typing `HybMesh2D --help case.dat` gets the
+  unresolved-token message, which at least names the flag. Adding real help is #184's
+  territory, not this ticket's.
+- **The table's `apply` lambdas are exercised by the golden comparator and the shipped
+  command lines, not by a check of their own.** That each flag still does what it says is
+  carried by 23 SAME plus the all-eighteen run, the same cover #186's restructured branches
+  rested on.
 
 **AN INTERIOR LINE THAT FOLLOWS A CURVE** (#151, measured 2026-09-29). Until this
 ticket every `interface` and every `cut` was a straight CHORD between its two declared

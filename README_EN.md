@@ -76,6 +76,17 @@ The executable will be located at `build/HybMesh2D`.
 - `-out_starcd <0|1>`: Enable/Disable STAR-CD output.
 - `-out_cgns <0|1>`: Enable/Disable CGNS output (requires the CGNS library detected at build time).
 
+The config file may also be passed as the first bare argument, with no `-conf`
+(`./HybMesh2D mycase.dat`).
+
+**An unrecognised argument is NAMED** and stated to have been ignored and had no effect on the
+run, which still finishes normally (exit 0, mesh written). The one exception: an unrecognised
+argument followed by a bare token, with no `-conf` anywhere on the line. That token is either the
+flag's value or the configuration path, the two readings select **different input documents**, and
+nothing says which — so the run is refused (exit 2) rather than meshing a configuration that was
+never knowingly chosen. The message names both ways out: pass `-conf <path>`, or drop the
+mistyped argument.
+
 ### Execution Example (Using Example Files)
 
 ```bash
