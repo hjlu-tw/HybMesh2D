@@ -83,6 +83,36 @@ What this pins down:
      on the mode test. What I5 shows is that the STATE half of the condition is
      load bearing; the MODE half is a decision held by a comment.
 
+  8. A top-level `.dat` key the parser does not recognise is NAMED, with the file
+     and the line, and the run still meshes at exit 0 (#185 -- the sibling of 7
+     on the other door most users come through). ``MB_SPLT_QUADS``, one
+     transposed letter, used to print ``Split Quads : Yes`` and exit 0 with the
+     setting never having happened. The half that constrains the feature is the
+     other one: EVERY config this repo ships is asserted silent, each through
+     the real binary. "Known" is the UNION of the readers -- the main key chain
+     OR the boundary-layer DECLARATION, whose 22 parameters appear in no
+     ``key == "..."`` branch at all -- and the terminal branch gets that union by
+     being the END of the chain rather than by holding a second copy of it.
+
+     INJECTIONS, seven, hand runs on 2026-11-12, each applied to
+     ``include/Config.hpp``, rebuilt and run: I1 the terminal branch never fires
+     (5 red); I2 it fires on EVERY line, before the chain (7 red -- the whole
+     two-sided half, including all 36 shipped configs); I3 "known" is the main
+     key chain ALONE, with ``readBLParam`` taken out of it (7 red, only 4 of them
+     here: sections 3 and 4 redden too, which is the union being load bearing in
+     two places); I4 the message drops the file and the line (2 red); I5 the
+     indented-comment guard is removed (1 red, naming ``'#'`` as the key);
+     I6 the no-token guard is removed (1 red); I7 the message no longer says the
+     key was IGNORED (2 red).
+
+     I6 CAME BACK INERT ON ITS FIRST RUN, and the check was rearranged rather
+     than the result explained away: a comment line LEAVES ITS OWN TOKEN in
+     ``key``, so the whitespace-only line had been sitting under ``# ...`` where
+     the stale key was ``'#'`` and the comment guard swallowed it either way. It
+     now sits directly under ``BL_LAYERS 3``, which is the arrangement the defect
+     needs -- without the guard that line re-enters the BL branch with an
+     exhausted stream and writes 0 into the field.
+
 THE GOLDEN BASELINE, recorded here because #49's first acceptance item is that the
 existing path is untouched and because a procedure nobody wrote down is one nobody
 can repeat:
@@ -207,6 +237,17 @@ def noadd_args(out: str) -> set:
     return set(re.findall(
         r"Command-line argument '([^']*)' was followed by no paths; it APPENDS",
         out))
+
+
+def unknown_keys(out: str) -> set:
+    """The top-level .dat keys the mesher reported as recognising nothing of (#185).
+
+    A FIFTH sentence, matched separately for the reason the four above are: "this
+    key does not exist" and "this key exists and the active mode never reads it"
+    ask the user for opposite things -- fix the spelling, versus the setting is
+    real and simply inert here -- and a single regex over both would let one be
+    reported as the other."""
+    return set(re.findall(r"Unknown config key '([^']*)'", out))
 
 
 def no_boundary_edge(out: str) -> bool:
@@ -806,6 +847,138 @@ OUTPUT_FILENAME {os.path.join(tmp, "seedonly")}
               f"topology declaring its own corners and naming no geometry at all "
               f"-- is silent about boundary edges (rc={rc})",
               rc == 0 and not no_boundary_edge(out))
+
+        # ── 8. a top-level .dat key the parser does not recognise (#185) ─────
+        # The sibling of section 7 on the OTHER door most users come through.
+        # `MB_SPLT_QUADS` -- one transposed letter -- used to be dropped without
+        # a word: the banner printed `Split Quads : Yes`, the run meshed and
+        # exited 0, and the setting the user wrote never happened.
+        typo_cfg = plain("typo").replace("BL_LAYERS 3", "MB_SPLT_QUADS 0")
+        typo_line = [i for i, l in enumerate(typo_cfg.splitlines(), 1)
+                     if l.startswith("MB_SPLT_QUADS")][0]
+        rc, out = run(tmp, typo_cfg)
+        check(f"8. a misspelled top-level key is NAMED, with the exact token the "
+              f"user typed ({sorted(unknown_keys(out))})",
+              unknown_keys(out) == {"MB_SPLT_QUADS"})
+        check("8. ...and the message says it was IGNORED and had no effect, so the "
+              "user knows the run in front of them is not the run they asked for",
+              re.search(r"Unknown config key 'MB_SPLT_QUADS' in .*mode\.dat line "
+                        r"\d+; it was IGNORED and had no effect on this run\.",
+                        out) is not None)
+        check(f"8. ...and names the FILE and the LINE, so a config the user did "
+              f"not write can be opened straight at it (line {typo_line})",
+              f"line {typo_line};" in out)
+        check(f"8. ...and that run still exits 0 and still writes its mesh: this "
+              f"is advisory, never a refusal (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "typo.vtk")))
+        check("8. ...and nothing ELSE in that file is named -- every other key on "
+              "it is real, and a branch that fires on everything would pass a "
+              "one-sided check as easily as one that fires on nothing",
+              len(unknown_keys(out)) == 1)
+
+        # THE UNION, measured. "Known" is the main key chain OR the boundary-layer
+        # DECLARATION, not one of them: the 22 BL_* parameters appear in no
+        # `key == "..."` branch at all, and a terminal branch that asked only the
+        # chain would report every one of them as unknown.
+        all_bl = "\n".join(
+            f"{k} 1" for k in re.findall(
+                r'X\("(BL_[A-Z0-9_]+)"',
+                open(os.path.join(_REPO, "include", "BLParams.hpp"),
+                     encoding="utf-8").read()))
+        check("8. (the declaration really is the 22 the rule claims)",
+              len(all_bl.splitlines()) == 22)
+        rc, out = run(tmp, plain("blquiet") + all_bl + "\n")
+        check(f"8. every declared BL_* parameter is SILENT, although no "
+              f"`key ==` branch mentions one ({sorted(unknown_keys(out))})",
+              not unknown_keys(out))
+        check(f"8. ...and that run meshed (rc={rc})", rc == 0)
+
+        # Comments and blank lines are about FORMATTING, not about settings. The
+        # two the loader's own `line[0]` skip does NOT catch by itself are the
+        # ones pinned here: an INDENTED comment, and a line of whitespace.
+        # The whitespace-only line sits directly under `BL_LAYERS 3`, with no
+        # comment between: a comment line LEAVES ITS OWN TOKEN in `key`, so a
+        # blank line placed after one is inert whether the guard is there or not,
+        # and the first arrangement of this check measured nothing (injection I6).
+        rc, out = run(tmp, plain("quiet")
+                      .replace("BL_LAYERS 3", "BL_LAYERS 3\n \t ")
+                      .replace("EXPORT_VTK 1",
+                               "   # an indented comment\nEXPORT_VTK 1"))
+        check(f"8. an indented comment and a whitespace-only line are both SILENT "
+              f"({sorted(unknown_keys(out))})", not unknown_keys(out))
+        check(f"8. ...and that run meshed (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "quiet.vtk")))
+        # And the whitespace-only line does not merely stay SILENT, it stays
+        # inert: `operator>>` leaves the key alone when it fails, so such a line
+        # used to re-enter the PREVIOUS key's branch with an exhausted stream and
+        # write 0 into its field. Pinned on the banner, because silence alone
+        # would pass while `BL_LAYERS 3` was being quietly turned into 0.
+        check("8. ...and a whitespace-only line does not re-run the key ABOVE it: "
+              "BL_LAYERS 3 is still 3 in the banner",
+              re.search(r"Base Layers\s*:\s*3 ", out) is not None)
+
+        # The two messages are different CLAIMS and neither hides the other: one
+        # says the key does not exist, the other says the active mode does not
+        # read it. Driven on ONE run that produces both.
+        rc, out = run(tmp, f"""
+MESH_MODE 1
+MESH_TOPOLOGY_FILE {shipped_topo}
+GMSH_ALGORITHM 5
+MB_SPLT_QUADS 0
+EXPORT_VTK 1
+OUTPUT_FILENAME {os.path.join(tmp, 'both')}
+""")
+        check(f"8. on a run carrying both, the unknown key is named as unknown "
+              f"({sorted(unknown_keys(out))})",
+              unknown_keys(out) == {"MB_SPLT_QUADS"})
+        check(f"8. ...and the inert key is named by the OTHER sentence, unchanged "
+              f"({sorted(warned_keys(out))})", warned_keys(out) == {"GMSH_ALGORITHM"})
+        check("8. ...and neither claim is reported as the other: a real key the "
+              "mode never reads is not 'unknown', and an unknown key is not a "
+              "parameter 'this mode never reads'",
+              "GMSH_ALGORITHM" not in unknown_keys(out)
+              and "MB_SPLT_QUADS" not in warned_keys(out))
+        check(f"8. ...and that run still exits 0 with its mesh (rc={rc})",
+              rc == 0 and os.path.exists(os.path.join(tmp, "both.vtk")))
+
+        # THE TWO-SIDED HALF, and the one that actually constrains the feature:
+        # every config this repo ships must stay SILENT. A branch that cries wolf
+        # on a working config is worse than no branch at all.
+        #
+        # Each is driven through the REAL binary with one line appended --
+        # `MESH_MODE 99`, a key the chain knows -- so the whole file is parsed
+        # (which is where this warning lives) and `validate()` then refuses
+        # before anything is meshed. The CONFIG exit line asserted beside the
+        # silence is the control: it proves the file was read, so a silence here
+        # cannot be a run that never opened it.
+        shipped = []
+        for sub in ("config", "examples", "docs"):
+            for root, _dirs, fs in os.walk(os.path.join(_REPO, sub)):
+                for f in sorted(fs):
+                    if not f.endswith(".dat"):
+                        continue
+                    p = os.path.join(root, f)
+                    body = open(p, encoding="utf-8", errors="replace").read()
+                    rows = [l.strip() for l in body.splitlines()
+                            if l.strip() and l.strip()[0] not in "#/"]
+                    if len(rows) >= 3 and all(
+                            re.fullmatch(r"[A-Z][A-Z0-9_]*", r.split()[0])
+                            for r in rows):
+                        shipped.append(p)
+        check(f"8. (there are shipped configs to be silent ABOUT: {len(shipped)} "
+              f"found under config/, examples/ and docs/)", len(shipped) >= 30)
+        noisy, unparsed = [], []
+        for p in sorted(shipped):
+            body = open(p, encoding="utf-8", errors="replace").read()
+            rc, out = run(tmp, body + "\nMESH_MODE 99\n")
+            if unknown_keys(out):
+                noisy.append((os.path.relpath(p, _REPO), sorted(unknown_keys(out))))
+            if "HYBMESH_ERROR 2 CONFIG" not in out:
+                unparsed.append(os.path.relpath(p, _REPO))
+        check(f"8. every shipped .dat config is SILENT -- no key in any of them "
+              f"is reported unknown ({noisy})", not noisy)
+        check(f"8. ...and every one of them was really parsed, so that silence is "
+              f"not a run that stopped before the loader ({unparsed})", not unparsed)
 
     print()
     if failures:

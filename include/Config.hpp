@@ -332,12 +332,26 @@ struct Config {
         }
 
         std::string line, key;
+        int lineNo = 0;
         while (std::getline(ifs, line)) {
+            ++lineNo;
             // 跳過註解與空行
             if (line.empty() || line[0] == '#' || line[0] == '/') continue;
-            
+
             std::stringstream ss(line);
-            ss >> key;
+            // A line that yields no token at all names no key. Checked rather
+            // than assumed: `operator>>` leaves `key` ALONE when it fails, so a
+            // whitespace-only line used to re-enter the PREVIOUS key's branch
+            // with an exhausted stream and zero its field. It also keeps the
+            // terminal branch below honest -- it can only report a token this
+            // line actually carried.
+            if (!(ss >> key)) continue;
+            // An INDENTED comment. The `line[0]` skip above is about the first
+            // CHARACTER, so `  # ...` reaches here; it was silently ignored
+            // before and must stay silent, or the new warning below would cry
+            // wolf about formatting.
+            if (key[0] == '#' || key[0] == '/') continue;
+
             if (key == "GEOM_FILE") {
                 // GEOM_FILE <path> [bl|nobl]  (bl = grow boundary layer, default;
                 // nobl = no BL, conform at far-field size). The GUI in
@@ -493,6 +507,30 @@ struct Config {
             }
             else if (key == "LENGTH_UNIT_NAME") {
                 ss >> lengthUnitName;
+            }
+            // A key no reader above recognised is NAMED rather than dropped
+            // (#185). `MB_SPLT_QUADS` -- one transposed letter -- used to print
+            // `Split Quads : Yes`, mesh, and exit 0 with the user's setting
+            // never having happened; the same failure class as the per-geometry
+            // override above and the command-line argument in src/cli.cpp.
+            //
+            // THERE IS NO SECOND LIST OF KEY NAMES. The chain above already IS
+            // the list, and this branch is its END, so "known" is whatever the
+            // chain accepts and the two cannot drift apart. That is also what
+            // makes the answer the UNION of the readers rather than one of them:
+            // `readBLParam` is one of the branches, so the 22 parameters
+            // declared in BLParams.hpp -- which appear in no `key ==` test here
+            // at all -- are silent without this branch knowing they exist.
+            //
+            // ADVISORY, never a refusal, for the reason #186 gives for the
+            // command line: a refusal would turn "your setting does nothing"
+            // into "your case does not run", and unlike a topology document this
+            // surface has an installed base. The exit code, the mesh and every
+            // machine-readable line are unchanged.
+            else {
+                LOG_WARN("Unknown config key '" << key << "' in " << filename
+                         << " line " << lineNo << "; it was IGNORED and had no "
+                         "effect on this run.");
             }
         }
         return true;

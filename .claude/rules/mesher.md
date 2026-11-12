@@ -95,6 +95,36 @@ the old and new trees:
 **An unrecognised per-geometry `KEY=VALUE` override is NAMED, not dropped**
 (`parseBLOverrideToken` asks `isBLParam` and warns) — same "the setting does nothing" failure class.
 
+**AN UNRECOGNISED TOP-LEVEL `.dat` KEY IS NAMED** (`Config::loadFromFile`; #185, the second child of
+#184): `[WARN] Unknown config key 'MB_SPLT_QUADS' in <file> line 12; it was IGNORED and had no
+effect on this run.` One transposed letter used to print `Split Quads : Yes`, mesh and exit 0 with
+the setting never having happened. Advisory for #186's reason — exit code, mesh and every
+`HYBMESH_*` line unchanged — and the installed base of hand-written `.dat` files is why this surface
+warns where a topology document refuses.
+- **THERE IS NO SECOND LIST OF KEY NAMES: the branch is the END of the `else if` chain**, so "known"
+  is whatever the chain accepts and a copy cannot drift from it. **That is also what makes the
+  answer the UNION of the readers rather than one of them** — `readBLParam` is one of the branches,
+  so `BLParams.hpp`'s 22 parameters, which appear in no `key ==` test here at all, are silent
+  without this branch knowing they exist. MEASURED, not assumed: main chain **43** keys, BL
+  declaration **22**, union **65**, no overlap; **59** distinct top-level keys across every mesher
+  `.dat` in the tree (**47** of them git-tracked) and **ZERO** covered by neither.
+- **A line that yields NO token is skipped, and an INDENTED comment is a comment.** Both are the new
+  branch's premise rather than features: `operator>>` leaves `key` ALONE when it fails, so a
+  whitespace-only line used to re-enter the PREVIOUS key's branch with an exhausted stream and write
+  0 into its field — a latent defect no shipped config reaches (measured: 0 such lines, 0 indented
+  comments across 329 configs), closed here because the warning would otherwise report a stale key.
+  `  # …` reaches the key test because the existing skip looks at the first CHARACTER, and naming it
+  would be crying wolf about formatting.
+- **The "a parameter this mode never reads" sentence is a DIFFERENT CLAIM and neither hides the
+  other**: one says the key does not exist, the other that a real key is inert here, and they ask
+  the user for opposite things. Both fire on one run in the gate, matched by separate regexes.
+- Gate: `tests/test_mesh_mode_surface.py` section 8, through the real binary, in BOTH directions —
+  the two-sided half drives EVERY shipped `.dat` config (36, discovered by shape rather than listed)
+  with `MESH_MODE 99` appended, so the whole file is parsed and `validate()` then refuses before
+  anything meshes; the `HYBMESH_ERROR 2 CONFIG` line beside each silence is the control that the
+  file was really read. Seven injections, dated in its docstring, one of which came back inert and
+  was fixed by rearranging the check.
+
 **AN UNRECOGNISED COMMAND-LINE ARGUMENT IS NAMED** (`hybmesh::runCli` in `src/cli.cpp`; #186,
 #187): `[WARN] Unknown command-line argument '-mb_smooth_iters'; it was IGNORED and had no effect
 on this run.` Advisory — the exit code, the machine-readable line and the mesh are all unchanged —

@@ -4694,6 +4694,150 @@ difference.
   documented job. The line between "overriding" and "deleting" is drawn at empty, which is
   where the user gets no mesh of what they asked for.
 
+**AN UNRECOGNISED TOP-LEVEL `.dat` KEY IS NAMED** (#185, parent #184, the second
+child after #186/#187; measured 2026-11-12). The other door of the two #184 named, and
+the one with the wider blast radius: every hand-written config, and every config the
+GUI has ever written, goes through `Config::loadFromFile`. `MB_SPLT_QUADS 0` — one
+transposed letter — was dropped without a word. The banner printed `Split Quads : Yes`,
+the mesher meshed, the run exited 0, and the setting the user wrote never happened. The
+only symptom was that the result looked like the one they were trying to change, which
+is exactly how #183's `-mb_smooth_iters 0` control arm was nearly published as a null
+result on the command-line half.
+
+```
+[WARN] Unknown config key 'MB_SPLT_QUADS' in /…/mode.dat line 7; it was IGNORED and had
+       no effect on this run.
+```
+
+**ADVISORY, NOT A REFUSAL, AND THE ARGUMENT IS #186's VERBATIM.** A topology document
+was made strict because it was a new format with no files in the wild; `.dat` is not.
+There are configs on disks this repo will never see, some carrying keys that were real
+when they were written, and a refusal would turn "your setting does nothing" into "your
+case does not run" — a worse outcome for the same mistake. The exit code, the mesh and
+every `HYBMESH_*` line are unchanged. Promoting it later is still cheap and nothing here
+prevents it.
+
+**THERE IS NO SECOND LIST OF KEY NAMES, AND THAT IS WHAT MAKES "KNOWN" THE UNION.** The
+`else if` chain already IS the list, so the new branch is simply its END: it tests
+nothing, names nothing, and cannot drift from the parser because it IS the parser's last
+alternative. The consequence that matters is the one a hand-written list would have got
+wrong. `readBLParam` is one of the branches in that chain, so `BLParams.hpp`'s 22
+parameters — which appear in no `key == "…"` test in `Config.hpp` at all — are silent
+without the terminal branch knowing they exist. A copy of the chain's key names would
+have reported all 22 as unknown on the first config that set one, which is nearly every
+config this repo ships.
+
+**RE-DERIVED RATHER THAN TRUSTED, because the ticket's own figures are a claim and not
+evidence** (2026-11-12, from `include/Config.hpp`, `include/BLParams.hpp` and a walk of
+the tree): main chain **43** keys, BL declaration **22**, no overlap, union **65**.
+Across every `.dat` in the tree that is a mesher config — defined as "names at least one
+known key", which is what separates them from the Tecplot dumps under `solver/preprocess`
+whose first tokens are also bare capitals — **329 files, 59 distinct top-level keys, and
+ZERO covered by neither reader**. Restricted to git-tracked files: 33 configs, 47 keys,
+again zero. The ticket said 55 keys; the number moved because the tree did, and the
+property it was quoted for — the new branch cries wolf on nothing shipped — is what was
+re-measured and is what the gate pins.
+
+**TWO GUARDS THAT ARE THE BRANCH'S PREMISE, NOT FEATURES.** Both existed as silent
+fall-through before and had to keep being silent, or the warning would cry wolf about
+formatting rather than about settings.
+- **A line that yields no token at all names no key.** `operator>>` leaves `key` ALONE
+  when it fails, and `key` is declared outside the loop, so a whitespace-only line used
+  to RE-ENTER the previous key's branch with an exhausted stream — `readBLParam` then
+  reads a failed `double` as 0 and writes it. `BL_LAYERS 3` followed by a line of spaces
+  silently became `BL_LAYERS 0`. A latent defect, not a regression, and no shipped config
+  reaches it: measured, **0 whitespace-only lines and 0 indented comments across all 329**.
+  It is closed here because the terminal branch would otherwise report a STALE key as the
+  unknown one, which is a worse diagnostic than the silence it replaces.
+- **An indented comment is a comment.** The existing skip looks at `line[0]`, so `  # …`
+  reaches the key test; before this branch it fell through in silence, and naming `'#'`
+  as an unknown config key would be the feature's first false positive.
+
+**THE TWO SENTENCES ARE DIFFERENT CLAIMS AND NEITHER MAY HIDE THE OTHER.** "Unknown
+config key" says the key does not exist; `MESH_MODE`'s "the active mode never reads" says
+a real key is inert on this path. They ask the user for opposite things — fix the
+spelling, versus keep the setting, it is simply not read here — and the gate drives ONE
+run that produces both, matched by separate regexes, for the reason `unread_keys` and
+`novalue_args` are matched separately next door: a single regex over two sentences lets
+one be reported as the other, and the sentences exist precisely to keep them apart.
+
+**THE TWO-SIDED HALF IS THE ONE THAT CONSTRAINS THE FEATURE, and it drives the real
+binary on every shipped config.** A branch that fires on everything passes a "does it
+warn?" check as easily as one that fires on nothing. The gate discovers the configs by
+SHAPE rather than from a list — every `.dat` under `config/`, `examples/` and `docs/`
+whose non-comment lines all begin with a bare capital token, **36 found**, with a
+`>= 30` floor so the check cannot pass by finding none — and runs each through
+`build/HybMesh2D` with ONE line appended: `MESH_MODE 99`. The whole file is parsed first,
+which is where this warning lives, and `validate()` then refuses before anything is
+meshed, so 36 real runs cost about a second each instead of 36 meshes. **The
+`HYBMESH_ERROR 2 CONFIG` line asserted beside each silence is the control**: it proves
+the loader reached the end of the file, so a silence here cannot be a run that never
+opened it.
+
+**SEVEN INJECTIONS, and one came back INERT first.** Each mutates `include/Config.hpp`,
+rebuilds `HybMesh2D` alone and re-runs the gate; the unmutated tree is the negative
+control at 0 FAIL.
+
+| # | mutation | red |
+|---|----------|-----|
+| I1 | the terminal branch never fires | 5 |
+| I2 | it fires on EVERY line, before the chain | 7 |
+| I3 | "known" is the main chain ALONE (`readBLParam` taken out of it) | 7 |
+| I4 | the message drops the file and the line | 2 |
+| I5 | the indented-comment guard is removed | 1 |
+| I6 | the no-token guard is removed | 1 |
+| I7 | the message no longer says the key was IGNORED | 2 |
+
+I3 reddens **sections 3 and 4 as well as 8**, which is the union being load bearing in
+two places rather than one: the inert-parameter report walks the same declaration.
+**I6 came back INERT on its first run, and the check was rearranged rather than the
+result explained away.** The whitespace-only line had been placed under an indented
+comment, and a comment line LEAVES ITS OWN TOKEN in `key` — so with the guard removed the
+stale key was `'#'`, the comment guard swallowed it, and nothing moved. It now sits
+directly under `BL_LAYERS 3`, the arrangement the defect actually needs, and is pinned on
+the BANNER (`Base Layers : 3`) rather than on silence, because silence passes while the 3
+is being quietly turned into a 0. Both injection rounds ran serially against the one
+build tree with nothing else building, which is the condition #175 found the hard way.
+
+**GOLDEN: 23 cases, 23 SAME, 0 DIFF, worst coordinate deviation 0.000e+00**, captured
+from the pre-change binary built by `git archive HEAD` (`a4d9e96`) into its own tree, so
+the baseline is not a capture from the tree about to be edited. One of the 23 matched a
+NO-MESH outcome (`isolated_corner`) and is reported rather than counted as a mesh.
+
+**Blind spots, named.**
+- **The GUI is untouched, which is #184's user story 9 — met by construction, and
+  MEASURED ONCE BY HAND rather than asserted.** The panel writes keys from its own
+  field-spec tables and cannot typo one, and the parity gate already pins those tables
+  against this chain in both directions. Measured 2026-11-12 anyway, because "it cannot
+  happen" is the shape of claim this repo keeps finding false: a default `MeshConfig`
+  saved through `save_to_file` writes **52 keys, 0 unknown**, and the real binary run on
+  that file prints **0** warnings. Left out of the gate — a mesher surface test importing
+  the GUI model to prove the GUI did not change would be a check on the wrong side of
+  the seam.
+- **A key that is spelled right and VALUED wrong is still silent.** `MB_SPLIT_QUADS
+  maybe` parses as 0 through `operator>>`'s failure and reads as "no", with no warning;
+  this ticket is about the KEY, and a value grammar is a different (and much larger)
+  question.
+- **A DUPLICATE key is silent, and the last one wins.** Writing `BL_LAYERS` twice is a
+  setting that does nothing just as surely as a misspelled one, and the chain cannot see
+  it without state this branch deliberately does not keep.
+- **The warning fires once per OCCURRENCE, not once per key, and there is no cap.** A
+  file repeating the same typo on ten lines prints ten lines, which is the right answer
+  for a message whose whole job is to name a line. **The shape that makes the volume
+  worth naming is a GEOMETRY handed to `-conf`**: `./build/HybMesh2D -conf
+  examples/geometries/naca0012.dat` now prints **201** warnings, one per coordinate pair,
+  where before it silently meshed an empty box at exit 0. The diagnosis is correct and the
+  first line already carries it; what is unpleasant is the volume, and a 40,000-point
+  geometry would be 40,000 lines. Left uncapped deliberately — #185's scope is "name the
+  key", a cap is a second rule about a FILE rather than about a key, and the number above
+  is here so a later ticket can decide it with evidence rather than from distaste. Note
+  that run is no longer silent in two ways: #193's zero-boundary-edge warning fires on it
+  as well.
+- **A `.dat` read by something OTHER than `Config::loadFromFile` is out of scope.** The
+  per-geometry `KEY=VALUE` tokens on a `GEOM_FILE` line have had their own named refusal
+  since before this, and a `GROUP_BC` line's payload is parsed inside its own branch;
+  neither reaches the terminal branch and neither is changed.
+
 **AN INTERIOR LINE THAT FOLLOWS A CURVE** (#151, measured 2026-09-29). Until this
 ticket every `interface` and every `cut` was a straight CHORD between its two declared
 corners, and the mesher's own refusal said why and what it cost: the only key that made
