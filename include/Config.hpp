@@ -331,12 +331,18 @@ struct Config {
             return false;
         }
 
+        // The `.dat` comment markers, stated ONCE. The same test is applied to a
+        // line's first character and to a token's, and two spellings of one rule
+        // is how a `//` comment comes to be a comment in one place and an unknown
+        // key in the other.
+        auto isCommentStart = [](char c) { return c == '#' || c == '/'; };
+
         std::string line, key;
         int lineNo = 0;
         while (std::getline(ifs, line)) {
             ++lineNo;
             // 跳過註解與空行
-            if (line.empty() || line[0] == '#' || line[0] == '/') continue;
+            if (line.empty() || isCommentStart(line[0])) continue;
 
             std::stringstream ss(line);
             // A line that yields no token at all names no key. Checked rather
@@ -350,7 +356,7 @@ struct Config {
             // CHARACTER, so `  # ...` reaches here; it was silently ignored
             // before and must stay silent, or the new warning below would cry
             // wolf about formatting.
-            if (key[0] == '#' || key[0] == '/') continue;
+            if (isCommentStart(key[0])) continue;
 
             if (key == "GEOM_FILE") {
                 // GEOM_FILE <path> [bl|nobl]  (bl = grow boundary layer, default;

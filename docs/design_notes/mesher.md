@@ -4733,10 +4733,12 @@ the tree): main chain **43** keys, BL declaration **22**, no overlap, union **65
 Across every `.dat` in the tree that is a mesher config — defined as "names at least one
 known key", which is what separates them from the Tecplot dumps under `solver/preprocess`
 whose first tokens are also bare capitals — **329 files, 59 distinct top-level keys, and
-ZERO covered by neither reader**. Restricted to git-tracked files: 33 configs, 47 keys,
-again zero. The ticket said 55 keys; the number moved because the tree did, and the
-property it was quoted for — the new branch cries wolf on nothing shipped — is what was
-re-measured and is what the gate pins.
+ZERO covered by neither reader**. **The 329 and the 59 are a WORKING TREE's figures and
+not the repo's**: most of them are generated case directories under `results/`, so
+another machine counts differently and only the git-tracked restriction is reproducible —
+**33 configs, 47 keys, again zero**. The ticket said 55 keys; the number moved because
+the tree did, and the property it was quoted for — the new branch cries wolf on nothing
+shipped — is what was re-measured and is what the gate pins.
 
 **TWO GUARDS THAT ARE THE BRANCH'S PREMISE, NOT FEATURES.** Both existed as silent
 fall-through before and had to keep being silent, or the warning would cry wolf about
@@ -4746,12 +4748,20 @@ formatting rather than about settings.
   to RE-ENTER the previous key's branch with an exhausted stream — `readBLParam` then
   reads a failed `double` as 0 and writes it. `BL_LAYERS 3` followed by a line of spaces
   silently became `BL_LAYERS 0`. A latent defect, not a regression, and no shipped config
-  reaches it: measured, **0 whitespace-only lines and 0 indented comments across all 329**.
+  reaches it: measured, **0 whitespace-only lines and 0 indented comments** across every
+  one of those configs.
   It is closed here because the terminal branch would otherwise report a STALE key as the
   unknown one, which is a worse diagnostic than the silence it replaces.
 - **An indented comment is a comment.** The existing skip looks at `line[0]`, so `  # …`
   reaches the key test; before this branch it fell through in silence, and naming `'#'`
-  as an unknown config key would be the feature's first false positive.
+  as an unknown config key would be the feature's first false positive. The two marker
+  tests — on a line's first character and on a token's — are ONE rule and are stated once
+  (`isCommentStart`), because two spellings of it is how `//` comes to be a comment in
+  one place and an unknown key in the other.
+
+A third shape the first guard also closes, named because nothing else names it: a
+CRLF-only line. `'\r'` is whitespace to `operator>>`, so `"\r\n"` extracts no token and
+used to re-enter the previous key's branch exactly as a line of spaces did.
 
 **THE TWO SENTENCES ARE DIFFERENT CLAIMS AND NEITHER MAY HIDE THE OTHER.** "Unknown
 config key" says the key does not exist; `MESH_MODE`'s "the active mode never reads" says
@@ -4765,14 +4775,29 @@ one be reported as the other, and the sentences exist precisely to keep them apa
 binary on every shipped config.** A branch that fires on everything passes a "does it
 warn?" check as easily as one that fires on nothing. The gate discovers the configs by
 SHAPE rather than from a list — every `.dat` under `config/`, `examples/` and `docs/`
-whose non-comment lines all begin with a bare capital token, **36 found**, with a
-`>= 30` floor so the check cannot pass by finding none — and runs each through
+that NAMES AT LEAST ONE KEY A READER DECLARES, the declaration read off `Config.hpp`
+and `BLParams.hpp` themselves so it is derived and not a third copy of the key list —
+and runs each through
 `build/HybMesh2D` with ONE line appended: `MESH_MODE 99`. The whole file is parsed first,
 which is where this warning lives, and `validate()` then refuses before anything is
-meshed, so 36 real runs cost about a second each instead of 36 meshes. **The
+meshed, so each real run costs about a second instead of a mesh. **The
 `HYBMESH_ERROR 2 CONFIG` line asserted beside each silence is the control**: it proves
 the loader reached the end of the file, so a silence here cannot be a run that never
 opened it.
+
+**AND THE COUNT IS NOT THE ASSERTION, which the spec review axis is what caught.** The
+first cut asserted a floor of 30 and the prose said **36**; three of those 36 are
+UNTRACKED files under `config/mesh/`, so a clean clone and CI discover **33** and the
+stated figure was false for everybody but the authoring machine. An untracked config in
+a working tree is a real config and is worth driving, so the set still includes them —
+what changed is that no document states the number as a property of the repo, and the
+gate holds the floor PLUS three configs pinned BY NAME (`config/Background_para.dat`,
+`config/multiblock_ogrid.dat`, `examples/config/test_box.dat`), because a bare count
+goes green while discovery silently drops the cases that matter. **The first discovery
+RULE was self-selecting too**: "every non-comment row begins with a bare capital" drops
+a shipped config carrying a lower-case key — which is exactly one that would be noisy —
+out of the silence set rather than catching it. There is no such file today, so nothing
+was hidden; the rule is now the design note's own definition, which has neither problem.
 
 **SEVEN INJECTIONS, and one came back INERT first.** Each mutates `include/Config.hpp`,
 rebuilds `HybMesh2D` alone and re-runs the gate; the unmutated tree is the negative

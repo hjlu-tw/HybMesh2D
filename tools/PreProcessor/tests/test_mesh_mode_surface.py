@@ -113,6 +113,18 @@ What this pins down:
      needs -- without the guard that line re-enters the BL branch with an
      exhausted stream and writes 0 into the field.
 
+     BLIND SPOT, named rather than papered over: the shipped-config COUNT is
+     machine-local. Three of the 36 found here are untracked files under
+     ``config/mesh/``, so a clean clone and CI discover 33 -- which is why the
+     assertion is a floor plus three cases pinned BY NAME, and why no document
+     states the 36 as a property of the repo. Discovery is by "names at least one
+     key a reader declares", read off ``Config.hpp`` and ``BLParams.hpp``
+     themselves; the first cut asked instead that every row begin with a bare
+     capital, which SELF-SELECTS -- a shipped config carrying a lower-case key,
+     exactly one that would be noisy, would have been dropped from the silence
+     set by the shape test rather than caught by it. Found by the spec review
+     axis; there is no such file today, so nothing was hidden.
+
 THE GOLDEN BASELINE, recorded here because #49's first acceptance item is that the
 existing path is untouched and because a procedure nobody wrote down is one nobody
 can repeat:
@@ -242,7 +254,8 @@ def noadd_args(out: str) -> set:
 def unknown_keys(out: str) -> set:
     """The top-level .dat keys the mesher reported as recognising nothing of (#185).
 
-    A FIFTH sentence, matched separately for the reason the four above are: "this
+    Matched separately for the reason every helper above is, and the contrast that
+    matters is with ``warned_keys`` rather than with the command-line family: "this
     key does not exist" and "this key exists and the active mode never reads it"
     ask the user for opposite things -- fix the spelling, versus the setting is
     real and simply inert here -- and a single regex over both would let one be
@@ -871,10 +884,11 @@ OUTPUT_FILENAME {os.path.join(tmp, "seedonly")}
         check(f"8. ...and that run still exits 0 and still writes its mesh: this "
               f"is advisory, never a refusal (rc={rc})",
               rc == 0 and os.path.exists(os.path.join(tmp, "typo.vtk")))
-        check("8. ...and nothing ELSE in that file is named -- every other key on "
-              "it is real, and a branch that fires on everything would pass a "
-              "one-sided check as easily as one that fires on nothing",
-              len(unknown_keys(out)) == 1)
+        check(f"8. ...and it is said ONCE, not once per key the file carries: the "
+              f"set above collapses repeats, so the LINE count is what says a "
+              f"branch firing on everything would be caught here "
+              f"({out.count('Unknown config key')})",
+              out.count("Unknown config key") == 1)
 
         # THE UNION, measured. "Known" is the main key chain OR the boundary-layer
         # DECLARATION, not one of them: the 22 BL_* parameters appear in no
@@ -951,25 +965,50 @@ OUTPUT_FILENAME {os.path.join(tmp, 'both')}
         # before anything is meshed. The CONFIG exit line asserted beside the
         # silence is the control: it proves the file was read, so a silence here
         # cannot be a run that never opened it.
-        shipped = []
+        # A config is DISCOVERED, never listed, and the population is "names at
+        # least one key a reader declares" -- taken from the two headers that ARE
+        # the readers, so it is derived rather than a third copy of the key list.
+        # The earlier filter here was "every row's first token is a bare capital",
+        # which SELF-SELECTS: a shipped config carrying a lower-case key -- which
+        # is exactly one that would be noisy -- would have been dropped from the
+        # silence set by the shape test. Found by the spec review axis.
+        decl = (open(os.path.join(_REPO, "include", "Config.hpp"),
+                     encoding="utf-8").read()
+                + open(os.path.join(_REPO, "include", "BLParams.hpp"),
+                       encoding="utf-8").read())
+        declared = (set(re.findall(r'key == "([A-Z][A-Z0-9_]*)"', decl))
+                    | set(re.findall(r'X\("([A-Z0-9_]+)"', decl)))
+        check(f"8. (the two headers really are the readers: {len(declared)} keys "
+              f"declared between them)", len(declared) >= 60)
+        shipped = {}
         for sub in ("config", "examples", "docs"):
             for root, _dirs, fs in os.walk(os.path.join(_REPO, sub)):
                 for f in sorted(fs):
                     if not f.endswith(".dat"):
                         continue
                     p = os.path.join(root, f)
-                    body = open(p, encoding="utf-8", errors="replace").read()
+                    with open(p, encoding="utf-8", errors="replace") as fh:
+                        body = fh.read()
                     rows = [l.strip() for l in body.splitlines()
                             if l.strip() and l.strip()[0] not in "#/"]
-                    if len(rows) >= 3 and all(
-                            re.fullmatch(r"[A-Z][A-Z0-9_]*", r.split()[0])
-                            for r in rows):
-                        shipped.append(p)
+                    if {r.split()[0] for r in rows} & declared:
+                        shipped[p] = body
+        # A floor so the check cannot pass by finding none, AND three configs
+        # pinned BY NAME so it cannot pass by finding the wrong 30: a bare count
+        # goes green while discovery silently drops the cases that matter.
+        must = [os.path.join(_REPO, "config", "Background_para.dat"),
+                os.path.join(_REPO, "config", "multiblock_ogrid.dat"),
+                os.path.join(_REPO, "examples", "config", "test_box.dat")]
         check(f"8. (there are shipped configs to be silent ABOUT: {len(shipped)} "
-              f"found under config/, examples/ and docs/)", len(shipped) >= 30)
+              f"found under config/, examples/ and docs/; the count is machine "
+              f"-local because an untracked config in the tree is a real one)",
+              len(shipped) >= 30)
+        check(f"8. ...and discovery really reached the named cases, so the floor "
+              f"above cannot be met by the wrong thirty "
+              f"({[os.path.basename(m) for m in must if m not in shipped]})",
+              all(m in shipped for m in must))
         noisy, unparsed = [], []
-        for p in sorted(shipped):
-            body = open(p, encoding="utf-8", errors="replace").read()
+        for p, body in sorted(shipped.items()):
             rc, out = run(tmp, body + "\nMESH_MODE 99\n")
             if unknown_keys(out):
                 noisy.append((os.path.relpath(p, _REPO), sorted(unknown_keys(out))))

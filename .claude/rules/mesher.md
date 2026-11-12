@@ -102,28 +102,25 @@ the setting never having happened. Advisory for #186's reason — exit code, mes
 `HYBMESH_*` line unchanged — and the installed base of hand-written `.dat` files is why this surface
 warns where a topology document refuses.
 - **THERE IS NO SECOND LIST OF KEY NAMES: the branch is the END of the `else if` chain**, so "known"
-  is whatever the chain accepts and a copy cannot drift from it. **That is also what makes the
-  answer the UNION of the readers rather than one of them** — `readBLParam` is one of the branches,
-  so `BLParams.hpp`'s 22 parameters, which appear in no `key ==` test here at all, are silent
-  without this branch knowing they exist. MEASURED, not assumed: main chain **43** keys, BL
-  declaration **22**, union **65**, no overlap; **59** distinct top-level keys across every mesher
-  `.dat` in the tree (**47** of them git-tracked) and **ZERO** covered by neither.
-- **A line that yields NO token is skipped, and an INDENTED comment is a comment.** Both are the new
-  branch's premise rather than features: `operator>>` leaves `key` ALONE when it fails, so a
-  whitespace-only line used to re-enter the PREVIOUS key's branch with an exhausted stream and write
-  0 into its field — a latent defect no shipped config reaches (measured: 0 such lines, 0 indented
-  comments across 329 configs), closed here because the warning would otherwise report a stale key.
-  `  # …` reaches the key test because the existing skip looks at the first CHARACTER, and naming it
-  would be crying wolf about formatting.
-- **The "a parameter this mode never reads" sentence is a DIFFERENT CLAIM and neither hides the
-  other**: one says the key does not exist, the other that a real key is inert here, and they ask
-  the user for opposite things. Both fire on one run in the gate, matched by separate regexes.
-- Gate: `tests/test_mesh_mode_surface.py` section 8, through the real binary, in BOTH directions —
-  the two-sided half drives EVERY shipped `.dat` config (36, discovered by shape rather than listed)
-  with `MESH_MODE 99` appended, so the whole file is parsed and `validate()` then refuses before
-  anything meshes; the `HYBMESH_ERROR 2 CONFIG` line beside each silence is the control that the
-  file was really read. Seven injections, dated in its docstring, one of which came back inert and
-  was fixed by rearranging the check.
+  is whatever the chain accepts. **That is also what makes it the UNION of the readers rather than
+  one of them** — `readBLParam` is one of the branches, so `BLParams.hpp`'s 22 parameters, named in
+  no `key ==` test here, are silent without this branch knowing they exist. MEASURED: main chain
+  **43**, BL declaration **22**, union **65**, no overlap, and **ZERO** keys used by this tree's
+  mesher configs covered by neither. The per-tree counts are dated in the design note.
+- **A line that yields NO token is skipped, and an INDENTED comment is a comment** (`isCommentStart`
+  states the marker test once for both). The branch's premise, not features: `operator>>` leaves
+  `key` ALONE on failure, so a whitespace-only line used to re-enter the PREVIOUS key's branch with
+  an exhausted stream and write 0 into its field — latent, reached by no shipped config, closed
+  because the warning would otherwise report a stale key.
+- **"A parameter this mode never reads" is a DIFFERENT CLAIM and neither hides the other**: one says
+  the key does not exist, the other that a real key is inert here. Both fire on one gate run,
+  matched by separate regexes.
+- Gate: `tests/test_mesh_mode_surface.py` section 8, real binary, BOTH directions. The two-sided
+  half drives every shipped `.dat` under `config/`, `examples/` and `docs/`, DISCOVERED not listed
+  ("names at least one key a reader declares", read off the two headers) and held by a floor plus
+  three cases pinned by name, never by a count. Each runs with `MESH_MODE 99` appended, so the file
+  parses whole and `validate()` refuses before anything meshes; the `HYBMESH_ERROR 2 CONFIG` line
+  beside each silence is the control that it was read. Injection counts are that docstring's.
 
 **AN UNRECOGNISED COMMAND-LINE ARGUMENT IS NAMED** (`hybmesh::runCli` in `src/cli.cpp`; #186,
 #187): `[WARN] Unknown command-line argument '-mb_smooth_iters'; it was IGNORED and had no effect
@@ -664,6 +661,15 @@ one list. #68 moved the first; #69 moved the rest; #89 took the multi-block four
   proves every parameter is reachable and that a number's own value appears, but the pairing of
   value to meaning IS the label prose.
 - **`tests/test_cpp_linkable_seam.py` names two of its own** in its docstring.
+- **#185's unknown-`.dat`-key warning has FOUR limits, and none of them is checked.** A key spelled
+  right but VALUED wrong (`MB_SPLIT_QUADS maybe` reads as 0) and a DUPLICATE key are both settings
+  that do nothing, where that rule's subject is the KEY; there is NO CAP, so a geometry handed to
+  `-conf` prints one line per point; the shipped-config set its gate calls EVERY is DISCOVERED, so
+  the count is machine-local and a config-shaped `.dat` outside `config/`, `examples/` and `docs/`
+  is not reached; and the GUI half of #184's story 9 is held by construction plus
+  `tests/test_gui_cpp_config_parity.py`, never by a check that the GUI cannot emit an unknown key.
+  Measured 2026-11-12, with the figures in `docs/design_notes/mesher.md`;
+  `tests/test_mesh_mode_surface.py` section 8's docstring names the third.
 - **The `MESH_MODE_HYBRID` half of #193's zero-boundary-edge guard is held by a COMMENT, not by a
   check.** No topology this repo ships can produce a mesh with no boundary edge — a block's four
   sides have to close — so `tests/test_mesh_mode_surface.py` 7c's `MESH_MODE 1` negative control
