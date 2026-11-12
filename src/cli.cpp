@@ -2099,9 +2099,13 @@ int hybmesh::runCli(int argc, char* argv[]) {
     // is a shipped case that does exactly that -- there the warning would fire on
     // a correct run.
     if (config.meshMode == MESH_MODE_HYBRID && mesh.edges.empty()) {
+        // "The run is not stopped" rather than "it is being exported anyway":
+        // this guard asks nothing about `exportVTK` / `exportStarCD` /
+        // `exportCGNS`, so with all three off the second sentence would be
+        // false while the first stays true. Said about what this code KNOWS.
         LOG_WARN("This mesh has NO boundary edge, so nothing in it carries a "
-                 "boundary condition and no solver can impose one. It is being "
-                 "exported anyway and the exit code is unchanged -- but if you "
+                 "boundary condition and no solver can impose one. The run is "
+                 "not stopped and the exit code is unchanged -- but if you "
                  "expected a body or a far-field outline in it, nothing on this "
                  "run selected one.");
     }

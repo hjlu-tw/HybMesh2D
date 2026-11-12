@@ -185,8 +185,12 @@ everywhere else the warning is the whole consequence.
   (#193; the `mesh.edges.empty()` guard beside `printHybridQuality` in `src/cli.cpp`). Nothing in
   it carries a boundary condition, so no solver can impose one. **It is keyed on the state because
   a warning keyed on a cause covers only the routes somebody thought of**: the two known ones are
-  the flag above and a config naming no geometry, and the third is whatever comes next. It needs no
-  new detection — the count is already on the `Boundary Edges (BND)` line. Advisory, for the same
+  the flag above and a config naming no geometry, and a cause-keyed version reaches neither the
+  second nor whatever comes next. It needs no new detection — the count is already on the
+  `Boundary Edges (BND)` line. **THE STATE IS NOT "MESHED NO GEOMETRY" AND MUST NOT BE QUOTED AS
+  IT**: a config with no geometry but a `SEED_FILE` or a `DOMAIN_FILE` still builds the far-field
+  box and leaves with four edges, so this is silent on it — strictly more than the two flags
+  reach, strictly less than every empty run, and PINNED in 7c so the claim cannot widen. Advisory, for the same
   reason, and **`MESH_MODE 1` is OUT OF SCOPE, NAMED and not negated**: a topology declaring its own
   corners is a complete input with no geometry at all, and `examples/topology/square_block.json` is
   a shipped case that does exactly that, so the warning would fire on a correct run.
@@ -195,10 +199,10 @@ everywhere else the warning is the whole consequence.
   refusal that does is worse. 7b carries three negative controls for the refusal alone: the unknown
   flag AFTER the path, a recognised no-value switch before it, and a recognised flag's value. 7c
   drives each of the three collectors with AND without a path, the export warning on a route no
-  flag caused, and the shipped `square_block.json` as the `MESH_MODE 1` negative; its seven hand
-  injections and its one named blind spot — the MODE half of that guard is held by a comment, no
-  shipped topology being able to produce a mesh with no boundary edge — are dated in its docstring.
-  **23/23 golden SAME at exactly 0.000e+00** against a separately built HEAD binary, 2026-11-12.
+  flag caused, and the shipped `square_block.json` as the `MESH_MODE 1` negative; its hand
+  injections are dated in its docstring, and the coverage limit one of them exposes is in this
+  file's blind-spot list. **Every exit code, every mesh and every `HYBMESH_*` line is unchanged** —
+  the golden run that measured that is in the design note, where it does not go stale here.
 
 **`DOMAIN_FILE` AND `GEOM_FILE` ARE ONE KIND OF LINE UNDER `MESH_MODE 1`** (`buildMultiBlockMesh`
 in `src/cli.cpp`; #171). On the hybrid path the two decide different things — which outline the
@@ -630,6 +634,12 @@ one list. #68 moved the first; #69 moved the rest; #89 took the multi-block four
   proves every parameter is reachable and that a number's own value appears, but the pairing of
   value to meaning IS the label prose.
 - **`tests/test_cpp_linkable_seam.py` names two of its own** in its docstring.
+- **The `MESH_MODE_HYBRID` half of #193's zero-boundary-edge guard is held by a COMMENT, not by a
+  check.** No topology this repo ships can produce a mesh with no boundary edge — a block's four
+  sides have to close — so `tests/test_mesh_mode_surface.py` 7c's `MESH_MODE 1` negative control
+  passes on that run's edge COUNT and would stay green with the mode test deleted. Injection I5
+  shows the STATE half is load bearing; the MODE half is a scope decision nothing can falsify
+  from a shipped case. That file's docstring names it too, with the injection log.
 - **`tests/test_comparability_refusal.py` holds the SENTENCES and the RECORD, never the practice.**
   Two shape figures put side by side by a GUI panel, a pipeline summary or a README table is the
   defect that rule exists to prevent and passes every check in it; so does swapping the two

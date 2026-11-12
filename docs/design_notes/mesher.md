@@ -4643,9 +4643,11 @@ at 0 FAIL.** Hand runs 2026-11-12, each mutating `src/cli.cpp`, rebuilding and r
 FAIL; it reuses #186's sentence → 5 FAIL (it takes `-seed` down with it, both going through
 the one helper); it drops the names of what it deleted → 2 FAIL; the export warning keyed on
 the CAUSE → 1 FAIL, the third-route check alone; the export warning fires unconditionally →
-2 FAIL, the ordinary run and the multi-block run, which is the "fires on everything"
-direction; `-geom_nobl` routed through the CLEARED sentence → 2 FAIL; `-seed` never warns →
-2 FAIL.
+3 FAIL, the ordinary run, the multi-block run and the seed-only run, which is the "fires on
+everything" direction; `-geom_nobl` routed through the CLEARED sentence → 2 FAIL; `-seed`
+never warns → 2 FAIL. **The last two counts are the SPEC review's**: pinning the state's own
+limit added a check, so those two injections were RE-RUN rather than having their numbers
+adjusted by hand — the unconditional one went 2 → 3 and the cause-keyed one stayed at 1.
 
 **GOLDEN: 23 cases, 23 SAME, 0 DIFF, worst coordinate deviation 0.000e+00**, captured from
 the pre-change binary built by `git archive HEAD` (`5cf8502`) into its own tree, so the
@@ -4661,10 +4663,28 @@ difference.
   sides have to close — so 7c's `MESH_MODE 1` negative control passes on its edge count and
   not on the mode test. Injection I5 shows the STATE half is load bearing; the MODE half is a
   decision held by a comment.
-- **A run that exports NOTHING still gets the export-side warning.** With `EXPORT_VTK 0`,
-  `EXPORT_STARCD 0` and `EXPORT_CGNS 0` there is no exporter to leave, and the sentence
-  "it is being exported anyway" is then false of a run nobody makes. Not guarded, because the
-  state it describes — a mesh with no boundary condition anywhere — is equally true.
+- **"ZERO BOUNDARY EDGES" IS NARROWER THAN "MESHED NO GEOMETRY", AND THE SPEC REVIEW AXIS IS
+  WHAT MEASURED THAT.** On the hybrid path the box is built from the config's own
+  `DOMAIN_X_*`/`DOMAIN_Y_*` whenever anything sends the run down the far-field branch, so a
+  config naming NO geometry but carrying a `SEED_FILE` meshes 368 cells with FOUR boundary edges
+  and this warning stays silent — the body the user wanted is just as absent. The state catches
+  strictly MORE than a cause-keyed version would (the flag-free route is the proof) and strictly
+  LESS than "every run that meshed nothing", and the rule file's first draft said "the third
+  route is whatever comes next", which reads wider than what the condition covers. Pinned in 7c
+  rather than left as prose, so the claim cannot widen back.
+- **The flag-shaped route into `-conf` is not this ticket's and is NOT silent.** `-conf -geom
+  x.dat` eats `-geom` as the config path and stops at `[ERROR] Config file '-geom' could not be
+  opened` plus `HYBMESH_ERROR 2 CONFIG -geom` — noisy and refusing, where `-geom`'s own
+  flag-shaped route (`-geom -domain_bl`) collects nothing and is what 7c drives. Pre-existing,
+  unchanged, and outside the acceptance item's "with no value" wording; the asymmetry is real
+  and is recorded rather than fixed here.
+- **A run that exports NOTHING still gets the export-side warning, and the MESSAGE was changed
+  rather than the guard.** With `EXPORT_VTK 0`, `EXPORT_STARCD 0` and `EXPORT_CGNS 0` there is
+  no exporter to leave; the first draft said "it is being exported anyway", which that run makes
+  false. The guard asks nothing about the three export flags, so the sentence may not claim
+  anything about them: it says "the run is not stopped and the exit code is unchanged", which is
+  what this code knows. **Found by the Standards review axis, not by a gate** — no check reads
+  that clause, and one that did would be asserting a sentence rather than a behaviour.
 - **`-geom` with paths that are all INVALID is a different shape and is untouched.** That
   one is already a hard error (`EXIT_ERR_GEOMETRY_LOAD`, "Requested geometry could not be
   opened"), and nothing here reaches it; the ticket's subject is an EMPTY selection, not a

@@ -70,7 +70,9 @@ What this pins down:
      names of what it deleted (2 red); I4 the export warning is keyed on the
      CAUSE (``-geom`` collected nothing) rather than on the state (1 red -- the
      third-route check, alone, which is the whole argument for the state); I5 it
-     fires unconditionally (2 red, both directions of "fires on everything");
+     fires unconditionally (3 red, every direction of "fires on everything" --
+     2 before the state's own LIMIT was pinned, and I4 and I5 were BOTH re-run
+     when that check was added rather than having their counts adjusted by hand);
      I6 ``-geom_nobl`` goes through the CLEARED sentence (2 red); I7 ``-seed``
      never warns (2 red).
 
@@ -759,6 +761,32 @@ OUTPUT_FILENAME {os.path.join(tmp, "nogeom")}
               not (cleared_args(out) | noadd_args(out)))
         check(f"7c. ...and it too exits 0 with a mesh (rc={rc})",
               rc == 0 and os.path.exists(os.path.join(tmp, "nogeom.vtk")))
+        # AND THE LIMIT OF THE STATE, measured rather than left as prose. "Zero
+        # boundary edges" is NOT "meshed no geometry": a config naming no
+        # geometry but carrying a SEED_FILE still builds the far-field box, so it
+        # leaves with FOUR boundary edges and this warning is silent on it,
+        # although the body the user wanted is just as absent. The state catches
+        # strictly more than the two flags do -- the check above proves it -- and
+        # strictly less than "every empty run". Pinned so the rule file's claim
+        # cannot quietly widen.
+        seedonly = f"""
+SEED_FILE {seed} 0.05 0.5 source
+DOMAIN_X_MIN -6
+DOMAIN_X_MAX 6
+DOMAIN_Y_MIN -6
+DOMAIN_Y_MAX 6
+EXPORT_VTK 1
+OUTPUT_FILENAME {os.path.join(tmp, "seedonly")}
+"""
+        rc, out = run(tmp, seedonly)
+        check("7c. the STATE is zero boundary edges and not 'meshed no geometry': "
+              "a config with no geometry but a seed still builds the far-field "
+              f"box, so this warning is SILENT on it (rc={rc})",
+              rc == 0 and not no_boundary_edge(out))
+        check("7c. ...and that run really did produce boundary edges, so the "
+              "silence above is the state and not a run that failed",
+              re.search(r"Boundary Edges \(BND\)\s*:\s*[1-9]", out) is not None)
+
         # And the negative, on the ordinary case this whole file meshes: a real
         # body has boundary edges, so the warning must be silent on every run
         # anybody actually makes.
