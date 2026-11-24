@@ -3483,8 +3483,8 @@ block boundary and not a shading choice.
 
 | # | the difference | theirs | ours | status |
 |---|----------------|--------|------|--------|
-| 1 | **Far-field cell size** | texture is near-uniform from the body to the panel edge | coarsens strongly outward: `adjacent_area_ratio_max` 18.3, `quad_midline_ratio_max` 43.0 | a NODE BUDGET, not a blocking — §11f |
-| 2 | **Fan → Cartesian transition** | some outer blocks carry an AXIS-ALIGNED grid while their neighbours carry a radial one | fan all the way to the circle, no transition | §12b's `--box` is half of it |
+| 1 | **Far-field cell size** | texture is near-uniform from the body to the panel edge | a 4.2× RADIAL STEP at ring 1, then flat; the azimuthal growth is the 2.7× a fixed angular count gives | §29h closes the step 2.9× with `--match-ring1`, for 8.6% of the residual |
+| 2 | **Fan → Cartesian transition** | some outer blocks carry an AXIS-ALIGNED grid while their neighbours carry a radial one | fan all the way to the circle, no transition | §29h REFUSED it by measurement, confirming §12b: a FORK, not a defect |
 | 3 | **Concentric bands** | three to five | three | §29f priced four and five as WORSE |
 | 4 | **The nose** | a dense rosette of small blocks wrapping the leading edge | 24 sectors converging on one point, no local clustering | §17d: stations by COUNT, not clustering |
 | 5 | **Downstream** | a thin banded wake strip with the fan cut around it | four wedges of ~30–36° carrying the whole quadrant | §29c measured the ceiling |
@@ -3497,9 +3497,96 @@ device and would be the most important structural item here; the few boundaries 
 the left edge line up, and no automated measurement on this figure works, so it is recorded as
 open rather than decided either way.
 
-**Triage.** 3, 4 and 5 are our own partition and can be moved — 5 has its ceiling measured and 3
-has been priced. 1 is a node budget, so changing it changes what every table in §§9–11 holds
-fixed. 2 needs the other topology family, half-built in §12b. 6 and 7 cannot be closed.
+**Triage, and what §29h did with it.** 1 is **closed** — and its first diagnosis in this very
+section was wrong, which 29h records. 2 is **refused by measurement**, twice now, and is a fork
+rather than a defect. 3 was **priced** in §29f and four and five rings are worse. 5 has its
+**ceiling measured** in §29c. 4 is **not attempted**, because closing it means reversing §20b's
+equal-angle choice or adding a local refinement this generator does not have. 6 and 7 cannot be
+closed at all.
+
+### 29h. ATTACKING THE LIST — one closed, one refused by measurement, and TWO instruments that said the fix had failed **[V]**
+
+29g's triage named 1, 2, 4 and 5 as the movable ones. This is what moving them produced.
+
+#### Difference 2 — the fan-to-Cartesian transition: REFUSED, confirming §12b
+
+`--box` replaces the tutorial circle with a rectangle and morphs the rings out to it. On the quilt,
+at the same 8664 cells and 0 inverted throughout:
+
+| | non-ortho max | mean | adjacent area max | turning median | sector max/min |
+|---|---------------|------|-------------------|----------------|----------------|
+| arc, circle (§29f) | **49.491** | **7.702** | **18.30** | 26.38 | **4.54** |
+| arc, `--box` | 81.203 | 13.195 | 25.38 | 59.30 | 9.05 |
+| arc, `--box`, 2 rings | 70.690 | 13.992 | 30.94 | 32.14 | 7.59 |
+| chord, `--box` | 64.973 | 12.769 | 25.67 | **26.11** | 5.59 |
+
+Worse on every figure but one. §12b reached the same verdict from the other direction — "the
+downstream half does become a streamwise band, the rest does not" — so this is a second,
+independent refusal of the same mechanism. **Difference 2 is a FORK, not a defect**: the
+arrangement GridPro's figure shows needs the C/H family, which §27 ships and which §29d's gate 2
+beats at matched cell count.
+
+#### Difference 1 — the coarsening: the first DIAGNOSIS was wrong, and then the fix worked
+
+**Wrong first:** this section's own first reading said the coarsening is azimuthal and the radial
+direction is already handled by `--linear-rings`. Measuring cell extent by radius about the
+trailing edge says otherwise — the radial extent STEPS 4.2× at r ≈ 1 (0.0220 → 0.0931) and is
+then flat (0.093 / 0.131 / 0.132 / 0.128), while the azimuthal extent grows gently, 0.027 → 0.073
+over r 1→3, which is the 2.7× a fixed angular count gives by construction. **The dominant term is
+a single step at ring 1's crossing**, not a gradual stretch.
+
+**The cause is the wall law.** `wall_ends: start` is one-sided: it pins the first cell to
+`BL_INITIAL_THICKNESS` and spends the tanh law filling the band, so the band's LAST cell is far
+finer than the first cell outside ring 1. `--match-ring1` makes it two-sided, giving `ds_end` the
+first cell the outer region has at that same station, per-station because the band's thickness is,
+and backed off to the law's own feasibility bound `(L/ds_start - 1)(L/ds_end - 1) >= (count - 2)^2`
+rather than handed over to be warned about and silently pinned.
+
+**It works, measured on the pairs ON ring 1** — 134 of them, found by testing both endpoints
+against the wrap ellipse:
+
+| across ring 1 | median | p95 | max |
+|---|--------|-----|-----|
+| without `--match-ring1` | 7.88 | 10.14 | 12.86 |
+| with | **2.78** | **3.88** | **4.47** |
+
+**AND TWO INSTRUMENTS SAID IT HAD FAILED.** Both were wrong in a way worth naming:
+
+1. **`adjacent_area_ratio_max` did not move, to six figures — 18.297 both ways.** Not because
+   nothing changed: its worst pair is at the FAR-FIELD boundary, r = 2.945 at (1.266, ±2.933)
+   between blocks 79|80 and 55|56, with a second cluster at the trailing-edge fan (r = 0.25–0.38,
+   ratios 12.9 and 12.7). **A mesh-wide max names no location**, which is the lesson §16e of the
+   sibling note recorded under another name and this is its second instance.
+2. **A band-median radial extent said the step got WORSE, 4.23× → 4.50×.** `ds_end` sets the LAST
+   cell of the band; a median over a band cannot see an end cell. The instrument could not measure
+   the thing the flag changes, and it did not return "no change" — it returned the opposite sign.
+
+Before reading either null result as a null result, the document was checked for the change:
+**25 wall edges carry a `ds_end` of 0.040–0.051**, so the flag had reached the mesh and the
+question was the instrument, not the mechanism.
+
+**GATE 2 prices it at about 9%.** Exit 0, zero NaN, 9000 half-iterations, 8664 cells:
+
+| iteration | graded | arc (§29f) | chord | 2-ring |
+|-----------|--------|------------|-------|--------|
+| 3000 | 2.053e-05 | 1.329e-05 | 1.162e-05 | **9.238e-06** |
+| 5000 | 4.400e-06 | **3.381e-06** | 4.600e-06 | 4.578e-06 |
+| 8000 | 1.589e-06 | **1.463e-06** | 3.026e-06 | 2.787e-06 |
+
+So grading across ring 1 costs **8.6% of the residual at 8000** and 6.7% of the mean
+non-orthogonality (7.702 → 8.216), leaves the worst corner and the turning unchanged, and buys a
+2.9× flatter size transition at the one seam where the mesh changes character. **It is a trade and
+is recorded as one**; `gridpro_quilt3_arc` remains what §29f recommends, and
+`gridpro_quilt3_graded` ships beside it because the trade is the finding.
+
+#### Differences 4 and 5 — not attempted here, and why
+
+**5** has its ceiling measured in §29c and nothing new was tried. **4**, the nose rosette, needs
+blocks CLUSTERED at the leading edge, and `--even-sectors` — which §20b adopted because it is how
+`fig5` arranges its sectors — works directly against that: equal angle puts FEWER stations at the
+nose than equal arc length does. So closing 4 means either reversing §20b's choice or a local
+refinement this generator does not have, and both are larger than one flag. **Not attempted, and
+named rather than left to look unexamined.**
 
 ### 29e. What this changes, and what it does not
 

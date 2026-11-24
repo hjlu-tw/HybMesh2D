@@ -50,6 +50,10 @@ DS_SURF = 0.005                 # the shipped C-grid's surface clustering
 N_AROUND = 96                   # intervals around the whole body
 N_WALL = 33                     # nodes across the WALL ring (body -> ring 1)
 N_OUT_TOTAL = 24                # intervals from ring 1 out to the circle, in all
+BL_FIRST = 0.001                # the run's BL_INITIAL_THICKNESS, which the wall
+                                # law takes; stated here only so --match-ring1
+                                # can apply the feasibility bound itself
+MATCH_RING1 = False
 N_WAKE = 17                     # nodes along the trailing-edge fan's angular side
 
 FAR_C = None
@@ -686,6 +690,41 @@ def build(split, nrings, nrays, fan_deg=None):
     # Layer 0 is the WALL layer and every one of its radials clusters at the
     # body. The three at the trailing edge are GridPro's internal surfaces.
     wall = {"wall_ends": "start"}
+    nout = PER_LAYER if PER_LAYER else max(1, N_OUT_TOTAL // max(1, nrings - 1))
+
+    def wall_spacing(st, inner):
+        """The wall radial's law at station ``st``, whose inner end is ``inner``.
+
+        ``inner`` is NOT always ``st``: a trailing-edge ray's radial runs from
+        "te" to ``R1_<ray>``, and reading the station's own name as a position
+        is a KeyError on R0 -- which is what the first cut of this did.
+
+        By default ONE-SIDED: the first cell is BL_INITIAL_THICKNESS and the tanh
+        law spends the rest filling the band, which leaves the band's OUTER cell
+        far finer than the first cell outside ring 1 -- measured at a 4.2x radial
+        step across that crossing (0.0220 -> 0.0931) and reported by the quality
+        line as adjacent_area_ratio_max 18.3. That step is difference 1 of 29g.
+
+        --match-ring1 makes it TWO-SIDED by giving ds_end the first cell the
+        OUTER region will have at this same station, so the two sides of ring 1
+        meet at the same size. The height is per-station because the band's
+        thickness is, and it is BACKED OFF to the law's own feasibility bound --
+        (L/ds_start - 1) * (L/ds_end - 1) >= (count - 2)^2, which
+        .claude/rules/mesher-spacing.md states -- rather than handed over to be
+        warned about and silently pinned.
+        """
+        if not MATCH_RING1:
+            return wall
+        a, b = t.pos[inner], t.pos["R1_" + st]
+        lw = math.hypot(b[0] - a[0], b[1] - a[1])
+        c = t.pos["R%d_%s" % (min(2, nrings), st)]
+        lo = math.hypot(c[0] - b[0], c[1] - b[1]) / max(1, nout)
+        if lw <= 0 or lo <= 0:
+            return wall
+        # the coarsest ds_end the count can carry beside a BL-height first cell
+        lim = lw / (1.0 + (N_WALL - 2) ** 2 / max(1e-12, lw / BL_FIRST - 1.0))
+        return {"wall_ends": "start", "ds_end": round(min(lo, lim), 10)}
+
     for k, rid in enumerate(ray_ids):
         if k == wake_i:
             t.edge("r0_" + rid, "te", "R1_" + rid, "cut", count=N_WAKE,
@@ -699,11 +738,11 @@ def build(split, nrings, nrays, fan_deg=None):
             # Seeding all of them with the SAME value leaves the three-ray mesh
             # coordinate-identical -- verified, section 21b.
             t.edge("r0_" + rid, "te", "R1_" + rid, "interface",
-                   count=N_WALL, spacing=wall)
+                   count=N_WALL, spacing=wall_spacing(rid, "te"))
     for cid in ["le"] + ["u%d" % k for k in range(split - 1)] \
             + ["l%d" % k for k in range(split - 1)]:
-        t.edge("r0_" + cid, cid, "R1_" + cid, "interface", spacing=wall)
-    nout = PER_LAYER if PER_LAYER else max(1, N_OUT_TOTAL // max(1, nrings - 1))
+        t.edge("r0_" + cid, cid, "R1_" + cid, "interface",
+               spacing=wall_spacing(cid, cid))
     # The chain is walked OUTWARD per station so each layer can be launched
     # along the tangent the one inside it arrived with (see arc_exit_tangent).
     tin = {}
@@ -848,7 +887,7 @@ def build(split, nrings, nrays, fan_deg=None):
 
 
 def main():
-    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH, BOX, EVEN_SECTORS, RING_LIN, PROP_NODES
+    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH, BOX, EVEN_SECTORS, RING_LIN, PROP_NODES, MATCH_RING1
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", type=int, default=8,
                     help="body sides per surface; 2K sectors around the body")
@@ -860,6 +899,11 @@ def main():
     ap.add_argument("--te-rays", type=int, default=3,
                     help="internal surfaces at the trailing edge; must be ODD "
                          "so one of them is the wake. 3 is the tutorial's.")
+    ap.add_argument("--match-ring1", action="store_true",
+                    help="give the WALL radial a two-sided law whose outer "
+                         "height is the first cell the outer region has at that "
+                         "same station, so the 4.2x radial step across ring 1 "
+                         "closes (section 29h)")
     ap.add_argument("--te-fan", type=float, default=None,
                     help="total angular width (deg) of the trailing-edge ray "
                          "fan, about the exterior angle's bisector. The default "
@@ -919,6 +963,7 @@ def main():
     ap.add_argument("--out", default="gridpro_rings.json")
     args = ap.parse_args()
     BLEND, TAIL, FREE = args.blend, not args.no_tail, args.free_rings
+    MATCH_RING1 = args.match_ring1
     FREE_WRAP = args.free_wrap
     CURVED, CURVED_TAIL = not args.chord_radials, not args.chord_tail
     SMOOTH = not args.ring_normal_radials
