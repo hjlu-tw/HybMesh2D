@@ -1426,14 +1426,19 @@ mesh has the same cells and more blocks.
 
 **At a FIXED 8112 cells, on `cgrid_stack`'s own settings:**
 
-| body-band layers | blocks | inverted | nonortho max | nonortho mean |
-|---|---|---|---|---|
-| 1 (as 16i) | 102 | 0 | 75.2 | 9.43 |
-| 2 | 136 | 0 | **75.2** | 8.55 |
-| 3 | 170 | 0 | 80.2 | 7.93 |
-| **4 (`cgrid_stack_wrap`)** | **204** | 0 | 84.3 | 7.74 |
-| 6 | 272 | 0 | 88.4 | 7.64 |
-| 8 | 340 | **2** | 89.5 | 7.62 |
+| body-band layers | blocks | inverted | nonortho max | nonortho mean | gate 2 |
+|---|---|---|---|---|---|
+| 1 (`cgrid_stack`, 16i) | 102 | 0 | 75.2 | 9.43 | NaN, residuals to 80 |
+| **2 (`cgrid_stack_wrap2`)** | **136** | 0 | **75.2** | 8.55 | NaN, residuals to 70 |
+| 3 | 170 | 0 | 80.2 | 7.93 | not run |
+| **4 (`cgrid_stack_wrap`)** | **204** | 0 | 84.3 | 7.74 | NaN, residuals to 70 |
+| 6 | 272 | 0 | 88.4 | 7.64 | not run |
+| 8 | 340 | **2** | 89.5 | 7.62 | not run |
+
+**TWO of the six are committed documents** — `cgrid_stack_wrap2` at two layers, which is the row
+that costs nothing on the worst cell, and `cgrid_stack_wrap` at four, which is the row that matches
+the vendor's wrap in `vs_gridpro_airfoil_wrap.png`. The other four rows are sweep readings and no
+document is kept for them.
 
 **The mean falls and the maximum rises, and the mean SATURATES around 7.6 while the maximum keeps
 going** — so two layers is free on the worst cell and buys 0.9 degrees of mean, four is what
@@ -1441,9 +1446,12 @@ matches the vendor's wrap visually and costs 9 degrees of maximum, and eight inv
 16h's fold-count trade-off a second time, on a different knob, with the same shape: **more blocks
 buy the average and spend the extreme.**
 
-**GATE 2 STILL FAILS, and slightly earlier**: `cgrid_stack_wrap` NaNs with its residual table
-ending at iteration 70 against `cgrid_stack`'s 80. The wrap does not touch what 16i attributed, so
-this is a consistency check rather than a new result.
+**GATE 2 STILL FAILS AT EVERY LAYER COUNT RUN, and slightly earlier than without the layers**:
+both committed wraps NaN with their residual tables ending at iteration 70 against `cgrid_stack`'s
+80, while `cgrid_stack_control` — the same levels with no corner block — reaches 90 with finite
+residuals. The layers do not touch what 16i attributed, so **the extra blocks neither cause nor cure
+it**; this is a consistency check rather than a new result, and it is the third time on this
+geometry that the corner block is the only thing between a mesh that solves and one that does not.
 
 **TWO DEFECTS IN THE KNOB ITSELF, both found by measuring rather than by looking.**
 
