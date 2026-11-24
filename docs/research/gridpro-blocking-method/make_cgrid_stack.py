@@ -155,69 +155,110 @@ def ell_even(a, b, n, t0=0.5 * math.pi, t1=1.5 * math.pi, samples=12001):
 
 
 def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
-          sigmas=None, ord_iv=None):
+          sigmas=None, ord_iv=None, layers=None):
     far_t = seg_table(FAR)
     body_t = seg_table(BODY)
     S = stages
     Ks = [folds // (2 ** s) for s in range(S)]
     if Ks[-1] < 2:
         raise SystemExit("the outermost band needs K >= 2; lower --stages")
-    n_levels = 2 + 2 * S
     arc = 192 // (4 * Ks[0])
     if arc * 4 * Ks[0] != 192:
         raise SystemExit("--folds must divide 192/4")
     red_iv = arc                      # forced: a = m
+
+    # THE BAND PLAN IS EXPLICIT, not derived from a level index's parity. It was
+    # parity until --layers: an ORDINARY band may now be cut into several RADIAL
+    # layers of blocks, which is how GridPro's own aerofoil figure wraps a body
+    # (16j) and which a parity rule cannot express, because it inserts levels.
+    #   ('ord', n)  an ordinary band as n layers of blocks, count unchanged
+    #   ('red', s)  a reducing band, 4Ks stations in and 2Ks out
+    if layers is None:
+        layers = [1] * (S + 1)
+    if len(layers) < S + 1:
+        layers = list(layers) + [1] * (S + 1 - len(layers))
+    plan = [("ord", layers[0])]
+    for s_i in range(S):
+        plan.append(("red", s_i))
+        plan.append(("ord", layers[s_i + 1]))
+
+    # levels[L] = (station count, fold indices). The body is 0 and the far
+    # field the last; everything between sits on its stations' own rays.
+    lv_count = [4 * Ks[0]]
+    bands = []                       # (kind, L_inner, payload)
+    for kind, payload in plan:
+        if kind == "ord":
+            for _ in range(payload):
+                bands.append(("ord", len(lv_count) - 1, None))
+                lv_count.append(lv_count[-1])
+        else:
+            bands.append(("red", len(lv_count) - 1, payload))
+            lv_count.append(2 * Ks[payload])
+    n_levels = len(lv_count)
+
     if ord_iv is None:
         rest = total_iv - S * red_iv
         ord_iv = [max(2, rest - 2 * S)] + [2] * S
-    # THE RADIAL BUDGET PER BAND, built once and used by BOTH modes, so the
-    # control is radially identical to the reducing document and the only thing
-    # that differs between them is the corner block. An earlier draft gave the
-    # control only the ORDINARY entries and the mesher refused it outright: two
-    # of its five bands had no count at all.
-    band_iv, oi = [], 0
-    for L in range(n_levels - 1):
-        if (not control) and (L % 2 == 1):
-            band_iv.append(red_iv)
-        else:
-            band_iv.append(ord_iv[oi] if oi < len(ord_iv) else 2)
+    # Per BAND, so the control is radially identical to the reducing document.
+    # An ordinary band split into n layers shares its budget between them.
+    # Share each ORDINARY band's budget across its own layers of blocks.
+    i, oi = 0, 0
+    band_iv = [0] * len(bands)
+    for kind, payload in plan:
+        if kind == "ord":
+            want = ord_iv[oi] if oi < len(ord_iv) else 2
             oi += 1
-    if control:
-        band_iv, oi = [], 0
-        for L in range(n_levels - 1):
-            if L % 2 == 1:
-                band_iv.append(red_iv)
-            else:
-                band_iv.append(ord_iv[oi] if oi < len(ord_iv) else 2)
-                oi += 1
-    if sigmas is None:
-        # Each interior level's fraction of the way along its stations' own
-        # rays. Geometric, so the bands grow the way a boundary layer does.
-        sigmas = [0.05, 0.10, 0.22, 0.40, 0.65, 0.85][:n_levels - 2]
+            per = max(2, want // payload)
+            for k in range(payload):
+                band_iv[i] = per
+                i += 1
+        else:
+            band_iv[i] = red_iv
+            i += 1
 
-    # Station counts per level: the body and the first band's inner level carry
-    # 4K0; each reducing band halves; the ordinary band above it passes through.
-    counts = [0] * n_levels
-    counts[0] = 4 * Ks[0]                      # the body
-    for s in range(S):
-        counts[1 + 2 * s] = 4 * Ks[s]          # a reducing band's inner level
-        counts[2 + 2 * s] = 2 * Ks[s]          # ... and its outer one
-    counts[n_levels - 1] = 2 * Ks[-1]          # the far field
-    if control:                       # no corner block anywhere: nothing halves
-        counts = [4 * Ks[0]] * n_levels
     # THE FOLD SITS IN THE MIDDLE OF ITS UNIT, at 4j+2, and that is forced by
     # the aerofoil rather than chosen. At 4j+1 the first unit's fold is the
     # station NEXT TO THE TRAILING EDGE, where the body stations are 0.064 chord
     # apart while the notch pulls the fold ~0.1 out of line: the quad between
     # them is a twisted sliver and the mesher refuses the block outright. 4j+2
     # is also MIRROR-SYMMETRIC by construction, so the upper and lower surfaces
-    # get folds at matching chordwise positions without a special case — which
-    # an earlier 4j+1-upper / 4j+3-lower pair had to fake, and which still left
-    # 11 inverted cells at negative y.
+    # get folds at matching chordwise positions without a special case.
     fold_at = {}
     if not control:
-        for s_i in range(S):
-            fold_at[1 + 2 * s_i] = {4 * j + 2 for j in range(Ks[s_i])}
+        for kind, L, payload in bands:
+            if kind == "red":
+                fold_at[L] = {4 * j + 2 for j in range(Ks[payload])}
+    if control:
+        lv_count = [4 * Ks[0]] * n_levels
+
+    # SIGMA IS GIVEN PER BAND OF THE PLAN, NOT PER LEVEL, and that distinction
+    # is a bug this file shipped for one run. --layers is meant to SUBDIVIDE an
+    # ordinary band; spreading one sigma per level over the whole range instead
+    # pushed the body band's outer boundary from 0.05 to 0.16 -- three times
+    # thicker -- and moved every level above it. The plan's own boundaries are
+    # fixed first and each ordinary band's layers are then packed INSIDE its own
+    # span, so --layers cannot move anything.
+    n_plan = len(plan)
+    if sigmas is None:
+        sigmas = [0.05 * (0.40 / 0.05) ** (k / max(1, n_plan - 2))
+                  for k in range(n_plan - 1)]
+    if len(sigmas) != n_plan - 1:
+        raise SystemExit("--sigmas needs %d values for this plan (one per "
+                         "interior band boundary), got %d"
+                         % (n_plan - 1, len(sigmas)))
+    lv_sigma, bi0 = [0.0], 0.0
+    for pi, (kind, payload) in enumerate(plan):
+        bi1 = sigmas[pi] if pi < len(sigmas) else 1.0
+        if kind == "ord":
+            for k in range(1, payload + 1):
+                f = k / float(payload)
+                lv_sigma.append(bi0 * (bi1 / bi0) ** f if bi0 > 0.0
+                                else bi1 * f)
+        else:
+            lv_sigma.append(bi1)
+        bi0 = bi1
+    counts = lv_count
+    assert len(lv_sigma) == n_levels, (len(lv_sigma), n_levels)
 
     corners, edges, blocks = [], [], []
     seen = set()
@@ -283,8 +324,8 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
     # ---- interior levels, on those rays -------------------------------------
     for L in range(1, n_levels - 1):
         step = n0 // counts[L]
-        sig = sigmas[L - 1]
-        below = sigmas[L - 2] if L >= 2 else 0.0
+        sig = lv_sigma[L]
+        below = lv_sigma[L - 1]
         row = []
         for m in range(counts[L] + 1):
             k = m * step
@@ -349,11 +390,11 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
                 edge(eid, ids[L][k], ids[L][k + 1], "interface")
 
     # ---- bands ---------------------------------------------------------------
-    red_in = {1 + 2 * s: s for s in range(S)} if not control else {}
-    band = 0
-    for L in range(n_levels - 1):
-        if L in red_in:
-            s = red_in[L]
+    red_in = {L: payload for kind, L, payload in bands if kind == "red"} \
+        if not control else {}
+    for bi, (kind, L, payload) in enumerate(bands):
+        if kind == "red" and not control:
+            s = payload
             for j in range(Ks[s]):
                 # O1 | CORNER (fold at 4j+2) | O2, with the apex at 2j+1.
                 rS = "rS%d_%d" % (L, j)
@@ -376,7 +417,7 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
                                "edges": [rM2, "c%d_%d" % (L + 1, 2 * j + 1),
                                          rE, "c%d_%d" % (L, 4 * j + 3)]})
         else:
-            seed = band_iv[L] + 1
+            seed = band_iv[bi] + 1
             for k in range(counts[L] + 1):
                 edge("r%d_%d" % (L, k), ids[L][k], ids[L + 1][k], "interface",
                      seed if k == 0 else None,
@@ -387,7 +428,6 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
                                          "c%d_%d" % (L + 1, k),
                                          "r%d_%d" % (L, k + 1),
                                          "c%d_%d" % (L, k)]})
-            band += 1
 
     # ---- the wake column ----------------------------------------------------
     edge("wake", "te", "wk", "cut", wake, spacing={"ds_start": 0.005})
@@ -395,7 +435,12 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
     for L in range(1, n_levels - 1):
         y = abs(float(next(c for c in corners
                            if c["id"] == ids[L][0])["xy"][1]))
-        t = min(0.95, max(0.02, y / 10.0))
+        # NO LOWER FLOOR. The levels' sigma is strictly increasing, so the
+        # te-side station's y is too, and t = y/10 is therefore strictly
+        # increasing on its own. An arbitrary 0.02 floor flattened the inner
+        # layers onto one another and the mesher refused `ou_e1` for having no
+        # length -- at six body layers, which is the first depth that reaches it.
+        t = min(0.95, y / 10.0)
         out_up.append(add({"id": "ou%d" % L, "kind": "on_geometry",
                            "geom": FAR, "seg": 0, "t": round(t, 12)}))
         out_lo.append(add({"id": "ol%d" % L, "kind": "on_geometry",
@@ -444,6 +489,10 @@ def main():
     ap.add_argument("--sigmas", type=float, nargs="*", default=None,
                     help="each interior level's fraction along the rays")
     ap.add_argument("--ord-iv", type=int, nargs="*", default=None)
+    ap.add_argument("--layers", type=int, nargs="*", default=None,
+                    help="radial layers of BLOCKS per ordinary band, innermost "
+                         "first; 4 on the body band makes its blocks square-ish "
+                         "the way GridPro's own aerofoil wrap is (16j)")
     ap.add_argument("--control", action="store_true",
                     help="the same levels with NO corner block, so nothing halves")
     ap.add_argument("--smooth", type=int, default=0)
@@ -451,7 +500,8 @@ def main():
     a = ap.parse_args()
     doc, counts, arc = build(folds=a.folds, stages=a.stages, notch=a.notch,
                              total_iv=a.total_iv, control=a.control,
-                             sigmas=a.sigmas, ord_iv=a.ord_iv)
+                             sigmas=a.sigmas, ord_iv=a.ord_iv,
+                             layers=a.layers)
     header = ("// A STACK OF COUNT-REDUCING RINGS ON THE SHIPPED AEROFOIL "
               "(#192 follow-up)\n"
               "// — GENERATED by make_cgrid_stack.py %s\n"

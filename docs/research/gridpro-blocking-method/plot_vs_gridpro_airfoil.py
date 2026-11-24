@@ -86,8 +86,12 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--wide", type=float, default=3.4,
                     help="HALF-HEIGHT of the far-field panel; the width is 2x")
-    ap.add_argument("--near", type=float, default=0.26,
-                    help="HALF-HEIGHT of the nose panel; the width is 2x")
+    ap.add_argument("--near", type=float, default=0.45,
+                    help="HALF-HEIGHT of the nose panel; the width is 2x. It "
+                         "has to clear the OUTERMOST body-band layer boundary "
+                         "or the layers are cropped out: at 0.16 they are 0.125 "
+                         "to 0.375 off the surface and only the first is in "
+                         "frame, which looked like a body band with no layers")
     ap.add_argument("--near-centre", type=float, nargs=2, default=[0.08, 0.0])
     a = ap.parse_args()
 
@@ -113,8 +117,13 @@ def main():
                         wspace=0.03, hspace=0.10)
     fig.savefig(a.out, dpi=175)
     print("wrote %s" % a.out)
-    print("  %d blocks, %d cells; heavy lines are BLOCK boundaries in (b), as "
-          "they are colour boundaries in (a)" % (len(set(blocks)), len(cells)))
+    print("  %d blocks, %d cells. In (b) the HEAVY LINES delimit blocks; the "
+          "FILL COLOUR does not, because" % (len(set(blocks)), len(cells)))
+    print("  the palette repeats every %d and two blocks stacked radially at "
+          "the same station" % len(BLOCK_COLORS))
+    print("  therefore take the same colour — which is how a first draft of "
+          "this figure looked as")
+    print("  though the body band had no radial layers at all.")
 
 
 if __name__ == "__main__":

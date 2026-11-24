@@ -1415,6 +1415,52 @@ with no chordwise subdivision inside it. **No count is taken off either raster h
 `gridpro-blocking-method.md` are where that was done, against the same figures, and this section
 adds the side-by-side rather than a second set of numbers.
 
+### 16k. THE BODY BAND AS A WRAP OF SMALL BLOCKS — what it buys and what it costs **[V]**
+
+**2026-11-24.** 16j's side-by-side shows the one difference at the body plainly: GridPro wraps the
+aerofoil in a band of many SMALL blocks, while `cgrid_stack`'s body band is 32 long radial strips,
+6 intervals wide and 24 deep. It was already cut chordwise — one block per station — and what it
+lacked was RADIAL subdivision. `--layers` cuts any ordinary band into several layers of blocks
+**without changing the cell count**: the band's radial budget is shared between its layers, so the
+mesh has the same cells and more blocks.
+
+**At a FIXED 8112 cells, on `cgrid_stack`'s own settings:**
+
+| body-band layers | blocks | inverted | nonortho max | nonortho mean |
+|---|---|---|---|---|
+| 1 (as 16i) | 102 | 0 | 75.2 | 9.43 |
+| 2 | 136 | 0 | **75.2** | 8.55 |
+| 3 | 170 | 0 | 80.2 | 7.93 |
+| **4 (`cgrid_stack_wrap`)** | **204** | 0 | 84.3 | 7.74 |
+| 6 | 272 | 0 | 88.4 | 7.64 |
+| 8 | 340 | **2** | 89.5 | 7.62 |
+
+**The mean falls and the maximum rises, and the mean SATURATES around 7.6 while the maximum keeps
+going** — so two layers is free on the worst cell and buys 0.9 degrees of mean, four is what
+matches the vendor's wrap visually and costs 9 degrees of maximum, and eight inverts cells. This is
+16h's fold-count trade-off a second time, on a different knob, with the same shape: **more blocks
+buy the average and spend the extreme.**
+
+**GATE 2 STILL FAILS, and slightly earlier**: `cgrid_stack_wrap` NaNs with its residual table
+ending at iteration 70 against `cgrid_stack`'s 80. The wrap does not touch what 16i attributed, so
+this is a consistency check rather than a new result.
+
+**TWO DEFECTS IN THE KNOB ITSELF, both found by measuring rather than by looking.**
+
+1. **`--layers` silently MOVED the bands instead of subdividing one.** Sigma was generated per
+   LEVEL, so adding layers spread them over the whole range and pushed the body band's outer
+   boundary from 0.05 to 0.16 — three times thicker, with every level above it displaced. Sigma is
+   now given per BAND of the plan and each ordinary band's layers are packed inside its own span,
+   so `--layers` cannot move anything.
+2. **The figure said the layers were not there, and they were.** 205 seam edges run along the body
+   between 0.05 and 0.20 chords off it in `cgrid_stack_wrap` against 74 in `cgrid_stack`, and 202
+   against 0 between 0.20 and 0.35 — measured, after the picture suggested otherwise. Two causes,
+   both the figure's: the nose panel was cropped at 0.16 while the boundaries sit at 0.125 to
+   0.375, and the block palette repeats every 8 so two blocks stacked radially at one station take
+   the SAME colour. The frame was widened and the caption now says the HEAVY LINES delimit blocks
+   and the fill colour does not. **A picture that disagrees with a count is a question about the
+   picture first.**
+
 ### 16f. What this supersedes, and what it does not
 
 - **SUPERSEDES the rest of §15d.** "The model cannot express a count-reducing termination" is now
