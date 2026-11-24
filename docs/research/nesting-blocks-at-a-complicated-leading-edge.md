@@ -1551,12 +1551,31 @@ committed script beside its document.
 **WHAT SURVIVES IS THE CONJUNCTION**: corner blocks AND an aerofoil document. #194's signature
 columns appear in exactly the runs that fail and in no other.
 
-**AND TWO CANDIDATES ARE NAMED AND UNTESTED**, both properties of the whole document rather than of
-a fold's neighbourhood, which is why no proximity test can separate them: the wake `cut` EXISTING at
-all (the circle documents contain no `cut` edge), and the far field's BOUNDARY CONDITIONS — the
-aerofoil's six-segment D carries `outlet` on two of its segments and the circle's four-quarter far
-field is `farfield` throughout. **Nothing here has tested an outlet beside a corner block**, and
-doing it needs a paired control because removing the outlet changes the physics for both sides.
+**ONE OF THE TWO REMAINING CANDIDATES WAS VOID, AND THE PREMISE WAS MINE.** It read: the aerofoil's
+six-segment D carries `outlet` on two of its segments while the circle's far field is `farfield`
+throughout, so an outlet beside a corner block had never been tested. A no-outlet far field was
+built (`cgrid_farfield_nooutlet.dat`, the same 209 points with those two segments renamed) and
+`--far-geom` added to swap it in, and the paired run changed **nothing**: the two `.bc.def` files are
+byte-identical. **`bnd_io.py` lines 65-66 say why — `outlet` and `farfield` BOTH map to solver flag
+1, non-reflect far field.** There was never a boundary-condition difference between the circle and
+the aerofoil in the solver's view. **I read the geometry's `.meta` and assumed it reached the
+solver; the derived `.bc.def` is what reaches it.** The two documents measured nothing and are not
+kept; the geometry and the knob are, because the premise is worth being able to re-check:
+
+    python3 make_cgrid_stack.py --far-geom <dir>/cgrid_farfield_nooutlet.dat --stem X
+    diff results/solver/X_demo/work/X_demo.bc.def results/solver/cgrid_stack_demo/work/...
+
+**AND A STALE FILE NEARLY BECAME EVIDENCE.** `results/solver/multiblock_cgrid_demo/work/*.bc.def`
+reads flag 2 on segments 5-8 where the mapping says 1, which looked like a real inconsistency in the
+deriving code — until its timestamp turned out to be **2026-09-04**, months before this chain. It is
+an old artefact in an uncommitted directory, written by an earlier code path. `results/` is not
+cleaned between runs, so **a file in it is only evidence once its date has been read.**
+
+**SO ONE CANDIDATE REMAINS, plus a new observation.** The wake `cut` EXISTING at all — the circle
+documents contain no `cut` edge of any kind — and the open C topology, which no proximity test can
+separate from it. The new observation is that the circle's `.bc.def` is **four** wall segments and
+four far-field, the aerofoil's **two** and six: a difference in how much of the boundary is wall, not
+in what kinds are present.
 
 **ONE GENERATOR CHANGE, and it needed a correction.** `--fold-units` lets a unit decline its corner
 block, mapping its four inner stations to FOUR outer ones instead of two. That makes a level's

@@ -42,14 +42,22 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 BODY, FAR = "naca0012_cgrid.dat", "cgrid_farfield.dat"
+# --far-geom swaps the far field for another FILE with the same points and
+# different boundary conditions. It exists for one experiment, #194's candidate
+# (2): the aerofoil's shipped far field carries `outlet` on two of its six
+# segments and the circle documents that PASS gate 2 are `farfield` throughout,
+# and nothing had put an outlet beside a corner block. A topology names a
+# geometry by BASENAME (findGeometry in src/MultiBlock.cpp), so the swap is a
+# basename in the document and a path in the config, and nothing else moves.
+FAR_DIR = "examples/geometries"
 CENTRE = (1.0, 0.0)                      # the chain case's own seam centre
 
 
-def seg_table(name):
+def seg_table(name, where="examples/geometries"):
     import numpy as np
-    pts = np.loadtxt(os.path.join(ROOT, "examples/geometries", name))
+    pts = np.loadtxt(os.path.join(ROOT, where, name))
     rows = [l.split() for l in
-            open(os.path.join(ROOT, "examples/geometries", name + ".meta"),
+            open(os.path.join(ROOT, where, name + ".meta"),
                  encoding="utf-8").read().splitlines()]
     i = next(k for k, r in enumerate(rows) if r and r[0] == "POINTS")
     seg = [int(r[0]) for r in rows[i + 1:i + 1 + len(pts)]]
@@ -156,7 +164,7 @@ def ell_even(a, b, n, t0=0.5 * math.pi, t1=1.5 * math.pi, samples=12001):
 
 def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
           sigmas=None, ord_iv=None, layers=None, fold_units=None):
-    far_t = seg_table(FAR)
+    far_t = seg_table(FAR, FAR_DIR)
     body_t = seg_table(BODY)
     S = stages
     Ks = [folds // (2 ** s) for s in range(S)]
@@ -540,6 +548,9 @@ def main():
                     help="radial layers of BLOCKS per ordinary band, innermost "
                          "first; 4 on the body band makes its blocks square-ish "
                          "the way GridPro's own aerofoil wrap is (16j)")
+    ap.add_argument("--far-geom", default=None,
+                    help="a path to another far-field geometry with the same "
+                         "points; see FAR_DIR. #194 candidate (2)")
     ap.add_argument("--fold-units", type=int, nargs="*", default=None,
                     help="which units of each reducing band carry a corner "
                          "block; the rest map four stations to four. Default: "
@@ -549,6 +560,9 @@ def main():
     ap.add_argument("--smooth", type=int, default=0)
     ap.add_argument("--stem", default="cgrid_stack")
     a = ap.parse_args()
+    if a.far_geom:
+        global FAR, FAR_DIR
+        FAR_DIR, FAR = os.path.split(a.far_geom)
     doc, counts, arc = build(folds=a.folds, stages=a.stages, notch=a.notch,
                              total_iv=a.total_iv, control=a.control,
                              sigmas=a.sigmas, ord_iv=a.ord_iv,
@@ -570,13 +584,13 @@ def main():
              "MESH_MODE 1\n"
              "MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/%s.json\n"
              "GEOM_FILE examples/geometries/%s\n"
-             "DOMAIN_FILE examples/geometries/%s nobl\n"
+             "DOMAIN_FILE %s/%s nobl\n"
              "BL_INITIAL_THICKNESS 0.001\n"
              "MB_SPLIT_QUADS 0\n"
              "MB_SMOOTH_ITERS %d\n"
              "BC_GEOM wall\n"
              "EXPORT_VTK 1\n"
-             "EXPORT_STARCD 0\n" % (a.stem, BODY, FAR, a.smooth))
+             "EXPORT_STARCD 0\n" % (a.stem, BODY, FAR_DIR, FAR, a.smooth))
     with open(os.path.join(HERE, a.stem + ".dat"), "w", encoding="utf-8") as f:
         f.write(cfg)
     print("wrote %s.json / %s.dat: %d blocks, stations %s, body %d -> far %d"
