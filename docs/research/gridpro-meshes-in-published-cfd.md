@@ -145,6 +145,15 @@ outermost ring of cells is coarse and nearly square. **[V]**
 shows what survives to the boundary — is the single most on-point presentation found in this
 search.** **[I]**
 
+> **AND COUNTED, 2026-11-24.** `gridpro-blocking-method/plot_vs_stern_fig4.py` counts the grid
+> lines crossing a horizontal cut through Figure 4 off the raster and plots them beside this
+> repo's own reducing stack (`vs_stern_fig4.png`) — the first measurement of a GridPro mesh's own
+> line count in any of these notes, and half of the blind spot
+> `nesting-blocks-at-a-complicated-leading-edge.md` §15g names. **Both fall.** The lower 39% of
+> that figure SATURATES — median white gap 2 px, 50-66% ink, lines merged — so the count there is
+> a severe undercount and is excluded by a drawn saturation line. The source image is not
+> committed, per the convention in this directory's Sources.
+>
 > **ADOPTED, 2026-11-24.** `gridpro-blocking-method/plot_two_panel.py` draws this repo's own
 > `MESH_MODE 1` meshes in that format, and the omissions are copied as deliberately as the
 > inclusions: black cell edges, no colour by block, no axes, no legend, and the numbers in a

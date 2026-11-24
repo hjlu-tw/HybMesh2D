@@ -1004,6 +1004,12 @@ corner graph from which blocks are inferred, rather than a per-block list of fou
 
 ### 15g. Named limits of this section
 
+- ~~**GridPro's own N(r) is NOT plotted anywhere here.**~~ **HALF-CLOSED by §16h, 2026-11-24**: the
+  GRID-line count of Stern et al.'s Figure 4 is now counted off the raster and plotted beside this
+  repo's own in `vs_stern_fig4.png`. What is NOT closed, and cannot be from published figures, is
+  the BLOCK-line N(r) this section defines — ten third-party GridPro papers draw block boundaries
+  in two cases and colour by block in none. Kept, because the original sentence below is still true
+  of everything else in it:
 - **GridPro's own N(r) is NOT plotted anywhere here.** Their mesh is a picture; the icing frame is
   a wireframe and the C-grid frame a JPEG. Every number in 15b, 15c and 15e is from our own
   topologies. The zones in 15e are read off a frame and are marked as such.
@@ -1255,6 +1261,22 @@ heavy on a greyed grid and is an ADDITION to the published format, not part of i
 mesh panel two of ten, and only §1 of that note draws the near and the far field in a way that lets
 a reader compare them. The block-coloured view from `tools/scripts/view_mesh_vtk.py` answers a
 different question ("which block is this cell in") and is kept for that one.
+
+**AND IT IS COMPARED WITH THE PUBLISHED ONE, WHICH CLOSES HALF OF 15g's BLIND SPOT.** That list
+says "GridPro's own N(r) is NOT plotted anywhere here", because their meshes reach us as pictures.
+`vs_stern_fig4.png`, by `plot_vs_stern_fig4.py`, counts one anyway: along a horizontal cut through
+Stern et al.'s Figure 4 each near-vertical grid line is one short dark run, so the lines crossing
+that cut can be counted off the raster. **Both curves FALL** — theirs to 0.38 of its innermost
+countable cut, ours to 0.12 of its own — and that is the whole of the claim, because the two
+x-axes cannot be put on one physical scale (§8b's rule) and each is plotted against the fraction
+of its OWN span. **What is closed is the GRID-line count; the BLOCK-line N(r) of §15a is still not
+plotted for any GridPro mesh**, and cannot be: their published figures do not draw block
+boundaries at all, which §14b of the survey measured as zero of ten.
+- **THE PUBLISHED RASTER SATURATES, and the figure says where.** Over the lower 39% of their
+  Figure 4 the median white gap between lines is 2 px and the row is 50-66% ink, so the lines merge
+  and the count is a severe undercount — row 544 returns 229 where row 384 returns 428. The
+  saturation line is computed, drawn on the panel, and everything below it is excluded. **A count
+  off a picture is only a count where the picture resolves.**
 
 **K AT THE OUTERMOST RING IS THE BINDING CONSTRAINT, and it was found by it failing.** A stack of
 K = 8/4/2 leaves the last ring two folds, so each corner block eats a quarter of the circle, and
