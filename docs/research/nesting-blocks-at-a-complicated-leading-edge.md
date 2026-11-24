@@ -1214,12 +1214,24 @@ inverted cells; at the shipped default of 20 it has 120. The figures above are a
 **GATE 2 FAILS: `Average norm is a nan, exiting....` at iteration 20** — and **so does its
 control, at the same iteration**, which is the whole of what that measures. The NaN belongs to
 this three-band C-grid construction and not to the reduction: both meshes carry a mean
-non-orthogonality of 22 to 24 degrees against the shipped cases' 3.8 and 5.3, both report
-`wall_first_cell_worst_rel` 0.924 against their 0.001, and that figure does not move when the
-radial budget is raised from 40 to 64, so it is a defect in how this document places its wall
-spacing rather than a resolution. **It was not chased.** Per #192 step 4, **no reduction on the
-C-grid leaves `docs/research/`**; the reducing O-GRID is the one that passed, and it is the one
-the device is cleared on.
+non-orthogonality of 22 to 24 degrees against the shipped cases' 3.8 and 5.3.
+
+> **THE SECOND FIGURE THIS PARAGRAPH USED TO CITE WAS READ WRONG, and the correction is the
+> interesting part (2026-11-24).** It said both meshes "report `wall_first_cell_worst_rel` 0.924
+> against their 0.001 ... so it is a defect in how this document places its wall spacing". That is
+> FALSE. The per-wall rows the same run prints name the offender outright: it is `e_ff_up` and
+> `e_ff_lo`, the far field's top and bottom PLANES, which ask 0.75 to 1.05 and get 0.75 to 1.63 —
+> a size blend of order one chord on a far-field edge, nothing to do with a boundary layer. They
+> are measured at all only because a far-field edge's KIND is `wall`. **Every aerofoil arc in the
+> document is within 0.47% of the 1e-3 it asks for**, which is better than the claim's own
+> baseline. The sentence was built on the headline alone and the headline is a MAX over edges that
+> are not all walls in any physical sense; the rows underneath it were there the whole time and I
+> did not read them. Kept rather than deleted because the shape recurs: **a worst-of figure names
+> no subject, and the subject is where the diagnosis lives.**
+
+**It was not chased further.** Per #192 step 4, **no reduction on the C-grid leaves
+`docs/research/`**; the reducing O-GRID is the one that passed, and it is the one the device is
+cleared on.
 
 ### 16h. ONE RING IS A STEP; A STACK IS A STAIRCASE **[V]**
 
@@ -1285,6 +1297,97 @@ the last ring has FOUR gives 0 inverted. **A corner block's angular span is its 
 16b measured as the ring's thickness and this measures as the fold count; they are the same
 statement about the taper.
 
+### 16i. THE STACK ON THE AEROFOIL — and the one gate-2 result that IS attributable **[V]**
+
+**2026-11-24, asked for in one line: "all on aerofoil meshes".** 16h's stack is on a circle, which
+was never the subject — it was the geometry whose boundary conditions were easiest to bind.
+`make_cgrid_stack.py` puts the stack on the shipped NACA 0012 and the two geometry files the
+shipped C-grid reads, with 16h's level machinery and arithmetic unchanged.
+
+**FOUR DEFECTS HAD TO BE FIXED FIRST, and every one was a FOLD the mesher refused or reported
+rather than something a picture showed.** They are listed because each is a general trap for this
+construction, not a quirk of this file:
+
+1. **Stations placed by ARC LENGTH along a declared ellipse** — the defect 16g named as untried.
+   A mid-chord body point lands against an ellipse point nowhere near its normal, so the radial
+   runs almost ALONG the aerofoil: mean non-orthogonality **26.0 degrees**. Replaced by a RAY per
+   station — it leaves the body along the surface normal and bends to arrive at its own far-field
+   station — which took the mean to **9.43**, against the **10.53** of a four-block mesh at the
+   same body count. The correspondence is then the body's own normal, by construction.
+2. **A notch scaled by the RAY, not by the band.** The ray length varies tenfold round an
+   aerofoil, so a 12% notch pulled the nose fold 0.6 chords in, deeper than the band it sat on:
+   12 inverted cells, all in the first band's corner blocks at the nose.
+3. **A fold at the unit's first station**, which on the first unit is the station NEXT TO THE
+   TRAILING EDGE, where the body stations are 0.064 chord apart. The quad there is a twisted
+   sliver and the mesher refused the block. The fold belongs at the unit's MIDDLE, which is also
+   mirror-symmetric about the leading edge for free — an earlier upper-4j+1 / lower-4j+3 pair had
+   to fake that symmetry and still left 11 inverted cells, every one at negative y.
+4. **A vertical normal at the trailing edge.** On a NACA 0012 the upper surface's normal there is
+   about (0.1, 0.995), so a station one arc in is pushed past x = 1 while a vertical te ray stays
+   at x = 1: the level's first arc steps BACKWARDS and the block across it is twisted. The te
+   stations take the surface's own normal.
+
+**AND A KNOB WAS REMOVED AFTER IT WAS MEASURED.** A `--bend` exponent went in at 2.0 to cure what
+looked like the bend starting too early; defect 4 was the real cause, and once it was fixed the
+exponent's best value was **1.0 on both the worst cell (75.2 against 85.7 degrees) and the mean
+(9.43 against 9.91)**. A knob whose best value is "off" should not exist, so it does not.
+
+| on the shipped aerofoil, `MB_SPLIT_QUADS 0` | blocks | quads | inverted | nonortho max / mean |
+|---|---|---|---|---|
+| shipped four-block C-grid, 49 per surface | 4 | 5760 | 0 | 29.9 / 3.82 |
+| shipped ten-block chain, 97 per surface | 10 | 9600 | 0 | 42.2 / 5.30 |
+| four-block at 193 per surface (for scale) | 4 | 17280 | 0 | 56.2 / 10.53 |
+| `cgrid_stack_control` — the same levels, NO corner block | 170 | 9600 | 0 | 70.5 / 6.94 |
+| **`cgrid_stack`, 2 stages, 192 → 48 intervals** | 102 | **8112** | 0 | 75.2 / 9.43 |
+| **`cgrid_stack_deep`, 3 stages, 192 → 24** | 218 | **6276** | 0 | 81.0 / 11.07 |
+
+**WHERE THE CELLS GO, in #191's bins with that gate's own ruler** (`bin_added_cells.py`, which now
+prints ABSOLUTE counts beside the share, because a document that REDISTRIBUTES gives the share a
+negative numerator and a figure past 100% — arithmetic, not a measurement):
+
+| | cells | < 1 chord | 1-5 chords | > 5 chords |
+|---|---|---|---|---|
+| the baseline itself (shipped four-block) | 5760 | 3182 | 1426 | 1152 |
+| #191's shipped chain case | 9600 | 6224 | 2198 | 1178 |
+| #192's one-band `reducing_cgrid` | 8448 | 5584 | 1700 | 1164 |
+| the stack's own control | 9600 | 6512 | 2142 | 946 |
+| **`cgrid_stack`, 2 stages** | **8112** | **6224** | 1235 | **653** |
+
+**The two-stage stack puts EXACTLY the chain case's 6224 cells inside one chord** — the same
+near-body mesh — for 8112 cells against 9600, and it carries **653 cells beyond five chords where
+the 5760-cell baseline carries 1152.** That is #188's user story 1 on the aerofoil, measured.
+
+**GATE 2, 2026-11-24, and this is the result the whole chain was for.** Through
+`cgrid_stack_demo.json` and `cgrid_stack_control_demo.json`, same day, same operating point as
+every other run here (M 0.2, Re 200, cfl 0.6, `num_half_iter` 100):
+
+    cgrid_stack_control   EXIT 0   9856 vertices, 19200 elements, iteration 90,
+                                   residuals finite and O(1e-4), NO NaN
+    cgrid_stack           EXIT 1   its residual table's last row is iteration 80
+                                   at 2.1e+79, and "Average norm is a nan,
+                                   exiting...." after iteration 90
+
+**THE CONTROL PASSES AND THE REDUCING DOCUMENT FAILS, so here the corner blocks ARE what breaks
+it** — and that is the opposite of 16e, where both failed together and nothing was attributable.
+Same levels, same radial budget, same station placement, same operating point; the corner block is
+the only difference.
+
+**THE MECHANISM IS NOT IDENTIFIED, and the two obvious candidates are both refuted.** The worst
+cell is 75.2 degrees against the control's 70.5 — not a difference that explains a blow-up — and
+the size jump across seams is WORSE in the control that survives (p95 17.9 against 11.5, and the
+same 391.65 maximum in both, which is the wake). **Attributed, not explained.**
+
+**Figures**, in the published two-panel format of
+`docs/research/gridpro-meshes-in-published-cfd.md` §1: `two_panel_cgrid_stack.png` (grid only, as
+the reference draws it), `two_panel_cgrid_stack_blocks.png` (the same with the block boundaries
+heavy), and `vs_stern_fig4_cgrid.png` beside the published mesh. **That last one needed the
+instrument changing and the first attempt was WRONG:** counting edges that cross circles about the
+origin reported this stack as NOT falling (1.06 of its innermost cut), because an aerofoil is not
+a ring and those circles are iso-lines of nothing. Against the distance to the BODY it falls to
+0.72, and it RISES first — an iso-distance contour about an aerofoil grows to take in the wake,
+where the mesh stays fine. **An instrument that was right for the circle was wrong for the
+aerofoil, and it reported a clean negative rather than failing.**
+
 ### 16f. What this supersedes, and what it does not
 
 - **SUPERSEDES the rest of §15d.** "The model cannot express a count-reducing termination" is now
@@ -1304,8 +1407,10 @@ statement about the taper.
   this repo reaches a settled force here.
 - **The C-grid construction is mine and it is not a good one**, which 16e's control is what
   establishes. A better station correspondence — derived from the four-block mesh's own grid lines
-  the way #191's one seam station was, rather than placed by arc length — was not tried, and the
-  wall-spacing defect behind `wall_first_cell_worst_rel` 0.924 was not diagnosed.
+  the way #191's one seam station was, rather than placed by arc length — was not tried. **What
+  the NaN IS remains undiagnosed**: `wall_first_cell_worst_rel` was the lead and 16e's own block
+  retracts it, so the only surviving candidate named anywhere here is the 22-to-24-degree mean
+  non-orthogonality, and nothing establishes that either.
 - **The notch depth was swept, not solved for.** 16b's claim that a fold needs the boundary to
   turn is a measurement over four values of one knob on two documents; no analysis says what the
   turn should be, and the three-cells-at-120-degrees ideal is argued from the valence, not
@@ -1317,8 +1422,12 @@ statement about the taper.
   `MB_SMOOTH_ITERS` 0, left behind when 16d's table was re-measured at the shipped 20. It is
   recorded rather than silently corrected because it is the shape every figure in this repo decays
   into: a number that was true of a measurement nobody re-ran after the measurement moved.
-- **16h's two stacks are gate-1 only.** Neither has been through `getPGrid` and `unicones`, so
-  nothing here says a staircase solves; only 16d's single ring has a gate-2 run behind it.
+- **16h's two CIRCLE stacks are gate-1 only.** Neither has been through `getPGrid` and
+  `unicones`; the aerofoil stack of 16i has, and it diverged. So nothing here says a staircase
+  solves on any geometry, and 16i says one does not on the aerofoil.
+- **16i's divergence is attributed and NOT explained.** The corner block is the only difference
+  from a control that survives, and neither the worst cell nor the size jump accounts for it. No
+  further diagnosis was attempted.
 - **Nothing here is gated.** These are research documents under `docs/research/`; no C++ check and
   no surface gate reads them, and they will rot exactly as §11's two figures did unless something
   does. That is the same state #192 step 1 closed for the three-block corner itself, and it is

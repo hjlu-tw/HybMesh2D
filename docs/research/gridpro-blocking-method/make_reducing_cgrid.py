@@ -55,8 +55,11 @@ So the reduction buys 1152 quads, 30% of what the refinement costs. GATE 1 passe
 only at ``MB_SMOOTH_ITERS 0``; at the shipped default of 20 the reducing document
 has 120 inverted cells. GATE 2 FAILS — ``Average norm is a nan`` at iteration 20
 — **and so does the control, at the same iteration**, so what that measures is
-this three-band construction and not the reduction. Section 16e names the two
-figures behind it that were not chased.
+this three-band construction and not the reduction. Its mean non-orthogonality
+is 22 to 24 degrees against the shipped cases' 3.8 and 5.3. The document's WALL
+SPACING is not the problem and section 16e carries the retraction: every
+aerofoil arc here is within 0.47% of the 1e-3 it asks for, and the 0.924 in the
+headline belongs to the far field's top and bottom planes.
 
     python3 docs/research/gridpro-blocking-method/make_reducing_cgrid.py
     ./run.sh -conf docs/research/gridpro-blocking-method/reducing_cgrid.dat

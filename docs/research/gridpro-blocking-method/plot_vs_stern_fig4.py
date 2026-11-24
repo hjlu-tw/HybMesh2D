@@ -64,6 +64,8 @@ from matplotlib.collections import LineCollection                 # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from measure_block_partition import read_vtk                      # noqa: E402
 
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "..", "..", ".."))
 DARK, MAX_RUN, MIN_GAP = 150, 6, 2.5
 
 
@@ -107,7 +109,36 @@ def published(path):
     return g, sat, (d - d[0]) / (d[-1] - d[0]), n / n[0]
 
 
-def ours(path):
+def body_polyline():
+    """The shipped aerofoil, as the polyline this repo's walls bind to."""
+    out = []
+    with open(os.path.join(ROOT, "examples/geometries/naca0012_cgrid.dat"),
+              encoding="utf-8") as f:
+        for ln in f:
+            t = ln.split()
+            if len(t) >= 2:
+                try:
+                    out.append((float(t[0]), float(t[1])))
+                except ValueError:
+                    pass
+    return np.array(out)
+
+
+def dist_to_body(P, body):
+    """Distance from each point to the aerofoil POLYLINE, by segment."""
+    A, B = body[:-1], body[1:]
+    d = B - A
+    L2 = (d * d).sum(1)
+    L2[L2 == 0] = 1e-30
+    t = ((P[:, None, 0] - A[None, :, 0]) * d[None, :, 0]
+         + (P[:, None, 1] - A[None, :, 1]) * d[None, :, 1]) / L2[None, :]
+    t = np.clip(t, 0.0, 1.0)
+    cx = A[None, :, 0] + t * d[None, :, 0]
+    cy = A[None, :, 1] + t * d[None, :, 1]
+    return np.hypot(P[:, None, 0] - cx, P[:, None, 1] - cy).min(1)
+
+
+def ours(path, body=None):
     pts, cells, _ = read_vtk(path)
     seen, seg = set(), []
     for ids in cells:
@@ -118,10 +149,21 @@ def ours(path):
                 seen.add(key)
                 seg.append((a, b))
     e = np.array(seg)
-    ra = np.linalg.norm(pts[e[:, 0]], axis=1)
-    rb = np.linalg.norm(pts[e[:, 1]], axis=1)
+    if body is None:                      # a RING: distance from its centre
+        ra = np.linalg.norm(pts[e[:, 0]], axis=1)
+        rb = np.linalg.norm(pts[e[:, 1]], axis=1)
+        radii = np.geomspace(0.52, 9.8, 200)
+    else:
+        # AN AEROFOIL IS NOT A RING. Circles about the origin are not iso-lines
+        # of anything here, and counting edges that cross them reported this
+        # repo's own aerofoil stack as NOT FALLING (1.06 of its innermost cut)
+        # when its station counts halve twice. The quantity that means the same
+        # thing on both shapes is the distance to the BODY, so the cut is the
+        # iso-distance contour and not a circle.
+        dd = dist_to_body(pts, body)
+        ra, rb = dd[e[:, 0]], dd[e[:, 1]]
+        radii = np.geomspace(0.02, 8.0, 200)
     lo, hi = np.minimum(ra, rb), np.maximum(ra, rb)
-    radii = np.geomspace(0.52, 9.8, 200)
     # STRICTLY straddling, so an edge lying exactly ON the circle is not
     # counted: that is the artefact plot_reduction.py blanks at a ring
     # interface, and here it showed as spikes above 1.0 near the body.
@@ -131,8 +173,9 @@ def ours(path):
 
 def main():
     src, vtk, out = sys.argv[1], sys.argv[2], sys.argv[3]
+    aero = "--aerofoil" in sys.argv
     g, sat, xd, yd = published(src)
-    pts, cells, xo, yo = ours(vtk)
+    pts, cells, xo, yo = ours(vtk, body_polyline() if aero else None)
 
     fig = plt.figure(figsize=(13.2, 8.4), facecolor="white")
     # (a) the published figure, cropped — a QUOTATION of part of it, which is
@@ -157,15 +200,18 @@ def main():
         for k in range(len(ids)):
             sg.append([pts[ids[k]], pts[ids[(k + 1) % len(ids)]]])
     a2.add_collection(LineCollection(np.array(sg), colors="k", linewidths=0.3))
-    a2.set_xlim(-3.2, 3.2); a2.set_ylim(-3.2, 3.2)
+    a2.set_xlim(-2.4, 3.0) if aero else a2.set_xlim(-3.2, 3.2)
+    a2.set_ylim(-2.7, 2.7) if aero else a2.set_ylim(-3.2, 3.2)
     a2.set_aspect("equal"); a2.set_axis_off()
-    a2.set_title("(b)  this repo, reducing_stack_deep (#192)", fontsize=9,
+    a2.set_title("(b)  this repo, %s" % os.path.basename(vtk), fontsize=9,
                  loc="left")
 
     # (c) the shapes, each against its own span
     a3 = fig.add_axes([0.545, 0.115, 0.42, 0.355])
     a3.plot(xd, yd, "C3-", lw=1.4, label="Stern Fig. 4, counted off the raster")
-    a3.plot(xo, yo, "C0-", lw=1.4, label="reducing_stack_deep, exact")
+    a3.plot(xo, yo, "C0-", lw=1.4,
+            label="this repo, exact (%s)" % ("distance to the body" if aero
+                                             else "radius"))
     a3.set_xlabel("distance from the refined band, as a fraction of each\n"
                   "figure's OWN countable span (the scales are NOT matched)",
                   fontsize=8)
@@ -176,17 +222,22 @@ def main():
     a3.legend(fontsize=7.5)
     a3.set_title("(c)  both FALL; only the shape is compared", fontsize=9,
                  loc="left")
-    a3.text(0.015, 0.03, "the blue spikes above 1.0 near the body are the "
-            "sampling circle lying along a\nscalloped interface — the same "
-            "coincidence plot_reduction.py blanks; the red\ncurve's roughness "
-            "is the raster count, not the mesh",
+    note = ("the blue curve RISES first because an iso-distance contour about an "
+            "aerofoil grows to\ntake in the wake, where the mesh stays fine — "
+            "that is the measure and not an artefact"
+            if aero else
+            "the blue spikes above 1.0 near the body are the sampling circle "
+            "lying along a\nscalloped interface — the same coincidence "
+            "plot_reduction.py blanks")
+    a3.text(0.015, 0.03, note + ";\nthe red curve's roughness is the raster "
+            "count, not the mesh",
             transform=a3.transAxes, fontsize=6.5, color="0.35")
     fig.savefig(out, dpi=170)
     print("wrote %s" % out)
     print("  published: saturation line at row %d of %d; countable span falls "
           "to %.2f of its innermost cut" % (sat, g.shape[0], yd[-1]))
-    print("  ours:      falls to %.2f of its innermost cut over r = 0.52 .. 9.8"
-          % yo[-1])
+    print("  ours:      falls to %.2f of its innermost cut (%s)"
+          % (yo[-1], "distance to the body" if aero else "radius"))
 
 
 if __name__ == "__main__":

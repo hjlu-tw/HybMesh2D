@@ -37,17 +37,29 @@ def main():
     body = gate._body_polyline()
     base = gate._bin_cells(sys.argv[1], body)
     print("baseline %s: %s, total %d" % (sys.argv[1], base, sum(base)))
-    print("%-34s %6s %6s %16s %16s %14s"
+    # ABSOLUTE counts as well as the share of what was added. #191's table is
+    # "added, split by bin", and that framing assumes every row ADDS in every
+    # bin: a document that REDISTRIBUTES -- the #192 stacks put fewer cells
+    # beyond one chord than the baseline does -- gives a negative numerator and
+    # a share past 100%, which is arithmetic and not a measurement. The absolute
+    # row is always meaningful; the share is printed beside it and goes blank
+    # when its own denominator cannot carry it.
+    print("%-34s %6s %6s %15s %15s %14s"
           % ("", "cells", "added", "< 1 chord", "1-5 chords", "> 5 chords"))
+    print("%-34s %6d %6s %7d %7s %7d %7s %6d %7s"
+          % ("the BASELINE itself", sum(base), "-", base[0], "", base[1], "",
+             base[2], ""))
     for arg in sys.argv[2:]:
         label, _, path = arg.rpartition("=")
         got = gate._bin_cells(path or label, body)
         add = [x - y for x, y in zip(got, base)]
         tot = sum(add)
-        print("%-34s %6d %6d %7d (%5.1f%%) %7d (%5.1f%%) %6d (%4.1f%%)"
-              % (label or path, sum(got), tot,
-                 add[0], 100.0 * add[0] / tot, add[1], 100.0 * add[1] / tot,
-                 add[2], 100.0 * add[2] / tot))
+        def share(v):
+            return "(%5.1f%%)" % (100.0 * v / tot) if tot > 0 and min(add) >= 0 \
+                else "        "
+        print("%-34s %6d %6d %7d %7s %7d %7s %6d %7s"
+              % (label or path, sum(got), tot, got[0], share(add[0]),
+                 got[1], share(add[1]), got[2], share(add[2])))
 
 
 if __name__ == "__main__":
