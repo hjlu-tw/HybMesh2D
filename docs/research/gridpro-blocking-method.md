@@ -3340,9 +3340,15 @@ reproducing the committed reading of 350..359 / 706..717.
   "an automated count bounced between 7 and 21, which is not a measurement" is why this is
   stated as a reading with an error bar rather than dressed up. **[I]** on the number,
   **[V]** on the separators.
-- **What the figure shows:** about **three concentric bands** of roughly **20–24 sectors**
+- **What the figure shows:** **three to five concentric bands** of roughly **20–24 sectors**
   each, the outermost ending about **1.5 chords** off the body where a coarser outer field
-  takes over. Ours is **two** bands of 24 — and §29b measured the third: median turning
+  takes over. The count is a range because a closer look at its upper-left quadrant at 4×
+  counts four to five where the first reading of this panel said three, and an automated
+  count does not settle it: sampling colour round circles at four radii returned 3, 4, 2 and
+  4 changes where the eye sees about twenty, which is §20b's finding reproduced on a second
+  figure. **The grid lines are coloured BY BLOCK in this figure** — a block's own grid is
+  drawn in its own colour — so a colour boundary is a block boundary, which is what makes
+  even the eye count sound. Ours is **two** bands of 24 — and §29b measured the third: median turning
   17.81° → 29.98°, mean non-orthogonality 5.958° → 9.254°. **So the remaining structural gap
   to this figure is one ring, and this repo has measured what that ring costs it** — then
   §29f BUILT it, at the same cell count and gate-1 clean, and the cost turned out to be the
