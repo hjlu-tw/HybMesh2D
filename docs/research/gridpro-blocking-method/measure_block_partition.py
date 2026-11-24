@@ -106,12 +106,38 @@ def rings_along(pts, seam, origin, theta, tol_deg=35.0):
     return np.sort(r[keep])
 
 
+def sector_gaps(pts, seam, centre, r):
+    """Angular widths of the sectors a circle of radius r is cut into.
+
+    What `--gaps` answers is the complaint N(r) cannot see: a far field cut into
+    24 EVEN sectors and one cut into 4 wide wedges plus 20 narrow ones have the
+    same N(r). Returns the sorted gaps in degrees; a perfect quilt has them all
+    equal, so max/min is the figure to read.
+    """
+    P1, P2 = pts[seam[:, 0]] - centre, pts[seam[:, 1]] - centre
+    a, b = np.linalg.norm(P1, axis=1), np.linalg.norm(P2, axis=1)
+    hit = (np.minimum(a, b) <= r) & (np.maximum(a, b) >= r)
+    if hit.sum() < 2:
+        return np.zeros(0)
+    t = (r - a[hit]) / np.where(b[hit] - a[hit] == 0, 1e-30, b[hit] - a[hit])
+    X = P1[hit] + (P2[hit] - P1[hit]) * np.clip(t, 0, 1)[:, None]
+    th = np.sort(np.degrees(np.arctan2(X[:, 1], X[:, 0])) % 360.0)
+    # a crossing found twice (two cells share the edge) must not read as a 0 gap
+    th = th[np.concatenate(([True], np.diff(th) > 1e-6))]
+    if len(th) < 2:
+        return np.zeros(0)
+    return np.sort(np.diff(np.concatenate([th, [th[0] + 360.0]])))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("vtk")
     ap.add_argument("--centre", nargs=2, type=float, default=[0.5, 0.0])
     ap.add_argument("--radii", nargs="*", type=float,
                     default=[0.5, 1.0, 2.0, 3.0, 5.0, 10.0])
+    ap.add_argument("--gaps", action="store_true",
+                    help="also report the ANGULAR WIDTHS of the sectors each "
+                         "circle is cut into -- the uniformity N(r) cannot see")
     ap.add_argument("--rays", action="store_true",
                     help="also report RINGS along rays at 180/165/150/135/120 deg")
     ap.add_argument("--ray-origin", nargs=2, type=float, default=None,
@@ -127,6 +153,17 @@ def main():
     for r in args.radii:
         print("    r = %-7g %4d" % (r, crossings(pts, seam, c, r)))
     print("\nA terminating blocking FALLS here. A propagating one is FLAT.")
+
+    if args.gaps:
+        print("\nSECTOR WIDTHS about (%g, %g) -- a uniform quilt has max/min = 1:"
+              % (c[0], c[1]))
+        print("    %-9s %4s %8s %8s %8s %8s" % ("r", "n", "min", "median", "max", "max/min"))
+        for r in args.radii:
+            g = sector_gaps(pts, seam, c, r)
+            if len(g) < 2:
+                print("    %-9g %4d       --" % (r, len(g))); continue
+            print("    %-9g %4d %8.2f %8.2f %8.2f %8.2f"
+                  % (r, len(g), g[0], float(np.median(g)), g[-1], g[-1] / g[0]))
 
     if args.rays:
         o = np.array(args.ray_origin if args.ray_origin else args.centre, float)

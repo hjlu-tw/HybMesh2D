@@ -1,0 +1,44 @@
+# =============================================================================
+# THE CONTROL for gridpro_quilt.dat: section 27's straightened C/H, at the split
+# that matches the quilt's cell count -- 8640 cells against 8664, a 0.3% match.
+#
+# Section 29. Section 27f is why this file exists: at 21600 cells against 29120
+# the straightened C/H read as 3-6x WORSE in the solve, and matching the count
+# turned that into 1.7-2.4x better. A gate-2 comparison across different cell
+# counts measures the count.
+#
+#   python3 docs/research/gridpro-blocking-method/make_ch.py \
+#       --layers 2 --split 12 --turn-blend 0.8 --wake 8 \
+#       --out gridpro_quilt_control.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_quilt_control.dat
+#
+# It is NOT gridpro_ch_straight.dat: that one is --split 32 and 28640 cells, and
+# section 27 ships it as the defensible default. This is the same topology
+# coarsened to be comparable with a 54-block radial fan.
+#
+# A RESEARCH HARNESS, not a shipped case.
+# =============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_quilt_control.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- the rectangle is declared, corner by corner.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing: the far-field and outlet edges
+# carry no binding, so this is where their condition comes from. The aerofoil's
+# sides are bound and take 'wall' off their own sidecar. A real case would want
+# inlet / outlet / farfield told apart, which needs a far-field geometry file.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family (section 8g); five is
+# where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_quilt_control/mesh_gridpro_quilt_control.vtk

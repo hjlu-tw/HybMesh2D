@@ -1,0 +1,56 @@
+# =============================================================================
+# THE QUILT: GridPro's radial-fan blocking at the sector count this generator
+# can actually reach -- 2 CONCENTRIC RINGS x 24 EVEN SECTORS, 54 blocks.
+#
+# Section 29. It exists because section 27c closed this route with a number that
+# does not survive re-measurement: it compared the C/H's best figure against the
+# O-ring family's WORST member. Measured on quads, the family runs 37.74 (the
+# committed gridpro_rings), 17.81 with --even-sectors, and 11.39 for
+# gridpro_tworing -- and the ruler that ranks them, total wall-normal turning,
+# is the one section 28 spent a whole section ADDING to the C/H on purpose,
+# because GridPro's own lines curve outward. Section 29a is that argument with
+# the numbers.
+#
+#   python3 docs/research/gridpro-blocking-method/make_rings.py \
+#       --rings 2 --split 12 --even-sectors --prop-nodes body --per-layer 20 \
+#       --out gridpro_quilt.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_quilt.dat
+#
+# --split 12 is the CEILING, not a taste: at 16 the worst corner goes 47.550 ->
+# 66.326 and the worst cell shape 43.0 -> 184.1, and at 20 the generator refuses
+# outright -- "equal-angle station 19 of 20 ... falls outside the angular span
+# its own end corners reach (125.12 deg)". Section 29b.
+#
+# --per-layer 20 is for the CONTROL, not for the mesh: it puts this case at 8664
+# cells against gridpro_quilt_control.dat's 8640, a 0.3% match, which is the only
+# way section 27f's lesson lets a gate-2 history be read at all.
+#
+# A RESEARCH HARNESS, not a shipped case, exactly as gridpro_rings.dat beside it
+# says of itself: nothing in config/ or examples/ refers to it and no gate
+# covers it.
+# =============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_quilt.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- every ring, the circle included, is declared.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing rather than a safety net: the outer
+# ring's arcs carry no binding (an analytic curve has no sidecar to read a
+# condition off), so this is where their condition comes from. The aerofoil's
+# two sides are bound and take 'wall' off their own sidecar.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family -- section 8g measured
+# it stopping at sweep 7 and reporting diverged=1 -- so the cap is five, which
+# is where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_quilt/mesh_gridpro_quilt.vtk

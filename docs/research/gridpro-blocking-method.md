@@ -2916,7 +2916,8 @@ up. Three things the measurement settles: **[V]**
    and accumulates worse.
 3. ~~**It is the far field's SHAPE.**~~ **WRONG — §27a.** Two predictions this made were tested
    and both failed: the O-ring, whose far field IS a circle, turns the MOST of any case measured
-   (median 37.7°), and enlarging the C/H's rectangle from 9×6 to 40×20 changes nothing
+   (median 37.7°  — **that is the family's WORST member; §29a measures the other two at 17.81
+   and 8.88**), and enlarging the C/H's rectangle from 9×6 to 40×20 changes nothing
    (6.9 → 7.5 median, p95 identical at 34.2). The cause is the **third body-hugging layer ring**;
    §27a has the sweep.
 
@@ -2971,7 +2972,7 @@ failed:** **[V]**
 
 | test | prediction if the far field's shape is the cause | measured |
 |------|--------------------------------------------------|----------|
-| the O-ring, whose far field IS a circle | low turning | **37.7° median** — the WORST of every case measured |
+| the O-ring, whose far field IS a circle | low turning | **37.7° median** — the WORST of every case measured, and **§29a: the worst MEMBER of its own family**, whose other two are 17.81 and 8.88 |
 | enlarge the C/H's rectangle 9×6 → 20×10 → 40×20 | turning falls toward the C-grid's 1.8° | 6.9 → 7.4 → **7.5°**, and p95 identical at 34.2 all three times |
 
 **The cause is the number of body-hugging LAYER RINGS**, and it is not linear: **[V]**
@@ -3016,6 +3017,13 @@ A rosette means the C-ring stops at the trailing edge and a fan takes over, whic
 modification of the C/H: it **is** the O-ring topology, which this note already has and which
 measures worse on the very thing the rosette was proposed to fix — **37.7° median turning**
 against the C/H's 6.9 — as well as on every angle metric (§19c: 48.095° against 42.873°).
+
+> **THIS CONCLUSION DOES NOT SURVIVE — §29.** The 37.7 is `gridpro_rings`, the worst of the three
+> O-ring cases this note ships; the matched member is `gridpro_tworing` at **8.88** against this
+> C/H's 6.92. And total turning is the ruler §28 spent a section moving the C/H AWAY from. The
+> sentence above is kept rather than rewritten, as §60's specimen rule asks: §29d's gate-2 run has
+> the fan 2.6–4.9× BELOW a cell-matched C/H at every iteration. The first clause — that a rosette
+> is not a modification of a C/H — still holds.
 
 What was tried instead is the cheap part of `fig6`'s wake appearance: subdividing the wake
 streamwise, `--wake` 4 → 6 → 8 → 10. It buys the mean (2.102 → 2.087 → 2.030 → 2.002) and
@@ -3076,7 +3084,8 @@ perpendicular NEAR the geometry and then curve into arcs further out**.
 
 (1) is unchanged and §27c holds: inside a C/H the wake is a `cut` by construction, so a
 trailing-edge rosette is not a modification of this topology, it is the O-ring topology, which
-measures 37.7° median turning against 6.9°. Nothing in this section touches it.
+measures 37.7° median turning against 6.9°. Nothing in this section touches it. **§29 does, and
+the comparison in that sentence does not survive it** — the matched member measures 8.88.
 
 (2) is built: `gridpro_ch_arcout.{json,dat}`, figure `arc_outward.png`, measurement script
 `measure_turning_profile.py`.
@@ -3196,6 +3205,170 @@ figure that prompted this cannot show the region the change acts on. The appeara
 reading `fig6`'s near-body quarter and extrapolating. **[I]**
 
 ---
+
+---
+
+## 29. The topology route, REOPENED — the number that closed it does not survive
+
+§27c closed the radial-fan route with one comparison: "the O-ring measures 37.7° median turning
+against the C/H's 6.9". Both halves of that are wrong — the member, and the ruler — and with the
+route reopened the fan turns out to **beat** the C/H in the solve at matched cell count. This
+section is that, built and measured.
+
+Everything here is measured on QUADS (`MB_SPLIT_QUADS 0`). That matters and §29a says why.
+
+### 29a. The closure compared the family's WORST member, on a ruler §28 argues the other way **[V]**
+
+**First, the member.** `gridpro_rings` is one of three O-ring cases this note already ships, and
+it is the worst of them. Total wall-normal turning, the corrected walk of §27a:
+
+| case | median | p95 | max | wall→25% / 25-50% / 50-75% / 75%→outer |
+|------|--------|-----|-----|----------------------------------------|
+| `gridpro_rings` — **the 37.7 quoted in §27c** | **37.74** | 67.23 | 84.05 | 7.99 / 9.22 / 10.74 / 8.90 |
+| `gridpro_rings_even` (§20b's equal-angle sectors) | 17.81 | 37.19 | 49.30 | 3.91 / 4.53 / 5.36 / 4.45 |
+| `gridpro_tworing` (§8's 14-block case) | **8.88** | 27.09 | 28.12 | 8.64 / 0.04 / 0.01 / 0.08 |
+| §25's C/H, 3 layers — **the 6.9 quoted in §27c** | 6.92 | 34.21 | 82.18 | 6.65 / 0.01 / 0.00 / 0.02 |
+| §27's C/H, 2 layers | 0.36 | 4.91 | 10.86 | 0.34 / 0.00 / 0.00 / 0.01 |
+
+The honest matched comparison is **8.88 against 6.92**, not 37.74 against 6.92. `gridpro_tworing`
+is a radial fan to a circle whose turning is within 28% of the C/H that §27c held it against, and
+its PROFILE is the C/H's shape exactly — everything at the wall, nothing outward.
+
+**Second, the ruler.** §28 spent a whole section ADDING outward turning to the C/H, on the reading
+that GridPro's lines curve out where ours run dead straight, and paid 1.840° → 2.980° of
+non-orthogonality mean for it — moving the outer quarter from 0.01 to 0.59. The radial fan has
+7.5× that for free: `gridpro_rings_even`'s outer quarter is 4.45. **Total turning counts §28's
+deliverable as a defect.** It is the right ruler for "does this line follow anything" and the wrong
+one for "is this the shape GridPro's figures show", and §27c used it for the second question.
+
+**Why the figures must be quads.** The published 6.9 / 34.2 / 82.2 reproduces **exactly** —
+6.92 / 34.21 / 82.18 — from `make_ch.py --layers 3 --split 20 --turn-blend 0.8` exported as quads.
+Measured on the committed triangulated `.vtk` of the same case the median and max are unchanged and
+the p95 reads **39.13**, because a split quad's diagonal is a turn the walk counts. Nothing in §27
+is stale; the first attempt at this section said it was, off the triangulated export, which is
+[[read-the-wrong-artefact-in-the-chain]] for the second time in this chain.
+
+### 29b. THE QUILT, built — and the sector count has a measured ceiling **[V]**
+
+`gridpro_quilt.{json,dat}`: two concentric rings × **24 even sectors**, 54 blocks, from
+`make_rings.py --rings 2 --split 12 --even-sectors --prop-nodes body --per-layer 20`.
+`gridpro_quilt_control.{json,dat}` is §27's C/H at `--split 12`, which is what puts the two at
+8664 and 8640 cells — a 0.3% match, and §27f is why a gate-2 comparison needs one.
+
+| | quilt (radial fan) | control (C/H) |
+|---|--------------------|---------------|
+| blocks | **54** | 80 |
+| cells (quads) | 8664 | 8640 |
+| inverted | **0** | **0** |
+| non-orthogonality max | **47.030** | 48.855 |
+| non-orthogonality mean | 6.259 | **2.284** |
+| worst cell shape | **43.0** | 282.4 |
+| turning median | 18.84 | **1.76** |
+
+The fan's **worst corner is better** and its worst cell shape is 6.6× milder; its mean
+non-orthogonality is 2.7× worse. Both pass gate 1.
+
+**The ceiling on even sectors is 12 per surface, measured, not chosen.** At `--split 16` the worst
+corner goes 47.550 → **66.326** and the worst cell shape 43.0 → **184.1**; at 20 the generator
+refuses by name — *"equal-angle station 19 of 20 on one surface falls outside the angular span its
+own end corners reach (125.12 deg)"*. And **more rings is strongly worse**, which is §27a's own
+finding reaching this family: at `--split 8 --even-sectors` the median turning runs 17.81 (2 rings)
+→ 29.98 (3) → 56.65 (4) with p95 37.19 → 137.91 → 223.36 and the mean non-orthogonality 5.958 →
+9.254 → 9.964. `--linear-rings` is **inert at two rings** — identical to six decimals — because it
+only governs rings 2..N-1 and there are none.
+
+### 29c. THE BIG WEDGES ARE ALL DOWNSTREAM, and lifting §9d's cap breaks the mesh **[V]**
+
+`measure_block_partition.py --gaps` is new here and is the complaint measured: the angular widths
+of the sectors a circle is cut into. N(r) cannot see this — 24 even sectors and 4 wedges plus 20
+slivers give the same count — and max/min is the figure, 1 being a perfect quilt.
+
+| max/min about (1, 0) | r = 1.5 | r = 2 | r = 2.5 |
+|---|---------|-------|---------|
+| quilt | **22.78** | **12.30** | **14.27** |
+| control | 41.47 | 36.15 | 30.67 |
+
+So the fan is 1.8–2.9× more uniform, and still far from 1. Walking the 28 crossings at r = 2 says
+exactly where the residue is: the body's 24 even sectors cover **71.2° to 288.8°**, and the whole
+remaining **142.4° downstream is carried by four sectors** of 34.4 / 36.8 / 36.8 / 34.4. The wedges
+are not a distribution defect; they are the trailing-edge ray fan, and `--te-rays` is capped at 3.
+
+**§9d names the escape and this section builds it.** That section proved equal bisection of a 343°
+exterior angle caps the fan at three — the 5th ray lands at ±114°, back over the body — and listed
+three things a figure showing more links could be, one of them *"rays placed unequally"*. `--te-fan`
+is that: the rays stay evenly spaced among themselves but span a narrower cone about the bisector,
+so the exterior angle is divided UNEQUALLY. It is not GridPro's rule and does not claim to be.
+
+| rays / fan | inverted | non-ortho max | mean | worst shape | widest sector | max/min |
+|------------|----------|---------------|------|-------------|---------------|---------|
+| 3 / equal bisection | **0** | 47.030 | 6.259 | 43.0 | 36.77° | 9.68 |
+| 3 / 120° | **0** | 58.474 | 8.132 | 70.7 | 26.18° | **3.32** |
+| 5 / 120° | **898** | 89.986 | 16.017 | 3693 | 17.01° | 2.25 |
+| 7 / 120° or wider | — | the generator refuses: *the radials CROSS between ring 1 and the far circle* | | | | |
+
+The uniformity arrives and the mesh goes with it. At five rays the widest sector is 17.0°, within
+2° of the 15° a 24-sector quilt wants, and 898 of 13272 cells are inverted; `--blend` 0.00/0.25
+improve the uniformity further (1.86, 1.95) and make the inversions worse (986, 962), and 0.75/1.00
+are refused. **The wake quadrant's coarseness is structural to this ring construction**: a narrow
+fan puts consecutive rays close together at the trailing edge while their ring-1 landings and
+far-field corners stay spread, and the tail block between each pair degenerates.
+
+So the one usable improvement is `--te-rays 3 --te-fan 120`, which trades 11.4° off the widest
+wedge for 1.9° of worst corner and 1.9° of mean. It is NOT shipped as the quilt: §29d's gate-2
+result is measured on the equal-bisection case, and a knob that costs the mean is a choice.
+
+The figure is `docs/research/gridpro-blocking-method/quilt_vs_control.png` (regenerate:
+`python3 docs/research/gridpro-blocking-method/plot_quilt_vs_control.py <quilt quads> <control
+quads> <out.png>`). Both panels of each case fill the blocks by colour and draw the partition
+heavy over a greyed grid, because the complaint is about the PARTITION — drawing the grid alone is
+how that question got dropped once already (§24).
+
+### 29d. GATE 2: the fan WINS at matched cell count **[V]**
+
+Both pass — exit 0, zero NaN, 9000 half-iterations. Worst-of-row from `unicones.enorm.cli`:
+
+| iteration | quilt, 8664 cells | control, 8640 cells |
+|-----------|-------------------|---------------------|
+| 3000 | 9.238e-06 | 2.431e-05 |
+| 4000 | **5.702e-06** | 2.798e-05 |
+| 5000 | **4.578e-06** | 1.399e-05 |
+| 6000 | **3.952e-06** | 1.477e-05 |
+| 7000 | **3.356e-06** | 9.537e-06 |
+| 8000 | **2.787e-06** | 8.326e-06 |
+
+**2.6–4.9× below the control at every matched iteration**, and the quilt descends monotonically
+across all six points where the control rises twice. The fan's mean non-orthogonality is 2.7× the
+control's and its turning 10.7×, and neither shows up here except in the fan's favour.
+
+§25c's caveat applies unchanged: six points is not convergence and this does not rank meshes. What
+it does establish is the narrow claim §27c needed and never had — **that the radial fan is not
+paid for in the solve** — and it is the opposite of what the closure assumed.
+
+### 29e. What this changes, and what it does not
+
+- **SUPERSEDES §27c's conclusion, not its facts.** The rosette still is not a modification of a
+  C/H — inside one the wake is a `cut` by construction — and that remains true. What does not
+  survive is "it measures worse on the very thing the rosette was proposed to fix": on the matched
+  member that figure is 8.88 against 6.92, and on the ruler it is §28's own deliverable.
+- **Does NOT supersede §27's or §28's cases.** Both ship. §27's straightened C/H is still the
+  defensible default at its own cell count, and nothing here was run at 28640.
+- **Does NOT make the fan the recommendation.** One operating point, six residual points, no force
+  compared with anything (#157), and the mean non-orthogonality is genuinely 2.7× worse. What is
+  established is that the route is open, which §27c said it was not.
+- **The quilt is still not GridPro's far field**, and §29c measures the gap rather than asserting
+  it: four wedges of ~36° carry the downstream quadrant, and every mechanism tried for making them
+  finer either costs the worst corner or inverts the mesh.
+- **The sector-width ruler is new and ungated**, like everything else in this note.
+- **`--te-fan` has no case shipped using it**, which is deliberate: 29c's table is its whole
+  justification and the only setting that passes gate 1 is 3 rays, where the fan is a trade rather
+  than a win.
+- **Four generators recorded only a chosen pair of their flags** — `make_rings.py` wrote
+  `--split` and `--rings` out of nine, `make_ch.py` `--split` and `--wake` out of nine,
+  `make_tworing.py` and `make_topology.py` `--split` alone. #192 fixed this for the generators it
+  created and the fix did not reach these. All four now write the full argv, verified byte-inert on
+  `gridpro_rings_even.json`. **The twelve documents committed before the fix still carry partial
+  headers** and regenerating them is not done here.
+
 
 ## Sources
 
