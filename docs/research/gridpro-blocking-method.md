@@ -3472,6 +3472,35 @@ construction — §10 chose curved block boundaries for this family and `--chord
 deviation introduced here. The chord variant ships beside it because it is what the angle metrics
 pick, and keeping both is what makes the disagreement checkable.
 
+### 29g. THE DIFFERENCES FROM GRIDPRO, enumerated — seven, and which can be closed **[V]** on ours, **[I]** on theirs
+
+Read off `quilt3_vs_gridpro.png`: `gridpro_quilt3_arc` against the middle panel of `img12.webp`
+at a matched frame. **Every count on the vendor side is an EYE reading** — sampling colour round
+circles at four radii returned 3, 4, 2 and 4 changes where the eye sees about twenty, which is
+§20b's finding reproduced on a second figure. What makes the eye reading sound is that **this
+figure colours each block's GRID LINES in that block's own colour**, so a colour boundary is a
+block boundary and not a shading choice.
+
+| # | the difference | theirs | ours | status |
+|---|----------------|--------|------|--------|
+| 1 | **Far-field cell size** | texture is near-uniform from the body to the panel edge | coarsens strongly outward: `adjacent_area_ratio_max` 18.3, `quad_midline_ratio_max` 43.0 | a NODE BUDGET, not a blocking — §11f |
+| 2 | **Fan → Cartesian transition** | some outer blocks carry an AXIS-ALIGNED grid while their neighbours carry a radial one | fan all the way to the circle, no transition | §12b's `--box` is half of it |
+| 3 | **Concentric bands** | three to five | three | §29f priced four and five as WORSE |
+| 4 | **The nose** | a dense rosette of small blocks wrapping the leading edge | 24 sectors converging on one point, no local clustering | §17d: stations by COUNT, not clustering |
+| 5 | **Downstream** | a thin banded wake strip with the fan cut around it | four wedges of ~30–36° carrying the whole quadrant | §29c measured the ceiling |
+| 6 | **Where the curves come from** | a converged elliptic solve: smooth at BOTH ends of every edge, consistent across every block at once | one tangency condition at one end, Coons fill for the rest | §10b/§10f — the one no re-blocking closes |
+| 7 | **Extent** | unknown: this panel does NOT reach a boundary, as §18d measured for `fig6` | far-field circle r = 3 about (1,0) — GridPro's own stated one (§3a) | unknowable from these sources |
+
+**One reading left UNRESOLVED and deliberately not in the table.** Whether their radial boundaries
+CONTINUE through the bands or stagger between them. Staggering would be #192's count-reducing
+device and would be the most important structural item here; the few boundaries legible at 6× on
+the left edge line up, and no automated measurement on this figure works, so it is recorded as
+open rather than decided either way.
+
+**Triage.** 3, 4 and 5 are our own partition and can be moved — 5 has its ceiling measured and 3
+has been priced. 1 is a node budget, so changing it changes what every table in §§9–11 holds
+fixed. 2 needs the other topology family, half-built in §12b. 6 and 7 cannot be closed.
+
 ### 29e. What this changes, and what it does not
 
 - **SUPERSEDES §27c's conclusion, not its facts.** The rosette still is not a modification of a
