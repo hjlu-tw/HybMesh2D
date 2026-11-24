@@ -12,7 +12,13 @@ script draws a ``MESH_MODE 1`` mesh in that format, and the format is as much
 about what it LEAVES OUT as what it shows -- section 14b of that note measured
 the conventions and they are narrow:
 
-  * NO COLOUR BY BLOCK. Zero of the ten papers coloured a mesh figure by block;
+  * NO COLOUR BY BLOCK, and BY DEFAULT NO BLOCK BOUNDARIES EITHER -- what the
+    reference figure draws is the GRID, and where the blocks are is inferred by
+    the reader from where the spacing changes. ``--blocks`` overdraws the block
+    boundaries heavy on a greyed grid, which is an ADDITION to the published
+    format rather than part of it, and is the panel to use when the question is
+    "where is the block boundary" rather than "where does the line stop".
+    Zero of the ten papers coloured a mesh figure by block;
     the only coloured mesh figure in the set marks boundary conditions. So this
     draws black cell edges on white and nothing else, which is deliberately the
     opposite of ``tools/scripts/view_mesh_vtk.py`` -- that one answers "which
@@ -40,7 +46,7 @@ import matplotlib.pyplot as plt                                  # noqa: E402
 from matplotlib.collections import LineCollection                # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from measure_block_partition import read_vtk                     # noqa: E402
+from measure_block_partition import read_vtk, seam_edges         # noqa: E402
 
 
 def cell_edges(pts, cells):
@@ -59,8 +65,16 @@ def cell_edges(pts, cells):
     return np.array(seg)
 
 
-def panel(ax, seg, half, lw):
-    ax.add_collection(LineCollection(seg, colors="k", linewidths=lw))
+def panel(ax, seg, half, lw, seam=None, seam_lw=None):
+    ax.add_collection(LineCollection(seg, colors="0.45", linewidths=lw)
+                      if seam is not None
+                      else LineCollection(seg, colors="k", linewidths=lw))
+    if seam is not None:
+        # The BLOCK boundaries, over the grid. Published GridPro figures draw
+        # the grid alone (section 14b: a block skeleton is the subject in two of
+        # ten papers, and this figure's own reference is not one of them), so
+        # this is an ADDITION to that format and is off by default.
+        ax.add_collection(LineCollection(seam, colors="k", linewidths=seam_lw))
     ax.set_xlim(-half, half)
     ax.set_ylim(-half, half)
     ax.set_aspect("equal")
@@ -74,14 +88,22 @@ def main():
                     help="half-width of the near-field panel")
     ap.add_argument("--full", type=float, default=10.2,
                     help="half-width of the whole-domain panel")
+    ap.add_argument("--blocks", action="store_true",
+                    help="overdraw the BLOCK boundaries heavy on the grid, "
+                         "which the published format does not do")
     ap.add_argument("--out", default=None)
     a = ap.parse_args()
 
     pts, cells, blocks = read_vtk(a.vtk)
     seg = cell_edges(pts, cells)
+    bnd = None
+    if a.blocks:
+        pairs = seam_edges(pts, cells, blocks)
+        bnd = np.array([[pts[i], pts[j]] for i, j in pairs]) if len(pairs) \
+            else np.zeros((0, 2, 2))
     fig, axes = plt.subplots(1, 2, figsize=(12.4, 6.3))
-    panel(axes[0], seg, a.zoom, 0.35)
-    panel(axes[1], seg, a.full, 0.18)
+    panel(axes[0], seg, a.zoom, 0.35, bnd, 1.5)
+    panel(axes[1], seg, a.full, 0.18, bnd, 0.9)
     for ax, tag in zip(axes, ("(a)", "(b)")):
         ax.text(0.02, 0.02, tag, transform=ax.transAxes, fontsize=11)
     fig.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.01,
@@ -97,6 +119,10 @@ def main():
     print("      refined band END on the seam above it.")
     print("  (b) Wide view of the same mesh. %d blocks, %d cells."
           % (len(set(blocks)), len(cells)))
+    if a.blocks:
+        print("      Heavy lines are BLOCK boundaries; the grid behind them is")
+        print("      grey. The published format this follows draws the grid")
+        print("      alone — see the note in panel().")
 
 
 if __name__ == "__main__":

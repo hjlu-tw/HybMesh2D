@@ -1247,7 +1247,10 @@ Figure: `reduction_termination.png`, where one ring is a step and a stack is a s
 **AND IT IS DRAWN THE WAY THE ONE ON-POINT PUBLISHED FIGURE DRAWS IT.**
 `two_panel_stack_deep.png`, by `plot_two_panel.py`: a near-field zoom where the lines STOP beside a
 whole-domain view of what SURVIVES to the boundary, in black cell edges with no colour, no axes and
-no legend. That pairing and those omissions are not taste — `docs/research/gridpro-meshes-in-published-cfd.md`
+no legend. **THAT FIGURE DRAWS THE GRID AND NOT THE BLOCKS**, which is what the reference draws and
+is a thing to know before reading one: where the blocks are has to be inferred from where the
+spacing changes. `--blocks` (`two_panel_stack_deep_blocks.png`) overdraws the block boundaries
+heavy on a greyed grid and is an ADDITION to the published format, not part of it. That pairing and those omissions are not taste — `docs/research/gridpro-meshes-in-published-cfd.md`
 §14b measured them over ten third-party GridPro papers: colour by block ZERO of ten, a whole-domain
 mesh panel two of ten, and only §1 of that note draws the near and the far field in a way that lets
 a reader compare them. The block-coloured view from `tools/scripts/view_mesh_vtk.py` answers a
