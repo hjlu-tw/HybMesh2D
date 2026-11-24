@@ -1469,6 +1469,49 @@ geometry that the corner block is the only thing between a mesh that solves and 
    and the fill colour does not. **A picture that disagrees with a count is a question about the
    picture first.**
 
+### 16l. THE TWO REMAINING DIFFERENCES FROM GRIDPRO'S FIGURE — one fixed, one priced **[V]**
+
+**2026-11-24.** 16j's side-by-side left two dissimilarities named, and both were handed back to be
+solved. One was a blocking problem and is fixed; the other turns out not to be a blocking problem at
+all.
+
+**(3) "OUR BLOCKS ARE STILL ELONGATED WHERE THEIRS ARE NEAR-SQUARE" — FIXED.** `--layers` applies to
+every ordinary band, not just the body's, and 16k only used it on the body. `cgrid_quilt` layers all
+of them: **252 blocks, 8352 quads, 0 inverted, nonortho max 84.3 and mean 7.79**, against
+`cgrid_stack`'s 102 blocks and 9.43 mean. **And it is nearly free in cells**, because a band's
+radial budget is SHARED between its layers — the mesh keeps its nodes and gains blocks.
+
+**AND IT IS ONE STAGE, NOT TWO, WHICH IS THE MORE HONEST TARGET ANYWAY.** `cgrid_stack` halves twice
+and leaves the far field 48 intervals, COARSER than the shipped four-block C-grid's 96.
+`cgrid_quilt` halves once: **the aerofoil carries 192 intervals and the far field carries the
+shipped case's own 96**, which is exactly "refine the body and the far field keeps its mesh" and is
+#188's user story 1 with nothing rounded off. Halving once also leaves 16 stations in the outer
+bands where halving twice leaves 8, so the far field is cut into twice as many sectors for free.
+
+**(2) "THEIR FAR FIELD IS AN EVEN QUILT; OURS HAS BIG WEDGES AHEAD OF THE NOSE" — HALF FIXED, AND
+THE OTHER HALF IS NOT BLOCKING.** Radial layering cuts each wedge into five, and more sectors cut it
+again. What is left after both is DENSITY: ahead of the nose our far field carries 96 intervals
+spread over ten chords and more — about 0.65 chord per cell circumferentially at r = 10 — and the
+blocks there are large because the MESH is deliberately coarse there. **[V]** on ours. Their panel
+resolves far finer **[V]** as a reading of the raster, with no cell count available for it.
+
+> **So closing the rest of that gap means spending the cells this entire line exists to save.** #192
+> is about putting FEWER cells in the far field; GridPro's quilt is a mesh with far more of them
+> there. The two pictures differ in the far field because they are answering opposite questions, and
+> that is the honest end of this particular comparison rather than a defect to engineer away.
+
+**ONE BLOCKING-ONLY LEVER IS NAMED AND NOT BUILT.** With more than two ordinary blocks per unit the
+station count falls by (2+q)/q instead of 2, so the far field could carry more sectors at the same
+node count and therefore at ZERO cell cost — `q` is hard-coded to 2 in `make_cgrid_stack.py`. It was
+not built because nothing measured says a sector count moves a number: it is appearance, and this
+section already has the appearance it set out to get.
+
+**GATE 2 STILL FAILS** on `cgrid_quilt`, and the #194 signature reproduces on it: columns 19 to 21
+of `unicones.enorm` start at 2.0e-15, 1.2e-15 and 1.7e-15 against the control's round-off and reach
+2.1e+08, 7.2e+07 and 6.6e+55. **Three columns here where `cgrid_stack` has six**, which is itself
+evidence for #194's first step — the offending SET varies with the document, so the columns are
+plausibly per-zone and the zones differ between meshes.
+
 ### 16f. What this supersedes, and what it does not
 
 - **SUPERSEDES the rest of §15d.** "The model cannot express a count-reducing termination" is now
@@ -1506,6 +1549,9 @@ geometry that the corner block is the only thing between a mesh that solves and 
 - **16h's two CIRCLE stacks are gate-1 only.** Neither has been through `getPGrid` and
   `unicones`; the aerofoil stack of 16i has, and it diverged. So nothing here says a staircase
   solves on any geometry, and 16i says one does not on the aerofoil.
+- **16l's remaining gap is asserted as DENSITY and the vendor's own cell count is not known.** Our
+  side is measured; theirs is a reading of a picture with no number behind it, and the blog figure
+  states none.
 - **16j takes no count off the vendor raster**, so every statement in it about their blocking is
   a READING of a picture; the measured readings of those same figures are §§7-8 of
   `gridpro-blocking-method.md` and were not re-derived here.
