@@ -3323,6 +3323,34 @@ quads> <out.png>`). Both panels of each case fill the blocks by colour and draw 
 heavy over a greyed grid, because the complaint is about the PARTITION — drawing the grid alone is
 how that question got dropped once already (§24).
 
+**And beside GridPro's own ring fan, at a matched frame:**
+`docs/research/gridpro-blocking-method/quilt_vs_gridpro.png` (regenerate:
+`plot_quilt_vs_gridpro.py <img12.webp> <quilt quads> <out.png>`; the vendor image is not
+committed). The panel is the MIDDLE one of `img12.webp` — the only published GridPro figure
+showing a single aerofoil inside a radial fan cut into concentric bands, which is what this
+section's quilt is. Its separators re-derive by row brightness at y = 350..357 and 706..713,
+reproducing the committed reading of 350..359 / 706..717.
+
+- **The frame is matched on a READING, not a measurement.** Segmenting the body automatically
+  fails on this image — heavily compressed, blocks painted over the grid, and three attempts
+  returned runs that are plainly not the body — so the chord was read off a 2× crop at
+  **140 ± 15 px of the panel's 700**, making the panel **5.0 ± 0.5 chords** wide. §20b's
+  "an automated count bounced between 7 and 21, which is not a measurement" is why this is
+  stated as a reading with an error bar rather than dressed up. **[I]** on the number,
+  **[V]** on the separators.
+- **What the figure shows:** about **three concentric bands** of roughly **20–24 sectors**
+  each, the outermost ending about **1.5 chords** off the body where a coarser outer field
+  takes over. Ours is **two** bands of 24 — and §29b measured the third: median turning
+  17.81° → 29.98°, mean non-orthogonality 5.958° → 9.254°. **So the remaining structural gap
+  to this figure is one ring, and this repo has measured what that ring costs it.**
+- **§11b does NOT cover this panel.** That correction — "the outer colour bands are azimuthally
+  adjacent and each spans the whole radial extent, there is no concentric seam out there at
+  all" — was read off `fig5`, the MDA-3 three-element figure. `img12`'s middle panel is a
+  different figure of a different configuration and it plainly does band concentrically. The
+  two are not in conflict and neither generalises to the other.
+- **The nose panel is NOT matched** and is labelled so in the figure: the body leaves that
+  panel diagonally, so no chord can be fixed on it.
+
 ### 29d. GATE 2: the fan WINS at matched cell count **[V]**
 
 Both pass — exit 0, zero NaN, 9000 half-iterations. Worst-of-row from `unicones.enorm.cli`:
@@ -3359,6 +3387,10 @@ paid for in the solve** — and it is the opposite of what the closure assumed.
   it: four wedges of ~36° carry the downstream quadrant, and every mechanism tried for making them
   finer either costs the worst corner or inverts the mesh.
 - **The sector-width ruler is new and ungated**, like everything else in this note.
+- **The vendor comparison's scale is a reading with a ±10% error bar**, and every count in it
+  is by eye. At 5.0 ± 0.5 chords the frames agree to within half a chord, which is enough to
+  compare the SHAPE of a partition and not enough to compare a density — the same limit §28e
+  established for the sagitta, reached here from the other side.
 - **`--te-fan` has no case shipped using it**, which is deliberate: 29c's table is its whole
   justification and the only setting that passes gate 1 is 3 rays, where the fan is a trade rather
   than a win.
