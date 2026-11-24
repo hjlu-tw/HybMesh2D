@@ -3565,6 +3565,12 @@ Before reading either null result as a null result, the document was checked for
 **25 wall edges carry a `ds_end` of 0.040–0.051**, so the flag had reached the mesh and the
 question was the instrument, not the mechanism.
 
+The figure is `ring1_grading.png` (regenerate: `plot_ring1_grading.py <without quads> <with
+quads> <out.png>`). It draws the GRID, not the partition — the two meshes have the SAME partition
+and a block figure shows nothing — zoomed onto a stretch of ring 1, because what changes is the
+last row of cells inside it and at body scale that is one thin line. Its ratios are derived by the
+same ellipse selection the table above uses.
+
 **GATE 2 prices it at about 9%.** Exit 0, zero NaN, 9000 half-iterations, 8664 cells:
 
 | iteration | graded | arc (§29f) | chord | 2-ring |
