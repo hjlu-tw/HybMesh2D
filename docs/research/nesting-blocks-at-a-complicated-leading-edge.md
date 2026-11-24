@@ -1630,7 +1630,72 @@ in the immediate neighbourhood of a fold**, and that is box 2 answered without a
 valence-3 nodes of its own, completes 100 iterations and its dumped Mach field stays within
 0.0008 to 0.2547. The conjunction survives and is now sharp — **a fold diverges on an aerofoil and
 does not on a circle** — and box 3, whether the solver's reconstruction admits an interior node of
-valence 3 at all, cannot be answered from this repo because the solver is a binary.
+valence 3 at all, cannot be answered from this repo because the solver is a binary. **16o answers
+one half of that question in the negative**: the difference is not the local shape of the fold,
+because a circle fold built worse than this one on all three measured quantities still passes.
+
+### 16o. THE FOLD'S OWN NEIGHBOURHOOD IS EXONERATED — a circle fold made WORSE than the one beside the divergence still passes **[V]**
+
+16n located the divergence 2.3 cell widths from a valence-3 node and left one question open:
+why the circle's folds do not do this. The answer is that **the fold's local geometry is not what
+decides it**, and the evidence runs three ways — two measurements and one control.
+
+`measure_fold_neighbourhood.py` is the instrument, beside this document's other harnesses. For
+every INTERIOR irregular node of a quad mesh it reports the worst angle subtended at that node,
+the area ratio between the cells meeting there, and their worst aspect ratio.
+
+**1. The fold beside the divergence is one of the MILDEST on the mesh.** `cgrid_stack`'s twelve
+folds range 123.4–147.5 degrees, area ratio 1.8–7.9, aspect 3.1–16.5. The one nearest the
+diverging cell, at (0.6470, 0.5017) and 0.069 away, measures 125.7 / 1.8 / 4.0 — ninth of twelve
+on angle, ninth of twelve on area ratio, fifth on aspect. The nearest APEX is 0.551 away — eighteen cell
+widths against the median edge of 0.0303, the same figure 16n reports — so the apex is not a
+candidate for this cell at all.
+
+**2. A circle whose fold is made worse than that one still passes gate 2.** The notch depth is the
+knob that sets how far the fold digs, and `reducing_ogrid_badfold` is 16d's reducing O-grid at
+`--notch 0.25` rather than 0.2 — every other flag identical, recorded in its own header. Its fold
+is worse than the passing reference on all three quantities AND worse than the fold beside the
+divergence on all three, and it runs the hundred iterations with no NaN:
+
+| mesh | gate 2 | fold angle | fold area ratio | fold aspect | apex area ratio | nonortho max/mean |
+|------|--------|-----------|-----------------|-------------|-----------------|-------------------|
+| `reducing_ogrid` (16d) | **PASSES** | 131.6 | 1.2 | 1.5 | 3.8 | 53.6 / 4.70 |
+| `reducing_ogrid_k12` | **PASSES** | 127.1 | 2.0 | 1.9 | 4.4 | — |
+| `reducing_ogrid_badfold` | **PASSES** | **136.6** | **2.7** | **4.6** | 3.7 | 55.96 / 5.40 |
+| — the fold beside `cgrid_stack`'s divergence | — | 125.7 | 1.8 | 4.0 | — | — |
+| `cgrid_stack` (16i) | **DIVERGES** | 123.4–147.5 | 1.8–7.9 | 3.1–16.5 | 9.9–78.4 | 75.2 / 9.43 |
+| `cgrid_quilt` (16l) | **DIVERGES** | 160.1–174.3 | 1.1–1.4 | 1.6–1.7 | 4.6–21.8 | 84.3 / 7.79 |
+
+The last row is the second refutation on its own: `cgrid_quilt`'s folds are the worst-angled of
+anything measured here at 174.3 degrees — nearly straight, so geometrically all but regular — and
+its area ratios and aspects are the BEST of any mesh in the table, better than either passing
+circle. Angle and area ratio do not co-vary, and that mesh still diverges. No single quantity in
+this table separates the passes from the failures in a way that also holds at the node where the
+divergence actually is.
+
+**3. The diverging cell is not the mesh's worst cell either.** At (0.5796, 0.5158) it is block 6's,
+with aspect 4.21 — 58.0% of `cgrid_stack`'s cells are milder — and 36.7 degrees of skew, which is
+the 93.4th percentile but not near the mesh's 75.2-degree worst. Mesh-wide, aspect runs
+median 3.61 / p90 20.22 / max 3146.8 and skew median 4.8 / p90 30.5 / max 75.2. Whatever selects
+this cell, it is not "the worst cell", which 16e had already retracted once under another name.
+
+**What survives.** One quantity still separates the two passing circles from the two diverging
+aerofoils at the MESH level: the apex area ratio, 3.7–4.4 against 9.9–78.4 and 4.6–21.8. It is
+recorded as a correlation and nothing more, because it has no mechanism at the node — the
+divergence is eighteen cell widths from the nearest apex, and 16i's own control already showed that a
+mesh-level correlation here survives exactly until somebody builds the control for it. The
+remaining candidates named anywhere in §16 are therefore unchanged in number and one fewer in
+strength: the fold's geometry is out, the worst cell is out, and what is left is the conjunction
+16n sharpened — a fold diverges on an aerofoil and does not on a circle — with the local shape of
+that fold now shown not to be the difference.
+
+**The measurement's own trap, recorded because it cost a reading.** The first cut of
+`measure_fold_neighbourhood.py` called a node irregular when it had three incident edges. Every
+node on a block side has three, so the ranking in point 1 came back "370th" out of four hundred
+and something boundary nodes rather than ninth of twelve, and the figure looked like the opposite
+finding. Interior means every incident edge is shared by two cells; the harness now says so in its
+docstring, beside the second trap — that a triangulated export has no irregular nodes at all,
+because splitting adds a diagonal at every one of them.
 
 ### 16f. What this supersedes, and what it does not
 
@@ -1653,8 +1718,9 @@ valence 3 at all, cannot be answered from this repo because the solver is a bina
   establishes. A better station correspondence — derived from the four-block mesh's own grid lines
   the way #191's one seam station was, rather than placed by arc length — was not tried. **What
   the NaN IS remains undiagnosed**: `wall_first_cell_worst_rel` was the lead and 16e's own block
-  retracts it, so the only surviving candidate named anywhere here is the 22-to-24-degree mean
-  non-orthogonality, and nothing establishes that either.
+  retracts it; the 22-to-24-degree mean non-orthogonality replaced it and 16m kills that too; the
+  fold's local shape replaced THAT and 16o kills it. What is left is 16n's located cell and 16o's
+  one uncontrolled correlation, and nothing establishes either.
 - **The notch depth was swept, not solved for.** 16b's claim that a fold needs the boundary to
   turn is a measurement over four values of one knob on two documents; no analysis says what the
   turn should be, and the three-cells-at-120-degrees ideal is argued from the valence, not
@@ -1669,6 +1735,16 @@ valence 3 at all, cannot be answered from this repo because the solver is a bina
 - **16h's two CIRCLE stacks are gate-1 only.** Neither has been through `getPGrid` and
   `unicones`; the aerofoil stack of 16i has, and it diverged. So nothing here says a staircase
   solves on any geometry, and 16i says one does not on the aerofoil.
+- **16o's control moves ONE knob, and the knob has a ceiling.** `--notch` is the only lever this
+  generator has on a fold's shape, and the sweep that found 0.25 also found its limit: at 0.3 the
+  quad mesh is clean but splitting it to triangles inverts 8 of 15744 cells, so the aspect-32
+  circle that would have beaten `cgrid_stack`'s worst fold outright could not be run at all. The
+  control therefore establishes that a fold worse than the one beside the divergence is survivable,
+  not that any fold is.
+- **16o's surviving correlation is one quantity over four meshes.** Two passes and two failures is
+  not a separation, the apexes it ranks are eighteen cell widths from the only divergence anybody
+  has located, and no control for it was built — which is the exact shape #191 and 16i both
+  recorded as "a mesh-level correlation survives until somebody builds the control".
 - **16n's localisation is ONE dumped state of ONE run.** The worst cell is named and its distance
   to the nearest irregular node is measured, but nothing establishes that the divergence STARTS
   there rather than arriving there — the dumps are ten iterations apart and the one before it is
