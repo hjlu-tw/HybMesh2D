@@ -1586,6 +1586,52 @@ level-0 station whose ray it sits on. The first cut still derived a band's unit 
 there. Verified behaviour-preserving twice: with every unit folded the document is identical,
 8112 quads / 0 inverted / 75.202929 / 9.430306.
 
+### 16n. THE DIVERGENCE, LOCATED — #194 steps 1 and 2 **[V]**
+
+**2026-11-24.** 16m killed five hypotheses from aggregate metrics and ran out of them. This is the
+route #194 specified, and it worked; both of its first two acceptance boxes are answered.
+
+**THE LAST TWO CANDIDATES WERE VOID TOO, and two greps settled the first.** `MB_EDGE_CUT` appears in
+exactly two places in `src/` — parsing the word and printing a banner label — so **a `cut` and an
+`interface` produce identical nodes and identical cells.** The planned "a circle with a cut"
+experiment would have measured nothing; checking the premise cost two greps and saved writing it.
+The size jump went the same way, refuted by a mesh already in hand: `cgrid_fold_nose` FAILS with a
+maximum adjacent-area ratio of **33.6** while two PASSING aerofoil controls carry **391.65**.
+
+**WHAT AN `unicones.enorm` COLUMN IS — box 1, established empirically because the solver ships no
+source.** `solver/execute/unicones.eqn6.mac` is a Mach-O binary and there is no `.f90` anywhere, so
+the writer cannot be read. The log instead prints, per output step, **30 lines of "eL2 error norm
+for int. region" with four numbers each, plus one "of bound. region"**, and the file carries 30
+columns. Matching them: **a column is the MEAN of its zone's four numbers**, verified at
+**240 of 240 columns across eight steps within 6%**, which is exactly what the log's own
+two-significant-figure printing can produce. The boundary region is not in the file.
+
+**AND THE COLUMN INDEX IS A PARTITION INDEX, WHICH REFUTES BOX 2's OWN METHOD.** `input.in` carries
+`num_zones_per_block`, which sits under solver_config's *Parallel (pthread)* heading. Varying it:
+**28 gives 30 zones and 30 columns; 8 gives 10 and 10.** The zone count is that field plus two, so a
+column names a solver-side partition that MOVES with a setting and has no fixed place in the mesh.
+"Locate the diverging columns in space" cannot be done from the index. **It is also not the cause**:
+the NaN survives `apply_pthread false` and survives 10 zones instead of 30.
+
+**SO THE INSTRUMENT IS THE DUMPED SOLUTION, and a failing run dumps NOTHING until you ask it to.**
+At the shipped `dump_zone_per_niter 100` a run that dies before iteration 100 leaves
+`xtecp_sol_allz` at **1 byte** and no `binDumpZ`. At 10 it leaves eight states, and the last one
+before the NaN says where:
+
+> **worst |M| = 101.9 at (0.5796, 0.5158)** — upper surface, 58% chord, half a chord off the body —
+> in a Mach 0.2 freestream, **one cell**, everything else finite.
+
+**THAT POINT IS 2.3 CELL WIDTHS FROM A VALENCE-3 NODE.** The nearest of the mesh's 24 interior
+irregular nodes is a FOLD at (0.6470, 0.5017), 0.069 away, against a median cell edge of 0.0303. The
+next is eight cell widths away and the nearest valence-5 apex is eighteen. **The divergence begins
+in the immediate neighbourhood of a fold**, and that is box 2 answered without any partition map.
+
+**WHAT IS STILL OPEN** is why the circle's folds do not do this: `reducing_ogrid` carries four
+valence-3 nodes of its own, completes 100 iterations and its dumped Mach field stays within
+0.0008 to 0.2547. The conjunction survives and is now sharp — **a fold diverges on an aerofoil and
+does not on a circle** — and box 3, whether the solver's reconstruction admits an interior node of
+valence 3 at all, cannot be answered from this repo because the solver is a binary.
+
 ### 16f. What this supersedes, and what it does not
 
 - **SUPERSEDES the rest of §15d.** "The model cannot express a count-reducing termination" is now
@@ -1623,6 +1669,10 @@ there. Verified behaviour-preserving twice: with every unit folded the document 
 - **16h's two CIRCLE stacks are gate-1 only.** Neither has been through `getPGrid` and
   `unicones`; the aerofoil stack of 16i has, and it diverged. So nothing here says a staircase
   solves on any geometry, and 16i says one does not on the aerofoil.
+- **16n's localisation is ONE dumped state of ONE run.** The worst cell is named and its distance
+  to the nearest irregular node is measured, but nothing establishes that the divergence STARTS
+  there rather than arriving there — the dumps are ten iterations apart and the one before it is
+  finite everywhere.
 - **16l's remaining gap is asserted as DENSITY and the vendor's own cell count is not known.** Our
   side is measured; theirs is a reading of a picture with no number behind it, and the blog figure
   states none.
