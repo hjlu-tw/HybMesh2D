@@ -1,0 +1,53 @@
+# =============================================================================
+# THE THREE-RING QUILT: the ring count GridPro's own img12 middle panel shows --
+# 3 CONCENTRIC RINGS x 24 EVEN SECTORS, 82 blocks.
+#
+# Section 29f. §29b said "more rings is strongly worse" and that was measured at
+# --split 8 with the DEFAULT arc radials; with --chord-radials --linear-rings the
+# third ring is affordable, and 29f has the control that separates the two
+# causes -- --chord-radials helps TWO rings as well (turning median 18.84 ->
+# 10.03), so it is not what the third ring buys.
+#
+#   python3 docs/research/gridpro-blocking-method/make_rings.py \
+#       --rings 3 --split 12 --even-sectors --prop-nodes body \
+#       --chord-radials --linear-rings --per-layer 10 --out gridpro_quilt3.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_quilt3.dat
+#
+# --per-layer 10 puts this at EXACTLY 8664 cells, the two-ring quilt's own count,
+# so the three meshes section 29 compares (this, gridpro_quilt, and
+# gridpro_quilt_control at 8640) differ by 0.3% and §27f's lesson is satisfied.
+#
+# BOTH extra flags are needed and 29f measures each: without --linear-rings the
+# worst corner is 56.385 instead of 45.703, and three rings with the default arc
+# radials is 54.339. THREE is also the optimum, not a ceiling -- four rings gives
+# 49.146 and five 50.807, both worse on every figure but the mean.
+#
+# A RESEARCH HARNESS, not a shipped case, exactly as gridpro_rings.dat beside it
+# says of itself: nothing in config/ or examples/ refers to it and no gate
+# covers it.
+# =============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_quilt3.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- every ring, the circle included, is declared.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing rather than a safety net: the outer
+# ring's arcs carry no binding (an analytic curve has no sidecar to read a
+# condition off), so this is where their condition comes from. The aerofoil's
+# two sides are bound and take 'wall' off their own sidecar.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family -- section 8g measured
+# it stopping at sweep 7 and reporting diverged=1 -- so the cap is five, which
+# is where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_quilt3/mesh_gridpro_quilt3.vtk

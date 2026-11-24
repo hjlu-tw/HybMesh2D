@@ -3274,7 +3274,9 @@ refuses by name — *"equal-angle station 19 of 20 on one surface falls outside 
 own end corners reach (125.12 deg)"*. And **more rings is strongly worse**, which is §27a's own
 finding reaching this family: at `--split 8 --even-sectors` the median turning runs 17.81 (2 rings)
 → 29.98 (3) → 56.65 (4) with p95 37.19 → 137.91 → 223.36 and the mean non-orthogonality 5.958 →
-9.254 → 9.964. `--linear-rings` is **inert at two rings** — identical to six decimals — because it
+9.254 → 9.964. **§29f WITHDRAWS that as a general claim**: it holds at `--split 8` with the default
+arc radials and not at `--split 12` with `--linear-rings`, where three rings reach 45.703 / 7.328 —
+better on the worst corner than two — and three is an optimum rather than a ceiling. `--linear-rings` is **inert at two rings** — identical to six decimals — because it
 only governs rings 2..N-1 and there are none.
 
 ### 29c. THE BIG WEDGES ARE ALL DOWNSTREAM, and lifting §9d's cap breaks the mesh **[V]**
@@ -3342,7 +3344,9 @@ reproducing the committed reading of 350..359 / 706..717.
   each, the outermost ending about **1.5 chords** off the body where a coarser outer field
   takes over. Ours is **two** bands of 24 — and §29b measured the third: median turning
   17.81° → 29.98°, mean non-orthogonality 5.958° → 9.254°. **So the remaining structural gap
-  to this figure is one ring, and this repo has measured what that ring costs it.**
+  to this figure is one ring, and this repo has measured what that ring costs it** — then
+  §29f BUILT it, at the same cell count and gate-1 clean, and the cost turned out to be the
+  mean non-orthogonality and nothing in the solve.
 - **§11b does NOT cover this panel.** That correction — "the outer colour bands are azimuthally
   adjacent and each spans the whole radial extent, there is no concentric seam out there at
   all" — was read off `fig5`, the MDA-3 three-element figure. `img12`'s middle panel is a
@@ -3372,6 +3376,96 @@ control's and its turning 10.7×, and neither shows up here except in the fan's 
 it does establish is the narrow claim §27c needed and never had — **that the radial fan is not
 paid for in the solve** — and it is the opposite of what the closure assumed.
 
+### 29f. THE THIRD RING, added — and EVERY angle ruler ranks the winner last **[V]**
+
+§29b said "more rings is strongly worse" and §29d's figure said the remaining structural gap to
+GridPro's own ring fan is one ring. Both are now measured properly, and the third ring is
+affordable: `gridpro_quilt3.{json,dat}` and `gridpro_quilt3_arc.{json,dat}`, **3 rings × 24 even
+sectors, 82 blocks**, at **exactly 8664 cells** — the two-ring quilt's own count, so all four
+meshes this section compares differ by 0.3% and §27f's lesson is satisfied without approximation.
+
+**§29b's claim was measured at `--split 8` with the DEFAULT arc radials, and does not generalise.**
+At `--split 12` the knobs that make a third ring work are `--linear-rings` and the radial
+construction, and 29f has the control that separates them:
+
+| three rings, `--split 12 --even-sectors` | inverted | non-ortho max | mean | turning median |
+|---|----------|---------------|------|----------------|
+| plain (arcs, geometric rings) | 0 | 54.339 | 9.205 | 31.37 |
+| `--linear-rings` | 0 | 49.442 | 7.699 | 26.52 |
+| `--chord-radials` alone | 0 | 56.385 | 8.203 | 22.45 |
+| `--linear-rings --chord-radials` | 0 | **45.703** | 7.328 | **21.62** |
+
+**Both flags are needed**, and **three is an optimum rather than a ceiling**: four rings gives
+49.146 / 7.486 and five 50.807 / 7.450, worse than three on every figure but the mean. GridPro's
+own figure reads as three (§29d).
+
+**The control that matters: `--chord-radials` is NOT what the third ring buys.** On two rings it
+moves the turning median 18.84 → 10.03 and the p95 40.23 → 25.50 all by itself, leaving the worst
+corner unchanged at 47.030. So it is a general improvement on that ruler and its effect has to be
+held fixed before the third ring can be priced at all.
+
+#### The four meshes, all at 8664 cells (the C/H at 8640) and all gate-1 clean
+
+| | 2-ring quilt | 3-ring, chords | 3-ring, ARCS | §27's C/H |
+|---|--------------|----------------|--------------|-----------|
+| blocks | 54 | 82 | 82 | 80 |
+| non-ortho max | 47.030 | **46.346** | 49.491 | 48.855 |
+| non-ortho mean | 6.259 | 7.369 | 7.702 | **2.284** |
+| turning median | 18.84 | 21.33 | 26.38 | **1.76** |
+| turning, by quarter | 3.4/5.7/4.8/4.8 | 9.1/0.2/13.6/0.0 | 4.8/6.7/10.2/9.0 | 1.4/0.0/0.0/0.0 |
+| sector width max/min, r = 1.5 / 2 / 2.5 | 7.58 / 9.68 / 11.45 | **3.54** / 4.53 / 7.65 | 4.97 / **4.54** / **4.61** | 31.26 / 45.71 / 39.06 |
+
+**The third ring delivers what §29c could not.** The far field is 1.5–2.1× more uniform at every
+radius than the two-ring quilt and 7–9× more uniform than the C/H, and the arc variant is the only
+mesh here whose uniformity does not DECAY outward — 4.97 / 4.54 / 4.61 against the chord variant's
+3.54 / 4.53 / 7.65. That is the "quilt" the complaint asked for, measured.
+
+**And the two radial constructions are a real trade, visible in the profile.** Chord radials put
+all the turning at the wall and at the ring-2 crossing and run dead straight in between
+(9.1 / 0.2 / 13.6 / 0.0); the arcs spread it over the whole line (4.8 / 6.7 / 10.2 / 9.0), which is
+the shape §28 read off GridPro's figures and spent a whole section ADDING to the C/H at a cost of
+1.840° → 2.980° in mean non-orthogonality.
+
+The figures are `quilt3_vs_gridpro.png` (the three-ring quilt beside GridPro's own panel, the
+same matched frame as 29d) and `quilt3_vs_control.png` (beside the C/H). Both are regenerated by
+the scripts named in 29d, and **every count in their captions is derived** — the block and cell
+counts from the mesh's own block field, the ring and sector counts from the topology document's
+header via `--topo`. The first cut of both scripts wrote those counts in as literals and then
+drew a different mesh under them unchanged, which is this repo's commonest figure defect reached
+once more.
+
+#### GATE 2: the mesh every angle ruler ranked LAST wins **[V]**
+
+All four pass — exit 0, zero NaN, 9000 half-iterations, same operating point.
+
+| iteration | 3-ring, chords | **3-ring, ARCS** | 2-ring quilt | §27's C/H |
+|-----------|----------------|------------------|--------------|-----------|
+| 3000 | 1.162e-05 | 1.329e-05 | **9.238e-06** | 2.431e-05 |
+| 4000 | 5.916e-06 | **4.899e-06** | 5.702e-06 | 2.798e-05 |
+| 5000 | 4.600e-06 | **3.381e-06** | 4.578e-06 | 1.399e-05 |
+| 6000 | 4.151e-06 | **2.786e-06** | 3.952e-06 | 1.477e-05 |
+| 7000 | 3.618e-06 | **2.078e-06** | 3.356e-06 | 9.537e-06 |
+| 8000 | 3.026e-06 | **1.463e-06** | 2.787e-06 | 8.326e-06 |
+
+The arc variant is the WORST of the three quilts on non-orthogonality max, on non-orthogonality
+mean and on every turning figure — and from 4000 on it is the best in the solve, by a margin that
+widens monotonically to **1.9× below the two-ring quilt, 2.1× below the chord three-ring and 5.7×
+below the C/H** at 8000. **Three rulers, all pointing the wrong way, on four meshes that differ by
+0.3% in cell count.** §29a argued that from one direction — total turning scores §28's own
+deliverable as a defect — and this is the same finding reached against our own primary quality
+metric.
+
+**Where this is weakest, stated:** at 3000 the arc variant is the WORST of the four, so the
+ordering depends on where the history is read, and §25c's caveat is unchanged — six points is not
+convergence and nothing here ranks meshes for accuracy. What it does support is narrow and now
+twice-measured: **the angle metrics this repo reports do not predict which of these meshes the
+solver prefers.**
+
+**The three-ring ARC quilt is what 29f recommends** of the four, and it is also the more canonical
+construction — §10 chose curved block boundaries for this family and `--chord-radials` is the
+deviation introduced here. The chord variant ships beside it because it is what the angle metrics
+pick, and keeping both is what makes the disagreement checkable.
+
 ### 29e. What this changes, and what it does not
 
 - **SUPERSEDES §27c's conclusion, not its facts.** The rosette still is not a modification of a
@@ -3385,7 +3479,14 @@ paid for in the solve** — and it is the opposite of what the closure assumed.
   established is that the route is open, which §27c said it was not.
 - **The quilt is still not GridPro's far field**, and §29c measures the gap rather than asserting
   it: four wedges of ~36° carry the downstream quadrant, and every mechanism tried for making them
-  finer either costs the worst corner or inverts the mesh.
+  finer either costs the worst corner or inverts the mesh. §29f's third ring does NOT close that
+  one — it makes the sectors uniform at every radius and leaves the four downstream wedges where
+  they are.
+- **§29f's recommendation rests on six residual points and inverts three rulers.** That the arc
+  variant starts WORST at 3000 and ends best is stated there and is the weakest part of it; a
+  longer run was not done, and no force was compared with anything (#157).
+- **The ring sweep stopped at five.** Four and five were measured worse than three at
+  `--split 12`; nothing says the trend is monotone beyond that, and nobody looked.
 - **The sector-width ruler is new and ungated**, like everything else in this note.
 - **The vendor comparison's scale is a reading with a ±10% error bar**, and every count in it
   is by eye. At 5.0 ± 0.5 chords the frames agree to within half a chord, which is enough to

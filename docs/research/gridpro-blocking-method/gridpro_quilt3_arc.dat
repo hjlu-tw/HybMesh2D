@@ -1,0 +1,46 @@
+# =============================================================================
+# THE THREE-RING QUILT WITH ARC RADIALS -- the same 3 rings x 24 sectors as
+# gridpro_quilt3.dat, with section 10's CURVED block boundaries kept instead of
+# straight chords. 82 blocks, the same 8664 cells.
+#
+# Section 29f. It exists because the two are a genuine TRADE and the angle
+# metrics pick the wrong one: chord radials score better on every one of them by
+# being piecewise straight -- all the turning at the wall and at ring 2, nothing
+# in between (9.22 / 0.21 / 13.65 / 0.01) -- while the arcs spread it over the
+# whole line (5.09 / 6.68 / 10.22 / 9.96), which is the shape section 28 read off
+# GridPro's own figures and spent a whole section ADDING to the C/H.
+#
+#   python3 docs/research/gridpro-blocking-method/make_rings.py \
+#       --rings 3 --split 12 --even-sectors --prop-nodes body \
+#       --linear-rings --per-layer 10 --out gridpro_quilt3_arc.json
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_quilt3_arc.dat
+#
+# So gate 2 decides it rather than a ruler, and 29f reports both runs.
+#
+# A RESEARCH HARNESS, not a shipped case.
+# =============================================================================
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/gridpro-blocking-method/gridpro_quilt3_arc.json
+
+# The aerofoil the C-grid case already ships: two segments, upper and lower,
+# split at the leading edge because that is where a block corner sits. There is
+# NO far-field geometry -- every ring, the circle included, is declared.
+GEOM_FILE examples/geometries/naca0012_cgrid.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+
+# The FALLBACK, and here it is load bearing rather than a safety net: the outer
+# ring's arcs carry no binding (an analytic curve has no sidecar to read a
+# condition off), so this is where their condition comes from. The aerofoil's
+# two sides are bound and take 'wall' off their own sidecar.
+BC_GEOM farfield
+
+# The repo default of 20 sweeps DIVERGES on this family -- section 8g measured
+# it stopping at sweep 7 and reporting diverged=1 -- so the cap is five, which
+# is where the wall height is held and nothing has turned.
+MB_SMOOTH_ITERS 5
+
+EXPORT_VTK 1
+OUTPUT_FILENAME results/meshes/gridpro_quilt3_arc/mesh_gridpro_quilt3_arc.vtk

@@ -2,7 +2,12 @@
 """Section 29's figure: the radial-fan QUILT beside the C/H, at matched cells.
 
     python3 docs/research/gridpro-blocking-method/plot_quilt_vs_control.py \
-        <quilt_quads.vtk> <control_quads.vtk> <out.png>
+        "<label>=<left_quads.vtk>" "<label>=<right_quads.vtk>" <out.png>
+
+Labels follow ``plot_reduction.py``'s ``label=path`` convention, and the BLOCK
+COUNT is appended from each mesh's own block field rather than typed into the
+label -- the first cut of this script wrote "54 blocks" into the caption as a
+literal and a later run drew an 82-block mesh under it unchanged.
 
 Each case gets a near-field panel and a whole-domain panel, with the BLOCKS
 filled by colour and the block boundaries drawn heavy over a greyed grid --
@@ -57,17 +62,21 @@ def panel(ax, pts, cells, blocks, seam, win, grid_lw):
 
 
 def main():
-    quilt, control, out = sys.argv[1], sys.argv[2], sys.argv[3]
+    left, right, out = sys.argv[1], sys.argv[2], sys.argv[3]
+    pair = []
+    for spec in (left, right):
+        label, _, path = spec.rpartition("=")
+        pair.append((path or label, label if path else os.path.basename(spec)))
     fig = plt.figure(figsize=(13.4, 7.4), facecolor="#fcfcfb")
-    fig.text(0.024, 0.962, "§29：徑向扇「被子」對 C/H 控制組，格數配對（8664 / 8640，差 0.3%）",
+    fig.text(0.024, 0.962, "§29：兩個 block 分區並排，格數配對",
              color=INK, fontsize=15.5, va="top")
     fig.text(0.024, 0.925,
              "填色＝block，粗線＝block 邊界，淡線＝網格。抱怨的是分區不是網格，所以兩者都畫。",
              color=SEC, fontsize=11, va="top")
-    for col, (path, name) in enumerate(((quilt, "被子：2 環 × 24 等角扇段，54 blocks"),
-                                        (control, "控制組：§27 的 C/H，--split 12，80 blocks"))):
+    for col, (path, name) in enumerate(pair):
         pts, cells, blocks = read_vtk(path)
         seam = seam_edges(pts, cells, blocks)
+        name = "%s（%d blocks，%d cells）" % (name, len(set(blocks)), len(cells))
         g = sector_gaps(pts, seam, np.array([0.5, 0.0]), 2.0)
         for row, (win, lw) in enumerate(((NEAR, 0.35), (WHOLE, 0.16))):
             ax = fig.add_axes([0.024 + col * 0.495, 0.455 - row * 0.405,

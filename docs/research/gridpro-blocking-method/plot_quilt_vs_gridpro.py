@@ -27,8 +27,16 @@ WHAT THE COMPARISON IS FOR. Not the grid -- the PARTITION. Our side fills the
 blocks by colour and draws the partition heavy, which is GridPro's own
 convention here and the opposite of what practitioners publish (the sibling
 note's section 14b measured colour-by-block at zero of ten papers).
+
+EVERY COUNT IN THE CAPTION IS DERIVED, none is written in. The block count comes
+from the mesh's own block field and the ring and sector counts from the topology
+document's header, passed as --topo. The first cut of this script wrote "2 rings
+x 24 sectors, 54 blocks" into the caption as a literal and then drew the
+THREE-ring mesh under it unchanged -- which is the figure class this repo keeps
+finding, a caption that does not read its own input.
 """
 import os
+import re
 import sys
 
 import numpy as np
@@ -89,13 +97,34 @@ def ours(ax, pts, cells, blocks, seam, half, centre, grid_lw, aspect_h):
         s.set_color(GRID)
 
 
+def topo_counts(path):
+    """``(rings, sectors)`` off a make_rings.py document's own header, or None."""
+    if not path:
+        return None
+    head = open(path).read(4000)
+    m = re.search(r"(\d+)\s+CONCENTRIC RINGS x (\d+)\s+CIRCUMFERENTIAL SECTORS", head)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
 def main():
+    if "--topo" in sys.argv:
+        i = sys.argv.index("--topo")
+        topo = sys.argv[i + 1]
+        del sys.argv[i:i + 2]
+    else:
+        topo = None
     src, vtk, out = sys.argv[1], sys.argv[2], sys.argv[3]
     pan, _ = panels(src)
     ring, nose = pan[1], pan[2]
     pts, cells, blocks = read_vtk(vtk)
     seam = seam_edges(pts, cells, blocks)
     ar = ring.height / ring.width
+    nb = len(set(blocks))
+    rs = topo_counts(topo)
+    ours_label = "%s：%s%d blocks" % (
+        os.path.basename(vtk).replace(".vtk", ""),
+        ("%d 環 × %d 等角扇段，" % rs) if rs else "", nb)
+    ring_note = ("我們是 %d 圈 %d 段。" % rs) if rs else "我們的圈數未傳入（--topo）。"
 
     fig = plt.figure(figsize=(13.6, 8.6), facecolor="#fcfcfb")
     fig.text(0.024, 0.972, "§29：被子對 GridPro 自己的徑向扇圖（img12 中間格），框以弦長對齊",
@@ -117,7 +146,7 @@ def main():
 
     for col, (half, centre, glw, title) in enumerate(
             ((CHORDS_WIDE / 2.0, (0.5, 0.0), 0.22,
-              "(b1) 本 repo：gridpro_quilt，2 環 × 24 等角扇段，54 blocks"),
+              "(b1) 本 repo：" + ours_label),
              (NOSE_WIDE / 2.0, (0.06, 0.0), 0.5,
               "(b2) 本 repo：鼻端（此格尺度未對齊，見下）"))):
         ax = fig.add_axes([0.024 + col * 0.492, 0.128, 0.452, 0.345])
@@ -127,7 +156,7 @@ def main():
 
     fig.text(0.024, 0.074,
              "(a1) 讀到約三圈同心帶、每圈約 20–24 個扇段，外緣在離體約 1.5 個弦長處接上較粗的外場。"
-             "我們是兩圈 24 段；§29b 量過第三圈的代價：中位轉折 17.81°→29.98°、平均非正交 5.958°→9.254°。",
+             + ring_note + "圈數與扇段數取自拓撲文件自己的檔頭，block 數取自網格自己的 block 欄位，都不是寫死的。",
              color=SEC, fontsize=10.6, va="top", wrap=True)
     fig.text(0.024, 0.030,
              "(a2) 的尺度在圖上讀不出來（機身在該格斜向出框，無法定弦長），所以 (b2) 標為未對齊；"
