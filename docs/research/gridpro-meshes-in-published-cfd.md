@@ -747,6 +747,13 @@ only §1 draws the near and the far field in a way that lets a reader compare th
 
 ### 14b. On presentation, the patterns are narrow **[V]**
 
+> **BOUNDED, 2026-11-24.** Every figure in this note is a THIRD-PARTY one, and the findings below
+> are about those. **The VENDOR's own aerofoil figure IS coloured by block**, in three panels from
+> the far field in to the nose (`media.gridpro.com/.../2017/10/img12.webp`, compared in
+> `nesting-blocks-at-a-complicated-leading-edge.md` §16j). So "zero of ten" is a statement about
+> what PRACTITIONERS publish, not about what the tool's own material does, and the two audiences
+> differ.
+
 - **Colour by block: zero of ten.** The only colour used on a mesh figure in this whole set is
   §6's, and it marks **boundary conditions** (inlet / outlet / sliding interface / periodic), not
   block identity. §4's wireframe colours four faces, as orientation aids rather than as a

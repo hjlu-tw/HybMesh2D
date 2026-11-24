@@ -1388,6 +1388,33 @@ a ring and those circles are iso-lines of nothing. Against the distance to the B
 where the mesh stays fine. **An instrument that was right for the circle was wrong for the
 aerofoil, and it reported a clean negative rather than failing.**
 
+### 16j. BESIDE GRIDPRO'S OWN AEROFOIL, block for block **[V]** on both pictures
+
+**2026-11-24, asked for in one line: "GridPro also has to be an aerofoil".** §16i's comparison is
+against Stern et al.'s entry capsule, which is not one. **There is no third-party aerofoil to
+compare against**: of the ten papers in `docs/research/gridpro-meshes-in-published-cfd.md` the only
+aerofoil-like bodies are turbine blades and a propeller and none of them publishes a far field.
+The aerofoil GridPro figures available are the **VENDOR's**, from *The Art and Science of Meshing
+Airfoil*, and §§7-8 of `gridpro-blocking-method.md` already measure those in detail.
+`vs_gridpro_airfoil.png`, by `plot_vs_gridpro_airfoil.py`, puts `cgrid_stack` beside two of its
+panels in matching 2:1 frames — the source image is not committed and is passed in as a path, this
+directory's own convention. **The panel rows were measured, not eyeballed**: the three panels are
+separated by near-white rows at y = 350-359 and 706-717 of 1064, found by row brightness.
+
+**THE VENDOR COLOURS BY BLOCK, AND THAT DOES NOT CONTRADICT THE SURVEY — it bounds it.** §14b of
+the third-party note measured "colour by block: ZERO of ten", and that is ten *third-party* papers.
+GridPro's own aerofoil figure is coloured by block in three panels from the far field in to the
+nose. So **the grid-only convention `plot_two_panel.py` follows is what PRACTITIONERS publish and
+colouring by block is what the VENDOR publishes**, and §14b must not be read as one rule for both.
+
+**What the two pictures show, read off them and marked as readings.** Theirs cuts the far field
+into several concentric TIERS of blocks and cuts each tier chordwise into many sectors; ours has
+the same concentric idea with far fewer sectors, and its wake is one H-stack rather than a fan.
+Theirs wraps the body in a dense band of many small blocks; our body band is long radial strips
+with no chordwise subdivision inside it. **No count is taken off either raster here** — §§7-8 of
+`gridpro-blocking-method.md` are where that was done, against the same figures, and this section
+adds the side-by-side rather than a second set of numbers.
+
 ### 16f. What this supersedes, and what it does not
 
 - **SUPERSEDES the rest of §15d.** "The model cannot express a count-reducing termination" is now
@@ -1425,6 +1452,9 @@ aerofoil, and it reported a clean negative rather than failing.**
 - **16h's two CIRCLE stacks are gate-1 only.** Neither has been through `getPGrid` and
   `unicones`; the aerofoil stack of 16i has, and it diverged. So nothing here says a staircase
   solves on any geometry, and 16i says one does not on the aerofoil.
+- **16j takes no count off the vendor raster**, so every statement in it about their blocking is
+  a READING of a picture; the measured readings of those same figures are §§7-8 of
+  `gridpro-blocking-method.md` and were not re-derived here.
 - **16i's divergence is attributed and NOT explained.** The corner block is the only difference
   from a control that survives, and neither the worst cell nor the size jump accounts for it. No
   further diagnosis was attempted.
