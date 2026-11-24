@@ -155,7 +155,7 @@ def ell_even(a, b, n, t0=0.5 * math.pi, t1=1.5 * math.pi, samples=12001):
 
 
 def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
-          sigmas=None, ord_iv=None, layers=None):
+          sigmas=None, ord_iv=None, layers=None, fold_units=None):
     far_t = seg_table(FAR)
     body_t = seg_table(BODY)
     S = stages
@@ -182,18 +182,52 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
         plan.append(("red", s_i))
         plan.append(("ord", layers[s_i + 1]))
 
-    # levels[L] = (station count, fold indices). The body is 0 and the far
-    # field the last; everything between sits on its stations' own rays.
-    lv_count = [4 * Ks[0]]
-    bands = []                       # (kind, L_inner, payload)
+    # A UNIT MAY DECLINE ITS FOLD. `fold_units` names the units of each
+    # reducing band that carry a corner block; the rest map their four inner
+    # stations to FOUR outer ones as ordinary blocks instead of to two. That
+    # makes the outer station count a MIX, so a level can no longer derive its
+    # stations from a uniform stride and each one carries `src`: the level-0
+    # station whose ray it sits on. This exists for one experiment — #194's
+    # discriminator, which needs corner blocks over the NOSE and none near the
+    # wake cut — and the all-folded default is behaviour-preserving.
+    lv_count, lv_src = [4 * Ks[0]], [list(range(4 * Ks[0] + 1))]
+    bands, fold_of = [], {}
     for kind, payload in plan:
         if kind == "ord":
             for _ in range(payload):
                 bands.append(("ord", len(lv_count) - 1, None))
                 lv_count.append(lv_count[-1])
+                lv_src.append(list(lv_src[-1]))
         else:
-            bands.append(("red", len(lv_count) - 1, payload))
-            lv_count.append(2 * Ks[payload])
+            L = len(lv_count) - 1
+            # K COMES FROM THE STATIONS THAT ARE ACTUALLY THERE, not from
+            # folds // 2**s. That derivation assumes every unit folds and so
+            # every band halves; with --fold-units it does not, and the next
+            # band's unit walk then leaves arcs belonging to one block only —
+            # which the mesher refuses by name, as `c3_16` an interface with one
+            # side.
+            if lv_count[-1] % 4:
+                raise SystemExit("level %d has %d stations, not a multiple of 4"
+                                 % (L, lv_count[-1]))
+            K = lv_count[-1] // 4
+            want = fold_units if fold_units is not None else list(range(K))
+            folded = sorted(j for j in want if 0 <= j < K)
+            src_in = lv_src[L]
+            src_out, plan_j = [src_in[0]], []
+            for j in range(K):
+                i0 = 4 * j
+                if j in folded:
+                    plan_j.append(("red", j))
+                    src_out.append(src_in[i0 + 2])
+                    src_out.append(src_in[i0 + 4])
+                else:
+                    plan_j.append(("flat", j))
+                    for t in (1, 2, 3, 4):
+                        src_out.append(src_in[i0 + t])
+            bands.append(("red", L, (payload, plan_j)))
+            fold_of[L] = {4 * j + 2 for j in folded}
+            lv_count.append(len(src_out) - 1)
+            lv_src.append(src_out)
     n_levels = len(lv_count)
 
     if ord_iv is None:
@@ -223,13 +257,10 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
     # them is a twisted sliver and the mesher refuses the block outright. 4j+2
     # is also MIRROR-SYMMETRIC by construction, so the upper and lower surfaces
     # get folds at matching chordwise positions without a special case.
-    fold_at = {}
-    if not control:
-        for kind, L, payload in bands:
-            if kind == "red":
-                fold_at[L] = {4 * j + 2 for j in range(Ks[payload])}
+    fold_at = {} if control else dict(fold_of)
     if control:
         lv_count = [4 * Ks[0]] * n_levels
+        lv_src = [list(range(4 * Ks[0] + 1))] * n_levels
 
     # SIGMA IS GIVEN PER BAND OF THE PLAN, NOT PER LEVEL, and that distinction
     # is a bug this file shipped for one run. --layers is meant to SUBDIVIDE an
@@ -323,12 +354,11 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
 
     # ---- interior levels, on those rays -------------------------------------
     for L in range(1, n_levels - 1):
-        step = n0 // counts[L]
         sig = lv_sigma[L]
         below = lv_sigma[L - 1]
         row = []
         for m in range(counts[L] + 1):
-            k = m * step
+            k = lv_src[L][m]
             # THE NOTCH IS A FRACTION OF THE BAND BELOW, NOT OF THE RAY. A first
             # draft scaled sigma itself, so the dip grew with the ray's own
             # length -- which varies tenfold round an aerofoil, so at the nose it
@@ -394,28 +424,45 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
         if not control else {}
     for bi, (kind, L, payload) in enumerate(bands):
         if kind == "red" and not control:
-            s = payload
-            for j in range(Ks[s]):
-                # O1 | CORNER (fold at 4j+2) | O2, with the apex at 2j+1.
-                rS = "rS%d_%d" % (L, j)
-                if j == 0:
-                    edge(rS, ids[L][0], ids[L + 1][0], "interface")
-                rM1 = edge("rM%d_%d_a" % (L, j), ids[L][4 * j + 1],
-                           ids[L + 1][2 * j + 1], "interface")
-                rM2 = edge("rM%d_%d_b" % (L, j), ids[L][4 * j + 3],
-                           ids[L + 1][2 * j + 1], "interface")
-                rE = edge("rS%d_%d" % (L, j + 1), ids[L][4 * j + 4],
-                          ids[L + 1][2 * j + 2], "interface")
-                blocks.append({"id": "Q%d_%d_0" % (L, j),
-                               "edges": [rS, "c%d_%d" % (L + 1, 2 * j), rM1,
-                                         "c%d_%d" % (L, 4 * j)]})
-                blocks.append({"id": "C%d_%d" % (L, j),
-                               "edges": [rM1, rM2,
-                                         "c%d_%d" % (L, 4 * j + 2),
-                                         "c%d_%d" % (L, 4 * j + 1)]})
-                blocks.append({"id": "Q%d_%d_1" % (L, j),
-                               "edges": [rM2, "c%d_%d" % (L + 1, 2 * j + 1),
-                                         rE, "c%d_%d" % (L, 4 * j + 3)]})
+            _, plan_j = payload
+            o = 0
+            for kind_j, j in plan_j:
+                i0 = 4 * j
+                if kind_j == "red":
+                    rS = "rS%d_%d" % (L, o)
+                    if o == 0:
+                        edge(rS, ids[L][i0], ids[L + 1][0], "interface")
+                    rM1 = edge("rM%d_%d_a" % (L, j), ids[L][i0 + 1],
+                               ids[L + 1][o + 1], "interface")
+                    rM2 = edge("rM%d_%d_b" % (L, j), ids[L][i0 + 3],
+                               ids[L + 1][o + 1], "interface")
+                    rE = edge("rS%d_%d" % (L, o + 2), ids[L][i0 + 4],
+                              ids[L + 1][o + 2], "interface")
+                    blocks.append({"id": "Q%d_%d_0" % (L, j),
+                                   "edges": [rS, "c%d_%d" % (L + 1, o), rM1,
+                                             "c%d_%d" % (L, i0)]})
+                    blocks.append({"id": "C%d_%d" % (L, j),
+                                   "edges": [rM1, rM2, "c%d_%d" % (L, i0 + 2),
+                                             "c%d_%d" % (L, i0 + 1)]})
+                    blocks.append({"id": "Q%d_%d_1" % (L, j),
+                                   "edges": [rM2, "c%d_%d" % (L + 1, o + 1),
+                                             rE, "c%d_%d" % (L, i0 + 3)]})
+                    del rE
+                    o += 2
+                else:
+                    # A unit that declined its fold: four ordinary blocks.
+                    if o == 0:
+                        edge("rS%d_0" % L, ids[L][i0], ids[L + 1][0],
+                             "interface")
+                    for t in range(4):
+                        edge("rS%d_%d" % (L, o + t + 1), ids[L][i0 + t + 1],
+                             ids[L + 1][o + t + 1], "interface")
+                        blocks.append({"id": "F%d_%d_%d" % (L, j, t),
+                                       "edges": ["rS%d_%d" % (L, o + t),
+                                                 "c%d_%d" % (L + 1, o + t),
+                                                 "rS%d_%d" % (L, o + t + 1),
+                                                 "c%d_%d" % (L, i0 + t)]})
+                    o += 4
         else:
             seed = band_iv[bi] + 1
             for k in range(counts[L] + 1):
@@ -462,7 +509,7 @@ def build(folds=8, stages=2, notch=0.12, total_iv=40, wake=25, control=False,
     def wake_side(L):
         """(upper radial, lower radial) bounding the wake blocks of band L."""
         if L in red_in:
-            return "rS%d_0" % L, "rS%d_%d" % (L, Ks[red_in[L]])
+            return "rS%d_0" % L, "rS%d_%d" % (L, counts[L + 1])
         return "r%d_0" % L, "r%d_%d" % (L, counts[L])
 
     for L in range(n_levels - 1):
@@ -493,6 +540,10 @@ def main():
                     help="radial layers of BLOCKS per ordinary band, innermost "
                          "first; 4 on the body band makes its blocks square-ish "
                          "the way GridPro's own aerofoil wrap is (16j)")
+    ap.add_argument("--fold-units", type=int, nargs="*", default=None,
+                    help="which units of each reducing band carry a corner "
+                         "block; the rest map four stations to four. Default: "
+                         "all. #194's discriminator needs the nose ones only")
     ap.add_argument("--control", action="store_true",
                     help="the same levels with NO corner block, so nothing halves")
     ap.add_argument("--smooth", type=int, default=0)
@@ -501,7 +552,7 @@ def main():
     doc, counts, arc = build(folds=a.folds, stages=a.stages, notch=a.notch,
                              total_iv=a.total_iv, control=a.control,
                              sigmas=a.sigmas, ord_iv=a.ord_iv,
-                             layers=a.layers)
+                             layers=a.layers, fold_units=a.fold_units)
     header = ("// A STACK OF COUNT-REDUCING RINGS ON THE SHIPPED AEROFOIL "
               "(#192 follow-up)\n"
               "// — GENERATED by make_cgrid_stack.py %s\n"

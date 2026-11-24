@@ -1512,6 +1512,61 @@ of `unicones.enorm` start at 2.0e-15, 1.2e-15 and 1.7e-15 against the control's 
 evidence for #194's first step — the offending SET varies with the document, so the columns are
 plausibly per-zone and the zones differ between meshes.
 
+### 16m. FOUR HYPOTHESES FOR THE NaN, KILLED — #194's step 0 **[V]**
+
+**2026-11-24.** 16i attributed the gate-2 failure to the corner block and stopped there, because
+attributing is not explaining. #194 asks for the explaining; this is its step 0, nine runs at the
+one operating point, each varying ONE thing. Every verdict below is a `run_pipeline.sh` run with a
+committed script beside its document.
+
+| run | geometry | corner blocks | smoother | nonortho mean | gate 2 |
+|---|---|---|---|---|---|
+| `reducing_ogrid_k12` | circle | **12 folds** | 20 | 3.34 | **PASS** |
+| `reducing_ogrid` | circle | 4 folds | 20 | 4.70 | **PASS** |
+| `reducing_ogrid_s0` | circle | 4 folds | **0** | 6.97 | **PASS** |
+| `cgrid_stack_control` | aerofoil | none | 0 | 6.94 | **PASS** |
+| `cgrid_control_skew` | aerofoil | **none** | 0 | **9.24** | **PASS** |
+| `cgrid_quilt` | aerofoil | 12 folds | 0 | 7.79 | FAIL at 90 |
+| `cgrid_stack` | aerofoil | 12 folds | 0 | 9.43 | FAIL at 80 |
+| `cgrid_fold_nose` | aerofoil | **2, over the NOSE** | 0 | 9.65 | FAIL at 50 |
+| `cgrid_fold_te` | aerofoil | **2, at the TE** | 0 | 9.73 | FAIL at 40 |
+| `cgrid_stack_k4` | aerofoil | 4 folds | 0 | 13.02 | FAIL at 50 |
+
+1. **NOT THE FOLD COUNT.** A circle with three times the folds of the passing case still passes; an
+   aerofoil with a third of the folds of the failing ones fails EARLIER. This is the hypothesis step
+   0 was built to test and it is dead.
+2. **NOT THE MEAN NON-ORTHOGONALITY, and this one nearly survived.** Ordered by mean, the first six
+   runs were perfectly monotone in both the verdict and the iteration they fail at — six points, no
+   exception, the most convincing wrong answer in this chain. `cgrid_control_skew` was built to
+   refute it and did, in one run: **9.24 without corner blocks passes, 7.79 with them fails.**
+3. **NOT THE FOLD'S POSITION, so not proximity to the wake cut.** `cgrid_fold_nose` and
+   `cgrid_fold_te` carry TWO corner blocks each and differ only in where — the nose, or hard against
+   the trailing edge. 96 blocks, 7896 quads and means within 0.08 degrees of each other. **Both
+   fail.** Two corner blocks anywhere on an aerofoil is enough.
+4. **NOT THE SMOOTHER, which was an uncontrolled variable until this step found it.** Both passing
+   circle runs had `MB_SMOOTH_ITERS` 20 and every aerofoil run had 0. `reducing_ogrid_s0` is the
+   circle at 0 — and it passes. (The reverse test is unavailable: the aerofoil stack at 20 has 15
+   inverted cells and fails gate 1, which is itself worth knowing.)
+
+**WHAT SURVIVES IS THE CONJUNCTION**: corner blocks AND an aerofoil document. #194's signature
+columns appear in exactly the runs that fail and in no other.
+
+**AND TWO CANDIDATES ARE NAMED AND UNTESTED**, both properties of the whole document rather than of
+a fold's neighbourhood, which is why no proximity test can separate them: the wake `cut` EXISTING at
+all (the circle documents contain no `cut` edge), and the far field's BOUNDARY CONDITIONS — the
+aerofoil's six-segment D carries `outlet` on two of its segments and the circle's four-quarter far
+field is `farfield` throughout. **Nothing here has tested an outlet beside a corner block**, and
+doing it needs a paired control because removing the outlet changes the physics for both sides.
+
+**ONE GENERATOR CHANGE, and it needed a correction.** `--fold-units` lets a unit decline its corner
+block, mapping its four inner stations to FOUR outer ones instead of two. That makes a level's
+station count a MIX, so stations can no longer come from a uniform stride and each carries the
+level-0 station whose ray it sits on. The first cut still derived a band's unit count from
+`folds // 2**s`, which assumes every unit folds — the mesher refused the result by name,
+`c3_16` an interface with one side, and the count now comes from the stations that are actually
+there. Verified behaviour-preserving twice: with every unit folded the document is identical,
+8112 quads / 0 inverted / 75.202929 / 9.430306.
+
 ### 16f. What this supersedes, and what it does not
 
 - **SUPERSEDES the rest of §15d.** "The model cannot express a count-reducing termination" is now
