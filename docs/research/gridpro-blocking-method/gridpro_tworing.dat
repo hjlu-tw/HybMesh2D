@@ -1,8 +1,15 @@
 # =============================================================================
 # GridPro's aerofoil blocking, reproduced on this repo's own aerofoil.
 #
-#   python3 docs/research/gridpro-blocking-method/make_topology.py
-#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_airfoil.dat
+#   python3 docs/research/gridpro-blocking-method/make_tworing.py
+#   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_tworing.dat
+#
+# Both lines above were gridpro_airfoil.dat's, copied and never changed: this
+# file recorded make_topology.py, which writes gridpro_airfoil.json and not the
+# document beside THIS file, and pointed -conf at the other case's own .dat. A
+# round-trip -- run the recorded command, compare the result with the document
+# it claims to produce -- is what reached it; reading the header does not,
+# because a header copied from a neighbour reads perfectly well.
 #
 # A RESEARCH HARNESS, not a shipped case: it lives beside
 # docs/research/gridpro-blocking-method.md rather than in config/, nothing in

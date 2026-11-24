@@ -1,8 +1,14 @@
 # =============================================================================
 # GridPro's aerofoil blocking, reproduced on this repo's own aerofoil.
 #
-#   python3 docs/research/gridpro-blocking-method/make_topology.py
+#   python3 docs/research/gridpro-blocking-method/make_topology.py --split 1
 #   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_airfoil.dat
+#
+# --split 1 is NOT a decoration: the default is 2, which gives SIX blocks where
+# gridpro_airfoil.json has FOUR. This line said bare `make_topology.py` until
+# a round-trip check ran it -- the recorded command did not reproduce the
+# document beside it, which is the defect section 29h's generator fix is about,
+# in a hand-written header the fix cannot reach.
 #
 # A RESEARCH HARNESS, not a shipped case: it lives beside
 # docs/research/gridpro-blocking-method.md rather than in config/, nothing in
