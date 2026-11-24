@@ -145,6 +145,13 @@ outermost ring of cells is coarse and nearly square. **[V]**
 shows what survives to the boundary — is the single most on-point presentation found in this
 search.** **[I]**
 
+> **ADOPTED, 2026-11-24.** `gridpro-blocking-method/plot_two_panel.py` draws this repo's own
+> `MESH_MODE 1` meshes in that format, and the omissions are copied as deliberately as the
+> inclusions: black cell edges, no colour by block, no axes, no legend, and the numbers in a
+> printed caption rather than burnt into the panel. §14b is the measurement that licenses each of
+> those. Worked: `two_panel_stack_deep.png` beside it, and
+> `nesting-blocks-at-a-complicated-leading-edge.md` §16h.
+
 ### 1d. Stated numbers **[V]**
 
 ~120 cells across the wake; outer boundary ≈ 30 vehicle diameters; vehicle diameter 8.6 m;

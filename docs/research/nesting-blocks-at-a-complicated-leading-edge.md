@@ -1244,6 +1244,15 @@ same body resolution — because the count keeps coming down instead of being ca
 field at half strength. It costs blocks (204 against 36) and, at three stages, its worst cell.
 Figure: `reduction_termination.png`, where one ring is a step and a stack is a staircase.
 
+**AND IT IS DRAWN THE WAY THE ONE ON-POINT PUBLISHED FIGURE DRAWS IT.**
+`two_panel_stack_deep.png`, by `plot_two_panel.py`: a near-field zoom where the lines STOP beside a
+whole-domain view of what SURVIVES to the boundary, in black cell edges with no colour, no axes and
+no legend. That pairing and those omissions are not taste — `docs/research/gridpro-meshes-in-published-cfd.md`
+§14b measured them over ten third-party GridPro papers: colour by block ZERO of ten, a whole-domain
+mesh panel two of ten, and only §1 of that note draws the near and the far field in a way that lets
+a reader compare them. The block-coloured view from `tools/scripts/view_mesh_vtk.py` answers a
+different question ("which block is this cell in") and is kept for that one.
+
 **K AT THE OUTERMOST RING IS THE BINDING CONSTRAINT, and it was found by it failing.** A stack of
 K = 8/4/2 leaves the last ring two folds, so each corner block eats a quarter of the circle, and
 that mesh has 6 inverted cells at the outermost fold at every notch tried. Starting at K = 16 so
