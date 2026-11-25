@@ -71,9 +71,15 @@ breakdown is §4a and must be used rather than these totals if the table changes
 quality-metric list is §4b — the note beside this one found **exactly one** in its whole search,
 so that is the largest single change this census makes.
 
-**Three mesh figures were extracted** (open licence only) into
-`docs/research/gridpro-mesh-samples/`, with `PROVENANCE.md` beside them. Everything else is a
-pointer. **[V]**
+**121 mesh and topology figures, from 55 documents, are in
+`docs/research/gridpro-mesh-samples/`, with `PROVENANCE.md` beside them.** **[V]** That is the
+whole figure sweep, added after this note was first written and described in §4e; the three
+figures the first pass extracted are part of it. The licence rule changed with it: the first pass
+took **open-licence sources only**, so `PROVENANCE.md` had one class. The sweep introduces a
+second, and every file is now labelled — **(A) redistributable** (NASA/DOE public domain, or
+CC-BY, with the evidence named) or **(B) openly downloadable but rights reserved**, kept as a
+local research copy. **63 are class A and 58 are class B.** **[V]** No paywall was circumvented
+and no bot check bypassed for any of them.
 
 ### The census
 
@@ -94,7 +100,7 @@ resolution); "GLOBAL" means a whole-mesh aggregate only.
 | 8 | **Repko, Nix, Uysal & Sisler 2016, *JFCMV* 4(1) 13-29** | [3P] | multi-hole film cooling | **2.5 M** (4.5 M unsteady, Star-CCM+) | ~30 drawn | y+ < 1.0, nominally **0.1**; **stretching ratio 1.2** | 10 d_m above; 3 d_m wide | — | **1.2 / 2.5 / 3.0 M** | **YES — each block a DIFFERENT COLOUR** (extracted) | LOCAL |
 | 9 | Ramesh, Edwards *et al.* 2015, AIAA 2015-0356 | [3P] | dual-mode scramjet, LES | **93 M** | **13,369** | 5 µm on all solid surfaces | internal | "very high aspect ratio cells" in the dump region | no | domain figure, not grid lines | LOCAL |
 | 10 | Nielsen, Edwards & Chelliah 2021, *AIAA J* 59(6), LA-UR-19-29624 | [3P] | premixed ethylene dual-mode scramjet | not read | **25,278** | **5e-6 m wall-normal, stretch ratio 1.3** | internal | — | no | yes — body-fitted grid around insert/cavity (Fig. 3) | LOCAL |
-| 11 | Schwing 2013, NTRS 20120017946 | [3P] | capsule aerodynamics (US3D, 05-CA tunnel) | **18,217,949 points / 18,113,216 cells** | not stated | y+ < 1 on entire geometry | **30 diameters** | — | no | presentation; grid panel not rendered by me | LOCAL |
+| 11 | Schwing 2013, NTRS 20120017946 | [3P] | capsule aerodynamics (US3D, 05-CA tunnel) | **18,217,949 points / 18,113,216 cells** | not stated | y+ < 1 on entire geometry | **30 diameters** | — | no | **rendered in §4e** — two slides, a capsule grid overview and a symmetry-plane grid | LOCAL |
 | 12 | Papadopoulos *et al.* 2001, AIAA 2001-3067 | [3P] | Shuttle Orbiter contingency abort | 2.2 M points + **1.4 M wake** | **365 non-merged** | — | — | — | no | yes — "(a) topological morphology, (b) 365 non-merged blocks" | LOCAL |
 | 13 | Rigby & Steinthorsson 2000, VKI LS 1999-2000 | [3P] | ribbed/bleed coolant passage | not stated | **282 → 22**; a merge study 124 → 992 / 1776 / 7936 | y+ named as the sizing criterion | internal | — | no | **yes — Fig. 9b block boundaries before merge, 9c after** | LOCAL |
 | 14 | Oswald *et al.* 2005, DLR-ONERA Pre-X | [3P] | re-entry demonstrator | 1,044,992 (M25); **1,428,992** (M17.75); ~700,000 final | **376** and **548** | y+ < 1 | — | — | **3 grid levels, space-convergence** | yes — symmetry-plane grid, surface grid, body-flap zoom | LOCAL |
@@ -107,7 +113,7 @@ resolution); "GLOBAL" means a whole-mesh aggregate only.
 | 21 | Rigby *et al.* 1998, 98-GT-329 / NASA/TM-1999-208501 | [3P] | rotating ribbed passage, 180° turn | **1,489,920** | merged to **64** | largest y+ at a cell centre limited to **< 1.25** | internal | "significant improvement in grid orthogonality" by not wrapping outer corners | no | yes — grid in the x=0 and y=0 planes | LOCAL |
 | 22 | Ameri 2002, NASA/CR-2002-211515 (GT-2002-30211) | [3P] | 180° turn channel | **340,000 / 523,000 / 1,060,000** | not stated | avg y+ ≈ 1; stretching ratio stated | internal | — | **yes, 3 grids** | **yes — Fig. 2 (a) topology, (b)(c)(d) the three grids, (e) y+ distribution** | LOCAL |
 | 23 | Garg 2002, NASA/CR-2002-211689 (GT-2002-30229) | [3P] | LPT separation control, vortex-generator jets | **160,128** viscous from **92,928** inviscid; **224 cells per hole exit** | not stated | y+ < 0.5 | 1 Cax up, 0.8 Cax down | **ratio of two adjacent grid sizes kept within 0.8–1.25** | no | yes — spanwise section of the multi-block grid | LOCAL |
-| 24 | Heidmann 2008, NASA/TM-2008-215209 (GT2008-50845) | [3P] | anti-vortex film cooling | **~2.5 M** per case, ~300,000 after one multigrid coarsening | not stated | y+ < 1.0; **stretching ratios < 1.2** | 7 d downstream | — | one coarsening level | not rendered by me | LOCAL |
+| 24 | Heidmann 2008, NASA/TM-2008-215209 (GT2008-50845) | [3P] | anti-vortex film cooling | **~2.5 M** per case, ~300,000 after one multigrid coarsening | not stated | y+ < 1.0; **stretching ratios < 1.2** | 7 d downstream | — | one coarsening level | **rendered in §4e** — Fig. 9, the baseline round-hole grid, COLOURED BY BLOCK | LOCAL |
 | 25 | Roy 2005, NASA final report NNC04GA21G | [3P] | film cooling over a GE flat plate (DES) | **4 M** (converted to one unstructured block) | GridPro multiblock, then merged to a single block | y+ < 1.0 everywhere; **stretching ratios < 1.2** | — | — | no | not rendered by me | LOCAL |
 | 26 | Ameri 2001, NASA/CR-2001-210764 (2001-GT-0156) | [3P] | blade tip, mean-camberline strip | **1.2 M** sharp tip, **1.4 M**, **1.8 M** with strip | not stated | y+ stated as the first-cell criterion | internal | — | 3 geometries, not a refinement series | yes — blade surface, grid, strip detail (Fig. 3a-e) | LOCAL |
 | 27 | Steinthorsson 1996, AIAA 96-0621 / NASA CR-198539 | [3P] | branched duct with pin array | **~2 M** | **283** | — | internal | "smooth, nearly orthogonal everywhere" | no | yes — Fig. 3 multiblock grid for the branched duct | LOCAL |
@@ -731,14 +737,79 @@ figure anyone printed. **[V]** It is also the closest published analogue of what
   grid lines. **[V]**
 - **Block boundaries drawn HEAVY over thin grid lines** is the dominant convention when blocking
   is shown at all: entries 6, 57 (whose caption says so outright), and 35. **[V]**
-- **Colour by block: one** — entry 8. **[V]** Against 66 documents, which is why the other note's
-  "zero of ten" was a fair reading of its sample.
+- **Colour by block: at least TWELVE documents.** **[V]** — **and this REVERSES what this note
+  said when it was first written**, which was "one, entry 8". That sentence was written from the
+  figures reached in the first pass; the figure sweep of §4e opened the rest and found the
+  convention is common in the thesis literature: entries **8, 17, 18, 19, 24, 26, 29, 33, 34, 36,
+  37 and 44** all publish a GridPro grid with the blocks in different colours. Entry 18's Figure
+  5.4 colours **506 blocks**; entry 37's Figure 4-17 colours by **block INDEX** with a colour bar
+  running to 512. The other note's "zero of ten" remains a fair reading of ITS sample, and this
+  note's own "one" was a reading of a sample that was still too small — which is the second time
+  in two notes that a presentation claim about GridPro users has had to be widened by looking at
+  more figures rather than more papers. **[I]**
 - **A before/after MERGE drawn in two panels: one** — entry 13, Figure 9b (282 blocks) beside 9c
   (22 blocks). **[V]** This is the only published picture found of what "merge elemental blocks
   into superblocks" does to a grid.
 - **A refinement series drawn with its y+: one** — entry 22, Figure 2(a)-(e). **[V]**
-- **Two 2-D aerofoil GridPro mesh figures now exist in this repo's notes**, entries 6 and 7, where
-  the other note recorded none. One is third-party, one is vendor. **[V]**
+- **2-D aerofoil and cylinder GridPro mesh figures now exist in this repo's notes in NUMBER**,
+  where the other note recorded none at all. Besides entries 6 and 7 (one third-party, one
+  vendor), the sweep saved 2-D grids for a **Joukowski aerofoil**, **NACA 0012**, **NACA 64A010**,
+  a **NACA 0012 in a linear cascade whose three blocks merge into a single-block C-grid** (entry
+  72, Figure 2, with the per-block node counts printed on the figure: 49x41, 57x41, 49x41), an
+  **8-block cylinder** and a **2-block supercircle**. **[V]**
+- **The three figures that answer this repo's own open questions most directly** **[I]**:
+  entry 72's Figure 1, *"A multiblock grid system in 12 blocks: an O-grid topology within an
+  H-grid topology"*; entry 13's Figure 2, *"Topology for twelve block circle in a box case"*, with
+  Figure 3 showing the merge stage by stage and Figure 9 the 282-to-22 merge drawn; and entry 36's
+  Figure 4-6, which draws a **3-way, a 4-way and a 5-way** two-dimensional grid singularity side
+  by side. **[V]** on what each figure shows.
+
+### 4e. The figure sweep, and what it changed **[V]**
+
+This section was added after the rest of the note, when the figures themselves were extracted
+rather than described. The method, because it decides how much the counts above are worth:
+
+1. Every PDF already on disk from the census harvest was re-read and its figure CAPTIONS indexed
+   — 343 caption lines in 63 documents that name a grid, a mesh, a topology or a block.
+2. Those were cut to 236 unique pages (list-of-figures pages dropped, duplicate downloads of the
+   same thesis collapsed by content hash), each page rendered as a thumbnail and scored by
+   horizontal line-transition density, so the pages most likely to BE a picture of a grid sorted
+   first.
+3. Every one of the 236 was then **looked at**, on contact sheets of twelve. That is the step
+   that matters: a caption saying "grid" is not a grid. Candidates that turned out to be a
+   convergence plot, a Mach contour, a CAD rendering, a solid-colour block diagram with no grid
+   lines, or a page of text were rejected and are not in the directory.
+4. The survivors were re-extracted at full resolution — the figure's own embedded bitmap where
+   the page had one, otherwise a 300 dpi page render cropped to the figure — then trimmed,
+   capped at 1800 px and PNG-optimised. **121 files, 55 documents, about 25 MB.**
+
+**Three documents turned up that the census above does not list**, because they were reached by
+figure caption rather than by the full-text index, and they are added here as entries 71-73:
+
+- **Entry 71.** NASA TM-106704 / ICOMP-94-17 / **AIAA-94-2330**, NTRS `19950015542` — adaptive
+  mesh refinement in curvilinear body-fitted grids. Figure 1 draws **a coarse grid covering the
+  whole domain with two properly nested fine grid levels, each of several topologically
+  rectangular blocks**; Figure 4 is a refined grid around a **NACA 0012** at M = 0.5. **[V]**
+  This is the closest published picture found anywhere in either note to what
+  `nesting-blocks-at-a-complicated-leading-edge.md` discusses. **[I]**
+- **Entry 72.** NASA TM-106356 / ICOMP-93-34 / **AIAA-93-2380**, NTRS `19940010255`. Figure 1,
+  *"A multiblock grid system in 12 blocks: An O-grid topology within an H-grid topology"*;
+  Figure 2, *"A multiblock grid system in 3 blocks around a NACA0012 airfoil in a linear cascade:
+  Bold lines indicate block boundaries — merging of block creates a single-block C-grid"*, with
+  **block 1: 49x41, block 2: 57x41, block 3: 49x41** printed on the figure itself. **[V]** It is
+  the only document in either note that prints a PER-BLOCK node count on the picture.
+- **Entry 73.** NASA/TM-2013-217860 (GT2013-95030), NTRS `20130013998` — Figure 3, a typical
+  three-dimensional grid for the variable-speed power turbine. **[V]**
+
+**One correction to this note's own text.** Entry 58 is cited above as *Wang & Eiseman*. The PDF's
+own title page reads **Ning Lu and Peter R. Eiseman**, Program Development Corporation. The
+extracted files are named `entry58-lu1995-*` and the citation here is corrected; the [V-GP]
+classification is unaffected. **[V]**
+
+**What the sweep did NOT change.** No cell count, block count, y+ or quality figure in §0's table
+was altered by looking at a picture, and §4b's quality list is untouched. The reversal is confined
+to a PRESENTATION claim (colour by block), which is exactly the kind of claim that a sample of
+figures can overturn and a sample of papers cannot. **[I]**
 
 ### 4d. What this does and does not settle for this repo
 
