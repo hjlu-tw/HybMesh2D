@@ -3674,6 +3674,13 @@ the fan, which `--prop-nodes` does not reach. `body` is kept — best mean (8.19
 **The cost is the mean, again.** 7.702 → 8.198, the same 6.5% `--match-ring1` cost on its own,
 with `--far-uniform` contributing nothing to it (7.702 → 7.683, slightly better).
 
+The figure is `farfield_sliver.png` (regenerate: `plot_farfield_sliver.py <before quads> <after
+quads> <out.png>`). Both panels show **the same place** — the FIRST mesh's worst pair, not each
+mesh's own — because 29i's result is that the worst pair MOVES, and recentring the second panel on
+its own worst pair somewhere else would hide exactly that. The left panel's grid lines crowd into
+the boundary and the sliver is filled red; the right panel's are evenly spaced and its worst pair
+is not in frame.
+
 **GATE 2, re-run on the shipped pair.** Exit 0, zero NaN, 9000 half-iterations, 8664 cells:
 
 | iteration | arc, neither flag | `--match-ring1` only | **both (shipped)** | 2-ring quilt |
