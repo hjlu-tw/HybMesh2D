@@ -3519,11 +3519,13 @@ block boundary and not a shading choice.
 | 6 | **Where the curves come from** | a converged elliptic solve: smooth at BOTH ends of every edge, consistent across every block at once | one tangency condition at one end, Coons fill for the rest | §10b/§10f — the one no re-blocking closes |
 | 7 | **Extent** | unknown: this panel does NOT reach a boundary, as §18d measured for `fig6` | far-field circle r = 3 about (1,0) — GridPro's own stated one (§3a) | unknowable from these sources |
 
-**One reading left UNRESOLVED and deliberately not in the table.** Whether their radial boundaries
-CONTINUE through the bands or stagger between them. Staggering would be #192's count-reducing
-device and would be the most important structural item here; the few boundaries legible at 6× on
-the left edge line up, and no automated measurement on this figure works, so it is recorded as
-open rather than decided either way.
+**One reading was left UNRESOLVED and deliberately not in the table** — whether their radial
+boundaries CONTINUE through the bands or stagger between them — and **§29j settles it for the
+inner 0.4 chord of `img11_1`'s topology wireframe: N(r) runs 39 / 40 / 40 / 42 / 54 / 50, flat then
+rising, so they PROPAGATE and nothing terminates there.** Past 0.4 chord that figure's own crop
+cannot answer. On img12 it stays open and §29j measures why: the colour method's control, a
+partition whose radials are declared continuous, scores 55–68% where GridPro's scores 22–56%, so
+that method cannot distinguish anything at 140 px per chord.
 
 **Triage, and what §29h did with it.** 1 is **closed** — and its first diagnosis in this very
 section was wrong, which 29h records. 2 is **refused by measurement**, twice now, and is a fork
@@ -3703,6 +3705,76 @@ re-spacing the arcs ring 1 is one of. `ring1_grading.png` is drawn from the ship
 caption carries 4.66 and the table carries 4.47; they measure different flag sets and both say
 which.
 
+### 29j. THE UNRESOLVED READING, SETTLED FOR THE INNER 0.4 CHORD — and the first N(r) ever taken off a vendor figure **[V]**
+
+§29g left one reading out of its table: do GridPro's radial block boundaries CONTINUE through the
+concentric bands, or stagger between them? Staggering is #192's count-reducing device, and finding
+it in the vendor's own figure would be the most important structural item in this whole comparison.
+It is now answered where it can be, with the instrument validated first.
+
+#### What made it measurable: the LOSSLESS source, and then a different figure
+
+**The PNG, not the WebP.** Both are served at the same 700×1064, but the WebP is lossy: its middle
+panel holds **81,346 distinct colours whose 24 commonest cover 5.6%** of it, against the PNG's
+**11,129 whose 24 commonest cover 57.4%**. §29d's automated colour count returned 3, 4, 2 and 4
+changes at four radii where the eye sees about twenty — **and that was the SOURCE, not the method**.
+`media.gridpro.com` serves `.png` for every figure this note cites; nothing here knew that.
+
+**But the colour method still cannot answer it, and a CONTROL is what establishes that.** Rendering
+our own `gridpro_quilt3_arc` the way img12 renders GridPro's — blocks filled, grid lines coloured by
+block, 140 px per chord — and running the same circle-walk on it, a partition whose radials are
+DECLARED continuous carries only **55–68%** of its own boundaries from one radius to the next, with
+run counts of 32–51 where the true sector count is 24. GridPro's figure scores **22–56%**. The
+ranges overlap, so the method has no discriminating power at that resolution. A first attempt
+blamed the palette — `tab20` repeats every 20 colours, so two adjacent blocks can share one and
+DELETE a real boundary — and re-rendering with one distinct colour per block moved the control to
+55–68% from 30–76%: tighter, and no higher. **The resolution is the limit, not the palette.**
+
+#### The figure that does answer it: `img11_1`'s first panel
+
+`img11_1.png`'s first panel is a **topology WIREFRAME on black** — the drawing IS the partition,
+there is no grid to tell it apart from — and the body spans about **380 px** there against img12's
+140, so every figure is **2.7× better resolved per chord**. §2b read this panel off the image in
+2026; nothing has measured it until now.
+
+**`measure_vendor_wireframe.py` takes N(r) off it**, which is §15a's own instrument and the vendor
+side §15g named as missing — §16j said in as many words that it "takes no count off the vendor
+raster". The method walks a circle and keeps the SHORT bright runs: a radial link crosses and
+leaves a blob, a concentric link lies along the circle and leaves a long arc, rejected by its own
+angular width, which is the raster counterpart of `rings_along`'s perpendicularity test.
+
+**THE INSTRUMENT IS VALIDATED, not assumed.** Our own partition rendered the same way, raster count
+against the true count from the mesh:
+
+| r (chord) | 0.14 | 0.18 | 0.24 | 0.29 | 0.34 | 0.39 |
+|-----------|------|------|------|------|------|------|
+| raster N(r) | 4 | 4 | 6 | 8 | 12 | 14 |
+| **true** N(r) from the mesh | **4** | **4** | **6** | **8** | **12** | 16 |
+
+Exact at five of six, within 2 at the sixth. At 380 px per chord the raster method reads a partition
+correctly.
+
+#### The answer
+
+| r (chord) | 0.14 | 0.18 | 0.24 | 0.29 | 0.34 | 0.39 |
+|-----------|------|------|------|------|------|------|
+| **GridPro, N(r)** | **39** | **40** | **40** | **42** | **54** | **50** |
+
+**Flat, then rising 38% — it does not fall.** In the range this crop can measure, GridPro's radial
+boundaries PROPAGATE; there is no count reduction. The staggering read by eye off img12's middle
+panel is not a termination here, and `img11_1` is a different figure of a different configuration,
+so it does not refute that reading either — it answers the question for ITS OWN case.
+
+**Beyond 0.39 chord the crop cannot answer and is not allowed to pretend.** The panel is 354 px
+tall about a centre 172 px from its nearest edge, so a circle is fully inside only to 0.45 chord;
+past that the tool reports the **fraction in frame** and marks the row not comparable. Its raw
+counts there fall — 53, 43, 29 — and every one of those falls is the crop. **That is §18d's
+retraction, which read fig6's edge as a boundary, turned into a guard rather than a warning.**
+
+**What would settle the rest:** a source at more pixels per chord, or a wireframe whose frame
+reaches past half a chord. Both are a fetch, not a method — the method is now validated and the
+tool is committed.
+
 ### 29e. What this changes, and what it does not
 
 - **SUPERSEDES §27c's conclusion, not its facts.** The rosette still is not a modification of a
@@ -3753,6 +3825,13 @@ Direct fetches (`curl`, article text and `<img alt>` extracted from the page HTM
   takes the source path as an argument): `media.gridpro.com/wp-content/uploads/2017/11/f12.webp`,
   `.../2017/10/img10.webp`, `.../2017/10/img12.webp`, `.../2017/11/img11_1.webp`,
   `.../2017/10/img6.webp`.
+  **EVERY ONE IS ALSO SERVED AS `.png`, LOSSLESS, at the same pixel size** — swap the extension.
+  §29j measured what that is worth: img12's middle panel as WebP holds 81,346 distinct colours
+  whose 24 commonest cover 5.6% of it, and as PNG 11,129 whose 24 commonest cover 57.4%. Any
+  measurement that reads these figures by COLOUR must use the PNG; §29d's automated count was run
+  on the WebP and its failure was the source, not the method. Measurements that read LUMINANCE
+  only — the panel separators, the sagitta, the grid-line saturation line — are unaffected and
+  their published figures stand.
 
 Internet Archive (the live paths now redirect to `gridpro.com/signin`):
 
