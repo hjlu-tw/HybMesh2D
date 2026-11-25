@@ -71,14 +71,14 @@ breakdown is §4a and must be used rather than these totals if the table changes
 quality-metric list is §4b — the note beside this one found **exactly one** in its whole search,
 so that is the largest single change this census makes.
 
-**121 mesh and topology figures, from 55 documents, are in
+**115 mesh and topology figures, from 50 documents, are in
 `docs/research/gridpro-mesh-samples/`, with `PROVENANCE.md` beside them.** **[V]** That is the
 whole figure sweep, added after this note was first written and described in §4e; the three
 figures the first pass extracted are part of it. The licence rule changed with it: the first pass
 took **open-licence sources only**, so `PROVENANCE.md` had one class. The sweep introduces a
 second, and every file is now labelled — **(A) redistributable** (NASA/DOE public domain, or
 CC-BY, with the evidence named) or **(B) openly downloadable but rights reserved**, kept as a
-local research copy. **63 are class A and 58 are class B.** **[V]** No paywall was circumvented
+local research copy. **60 are class A and 55 are class B.** **[V]** No paywall was circumvented
 and no bot check bypassed for any of them.
 
 ### The census
@@ -781,7 +781,30 @@ rather than described. The method, because it decides how much the counts above 
    lines, or a page of text were rejected and are not in the directory.
 4. The survivors were re-extracted at full resolution — the figure's own embedded bitmap where
    the page had one, otherwise a 300 dpi page render cropped to the figure — then trimmed,
-   capped at 1800 px and PNG-optimised. **121 files, 55 documents, about 25 MB.**
+   capped at 1800 px and PNG-optimised, then **audited** (step 5). **115 files, 50 documents,
+   about 24 MB.**
+
+5. **The audit, and the gap it closed.** Step 3 verified the PAGE; step 4 sometimes saved
+   something else from that page. Where a page carried the figure as its own embedded bitmap,
+   the extractor took the LARGEST bitmap on the page — which on a multi-panel figure is one
+   panel, and on a page holding both a grid and a plot can be the plot. 35 files had come
+   through that route, so all 35 were re-opened and judged as FILES rather than as pages.
+   **Six failed and were deleted**: a grid-independence curve saved in place of entry 8's
+   Figure 4; entry 36's Figure 4-19, which is a solution field, not a topology; entry 44's
+   octree refinement map, which is the thesis's own AMR and not its GridPro mesh; entry 32's
+   tetrahedral comparator rather than its GridPro hex grid; a redundant page already held as a
+   clean crop; and the golf-ball figure of the other note's §9, which is a y+ contour with no
+   grid lines at all. A seventh, entry 36's Figure 4-6, had been cut down to panel (c) alone
+   while this note described all three panels, and was re-extracted whole rather than deleted.
+   **[V]** The lesson is narrow and worth keeping: *verifying the page is not verifying the
+   file*, and an extractor that picks "the biggest image" will silently disagree with the
+   caption it was keyed on. **[I]**
+
+   The document count was first written as 55. That was wrong, and wrong in a way worth naming:
+   four documents had been given two different author slugs by the two passes that extracted
+   from them (`papad2001` and `papadopoulos2001` for the same NTRS report, and three more), so
+   grouping by slug counted each of them twice. Normalising the filenames collapsed them. **[V]**
+   A count derived from a naming convention is only as good as the convention.
 
 **Three documents turned up that the census above does not list**, because they were reached by
 figure caption rather than by the full-text index, and they are added here as entries 71-73:

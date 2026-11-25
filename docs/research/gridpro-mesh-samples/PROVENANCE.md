@@ -91,7 +91,6 @@ T. W. Repko, A. C. Nix, S. C. Uysal, A. T. Sisler, *Flow Visualization of Multi-
 - Licence: **class A** — Creative Commons Attribution 4.0 (publisher-stated)
 
 - `entry08-repko2016-fig3-grid-coloured-by-block.png` — figure 3 of that document, cropped to the figure.
-- `entry08-repko2016-fig4-computational-grid-unsteady-rans-analyses.png` — PDF page 5, 1800x1363 px. Caption(s): “Figure 4. Computational grid used in unsteady RANS analyses.”
 
 ## entry10 — `nielsen2021` — class A
 
@@ -109,17 +108,8 @@ A. Schwing (NASA JSC / University of Minnesota), *Validation of US3D for Capsule
 - Source PDF: `https://ntrs.nasa.gov/api/citations/20120017946/downloads/20120017946.pdf`
 - Licence: **class A** — NASA work hosted on NTRS; US Government work, public domain
 
-- `entry11-schwing2012-slide7-capsule-grid-overview.png` — figure ? of that document, cropped to the figure.
-- `entry11-schwing2012-slide8-capsule-symmetry-plane-grid.png` — figure ? of that document, cropped to the figure.
-
-## entry12 — `papad2001` — class A
-
-P. Papadopoulos et al., *CFD Simulations in Support of Shuttle Orbiter Contingency Abort Aerodynamic Database Enhancement*, AIAA 2001-3067, NTRS `20010089699`
-
-- Source PDF: `https://ntrs.nasa.gov/api/citations/20010089699/downloads/20010089699.pdf`
-- Licence: **class A** — NASA work hosted on NTRS; US Government work, public domain
-
-- `entry12-papad2001-fig5-multi-layer-grid-generation-strategy.png` — PDF page 16, 1357x1800 px. Caption(s): “Fig. 5 Multi-layer grid generation strategy.”
+- `entry11-schwing2012-slide7-capsule-grid-overview.png` — figure 7 of that document, cropped to the figure.
+- `entry11-schwing2012-slide8-capsule-symmetry-plane-grid.png` — figure 8 of that document, cropped to the figure.
 
 ## entry12 — `papadopoulos2001` — class A
 
@@ -128,6 +118,7 @@ P. Papadopoulos et al., *CFD Simulations in Support of Shuttle Orbiter Contingen
 - Source PDF: `https://ntrs.nasa.gov/api/citations/20010089699/downloads/20010089699.pdf`
 - Licence: **class A** — NASA work hosted on NTRS; US Government work, public domain
 
+- `entry12-papadopoulos2001-fig5-multi-layer-grid-generation-strategy.png` — figure 5 of that document, cropped to the figure.
 - `entry12-papadopoulos2001-fig7-orbiter-365-nonmerged-blocks.png` — figure 7 of that document, cropped to the figure.
 
 ## entry13 — `rigby2000` — class A
@@ -140,7 +131,6 @@ D. L. Rigby and E. Steinthorsson, *Aero-Thermal Performance of Internal Cooling 
 - `entry13-rigby2000-fig2-twelve-block-circle-in-box-topology.png` — figure 2 of that document, cropped to the figure.
 - `entry13-rigby2000-fig3-block-merge-stages.png` — figure 3 of that document, cropped to the figure.
 - `entry13-rigby2000-fig9-282-blocks-merged-to-22.png` — figure 9 of that document, cropped to the figure.
-- `entry13-rigby2000-fig9_1n-passage-ribs-bleed-topology.png` — PDF page 25, 1395x1800 px. Caption(s): “Figure 9.1nternal passage with ribs and bleed topology”
 
 ## entry14 — `oswald2005` — class B
 
@@ -193,17 +183,9 @@ A. A. Ameri, *Implementation of a Transition Model in a NASA Code and Validation
 - Source PDF: `https://ntrs.nasa.gov/api/citations/20120009201/downloads/20120009201.pdf`
 - Licence: **class A** — NASA work hosted on NTRS; US Government work, public domain
 
+- `entry19-ameri2012-fig17-three-dimensional-blade-grid-e3-blade.png` — figure 17 of that document, cropped to the figure.
 - `entry19-ameri2012-fig2-flat-plate-16-block-grid.png` — figure 2 of that document, cropped to the figure.
 - `entry19-ameri2012-fig3-ge2-midspan-and-3d-grids.png` — figure 3 of that document, cropped to the figure.
-
-## entry19 — `ameri2012b` — class A
-
-A. A. Ameri, *Implementation of a Transition Model in a NASA Code and Validation Using Heat Transfer Data*, NASA/CR-2012-217436, NTRS `20120009201`
-
-- Source PDF: `https://ntrs.nasa.gov/api/citations/20120009201/downloads/20120009201.pdf`
-- Licence: **class A** — NASA work hosted on NTRS; US Government work, public domain
-
-- `entry19-ameri2012b-fig17-three-dimensional-blade-grid-e3-blade.png` — PDF page 24, 693x454 px. Caption(s): “Figure 17.—(a) Three-dimensional blade grid of the E3 blade tip section cascade.(b) A two-dimensional section at the”
 
 ## entry20 — `garg2001` — class A
 
@@ -270,15 +252,6 @@ E. Steinthorsson, *Simulations of Turbine Cooling Flows Using a Multiblock-Multi
 - `entry27-steinthorsson1996-fig3ab-branched-duct-grid.png` — figure ? of that document, cropped to the figure.
 - `entry27-steinthorsson1996-fig3cd-corner-and-pin-fin-grid.png` — figure ? of that document, cropped to the figure.
 
-## entry28 — `steinth1995` — class A
-
-E. Steinthorsson and D. Modiano, *Advanced methodology for simulation of complex flows using structured grid systems*, NASA CP-3291, 1995, NTRS `19950022345`
-
-- Source PDF: `https://ntrs.nasa.gov/api/citations/19950022345/downloads/19950022345.pdf`
-- Licence: **class A** — NASA work hosted on NTRS; US Government work, public domain
-
-- `entry28-steinth1995-fig4-transonic-naca0012-adapted-structured-grid.png` — figure 4 of that document, cropped to the figure.
-
 ## entry28 — `steinthorsson1995` — class A
 
 E. Steinthorsson and D. Modiano, *Advanced methodology for simulation of complex flows using structured grid systems*, NASA CP-3291, 1995, NTRS `19950022345`
@@ -288,6 +261,7 @@ E. Steinthorsson and D. Modiano, *Advanced methodology for simulation of complex
 
 - `entry28-steinthorsson1995-fig2-multiblock-topology.png` — figure 2 of that document, cropped to the figure.
 - `entry28-steinthorsson1995-fig3-centre-region-grid.png` — figure 3 of that document, cropped to the figure.
+- `entry28-steinthorsson1995-fig4-transonic-naca0012-adapted-structured-grid.png` — figure 4 of that document, cropped to the figure.
 
 ## entry29 — `ameri2009` — class A
 
@@ -325,19 +299,8 @@ P. Shankara, *CFD Simulation and Analysis of Particulate Deposition on Gas Turbi
 - Source PDF: `https://etd.ohiolink.edu/acprod/odb_etd/ws/send_file/send?accession=osu1262290700&disposition=inline`
 - Licence: **class B** — OhioLINK ETD; openly downloadable, copyright retained by the author
 
-- `entry32-shankara2009-fig6_7-view-tetrahedral-volume-mesh-3d-case.png` — PDF page 67, 714x522 px. Caption(s): “Fig. 6.7: View of the tetrahedral volume mesh for the 3D case”
 - `entry32-shankara2009-fig6.8-hexahedral-cut-section.png` — figure 6.8 of that document, cropped to the figure.
 - `entry32-shankara2009-fig7_1-computational-grid-vki-blade.png` — PDF page 81, 1199x1800 px. Caption(s): “Fig 7.1: Computational grid used for the VKI blade”
-
-## entry33 — `ayyala2003` — class B
-
-H. Ayyalasomayajula, MS thesis, University of Cincinnati, 2003, OhioLINK `ucin1054757181`
-
-- Source PDF: `https://etd.ohiolink.edu/acprod/odb_etd/ws/send_file/send?accession=ucin1054757181&disposition=inline`
-- Licence: **class B** — OhioLINK ETD; openly downloadable, copyright retained by the author
-
-- `entry33-ayyala2003-fig5_2-enlarged-view-grid-around-mid-blade.png` — PDF page 100, 1135x1800 px. Caption(s): “Fig. 5.2. Enlarged-view of Grid around the mid-blade of Turbine Cascade”
-- `entry33-ayyala2003-fig6_14-12-block-structured-periodic-grid-hpt.png` — PDF page 112, 1371x1800 px. Caption(s): “Fig. 6.14. 12-Block, Structured, Periodic Grid for HPT Blade Cascade”
 
 ## entry33 — `ayyalasomayajula2003` — class B
 
@@ -346,6 +309,8 @@ H. Ayyalasomayajula, MS thesis, University of Cincinnati, 2003, OhioLINK `ucin10
 - Source PDF: `https://etd.ohiolink.edu/acprod/odb_etd/ws/send_file/send?accession=ucin1054757181&disposition=inline`
 - Licence: **class B** — OhioLINK ETD; openly downloadable, copyright retained by the author
 
+- `entry33-ayyalasomayajula2003-fig5_2-enlarged-view-grid-around-mid-blade.png` — figure 5.2 of that document, cropped to the figure.
+- `entry33-ayyalasomayajula2003-fig6_14-12-block-structured-periodic-grid-hpt.png` — figure 6.14 of that document, cropped to the figure.
 - `entry33-ayyalasomayajula2003-fig6.6-ogrid-around-cylinder.png` — figure 6.6 of that document, cropped to the figure.
 
 ## entry34 — `singh2005` — class B
@@ -379,8 +344,7 @@ M. Mansouri, *A High-Order High-Accuracy Geometric Block Interface Treatment for
 - `entry36-mansouri2016-fig1-6-typical-form-grid-discontinuities-singularities-around.png` — PDF page 26, 1116x744 px. Caption(s): “Figure 1-6: A Typical Form of Grid Discontinuities/Singularities around the”
 - `entry36-mansouri2016-fig1-8-grid-blocks-3-way-b-3.png` — PDF page 28, 1226x1800 px. Caption(s): “Figure 1-8: Grid Blocks with (a) 3-way and (b) 3 and 5-way Singularities”
 - `entry36-mansouri2016-fig4-1-cartesian-singular-b-grid-blocks-evaluate.png` — PDF page 84, 1285x1800 px. Caption(s): “Figure 4-1: Cartesian (a) and Singular (b) Grid Blocks to Evaluate BASS”
-- `entry36-mansouri2016-fig4-19-grid-topology-contains-several-singularities.png` — PDF page 106, 656x656 px. Caption(s): “Figure 4-19: Grid Topology Contains Several Singularities”
-- `entry36-mansouri2016-fig4-6-3-way-4-way-b-5.png` — PDF page 88, 744x709 px. Caption(s): “Figure 4-6: 3-way (a), 4-way (b), and 5-way (c) Two-dimensional Grid Sin-”
+- `entry36-mansouri2016-fig4-6-three-four-and-five-way-singularities.png` — figure 4 of that document, cropped to the figure.
 - `entry36-mansouri2016-fig4.15-three-way-singularity-grid.png` — figure 4.15 of that document, cropped to the figure.
 - `entry36-mansouri2016-fig4.17-five-way-singularity-grid.png` — figure 4.17 of that document, cropped to the figure.
 - `entry36-mansouri2016-fig5-10-clustered-grid-using-0-692.png` — PDF page 122, 1228x1800 px. Caption(s): “Figure 5-10: Clustered Grid Using α = 0.692”
@@ -451,7 +415,6 @@ V. Ledermann et al., *Pampero HiFi: improvements in aerodynamic modeling of a sp
 - Source PDF: `https://link.springer.com/content/pdf/10.1007/s12567-025-00655-2.pdf`
 - Licence: **class A** — Creative Commons Attribution 4.0 (publisher-stated)
 
-- `entry44-ledermann2025-fig2-mesh-obtained-after-refinement-process.png` — PDF page 2, 965x692 px. Caption(s): “Fig. 2 Mesh obtained after the refinement process”
 - `entry44-ledermann2025-fig9-mistral-multiblock-mesh.png` — figure 9 of that document, cropped to the figure.
 
 ## entry47 — `mcginn2021` — class A
@@ -489,8 +452,8 @@ J. Klečková, *Modelování aeroelastických jevů se zaměřením na predikci 
 - Source PDF: `(university repository; see the census note’s Sources list)`
 - Licence: **class B** — openly downloadable; no open licence stated, rights reserved by the publisher/author
 
-- `entry51-kleckova2019-obr6.4-blade-topology-and-bl-settings.png` — figure ? of that document, cropped to the figure.
-- `entry51-kleckova2019-obr6.5-leading-and-trailing-edge-bl-mesh.png` — figure ? of that document, cropped to the figure.
+- `entry51-kleckova2019-obr6.4-blade-topology-and-bl-settings.png` — figure 6.4 of that document, cropped to the figure.
+- `entry51-kleckova2019-obr6.5-leading-and-trailing-edge-bl-mesh.png` — figure 6.5 of that document, cropped to the figure.
 
 ## entry53 — `hauser1999` — class B
 
@@ -582,14 +545,5 @@ G. V. Candler and C. H. Campbell, *Hypersonic Navier-Stokes Comparisons to Orbit
 
 - `othernote03-candler2010-fig1-several-images-surface-grid-shock-adapted.png` — PDF page 3, 1336x1800 px. Caption(s): “Figure 1. Several images of the surface grid and shock-adapted outer envelop of grid for the half-Orbiter.”
 
-## othernote09 — `crabill2019` — class B
 
-J. Crabill, F. D. Witherden, A. Jameson, *High-Order Computational Fluid Dynamics Simulations of a Spinning Golf Ball*, arXiv `1806.00378` (Sports Engineering) — covered as §9 of `gridpro-meshes-in-published-cfd.md`
-
-- Source PDF: `https://arxiv.org/pdf/1806.00378`
-- Licence: **class B** — arXiv default licence; no Creative Commons licence returned by the arXiv API for this id
-
-- `othernote09-crabill2019-fig1-golf-ball-surface-grid-resolution-figure.png` — PDF page 6, 640x640 px. Caption(s): “Fig. 1 Golf ball surface and grid resolution. Figure (c) shows the pre-agglomerated element”
-
-
-**121 files: 63 class A, 58 class B, from 55 documents.**
+**115 files: 60 class A, 55 class B, from 50 documents.**
