@@ -55,6 +55,7 @@ N_OUT_TOTAL = 24                # intervals from ring 1 out to the circle, in al
 # against the .dat it is about to be used with rather than trusting this line.
 BL_FIRST = 0.001
 MATCH_RING1 = False
+FAR_UNIFORM = False
 N_WAKE = 17                     # nodes along the trailing-edge fan's angular side
 
 FAR_C = None
@@ -864,18 +865,37 @@ def build(split, nrings, nrays, fan_deg=None):
             # Every ring's arc carries the body stretch's clustering SCALED by
             # its own arc length, so the whole radial family shares one
             # normalized distribution. DERIVED, not tuned.
+            #
+            # THAT SCALING PRESERVES THE RELATIVE DISTRIBUTION AND DESTROYS THE
+            # ABSOLUTE ONE, and on the far field only the absolute one matters.
+            # Measured on gridpro_quilt3_arc: the same DS_SURF of 0.005 arrives
+            # on the outermost ring as 0.005378 at the trailing-edge end of one
+            # stretch and 0.990347 at the leading-edge end of another -- a 184x
+            # spread on a boundary whose uniform interval is 0.196 -- because
+            # the nose stretch is short in body arc and long in ring arc while
+            # the trailing-edge stretch is not. The 18.3 worst adjacent-area
+            # pair of section 29h is the 0.005378 one, a cell of 0.0054 x 0.155.
+            # --far-uniform blends each ring's clustering toward that ring's own
+            # UNIFORM interval, by the ring index, so the wrap keeps the body's
+            # distribution and the outer boundary is exactly uniform.
             for k in range(1, nrings + 1):
                 g = ring_geom(k, nrings)
                 rl = ell_arc(g, par[k][ka], par[k][kb]) if not BOX else \
                     math.hypot(*(x - y for x, y in
                                  zip(t.pos["R%d_%s" % (k, kb)],
                                      t.pos["R%d_%s" % (k, ka)])))
+                csp = {q: v * rl / blen for q, v in sp.items()}
+                if FAR_UNIFORM and csp:
+                    w = 0.0 if nrings < 2 else (k - 1) / (nrings - 1)
+                    uni = rl / max(1, cnt[(side, i)])
+                    csp = {q: round(v * (1.0 - w) + uni * w, 10)
+                           for q, v in csp.items()}
                 t.edge("c%d_%s_%d" % (k, side, i), "R%d_%s" % (k, ka),
                        "R%d_%s" % (k, kb),
                        "wall" if k == nrings else "interface",
                        curve=None if (_free(k, nrings) or (BOX and k > 1))
                        else curve_of(g),
-                       spacing={q: v * rl / blen for q, v in sp.items()})
+                       spacing=csp)
 
     surface(up_body, 0, seg_up, "up", [0.0] + list(fr_up) + [1.0])
     surface(lo_body, 1, seg_lo, "lo", [0.0] + list(fr_lo) + [1.0])
@@ -932,7 +952,7 @@ def build(split, nrings, nrays, fan_deg=None):
 
 
 def main():
-    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH, BOX, EVEN_SECTORS, RING_LIN, PROP_NODES, MATCH_RING1
+    global BLEND, TAIL, FREE, FREE_WRAP, PER_LAYER, CURVED, CURVED_TAIL, SMOOTH, BOX, EVEN_SECTORS, RING_LIN, PROP_NODES, MATCH_RING1, FAR_UNIFORM
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", type=int, default=8,
                     help="body sides per surface; 2K sectors around the body")
@@ -944,6 +964,12 @@ def main():
     ap.add_argument("--te-rays", type=int, default=3,
                     help="internal surfaces at the trailing edge; must be ODD "
                          "so one of them is the wake. 3 is the tutorial's.")
+    ap.add_argument("--far-uniform", action="store_true",
+                    help="blend each ring's circumferential clustering toward "
+                         "that ring's own UNIFORM interval by the ring index, so "
+                         "the outer boundary is exactly uniform. Without it the "
+                         "body's DS_SURF arrives there scaled by arc length, "
+                         "which spreads one value over 184x (section 29i)")
     ap.add_argument("--match-ring1", action="store_true",
                     help="give the WALL radial a two-sided law whose outer "
                          "height is the first cell the outer region has at that "
@@ -1009,6 +1035,7 @@ def main():
     args = ap.parse_args()
     BLEND, TAIL, FREE = args.blend, not args.no_tail, args.free_rings
     MATCH_RING1 = args.match_ring1
+    FAR_UNIFORM = args.far_uniform
     FREE_WRAP = args.free_wrap
     CURVED, CURVED_TAIL = not args.chord_radials, not args.chord_tail
     SMOOTH = not args.ring_normal_radials

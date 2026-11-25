@@ -3511,7 +3511,7 @@ block boundary and not a shading choice.
 
 | # | the difference | theirs | ours | status |
 |---|----------------|--------|------|--------|
-| 1 | **Far-field cell size** | texture is near-uniform from the body to the panel edge | a 4.2× RADIAL STEP at ring 1, then flat; the azimuthal growth is the 2.7× a fixed angular count gives | §29h closes the step 2.9× with `--match-ring1`, for 8.6% of the residual |
+| 1 | **Far-field cell size** | texture is near-uniform from the body to the panel edge | a 4.2× RADIAL STEP at ring 1, then flat; and a 184× spread of one `DS_SURF` across the outer boundary | §29h closes the step 2.9× (`--match-ring1`); §29i closes the boundary and moves the worst pair OFF it (`--far-uniform`) |
 | 2 | **Fan → Cartesian transition** | some outer blocks carry an AXIS-ALIGNED grid while their neighbours carry a radial one | fan all the way to the circle, no transition | §29h REFUSED it by measurement, confirming §12b: a FORK, not a defect |
 | 3 | **Concentric bands** | three to five | three | §29f priced four and five as WORSE |
 | 4 | **The nose** | a dense rosette of small blocks wrapping the leading edge | 24 sectors converging on one point, no local clustering | §17d: stations by COUNT, not clustering |
@@ -3584,7 +3584,9 @@ against the wrap ellipse:
    nothing changed: its worst pair is at the FAR-FIELD boundary, r = 2.945 at (1.266, ±2.933)
    between blocks 79|80 and 55|56, with a second cluster at the trailing-edge fan (r = 0.25–0.38,
    ratios 12.9 and 12.7). **A mesh-wide max names no location**, which is the lesson §16e of the
-   sibling note recorded under another name and this is its second instance.
+   sibling note recorded under another name and this is its second instance. **§29i then went and
+   fixed that pair**, so the number this paragraph says did not move does move — to 9.87, with the
+   worst pair no longer on the far field at all.
 2. **A band-median radial extent said the step got WORSE, 4.23× → 4.50×.** `ds_end` sets the LAST
    cell of the band; a median over a band cannot see an end cell. The instrument could not measure
    the thing the flag changes, and it did not return "no change" — it returned the opposite sign.
@@ -3621,6 +3623,78 @@ blocks CLUSTERED at the leading edge, and `--even-sectors` — which §20b adopt
 nose than equal arc length does. So closing 4 means either reversing §20b's choice or a local
 refinement this generator does not have, and both are larger than one flag. **Not attempted, and
 named rather than left to look unexamined.**
+
+### 29i. DIFFERENCE 1, THE OTHER END — the far-field worst pair, found and fixed **[V]**
+
+29h closed the size step across ring 1 and said in as many words that the mesh-wide
+`adjacent_area_ratio_max` did not move because **its worst pair is on the far-field BOUNDARY**, at
+r = 2.945. 29h named that and did not touch it. This does.
+
+**What the pair IS.** Not a size step at all. The two cells have near-identical extents —
+0.109 × 0.110 and 0.115 × 0.123 — and areas 18.3× apart, because one of them is a **sliver**:
+0.0054 × 0.155, aspect 28.8, its four corners at r = 3.000 spanning 274.03° to 276.28° about the
+trailing edge. It sits where the trailing-edge ray at −85.866° lands on the circle.
+
+**Its short side is `DS_SURF`.** 0.00538 against the generator's 0.005. The circumferential arcs
+carry the body stretch's clustering **scaled by arc length**, so the whole radial family shares one
+normalised distribution — derived, not tuned, and the right thing for the family. But scaling
+preserves the RELATIVE distribution and destroys the ABSOLUTE one, and on the far field only the
+absolute one matters. The outermost ring's four spaced arcs say it outright:
+
+| arc | declared spacing | against the boundary's uniform interval, 0.196 |
+|-----|------------------|------------------------------------------------|
+| `c3_lo_11`, `c3_up_0` | **0.005378** | **36× finer** — this is the sliver |
+| `c3_lo_0`, `c3_up_11` | **0.990347** | **5× coarser** |
+
+One value of `DS_SURF`, 184× apart at the two ends, because the nose stretch is short in body arc
+and long in ring arc while the trailing-edge stretch is not.
+
+**`--far-uniform` blends each ring's clustering toward THAT RING's own uniform interval**, by the
+ring index: the wrap keeps the body's distribution, the outer boundary is exactly uniform, and the
+rings between are graded. One line, and the whole mechanism is `rl / cnt`, the arc's own mean.
+
+| 8664 cells, 0 inverted throughout | non-ortho max | mean | adjacent area max | seam p95 | where the worst pair is |
+|---|---------------|------|-------------------|----------|-------------------------|
+| §29f, neither flag | 49.491 | **7.702** | 18.30 | 8.08 | r = 2.945, the FAR FIELD |
+| `--far-uniform` | 49.491 | 7.683 | 13.42 | 7.96 | r = 0.246, the trailing edge |
+| **both flags (shipped)** | 49.491 | 8.198 | **9.87** | **3.51** | r = 0.444, the trailing edge |
+
+**The worst pair MOVES OFF the far field**, which is the result rather than the 46% the number
+falls by: what is left is 29h's second cluster, the trailing-edge fan, and the far-field boundary
+is no longer the mesh's worst place.
+
+**The residue at the far field is `--prop-nodes`, and it cannot be improved here.** With
+`--far-uniform` on, the outer arcs' spacings are 0.0239 and 0.2648 — each that stretch's OWN
+uniform interval, so the blend is doing exactly what it says; the remaining 11× spread is the
+per-stretch node density `--prop-nodes body` assigns. Swept: `far` is much worse (32.78),
+`mean` and no proportioning are identical to `body` at 9.87 because the surviving worst pair is in
+the fan, which `--prop-nodes` does not reach. `body` is kept — best mean (8.198 against 8.557 and
+10.054) and the only one at the matched 8664 cells.
+
+**The cost is the mean, again.** 7.702 → 8.198, the same 6.5% `--match-ring1` cost on its own,
+with `--far-uniform` contributing nothing to it (7.702 → 7.683, slightly better).
+
+**GATE 2, re-run on the shipped pair.** Exit 0, zero NaN, 9000 half-iterations, 8664 cells:
+
+| iteration | arc, neither flag | `--match-ring1` only | **both (shipped)** | 2-ring quilt |
+|-----------|-------------------|----------------------|--------------------|--------------|
+| 5000 | **3.381e-06** | 4.400e-06 | 4.699e-06 | 4.578e-06 |
+| 7000 | **2.078e-06** | 2.368e-06 | 2.437e-06 | 3.356e-06 |
+| 8000 | **1.463e-06** | 1.589e-06 | 1.720e-06 | 2.787e-06 |
+
+**Each fix costs about 8–9% of the residual** and they add: +8.6% for `--match-ring1`, +8.2% more
+for `--far-uniform`, 17.6% in all at 8000, and the shipped pair is still 38% BELOW the two-ring
+quilt there. So the arc variant with neither flag remains the best mesh in the solve and §29f's
+recommendation is unchanged; what 29h and 29i buy is a mesh whose worst local transitions are no
+longer at the two places the quality report points to, for a seventh of the residual. **A trade,
+twice, and recorded as one both times.**
+
+**29h's ring-1 table is `--match-ring1` ALONE and stays as written; the shipped case now carries
+both flags** and its 134 ring-1 pairs measure 2.78 / 3.88 / **4.66** against that table's
+2.78 / 3.88 / 4.47 — the median and p95 unmoved, the max 4% higher, which is `--far-uniform`
+re-spacing the arcs ring 1 is one of. `ring1_grading.png` is drawn from the shipped mesh, so its
+caption carries 4.66 and the table carries 4.47; they measure different flag sets and both say
+which.
 
 ### 29e. What this changes, and what it does not
 

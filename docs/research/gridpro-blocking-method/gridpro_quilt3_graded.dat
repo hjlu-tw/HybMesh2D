@@ -13,9 +13,19 @@
 #
 #   python3 docs/research/gridpro-blocking-method/make_rings.py \
 #       --rings 3 --split 12 --even-sectors --prop-nodes body \
-#       --linear-rings --per-layer 10 --match-ring1 \
+#       --linear-rings --per-layer 10 --match-ring1 --far-uniform \
 #       --out gridpro_quilt3_graded.json
 #   ./run.sh -conf docs/research/gridpro-blocking-method/gridpro_quilt3_graded.dat
+#
+# --far-uniform was added in section 29i, which is 29g's difference 1 attacked
+# at the OTHER end: 29h closed the step across ring 1 and left the mesh-wide
+# adjacent_area_ratio_max at 18.297, whose worst pair is on the far-field
+# BOUNDARY. That pair is a 0.0054 x 0.155 sliver, and its short side is DS_SURF
+# scaled by arc length -- the same 0.005 arrives on the outermost ring as
+# 0.005378 at one stretch's end and 0.990347 at another's, a 184x spread on a
+# boundary whose uniform interval is 0.196. --far-uniform blends each ring's
+# clustering toward that ring's own uniform interval by the ring index, and with
+# both flags the worst pair falls to 9.87 and MOVES OFF the far field.
 #
 # A RESEARCH HARNESS, not a shipped case.
 # =============================================================================
