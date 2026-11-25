@@ -806,6 +806,18 @@ rather than described. The method, because it decides how much the counts above 
    grouping by slug counted each of them twice. Normalising the filenames collapsed them. **[V]**
    A count derived from a naming convention is only as good as the convention.
 
+**Finding a figure again.** `gridpro-mesh-samples/FIGURE-INDEX.md` is one row per file: the
+block count the FIGURE states, the block and cell counts the DOCUMENT states (kept in separate
+columns, because they are different claims), the wall spacing, and a tag set.
+`figure-index.tsv` is the same table for grep or a spreadsheet, and `gallery.html` is the same
+data as a local, filterable picture wall. Two of the tags are **measured** from the image
+(`monochrome-line-art`, `multi-colour`, by quantising each file and counting saturated regions
+over 2% of its area); `coloured-by-block` is **verified by eye** and deliberately narrower,
+because a figure can be multi-colour for carrying a contour field; the rest are keyword matches
+on the filename and caption and are labelled as such. **21 of the 115 figures state a block
+count on the picture or in their own caption**; two print PER-BLOCK node counts, and both are
+named at the end of that file. **[V]**
+
 **Three documents turned up that the census above does not list**, because they were reached by
 figure caption rather than by the full-text index, and they are added here as entries 71-73:
 
