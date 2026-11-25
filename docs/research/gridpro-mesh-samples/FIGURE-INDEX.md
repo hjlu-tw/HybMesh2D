@@ -147,10 +147,10 @@ of this same table.
 | 58 | Fig. 4 | 2 blocks | — | — | — | `2d-aerofoil` `monochrome-line-art` `vendor` | `entry58-lu1995-fig4-two-block-grid-around-supercircle.png` |
 | 58 | Fig. 5 | 1 block | — | — | — | `3d` `monochrome-line-art` `vendor` | `entry58-lu1995-fig5-half-single-block-volume-grid-inside-torus.png` |
 | 58 | Fig. 6 | 7 blocks | — | — | — | `3d` `monochrome-line-art` `vendor` | `entry58-lu1995-fig6-seven-block-volume-grid-inside-sphere.png` |
-| 71 | Fig. 1 | — | "several topologically rectangular blocks" pe… | not stated | not stated | `monochrome-line-art` `refinement-series` | `entry71-nasa1994-fig1-grid-system-three-levels-coarse.png` |
+| 71 | Fig. 1 | — | "several topologically rectangular blocks" pe… | not stated | not stated | `2d-aerofoil` `far-field` `monochrome-line-art` `refinement-series` `topology-only` | `entry71-nasa1994-fig1-grid-system-three-levels-coarse.png` |
 | 71 | Fig. 6 | — | "several topologically rectangular blocks" pe… | not stated | not stated | `2d-aerofoil` `monochrome-line-art` `refinement-series` | `entry71-nasa1994-fig6-refined-grid-around-naca0012-airfoil-m.png` |
-| 72 | Fig. 1 | 12 blocks | 12 (O-in-H); 3 (NACA0012 cascade, merging to … | not stated | not stated | `monochrome-line-art` | `entry72-nasa1993-fig1-multiblock-grid-system-12-blocks.png` |
-| 72 | Fig. 10 | — | 12 (O-in-H); 3 (NACA0012 cascade, merging to … | not stated | not stated | `internal-flow` `monochrome-line-art` `turbomachinery` | `entry72-nasa1993-fig10-grid-system-radial-turbine-coolant-passage.png` |
+| 72 | Fig. 1 | 12 blocks; 3 blocks; 1 block | 12 (O-in-H); 3 (NACA0012 cascade, merging to … | not stated | not stated | `2d-aerofoil` `c-grid` `h-grid` `monochrome-line-art` `o-grid` `topology-only` `turbomachinery` | `entry72-nasa1993-fig1-multiblock-grid-system-12-blocks.png` |
+| 72 | Fig. 10 | — | 12 (O-in-H); 3 (NACA0012 cascade, merging to … | not stated | not stated | `3d` `internal-flow` `monochrome-line-art` `turbomachinery` | `entry72-nasa1993-fig10-grid-system-radial-turbine-coolant-passage.png` |
 | 73 | Fig. 3 | — | not stated | not stated | not stated | `multi-colour` | `entry73-nasa2013-fig3-typical-three-dimensional-grid-vspt-as.png` |
 | §03 | Fig. 1 | — | — | — | — | `3d` `far-field` | `othernote03-candler2010-fig1-several-images-surface-grid-shock-adapted.png` |
 
@@ -166,23 +166,23 @@ of this same table.
 | `monochrome-line-art` | 66 | measured |
 | `multi-colour` | 30 | measured |
 | `coloured-by-block` | 27 | verified by eye |
-| `turbomachinery` | 20 | keyword in filename/caption |
+| `turbomachinery` | 21 | keyword in filename/caption |
+| `topology-only` | 18 | keyword in filename/caption |
 | `internal-flow` | 17 | keyword in filename/caption |
-| `topology-only` | 16 | keyword in filename/caption |
-| `3d` | 13 | keyword in filename/caption |
+| `3d` | 14 | keyword in filename/caption |
+| `2d-aerofoil` | 13 | keyword in filename/caption |
 | `vendor` | 12 | keyword in filename/caption |
-| `2d-aerofoil` | 11 | keyword in filename/caption |
 | `near-field-zoom` | 10 | keyword in filename/caption |
 | `wall-spacing` | 7 | keyword in filename/caption |
 | `singularity` | 7 | keyword in filename/caption |
+| `far-field` | 6 | keyword in filename/caption |
 | `refinement-series` | 6 | keyword in filename/caption |
-| `far-field` | 5 | keyword in filename/caption |
-| `o-grid` | 4 | keyword in filename/caption |
+| `o-grid` | 5 | keyword in filename/caption |
 | `cylinder` | 4 | keyword in filename/caption |
 | `junction` | 4 | keyword in filename/caption |
 | `merge` | 3 | keyword in filename/caption |
-| `h-grid` | 1 | keyword in filename/caption |
-| `c-grid` | 1 | keyword in filename/caption |
+| `h-grid` | 2 | keyword in filename/caption |
+| `c-grid` | 2 | keyword in filename/caption |
 
 **115 files.** 21 state a block count on the
 figure itself; the rest carry only their document’s number, or none.
