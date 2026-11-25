@@ -35,7 +35,7 @@ A shipped case: `MESH_MODE 1`, the four-block C-grid around a NACA 0012 declared
 | inverted cells | **0** |
 | non-orthogonality | max **29.9 deg**, mean **3.8 deg** |
 
-Figures: `our-cgrid-vs-gridpro/ours_full.png`, `ours_near.png`, `ours_le.png`, `ours_wake.png`.
+Figures: `our-cgrid-vs-gridpro/ours_full.png`, `our-cgrid-vs-gridpro/ours_near.png`, `our-cgrid-vs-gridpro/ours_le.png`, `our-cgrid-vs-gridpro/ours_wake.png`.
 **[V]** — all four rendered by `tools/scripts/view_mesh_vtk.py` from the run above, coloured by
 block.
 
@@ -72,7 +72,7 @@ caption states the merge outright: *"merging of block creates a single-block C-g
 
 ## 2. The leading edge, where the two differ most **[V]**
 
-Put `ours_le.png` beside `gridpro-mesh-samples/entry36-mansouri2016-fig1-6-typical-form-grid-discontinuities-singularities-around.png`
+Put `our-cgrid-vs-gridpro/ours_le.png` beside `gridpro-mesh-samples/entry36-mansouri2016-fig1-6-typical-form-grid-discontinuities-singularities-around.png`
 (entry 36, *"A Typical Form of Grid Discontinuity/Singularities around the Leading Edge of NACA
 0012 Airfoil for a Multi-Block Structured Grid"*).
 
@@ -83,7 +83,7 @@ Put `ours_le.png` beside `gridpro-mesh-samples/entry36-mansouri2016-fig1-6-typic
   interface — and the upper and lower wall blocks meet along it. There is no leading-edge block.
   **[V]**
 
-**A reading I had to correct.** Looking at `ours_le.png` I first wrote that the nose was
+**A reading I had to correct.** Looking at `our-cgrid-vs-gridpro/ours_le.png` I first wrote that the nose was
 under-resolved chordwise. **Measuring it says otherwise**: the first surface cell at the nose is
 **0.00498 c**, the NACA 0012 leading-edge radius is **0.01587 c**, so the first cell is
 **0.31 r_LE** and **five surface nodes sit within one leading-edge radius**. **[V]** The nose is
@@ -126,7 +126,7 @@ found that what gets published is a bound or a convergence index, never a distri
 
 ## 4. The defect this comparison found **[V]**
 
-`ours_wake.png` shows it. The quality report puts the worst cells in the wake blocks —
+`our-cgrid-vs-gridpro/ours_wake.png` shows it. The quality report puts the worst cells in the wake blocks —
 `b_wake_up` and `b_wake_lo` carry a quad midline ratio of median **10.1**, p95 **610**, max
 **3,148**, against **3.69 / 48.3 / 211** in the two wall blocks. **[V]**
 
