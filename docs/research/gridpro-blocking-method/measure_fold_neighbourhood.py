@@ -15,8 +15,12 @@ TWO things the caller must get right, both of which cost a measurement here:
   block side has three edges and is perfectly regular; counting it as valence 3
   put the fold beside #194's divergence 370th of 400-odd instead of 9th of 12.
 - **Measure the QUADS** (`MB_SPLIT_QUADS 0`). Splitting to triangles adds a
-  diagonal at every node, so the valence this reads is the triangulation's and
-  no node comes back irregular.
+  diagonal at every node, so the valence this reads is the TRIANGULATION's and
+  every valence is DOUBLED -- not absent. On the triangulated
+  `reducing_ogrid_badfold` the four folds come back at valence 6, the four
+  apexes at 10, and all 3856 regular nodes at 8: 3864 "irregular" nodes where
+  the quad mesh has 8. The first version of this docstring said a triangulated
+  export has none, which is the opposite of what it has.
 """
 import os, sys, math
 import numpy as np

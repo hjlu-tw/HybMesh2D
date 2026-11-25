@@ -78,6 +78,9 @@ for path in sys.argv[1:]:
     name = "/".join(path.split("/")[-2:]).replace(".vtk", "")
     QS, TOT, bad = measure(path)
     print("%-34s %d lines (%d failed to reach the outer boundary)." % (name, len(QS[0]), bad))
+    if not TOT:
+        print("   no line reached the outer boundary, so there is nothing to report")
+        continue
     t = np.array(TOT)
     print("   TOTAL per line:   median %6.2f   p95 %6.2f   max %6.2f  (deg)"
           % (float(np.median(t)), float(np.percentile(t, 95)), float(t.max())))

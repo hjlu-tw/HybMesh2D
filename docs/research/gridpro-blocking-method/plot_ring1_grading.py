@@ -30,7 +30,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from measure_block_partition import read_vtk                       # noqa: E402
 
 INK, SEC, GRID = "#0b0b0b", "#52514e", "#b9b7ae"
-RING1 = (0.5, 0.0, 0.9, 0.3)      # the wrap ellipse: cx, cy, a, b
+# The wrap ellipse (cx, cy, a, b) that ring 1 IS. make_rings.py prints it as
+# "ring 1: centre (x, y)  a A  b B", so --ring1 takes it rather than trusting
+# this default: a different --rings or --blend moves it and the default then
+# selects NOTHING, which the first version of this reported as a crash in
+# r.max() rather than as the wrong seam.
+RING1 = (0.5, 0.0, 0.9, 0.3)
 # A TIGHT window ON the seam, not the whole body: what --match-ring1 changes is
 # the LAST row of cells inside ring 1, which at body scale is one thin line and
 # the first draft of this figure showed two panels that looked identical.
@@ -62,7 +67,16 @@ def ratios(pts, cells, blocks):
 
 
 def main():
-    a_path, b_path, out = sys.argv[1], sys.argv[2], sys.argv[3]
+    global RING1
+    argv = sys.argv[1:]
+    if "--ring1" in argv:
+        i = argv.index("--ring1")
+        RING1 = tuple(float(v) for v in argv[i + 1:i + 5])
+        del argv[i:i + 5]
+    if len(argv) != 3:
+        raise SystemExit("usage: plot_ring1_grading.py [--ring1 cx cy a b] "
+                         "<without_quads.vtk> <with_quads.vtk> <out.png>")
+    a_path, b_path, out = argv
     fig = plt.figure(figsize=(13.2, 5.6), facecolor="#fcfcfb")
     fig.text(0.024, 0.968, "§29h：ring 1 交界的尺寸台階，--match-ring1 之前與之後",
              color=INK, fontsize=15, va="top")
@@ -89,6 +103,11 @@ def main():
         for s in ax.spines.values():
             s.set_color(GRID)
         r = ratios(pts, cells, blocks)
+        if len(r) == 0:
+            raise SystemExit("%s: no block-boundary pair has BOTH ends on the "
+                             "ellipse (%g, %g, %g, %g). That is the wrong ring 1 "
+                             "for this mesh -- pass --ring1 cx cy a b, which "
+                             "make_rings.py prints." % ((path,) + RING1))
         ax.text(0.0, 1.03, title, transform=ax.transAxes, color=INK,
                 fontsize=12.5, va="bottom")
         fig.text(0.028 + col * 0.492, 0.075,

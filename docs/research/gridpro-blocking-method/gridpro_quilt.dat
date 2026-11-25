@@ -5,7 +5,7 @@
 # Section 29. It exists because section 27c closed this route with a number that
 # does not survive re-measurement: it compared the C/H's best figure against the
 # O-ring family's WORST member. Measured on quads, the family runs 37.74 (the
-# committed gridpro_rings), 17.81 with --even-sectors, and 11.39 for
+# committed gridpro_rings), 17.81 with --even-sectors, and 8.88 for
 # gridpro_tworing -- and the ruler that ranks them, total wall-normal turning,
 # is the one section 28 spent a whole section ADDING to the C/H on purpose,
 # because GridPro's own lines curve outward. Section 29a is that argument with

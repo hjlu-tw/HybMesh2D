@@ -3215,7 +3215,12 @@ against the C/H's 6.9". Both halves of that are wrong — the member, and the ru
 route reopened the fan turns out to **beat** the C/H in the solve at matched cell count. This
 section is that, built and measured.
 
-Everything here is measured on QUADS (`MB_SPLIT_QUADS 0`). That matters and §29a says why.
+Everything here is measured on QUADS (`MB_SPLIT_QUADS 0`). That matters and §29a says why — and
+**every `.dat` this section ships carries `MB_SPLIT_QUADS 1`**, because that is what the solver
+needs and gate 2 is run on the same files. So `./run.sh -conf gridpro_quilt.dat` as written
+reproduces the cell counts and the non-orthogonality but NOT one turning or sector figure here;
+flip that key to 0 first, which is the same instruction `gridpro_rings.dat`'s own header has
+carried since §9. Stated once, for all six.
 
 ### 29a. The closure compared the family's WORST member, on a ruler §28 argues the other way **[V]**
 
@@ -3275,8 +3280,11 @@ own end corners reach (125.12 deg)"*. And **more rings is strongly worse**, whic
 finding reaching this family: at `--split 8 --even-sectors` the median turning runs 17.81 (2 rings)
 → 29.98 (3) → 56.65 (4) with p95 37.19 → 137.91 → 223.36 and the mean non-orthogonality 5.958 →
 9.254 → 9.964. **§29f WITHDRAWS that as a general claim**: it holds at `--split 8` with the default
-arc radials and not at `--split 12` with `--linear-rings`, where three rings reach 45.703 / 7.328 —
-better on the worst corner than two — and three is an optimum rather than a ceiling. `--linear-rings` is **inert at two rings** — identical to six decimals — because it
+arc radials and not at `--split 12` with `--linear-rings`, where three rings reach 46.346 / 7.369 at the
+two-ring quilt's own 8664 cells — better on the worst corner than its 47.030 — and three is an
+optimum rather than a ceiling. (The 45.703 / 7.328 in 29f's flag table is the same case at the
+generator's default 9488 cells, and quoting THAT against 47.030 is the cross-count comparison
+§27f forbids.) `--linear-rings` is **inert at two rings** — identical to six decimals — because it
 only governs rings 2..N-1 and there are none.
 
 ### 29c. THE BIG WEDGES ARE ALL DOWNSTREAM, and lifting §9d's cap breaks the mesh **[V]**
@@ -3285,7 +3293,7 @@ only governs rings 2..N-1 and there are none.
 of the sectors a circle is cut into. N(r) cannot see this — 24 even sectors and 4 wedges plus 20
 slivers give the same count — and max/min is the figure, 1 being a perfect quilt.
 
-| max/min about (1, 0) | r = 1.5 | r = 2 | r = 2.5 |
+| max/min **about (1, 0)**, the far-field circle's own centre | r = 1.5 | r = 2 | r = 2.5 |
 |---|---------|-------|---------|
 | quilt | **22.78** | **12.30** | **14.27** |
 | control | 41.47 | 36.15 | 30.67 |
@@ -3320,15 +3328,17 @@ wedge for 1.9° of worst corner and 1.9° of mean. It is NOT shipped as the quil
 result is measured on the equal-bisection case, and a knob that costs the mean is a choice.
 
 The figure is `docs/research/gridpro-blocking-method/quilt_vs_control.png` (regenerate:
-`python3 docs/research/gridpro-blocking-method/plot_quilt_vs_control.py <quilt quads> <control
-quads> <out.png>`). Both panels of each case fill the blocks by colour and draw the partition
+`python3 docs/research/gridpro-blocking-method/plot_quilt_vs_control.py "<label>=<quilt quads>"
+"<label>=<control quads>" <out.png>`; the label is required and the block and cell counts are
+appended from the mesh). Both panels of each case fill the blocks by colour and draw the partition
 heavy over a greyed grid, because the complaint is about the PARTITION — drawing the grid alone is
 how that question got dropped once already (§24).
 
 **And beside GridPro's own ring fan, at a matched frame:**
 `docs/research/gridpro-blocking-method/quilt_vs_gridpro.png` (regenerate:
-`plot_quilt_vs_gridpro.py <img12.webp> <quilt quads> <out.png>`; the vendor image is not
-committed). The panel is the MIDDLE one of `img12.webp` — the only published GridPro figure
+`plot_quilt_vs_gridpro.py --topo <that case's .json> <img12.webp> <quilt quads> <out.png>`; the
+vendor image is not committed, and `--topo` is what makes the caption's ring and sector counts
+derived rather than absent). The panel is the MIDDLE one of `img12.webp` — the only published GridPro figure
 showing a single aerofoil inside a radial fan cut into concentric bands, which is what this
 section's quilt is. Its separators re-derive by row brightness at y = 350..357 and 706..713,
 reproducing the committed reading of 350..359 / 706..717.
@@ -3394,7 +3404,14 @@ meshes this section compares differ by 0.3% and §27f's lesson is satisfied with
 At `--split 12` the knobs that make a third ring work are `--linear-rings` and the radial
 construction, and 29f has the control that separates them:
 
-| three rings, `--split 12 --even-sectors` | inverted | non-ortho max | mean | turning median |
+**These four rows are at the generator's DEFAULT `--per-layer`, which is 9488 cells, not the 8664
+the rest of this section compares at.** They are a comparison of four FLAG SETS against each other
+and are sound as that; the figure to carry into any comparison with the two-ring quilt is the
+matched one below, **46.346 at 8664**. §29b quotes 45.703 against the two-ring 47.030 and those are
+9488 against 8664 — the cross-cell-count comparison §27f exists to forbid, committed here by the
+same section that states the rule.
+
+| three rings, `--split 12 --even-sectors`, 9488 cells | inverted | non-ortho max | mean | turning median |
 |---|----------|---------------|------|----------------|
 | plain (arcs, geometric rings) | 0 | 54.339 | 9.205 | 31.37 |
 | `--linear-rings` | 0 | 49.442 | 7.699 | 26.52 |
@@ -3419,12 +3436,23 @@ held fixed before the third ring can be priced at all.
 | non-ortho mean | 6.259 | 7.369 | 7.702 | **2.284** |
 | turning median | 18.84 | 21.33 | 26.38 | **1.76** |
 | turning, by quarter | 3.4/5.7/4.8/4.8 | 9.1/0.2/13.6/0.0 | 4.8/6.7/10.2/9.0 | 1.4/0.0/0.0/0.0 |
-| sector width max/min, r = 1.5 / 2 / 2.5 | 7.58 / 9.68 / 11.45 | **3.54** / 4.53 / 7.65 | 4.97 / **4.54** / **4.61** | 31.26 / 45.71 / 39.06 |
+| sector width max/min **about (0.5, 0)**, r = 1.5 / 2 / 2.5 | 7.58 / 9.68 / 11.45 | **3.54** / 4.53 / 7.65 | 4.97 / **4.54** / **4.61** | 31.26 / 45.71 / 39.06 |
 
-**The third ring delivers what §29c could not.** The far field is 1.5–2.1× more uniform at every
-radius than the two-ring quilt and 7–9× more uniform than the C/H, and the arc variant is the only
-mesh here whose uniformity does not DECAY outward — 4.97 / 4.54 / 4.61 against the chord variant's
-3.54 / 4.53 / 7.65. That is the "quilt" the complaint asked for, measured.
+**The third ring delivers what §29c could not — and this row's CENTRE is not 29c's, which the
+first draft of it did not say.** 29c measures about **(1, 0)**, the far-field circle's own centre;
+this row measures about **(0.5, 0)**, the generator's default and the wrap ellipse's centre. Both
+are stated now, and the comparison holds either way but by different factors:
+
+| arc 3-ring against | about (0.5, 0) | about (1, 0) |
+|---|----------------|--------------|
+| the two-ring quilt | 1.52× / 2.13× / 2.48× more uniform | 1.16× / 1.24× / 2.11× |
+| the C/H control | 6.29× / 10.07× / 8.47× | 2.11× / 3.65× / 4.54× |
+
+So the honest statement is **1.5–2.5× more uniform than the two-ring quilt and 6.3–10.1× more
+uniform than the C/H about (0.5, 0)**, and 1.2–2.1× / 2.1–4.5× about (1, 0) — not the "1.5–2.1×"
+and "7–9×" this paragraph first claimed, neither of which is either column. The arc variant is
+also the only mesh here whose uniformity does not DECAY outward — 4.97 / 4.54 / 4.61 against the
+chord variant's 3.54 / 4.53 / 7.65. That is the "quilt" the complaint asked for, measured.
 
 **And the two radial constructions are a real trade, visible in the profile.** Chord radials put
 all the turning at the wall and at the ring-2 crossing and run dead straight in between

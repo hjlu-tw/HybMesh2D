@@ -35,6 +35,7 @@ x 24 sectors, 54 blocks" into the caption as a literal and then drew the
 THREE-ring mesh under it unchanged -- which is the figure class this repo keeps
 finding, a caption that does not read its own input.
 """
+import argparse
 import os
 import re
 import sys
@@ -73,7 +74,12 @@ def panels(src):
     cuts.append((cur[0], cur[-1]))
     print("panel separators re-derived at", cuts)
     a = [2] + [c[1] + 1 for c in cuts] + [im.height - 8]
-    return [im.crop((0, a[i], im.width, a[i + 1])) for i in range(len(a) - 1)], cuts
+    panes = [im.crop((0, a[i], im.width, a[i + 1])) for i in range(len(a) - 1)]
+    if len(panes) < 3:
+        raise SystemExit("%s split into %d panels, not the 3 img12.webp has: the "
+                         "separator rows were not found, so this is a different "
+                         "image or a different crop of it" % (src, len(panes)))
+    return panes
 
 
 def ours(ax, pts, cells, blocks, seam, half, centre, grid_lw, aspect_h):
@@ -107,14 +113,16 @@ def topo_counts(path):
 
 
 def main():
-    if "--topo" in sys.argv:
-        i = sys.argv.index("--topo")
-        topo = sys.argv[i + 1]
-        del sys.argv[i:i + 2]
-    else:
-        topo = None
-    src, vtk, out = sys.argv[1], sys.argv[2], sys.argv[3]
-    pan, _ = panels(src)
+    ap = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("src", help="the vendor image (img12.webp), NOT committed")
+    ap.add_argument("vtk", help="our mesh, exported as QUADS")
+    ap.add_argument("out")
+    ap.add_argument("--topo", help="that case's topology .json; its header is where "
+                                   "the caption's ring and sector counts come from")
+    a = ap.parse_args()
+    src, vtk, out, topo = a.src, a.vtk, a.out, a.topo
+    pan = panels(src)
     ring, nose = pan[1], pan[2]
     pts, cells, blocks = read_vtk(vtk)
     seam = seam_edges(pts, cells, blocks)
@@ -155,7 +163,7 @@ def main():
                 fontsize=12.2, va="bottom")
 
     fig.text(0.024, 0.074,
-             "(a1) 讀到約三圈同心帶、每圈約 20–24 個扇段，外緣在離體約 1.5 個弦長處接上較粗的外場。"
+             "(a1) 讀到三到五圈同心帶、每圈約 20–24 個扇段，外緣在離體約 1.5 個弦長處接上較粗的外場。"
              + ring_note + "圈數與扇段數取自拓撲文件自己的檔頭，block 數取自網格自己的 block 欄位，都不是寫死的。",
              color=SEC, fontsize=10.6, va="top", wrap=True)
     fig.text(0.024, 0.030,

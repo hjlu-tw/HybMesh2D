@@ -65,8 +65,13 @@ def main():
     left, right, out = sys.argv[1], sys.argv[2], sys.argv[3]
     pair = []
     for spec in (left, right):
-        label, _, path = spec.rpartition("=")
-        pair.append((path or label, label if path else os.path.basename(spec)))
+        # rpartition on a bare path returns ("", "", spec), so taking `label`
+        # as the name gave an EMPTY caption and made this fallback unreachable
+        if "=" in spec:
+            label, _, path = spec.rpartition("=")
+        else:
+            label, path = os.path.basename(spec).replace(".vtk", ""), spec
+        pair.append((path, label))
     fig = plt.figure(figsize=(13.4, 7.4), facecolor="#fcfcfb")
     fig.text(0.024, 0.962, "§29：兩個 block 分區並排，格數配對",
              color=INK, fontsize=15.5, va="top")
@@ -78,6 +83,10 @@ def main():
         seam = seam_edges(pts, cells, blocks)
         name = "%s（%d blocks，%d cells）" % (name, len(set(blocks)), len(cells))
         g = sector_gaps(pts, seam, np.array([0.5, 0.0]), 2.0)
+        if len(g) < 2:
+            raise SystemExit("%s: a circle of r = 2 about (0.5, 0) crosses fewer "
+                             "than two block boundaries, so there are no sector "
+                             "widths to report -- is this a block-field mesh?" % path)
         for row, (win, lw) in enumerate(((NEAR, 0.35), (WHOLE, 0.16))):
             ax = fig.add_axes([0.024 + col * 0.495, 0.455 - row * 0.405,
                                0.455, 0.345])

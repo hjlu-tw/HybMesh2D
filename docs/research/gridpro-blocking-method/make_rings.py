@@ -50,9 +50,10 @@ DS_SURF = 0.005                 # the shipped C-grid's surface clustering
 N_AROUND = 96                   # intervals around the whole body
 N_WALL = 33                     # nodes across the WALL ring (body -> ring 1)
 N_OUT_TOTAL = 24                # intervals from ring 1 out to the circle, in all
-BL_FIRST = 0.001                # the run's BL_INITIAL_THICKNESS, which the wall
-                                # law takes; stated here only so --match-ring1
-                                # can apply the feasibility bound itself
+# The run's BL_INITIAL_THICKNESS, which the wall law takes. It is DUPLICATED
+# from the .dat and nothing checks the two agree, so --match-ring1 asserts it
+# against the .dat it is about to be used with rather than trusting this line.
+BL_FIRST = 0.001
 MATCH_RING1 = False
 N_WAKE = 17                     # nodes along the trailing-edge fan's angular side
 
@@ -692,6 +693,45 @@ def build(split, nrings, nrays, fan_deg=None):
     wall = {"wall_ends": "start"}
     nout = PER_LAYER if PER_LAYER else max(1, N_OUT_TOTAL // max(1, nrings - 1))
 
+    def _check_bl_first():
+        """Refuse if BL_FIRST disagrees with a .dat beside this generator.
+
+        --match-ring1's feasibility bound is arithmetic ON the first cell height,
+        so a .dat edited to a different BL_INITIAL_THICKNESS makes the bound
+        silently wrong rather than visibly so.
+
+        THE FIRST VERSION OF THIS WAS INERT and an injection is what found it:
+        setting BL_FIRST to 0.002 produced no refusal, because it globbed the
+        GEOMETRY directory (whose .dat files carry coordinates, not config keys)
+        and `break` left the file loop after the first one. It now reads the
+        configs beside this script, all of them, and the injection reddens.
+        """
+        here = os.path.dirname(os.path.abspath(__file__))
+        seen = []
+        for name in sorted(os.listdir(here)):
+            if not name.endswith(".dat"):
+                continue
+            for ln in open(os.path.join(here, name)):
+                if not ln.strip().startswith("BL_INITIAL_THICKNESS"):
+                    continue
+                try:
+                    v = float(ln.split()[1])
+                except (IndexError, ValueError):
+                    continue
+                seen.append((name, v))
+                if abs(v - BL_FIRST) > 1e-12:
+                    raise SystemExit(
+                        "--match-ring1's feasibility bound is arithmetic on the first "
+                        "cell height and make_rings.py has BL_FIRST = %g, but %s "
+                        "declares BL_INITIAL_THICKNESS %g. Change BL_FIRST to match, "
+                        "or the bound is wrong." % (BL_FIRST, name, v))
+        if not seen:
+            raise SystemExit(
+                "--match-ring1 needs the run's BL_INITIAL_THICKNESS and no .dat "
+                "beside make_rings.py declares one, so BL_FIRST = %g cannot be "
+                "checked against anything. Refusing rather than assuming it."
+                % BL_FIRST)
+
     def wall_spacing(st, inner):
         """The wall radial's law at station ``st``, whose inner end is ``inner``.
 
@@ -715,13 +755,18 @@ def build(split, nrings, nrays, fan_deg=None):
         """
         if not MATCH_RING1:
             return wall
+        _check_bl_first()
         a, b = t.pos[inner], t.pos["R1_" + st]
         lw = math.hypot(b[0] - a[0], b[1] - a[1])
         c = t.pos["R%d_%s" % (min(2, nrings), st)]
         lo = math.hypot(c[0] - b[0], c[1] - b[1]) / max(1, nout)
         if lw <= 0 or lo <= 0:
             return wall
-        # the coarsest ds_end the count can carry beside a BL-height first cell
+        # The coarsest ds_end the count can carry beside a BL-height first cell.
+        # N_WALL is the count the RAY radials declare; the le/u/l radials take
+        # theirs by propagation from that same class, so it is the right number
+        # for all of them -- but it is an assumption about the propagation and
+        # not a reading of it, and nothing here checks the class did not split.
         lim = lw / (1.0 + (N_WALL - 2) ** 2 / max(1e-12, lw / BL_FIRST - 1.0))
         return {"wall_ends": "start", "ds_end": round(min(lo, lim), 10)}
 

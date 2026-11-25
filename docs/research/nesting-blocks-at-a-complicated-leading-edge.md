@@ -1630,9 +1630,11 @@ in the immediate neighbourhood of a fold**, and that is box 2 answered without a
 valence-3 nodes of its own, completes 100 iterations and its dumped Mach field stays within
 0.0008 to 0.2547. The conjunction survives and is now sharp — **a fold diverges on an aerofoil and
 does not on a circle** — and box 3, whether the solver's reconstruction admits an interior node of
-valence 3 at all, cannot be answered from this repo because the solver is a binary. **16o answers
-one half of that question in the negative**: the difference is not the local shape of the fold,
-because a circle fold built worse than this one on all three measured quantities still passes.
+valence 3 at all, cannot be answered from this repo because the solver is a binary — and **16o
+does NOT answer any part of box 3**, which the first draft of this sentence claimed. 16o's evidence
+is fold GEOMETRY, which is box 2's subject; what it settles is that the difference is not the local
+shape of the fold, because a circle fold built worse than this one on all three measured quantities
+still passes. Box 3 stays unanswerable here for the reason above.
 
 ### 16o. THE FOLD'S OWN NEIGHBOURHOOD IS EXONERATED — a circle fold made WORSE than the one beside the divergence still passes **[V]**
 
@@ -1694,8 +1696,12 @@ that fold now shown not to be the difference.
 node on a block side has three, so the ranking in point 1 came back "370th" out of four hundred
 and something boundary nodes rather than ninth of twelve, and the figure looked like the opposite
 finding. Interior means every incident edge is shared by two cells; the harness now says so in its
-docstring, beside the second trap — that a triangulated export has no irregular nodes at all,
-because splitting adds a diagonal at every one of them.
+docstring, beside the second trap — that on a triangulated export this reads the TRIANGULATION's
+valence, not the mesh's. **Not "no irregular nodes": DOUBLED ones.** Splitting adds a diagonal at
+every node, so `reducing_ogrid_badfold`'s four folds come back at valence 6, its four apexes at 10,
+and all 3856 of its regular nodes at 8 — 3864 "irregular" nodes where the quad mesh has 8. The
+first version of this paragraph said the triangulated export has none, which is the opposite of
+what it has and would send the next reader looking for the wrong thing.
 
 ### 16f. What this supersedes, and what it does not
 
