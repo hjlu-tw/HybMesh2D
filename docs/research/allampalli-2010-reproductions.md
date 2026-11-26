@@ -303,12 +303,30 @@ Nothing refused any of these documents. What they cost is that all four are **ge
 in this directory** — 70 and 98 blocks, 154 and 218 edges — and the shipped topology families
 (`services/topology_*`: square, cavity, H-grid, O-grid, C-grid) emit none of them.
 
-- **Proposal: a `rosette + H` family.** Its parameters are exactly `make_airfoil.py`'s: the body,
-  the number of shells and how far the last one reaches, the inner rectangle, and the column and
-  row cuts of the H. That one family covers Figs. 5.1, 5.3, 5.17 and 6.1–6.3 — six of the eight
-  targets — and the pre-flight question it has to answer (*can this body be offset the requested
-  distance without self-intersection?*) is `.claude/rules/gui-preflight.md`'s shape. Note that
-  `gui-topology.md` is near its budget, so this would land as its own rule file.
+- ~~**Proposal: a `rosette + H` family.** Its parameters are exactly `make_airfoil.py`'s: the
+  body, the number of shells and how far the last one reaches, …~~ **HALF OF THAT PROPOSAL WAS
+  ILLEGAL AND I HAD NOT CHECKED. [V]** `.claude/rules/gui-topology.md` rules that a family writes
+  no geometry, because a `follows` edge resolves to a stretch of a stored POLYLINE and a generated
+  one would be a written file with no stable-id scheme — which is exactly why the two-ring family
+  REFUSES rather than offsetting the body for you. So "the number of shells and how far the last
+  one reaches" cannot be a family's to generate: every intermediate ring stays the user's, made
+  with **CAD ▸ Offset Geometry…**.
+
+  **What re-reading that rule found is that it is NARROWER than its own slogan**, and the narrow
+  version left something worth building: the line is *a generated thing cannot be a stored
+  polyline*, and since #175 an edge may declare the **curve it is**, with no file anywhere. An
+  outer boundary is on the legal side of it — where the C-grid has been since #149.
+
+  **SHIPPED INSTEAD (#197):** the O-grid's far field is now optionally drawn and GENERATED as one
+  ellipse when it is blank, so a body alone is enough. The rule is
+  `.claude/rules/gui-generated-boundary.md` (the nineteenth), the rationale
+  `docs/design_notes/gui.md` ("A FAR FIELD NOBODY DREW"), the gate
+  `tests/test_topology_ogrid.py` group 18. **Measured there: not drawing the far field costs
+  nothing** — 15.292° against 15.292° on the same body, because a generated side is an exact
+  ellipse where a drawn one is a stored polyline and so contributes no faceting of its own; on the
+  shipped circle it measures 3.09° with the wall held to 0.05%. **The H far field of Fig. 5.1 is
+  still not a family**: a rectangle's four corners need block corners at each, which needs the H,
+  which is a different family.
 
 ### 5.5 A SHARP TRAILING EDGE IS WHERE AN O-RING IS WORST, AND THIS REPO ALREADY SHIPS THE CURE **[V]**
 
