@@ -321,12 +321,21 @@ in this directory** — 70 and 98 blocks, 154 and 218 edges — and the shipped 
   ellipse when it is blank, so a body alone is enough. The rule is
   `.claude/rules/gui-generated-boundary.md` (the nineteenth), the rationale
   `docs/design_notes/gui.md` ("A FAR FIELD NOBODY DREW"), the gate
-  `tests/test_topology_ogrid.py` group 18. **Measured there: not drawing the far field costs
-  nothing** — 15.292° against 15.292° on the same body, because a generated side is an exact
-  ellipse where a drawn one is a stored polyline and so contributes no faceting of its own; on the
-  shipped circle it measures 3.09° with the wall held to 0.05%. **The H far field of Fig. 5.1 is
-  still not a family**: a rectangle's four corners need block corners at each, which needs the H,
-  which is a different family.
+  `tests/test_topology_ogrid.py` group 18. **Measured there on TWO bodies, because one of them
+  cannot fail**: on a round one the generated and drawn paths agree to six decimals (15.292°
+  against 15.292°), and on a NACA 0012 — where they can differ — **14.85° against 14.76**. The
+  first version placed each outer corner along the ray through its body corner, which is right on
+  a circle and put seven of a thin body's first eight outer corners inside the first 10% of the
+  ellipse (mean 33.58°); it pairs ARC-LENGTH FRACTIONS now, the drawn path's own rule. On the
+  shipped circle the generated path measures **3.09°** with the wall held to 0.05%.
+
+  **WHAT IT DOES NOT DO IS REPLACE §3's REPRODUCTION, and the aerofoil is where that shows.**
+  A ring from an aerofoil to a circle is the wrong construction whatever bounds it: 24 blocks
+  from one geometry gives **mean 33.58° before the fix and 14.85 after**, against the
+  hand-written rosette + H's **5.07°** on the same section — and the worst cell is the same
+  81.7° trailing edge in all of them. The one-geometry path is excellent on a bluff body and
+  structurally mismatched on a thin one. **The H far field of Fig. 5.1 is still not a family**:
+  a rectangle's four corners need block corners at each, which needs the H.
 
 ### 5.5 A SHARP TRAILING EDGE IS WHERE AN O-RING IS WORST, AND THIS REPO ALREADY SHIPS THE CURE **[V]**
 

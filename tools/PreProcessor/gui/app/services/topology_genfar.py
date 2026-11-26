@@ -24,6 +24,9 @@ same trade the C-grid's generated hexagon makes, and the reason the drawn path s
 A mesh wanting an inlet and an outlet on different parts of its outer boundary still
 has to draw one.
 
+WHERE THE CORNERS GO IS ARC LENGTH, NOT A RAY FAN, and that is this module's one
+measured decision -- see :func:`ring_corners`.
+
 WHY AN ELLIPSE AND NOT A RECTANGLE. A rectangle has four corners, and a ring's outer
 corners are placed one per block: unless the blocking happens to put a corner at each
 of the four, some block side would cut across one and the far field would be a polygon
@@ -92,78 +95,85 @@ def axes(radius: float, ratio: float, aspect: float) -> tuple[float, float]:
     return far_r / math.sqrt(asp), far_r * math.sqrt(asp)
 
 
-def ray_point(centre, a: float, b: float, through) -> tuple[float, float] | None:
-    """Where the ray from ``centre`` through ``through`` meets the ellipse.
+def _arc_table(a: float, b: float, n: int = 20000):
+    """``(parameters, cumulative arc length)`` around the ellipse, for inverting it.
 
-    EXACTLY on the ellipse, which is the requirement and not a nicety: the mesher
-    inverse-maps a curve edge's two corners onto the curve and REFUSES one that is off
-    it by more than 1e-9 of the larger semi-axis (`MB_CURVE_ON_TOL`). Solving the ray
-    rather than sampling a parameter is what makes that exact — the scale factor below
-    is the positive root of ``(s*dx/a)^2 + (s*dy/b)^2 = 1``.
-
-    ``None`` when the point IS the centre, which carries no direction. The caller
-    refuses that as a body whose outline passes through its own centroid.
+    An ellipse's arc length has no elementary inverse, so it is tabulated and
+    bisected. ``n`` is fixed rather than adaptive because the table is only used to
+    pick a PARAMETER: the point itself is then computed from that parameter exactly
+    (see :func:`ring_corners`), so the sampling decides where a corner sits along
+    the curve and never whether it is ON it. An earlier draft interpolated between
+    two samples instead and put a corner 1.07e-8 off the ellipse, which the
+    mesher's own 1e-9-relative bar refused — correctly.
     """
-    dx, dy = through[0] - centre[0], through[1] - centre[1]
-    q = (dx / a) ** 2 + (dy / b) ** 2 if a > 0.0 and b > 0.0 else 0.0
-    if q <= 0.0:
-        return None
-    s = 1.0 / math.sqrt(q)
-    return (centre[0] + s * dx, centre[1] + s * dy)
+    th = [2.0 * math.pi * k / n for k in range(n + 1)]
+    cum = [0.0]
+    for k in range(n):
+        x0, y0 = a * math.cos(th[k]), b * math.sin(th[k])
+        x1, y1 = a * math.cos(th[k + 1]), b * math.sin(th[k + 1])
+        cum.append(cum[-1] + math.hypot(x1 - x0, y1 - y0))
+    return th, cum
 
 
-def star_problem(centre, ring, ccw: bool) -> str:
-    """Why a ray fan from ``centre`` through ``ring`` would cross itself, or "".
+def _theta_at(th, cum, f: float) -> float:
+    """The ellipse parameter at arc-length fraction ``f`` of its perimeter."""
+    s = (f % 1.0) * cum[-1]
+    lo, hi = 0, len(cum) - 1
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        if cum[mid] <= s:
+            lo = mid
+        else:
+            hi = mid
+    d = cum[hi] - cum[lo]
+    u = 0.0 if d <= 0.0 else (s - cum[lo]) / d
+    return th[lo] + u * (th[hi] - th[lo])
 
-    THE ONE THING A GENERATED FAR FIELD CANNOT DO FOR THE USER. Every outer corner is
-    placed along the ray from the body's centroid through its own body corner, so the
-    radial edges cannot cross exactly when those rays leave the centre in the order the
-    ring runs — which is to say when the body is STAR-SHAPED about its own centroid at
-    the corners it was cut at. A body with a deep enough notch is not, and the mesher's
-    answer to the mesh that results is a fold, reported as an inverted cell count with
-    no sentence about why.
 
-    MEASURED AT THE CORNERS AND NOT OVER THE WHOLE OUTLINE, deliberately: what the fan
-    is made of is the corners, so an outline that dips back between two of them still
-    produces a legal fan. Over-refusing here would turn a working aerofoil into an
-    error, since a cambered section's lower surface is not star-shaped about the area
-    centroid everywhere while its block corners are.
+def ring_corners(centre, a: float, b: float, body_xy, ccw: bool) -> list:
+    """Where the generated far field's corners go, one per body corner.
 
-    The sentence names the two corners that are out of order and their ring positions,
-    because "your body is not star-shaped" is a property the user cannot see and "the
-    outer corner for block 7 would land behind block 6's" is a place they can look.
+    **BY ARC LENGTH, PAIRED WITH THE BODY's OWN**, which is the rule the DRAWN path
+    has always used: there a far-field outline is cut into equal-arc splits that
+    pair one to one with the body's, and the generated path now says the same thing
+    about a curve instead of about a polyline. The ring is anchored by the ray
+    through body corner 0, so the fan still "starts" where the body does, and then
+    advances by arc length in the ring's own direction.
+
+    **THIS REPLACED A RAY FAN FROM THE CENTROID, AND THE MEASUREMENT IS WHY.** Ray
+    casting is right on a round body — where the two rules agree — and wrong on a
+    thin one, because most of an aerofoil's surface is nearly parallel to the rays
+    through it: on a NACA 0012 at 24 blocks the first SEVEN outer corners landed in
+    the first 10% of the ellipse while their body partners were evenly spaced 4.2%
+    apart. Mean non-orthogonality **33.58 deg** against a drawn far field's 14.76 on
+    the same circle at the same counts; by arc length it is **14.84**, which is that
+    drawn number to the drawn circle's own faceting. The first version of this
+    module shipped the ray rule and claimed "not drawing the far field costs
+    nothing" on the evidence of a CIRCLE, where the claim cannot fail.
+
+    **AND IT RETIRES A REFUSAL RATHER THAN NEEDING ONE.** A ray fan can cross itself
+    on a body that is not star-shaped about its centroid, which cost a check and a
+    sentence the user could not act on. Two monotone orderings around two nested
+    closed curves cannot cross, so there is nothing left to refuse here.
     """
-    if len(ring) < 3:
-        return ""
-    angs = []
-    for x, y in ring:
-        dx, dy = x - centre[0], y - centre[1]
-        if dx == 0.0 and dy == 0.0:
-            return ("the body's outline passes through its own centroid, so the ray "
-                    "that would place one of the generated far-field corners has no "
-                    "direction. Draw the far field yourself, or cut the body "
-                    "elsewhere.")
-        angs.append(math.atan2(dy, dx))
-    # Unwrap in the ring's OWN direction, so one full turn is the whole loop. A corner
-    # that does not advance has fallen behind the one before it.
-    step = 1.0 if ccw else -1.0
-    total = 0.0
-    for k in range(len(angs)):
-        d = angs[(k + 1) % len(angs)] - angs[k]
-        while d * step <= -math.pi:
-            d += step * 2.0 * math.pi
-        while d * step > math.pi:
-            d -= step * 2.0 * math.pi
-        if d * step <= 0.0:
-            return (f"the generated far field places each outer corner along the ray "
-                    f"from the body's centroid through its own corner, and ring "
-                    f"position {k} does not advance past position "
-                    f"{(k + 1) % len(angs)} — so those two radial edges would cross. "
-                    f"The body is not star-shaped about its centroid at the corners "
-                    f"it is cut at. Cut it into more segments, or draw the far field "
-                    f"yourself.")
-        total += d
-    return ""
+    th, cum = _arc_table(a, b)
+    acc, total = [0.0], 0.0
+    for k in range(len(body_xy)):
+        x0, y0 = body_xy[k]
+        x1, y1 = body_xy[(k + 1) % len(body_xy)]
+        total += math.hypot(x1 - x0, y1 - y0)
+        acc.append(total)
+    if total <= 0.0:
+        return []
+    f0 = (math.atan2((body_xy[0][1] - centre[1]) / b,
+                     (body_xy[0][0] - centre[0]) / a) % (2.0 * math.pi)) \
+        / (2.0 * math.pi)
+    sgn = 1.0 if ccw else -1.0
+    out = []
+    for k in range(len(body_xy)):
+        t = _theta_at(th, cum, f0 + sgn * acc[k] / total)
+        out.append((centre[0] + a * math.cos(t), centre[1] + b * math.sin(t)))
+    return out
 
 
 def outside_body(centre, a: float, b: float, g) -> str:
@@ -219,20 +229,28 @@ def derive(plan, ratio: float, aspect: float, body) -> str:
 
 
 def fan_problem(plan, body, ring_points) -> str:
-    """The two questions only the GENERATED path has to ask, in one call.
+    """The ONE question only the GENERATED path has to ask: does the ellipse
+    contain the body.
 
-    Containment first and the fan second, because a body poking through its far
-    field is the one the user is more likely to have made and the one whose fix
-    (raise the size) is a number they can see.
+    It was two until the corner placement became arc length rather than a ray fan
+    (see :func:`ring_corners`): a fan could cross itself on a body that is not
+    star-shaped about its centroid, and two monotone orderings cannot. The
+    signature keeps ``ring_points`` so the caller is unchanged and so a future
+    question about the ring has somewhere to go.
     """
-    why = outside_body(plan.far_centre, plan.far_a, plan.far_b, body)
-    return why or star_problem(plan.far_centre, ring_points, plan.ccw)
+    del ring_points
+    return outside_body(plan.far_centre, plan.far_a, plan.far_b, body)
 
 
-def corner(plan, cid: str, through) -> dict:
-    """One generated far-field corner, as a FREE corner on the ellipse."""
-    xy = ray_point(plan.far_centre, plan.far_a, plan.far_b, through)
-    return {"id": cid, "kind": "free", "xy": [xy[0], xy[1]]}
+def corners(plan, ids, body_xy) -> list:
+    """The generated far field's corners, as FREE corners on the ellipse.
+
+    ALL OF THEM AT ONCE, because where one goes is a property of the RING and not
+    of its own body corner -- which is the whole content of the change
+    :func:`ring_corners` records.
+    """
+    xy = ring_corners(plan.far_centre, plan.far_a, plan.far_b, body_xy, plan.ccw)
+    return [{"id": i, "kind": "free", "xy": [p[0], p[1]]} for i, p in zip(ids, xy)]
 
 
 def edge(plan, eid: str, a: str, b: str) -> dict:

@@ -821,6 +821,99 @@ if True:
     else:
         print("SKIP 18g. %s not built" % _BIN)
 
+# ── 18h. THE SAME CLAIM ON A THIN BODY, WHICH IS WHERE IT CAN FAIL ─────────
+#
+# 18g measures "not drawing the far field costs nothing" on a CIRCLE, and on a
+# circle the claim cannot fail: the two ways of placing an outer corner — along the
+# ray through its body corner, and at the same arc-length fraction as it — AGREE
+# there. #197 shipped the ray rule on that evidence. On a NACA 0012 at 24 blocks
+# the first SEVEN outer corners landed in the first 10% of the ellipse while their
+# body partners were evenly spaced 4.2% apart, and the mesh came out at mean 33.58
+# deg against a drawn far field's 14.76 on the same circle at the same counts.
+#
+# THE FIXTURE IS A THIN BODY AND THE CONTROL IS A DRAWN FAR FIELD, for the reason
+# 18g gives: a constant would measure the fixture. What is asserted is that the two
+# paths AGREE to the drawn circle's own faceting — not a threshold.
+if os.path.exists(_BIN):
+    import json as _json18
+    import math as _math18
+
+    _af = os.path.join(_REPO, "examples", "geometries", "naca0012_cgrid.dat")
+    # A far field with the SAME segment count as the aerofoil, so the drawn path
+    # can pair with it one to one. 400 points per half: fine enough that its own
+    # faceting is not what this check measures.
+    _cx, _rr, _n18 = 0.4179, 10.0, 400
+    _segs18 = [[(_cx + _rr * _math18.cos(_math18.pi * k / _n18),
+                 _rr * _math18.sin(_math18.pi * k / _n18)) for k in range(_n18 + 1)],
+               [(_cx + _rr * _math18.cos(_math18.pi + _math18.pi * k / _n18),
+                 _rr * _math18.sin(_math18.pi + _math18.pi * k / _n18))
+                for k in range(_n18 + 1)]]
+    _pts18, _rows18 = [], []
+    for _sid, _seg in enumerate(_segs18):
+        for _j, _pt in enumerate(_seg[:-1]):
+            _pts18.append(_pt)
+            _rows18.append((_sid, 1 if _j == 0 else 0))
+    _pts18.append(_pts18[0])
+    _rows18.append((0, 1))
+    _far18 = os.path.join(_T, "far2.dat")
+    with open(_far18, "w", encoding="utf-8") as _f:
+        _f.write("".join("%.12f %.12f\n" % _p for _p in _pts18))
+    with open(_far18 + ".meta", "w", encoding="utf-8") as _f:
+        _f.write("HYBMESH_META 2\nCOUNT %d\nNPIECES 0\nNSEGMENTS 2\n" % len(_pts18)
+                 + "0 farfield line\n1 farfield line\nPOINTS %d\n" % len(_pts18)
+                 + "".join("%d %d\n" % _r for _r in _rows18))
+
+    _ctx18 = tb.context_for_config(Cfg([_af, _far18], first_cell=1.5e-3))
+
+    def _thin(fg):
+        return tm.TopologyModel(family=og.FAMILY, ogrid_body_geom=_af,
+                                ogrid_far_geom=fg, ogrid_splits=12,
+                                ogrid_cell=0.012, ogrid_far_ratio=62.0)
+
+    _d18 = tempfile.mkdtemp(prefix="ogrid_thin_")
+
+    def _run18(tag, doc, geoms):
+        jp = os.path.join(_d18, tag + ".json")
+        with open(jp, "w", encoding="utf-8") as f:
+            _json18.dump(doc, f)
+        conf = ("MESH_MODE 1\nMESH_TOPOLOGY_FILE %s\n" % jp
+                + "".join("GEOM_FILE %s\n" % os.path.abspath(g) for g in geoms)
+                + "BL_INITIAL_THICKNESS 0.0015\nMB_SPLIT_QUADS 0\n"
+                  "MB_SMOOTH_ITERS 0\nBC_GEOM farfield\nEXPORT_VTK 1\n"
+                  "EXPORT_STARCD 0\nOUTPUT_FILENAME %s/%s.vtk\n" % (_d18, tag))
+        cp = os.path.join(_d18, tag + ".dat")
+        with open(cp, "w", encoding="utf-8") as f:
+            f.write(conf)
+        env = dict(os.environ)
+        env["HYBMESH_MB_QUALITY"] = "1"
+        r = subprocess.run([_BIN, "-conf", cp], capture_output=True, text=True,
+                           env=env, timeout=900)
+        out = r.stdout + r.stderr
+        inv = re.search(r"Inverted cells\s*:\s*(\d+) of", out)
+        mean = re.search(r"Non-orthogonality\s*:\s*max [0-9.]+ deg, mean ([0-9.]+)", out)
+        return (r.returncode, int(inv.group(1)) if inv else -1,
+                float(mean.group(1)) if mean else -1.0)
+
+    _pg = og.plan(_thin(""), _ctx18)
+    _pd = og.plan(_thin(_far18), _ctx18)
+    check(f"18h. the thin-body fixture plans both ways (generated {_pg.problem!r}, "
+          f"drawn {_pd.problem!r})", not _pg.problem and not _pd.problem)
+    if not _pg.problem and not _pd.problem:
+        _rg, _ig, _mg = _run18("gen", og.build(_thin(""), _ctx18), [_af])
+        _rd, _id, _md = _run18("drawn", og.build(_thin(_far18), _ctx18),
+                               [_af, _far18])
+        check(f"18h. both mesh on the thin body (generated exit {_rg}/{_ig} "
+              f"inverted, drawn exit {_rd}/{_id})",
+              _rg == 0 and _ig == 0 and _rd == 0 and _id == 0)
+        check(f"18h. ...and the generated far field AGREES with the drawn one on a "
+              f"THIN body too: mean non-orthogonality {_mg:.2f} deg against "
+              f"{_md:.2f}. The ray fan #197 first shipped read 33.58 here while "
+              f"18g's circle, where the two placements coincide, said it cost "
+              f"nothing — this is that claim asserted where it can fail",
+              0.0 < _mg <= _md * 1.10)
+else:
+    print("SKIP 18h. %s not built" % _BIN)
+
 print()
 if failures:
     print(f"FAILED {len(failures)} check(s)")

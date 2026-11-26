@@ -510,10 +510,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    19 rule files now — 59,992 / 59,780 / 59,600 / 59,523 / 56,802 / 56,405 / 41,250 / 37,516 / 30,991 / 25,539 / 23,846 / 23,361 / 22,126 / 20,568 / 16,993 / 16,710 / 15,762 / 8,969 / 8,004  characters (gui-topology, gui-handoff, mesher, mesher-multiblock, mesher-smoothing, pipeline-case, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, mesher-block-side, gui-canvas-edit, gui-apply, gui-evidence, mesher-spacing, gui-preflight, gui-results, gui-lifecycle, gui-generated-boundary) — so "moving text into another rule file
+    19 rule files now — 59,992 / 59,780 / 59,600 / 59,523 / 56,802 / 56,405 / 41,250 / 37,516 / 30,991 / 25,539 / 23,846 / 23,361 / 22,126 / 20,568 / 16,993 / 16,710 / 15,762 / 9,379 / 8,969  characters (gui-topology, gui-handoff, mesher, mesher-multiblock, mesher-smoothing, pipeline-case, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, mesher-block-side, gui-canvas-edit, gui-apply, gui-evidence, mesher-spacing, gui-preflight, gui-results, gui-generated-boundary, gui-lifecycle) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 8 / 220 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    17, which have 400 / 477 / 3,198 / 3,595 / 18,750 / 22,484 / 29,009 / 34,461 / 36,154 / 36,639 / 37,874 / 39,432 / 43,007 / 43,290 / 44,238 / 51,031 / 51,996. #76 spent 3,446 of
+    17, which have 400 / 477 / 3,198 / 3,595 / 18,750 / 22,484 / 29,009 / 34,461 / 36,154 / 36,639 / 37,874 / 39,432 / 43,007 / 43,290 / 44,238 / 50,621 / 51,031. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a

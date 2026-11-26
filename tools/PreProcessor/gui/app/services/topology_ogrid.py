@@ -380,6 +380,12 @@ def build(model, ctx=None) -> dict:
     n = len(body_ring)
 
     corners, edges, blocks = [], [], []
+    # THE GENERATED CORNERS ARE PLACED AS A RING, not one at a time: where one goes
+    # is an arc-length fraction of the WHOLE ellipse paired with the same fraction
+    # of the whole body, which is the rule the drawn path has always used.
+    gen_far = [] if p.far_bound else genfar.corners(
+        p, [f"f{k}" for k in range(n)],
+        [body.spans[s].point_at(t) for s, t in body_ring])
     for k in range(n):
         bs, bt = body_ring[k]
         corners.append({"id": f"b{k}", "kind": "on_geometry",
@@ -394,8 +400,7 @@ def build(model, ctx=None) -> dict:
             # the mesher inverse-maps a curve edge's corners onto the curve and
             # refuses one that is off by more than 1e-9 of the larger semi-axis.
             # `plan` has already refused the two cases that make this None.
-            corners.append(genfar.corner(p, f"f{k}",
-                                         body.spans[bs].point_at(bt)))
+            corners.append(gen_far[k])
 
     for k in range(n):
         # The radials are ONE equivalence class that wraps around and closes, so only

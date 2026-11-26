@@ -3750,6 +3750,42 @@ is on the body either way, and a generated side is an exact ellipse where a draw
 polyline, so it contributes no faceting of its own. On the shipped 40-per-quarter circle the
 generated path measures **3.09°** with the wall held to 0.05%.
 
+**AND THEN THE HEADLINE WAS WRONG — corrected the same day, by drawing an aerofoil with it.**
+The sentence above, *not drawing the far field costs nothing*, was measured on a CIRCLE, and on
+a circle it cannot fail: the two ways of placing an outer corner — along the RAY through its
+body corner, and at the same ARC-LENGTH FRACTION as it — give the same answer there. #197
+shipped the ray rule on that evidence, and the gate that was supposed to hold the claim (18g,
+generated against drawn on the same body) agreed to six decimals, because both of its paths were
+on the round fixture.
+
+**ON A NACA 0012 THE TWO RULES ARE NOT THE SAME, AND THE PRINTED FRACTIONS SAY WHY.** At 24
+blocks the body's corners are evenly spaced by arc length — 0.000, 0.042, 0.084, … — while the
+ray rule put their partners at 0.000, 0.004, 0.008, 0.015, 0.026, 0.046, 0.098, 0.277: **seven of
+the first eight outer corners inside the first 10% of the ellipse.** Most of an aerofoil's
+surface is nearly parallel to the rays through it. Measured on the same circle at the same
+counts: **mean non-orthogonality 33.58° for the ray fan against 14.76 for a DRAWN far field**,
+and **14.84 once the corners are placed by arc length** — the drawn figure to the drawn circle's
+own faceting.
+
+**THE FIX IS THE DRAWN PATH'S OWN RULE, SAID ABOUT A CURVE.** A drawn far field is cut into
+equal-arc splits that pair one to one with the body's; the generated one now pairs arc-length
+FRACTIONS with the ellipse instead of ray directions, anchored by the ray through body corner 0
+so the fan still starts where the body does. **It also retired a refusal**: a ray fan can cross
+itself on a body that is not star-shaped about its centroid, and two monotone orderings around
+two nested closed curves cannot — so the check, and a sentence the user could not act on, are
+gone rather than kept.
+
+**WHAT THE GATE LEARNED IS THE TRANSFERABLE PART.** 18g was not wrong, it was *unfalsifiable on
+its own fixture*. 18h is the same comparison on a THIN body with a drawn far field of the same
+two segments, and the ray fan is its injection: restoring it reddens 18h and nothing else. A
+claim of the form "X costs nothing" needs a fixture on which X could cost something, and a round
+body is not one for anything that depends on where a corner sits around a ring.
+
+**ONE MEASURED NEGATIVE BESIDE IT.** The far field's `aspect` looks like the knob that would
+rescue a ring on a thin body and is not: on the same aerofoil, stretching the ellipse takes the
+mean from 33.58° to 57.97 and the wall from 0.12% to 14.69 as aspect goes 1.00 → 0.12,
+monotonically. It is for a body that is itself elongated, not a repair for the construction.
+
 **AND IT COST A WIDGET DECISION THAT LOOKS LIKE A DETAIL AND IS NOT.** The two generated-path
 numbers went in as `sci`, which is this repo's widget for a PHYSICAL LENGTH — and `sci` is what
 `case_type_scale.LENGTH_KIND` is keyed on, so the scale gate demanded a judgement and the only

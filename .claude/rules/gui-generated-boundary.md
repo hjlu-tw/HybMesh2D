@@ -67,35 +67,46 @@ NOT** (#197; `services/topology_genfar.py` + the generated branch of
   keyed on, so calling a dimensionless number a length there would ask a case type to
   rescale a ratio into another drawing. Gate: `tests/test_case_type_scale.py` check 7,
   both directions.
-- **THREE REFUSALS THE DRAWN PATH NEVER NEEDS, each naming what the user can change:**
+- **WHERE AN OUTER CORNER GOES IS ARC LENGTH, PAIRED WITH THE BODY's OWN — NOT A RAY FAN
+  FROM THE CENTROID.** It is the rule the DRAWN path has always used (equal-arc splits
+  pairing one to one), said about a curve instead of about a polyline, and the ring is
+  anchored by the ray through body corner 0 so the fan still starts where the body does.
+  **#197 SHIPPED THE RAY FAN FIRST AND IT WAS WRONG ON A THIN BODY**: on a NACA 0012 at 24
+  blocks the first SEVEN outer corners landed in the first 10% of the ellipse while their
+  body partners were evenly spaced 4.2% apart, for a mean non-orthogonality of **33.58°**
+  against a drawn far field's **14.76** on the same circle at the same counts. By arc
+  length it is **14.84**, which is that drawn figure to the drawn circle's own faceting.
+  **The two rules AGREE on a round body**, which is why the first evidence could not see
+  it. Gate: 18h, with the ray fan as its injection.
+- **THAT CHANGE RETIRED A REFUSAL RATHER THAN NEEDING ONE.** A ray fan can cross itself on
+  a body that is not star-shaped about its centroid, which cost a check and a sentence the
+  user could not act on ("your body is not star-shaped"). Two monotone orderings around two
+  nested closed curves cannot cross, so there is nothing left to refuse. **Do not
+  reintroduce a fan check**: if one is ever needed again, the placement rule has changed
+  and that is the thing to argue about.
+- **TWO REFUSALS THE DRAWN PATH NEVER NEEDS, each naming what the user can change:**
   1. **a size under `MIN_RATIO`** (1.5 body radii) — below it the ring is a sliver the
      mesher fills with folded cells rather than refusing;
   2. **CONTAINMENT, walked over the body's OWN POINTS** and never compared against an
      equivalent radius. That is #165's ruler mistake, and the 4.0 × 0.2 body it was
      measured on is this gate's fixture too: its equivalent radius is 0.505, so a far
      field at 1.5 "radii" is an ellipse of radius 0.76 and the body reaches x = ±2
-     straight through it;
-  3. **THE FAN** — every outer corner is placed along the ray from the body's centroid
-     through its own corner, so the radials cannot cross exactly when the body is
-     STAR-SHAPED about that centroid **at the corners it is cut at**. Measured at the
-     corners and not over the whole outline, deliberately: a cambered section's lower
-     surface is not star-shaped everywhere while its block corners are, and over-refusing
-     would turn a working aerofoil into an error. The sentence names the two ring
-     positions that are out of order, because "your body is not star-shaped" is a property
-     the user cannot see.
+     straight through it.
 - **NAMING A FAR FIELD PUTS THE FAMILY BACK ON THE DRAWN PATH, DOCUMENT FOR DOCUMENT**,
   and the two generated rows go INERT through `Plan.inert_rows` — the C-grid's mechanism
   and its direction: a row is inert because of what the user CONFIGURED, never because of
   what they typed into it. Gate: 18f, which is what makes the rest of group 18
   non-vacuous.
-- **THE COST IS MEASURED AGAINST THE DRAWN PATH AND NOT AGAINST A CONSTANT.** Gate 18g
-  runs both on the SAME body: a constant there would measure the FIXTURE, whose ten points
-  per segment are worth 15° of non-orthogonality on their own (#93's residue). Measured,
-  the two are **equal to six decimals** — the worst cell is on the body in both, and a
-  generated side is an exact ellipse where a drawn one is a stored polyline, so it has no
-  faceting of its own to contribute.
-- Gated by `tests/test_topology_ogrid.py` group 18 (18, 18b, 18c, 18d, 18f, 18g), with the
-  drawn path's own checks unchanged beside it.
+- **THE COST IS MEASURED AGAINST THE DRAWN PATH, NOT AGAINST A CONSTANT, AND ON TWO BODIES
+  BECAUSE ONE OF THEM CANNOT FAIL.** Gate 18g runs both paths on the same ROUND body — a
+  constant there would measure the FIXTURE, whose ten points per segment are worth 15° on
+  their own (#93's residue) — and they come back **equal to six decimals**. That is true
+  and it is not evidence: the two corner-placement rules coincide on a circle. **18h is the
+  check that can fail**, the same comparison on a NACA 0012 with a drawn far field of the
+  same two segments: **14.85° against 14.76**, where the rule that shipped first read
+  33.58. Quote 18h, never 18g alone.
+- Gated by `tests/test_topology_ogrid.py` group 18 (18, 18b, 18c, 18d, 18f, 18g, 18h), with
+  the drawn path's own checks unchanged beside it.
   Why: `docs/design_notes/gui.md`, "A FAR FIELD NOBODY DREW".
 
 ## Named blind spots
@@ -107,10 +118,14 @@ NOT** (#197; `services/topology_genfar.py` + the generated branch of
   the field-spec row records. Measured as an injection in #197's own round: it came back
   GREEN. What #197 did instead was move the two rows OFF `sci` entirely, so the question
   is not asked of them — which fixes these two and not the shape.
-- **THE FAN TEST IS AT THE CORNERS, SO A BODY THAT DIPS BACK BETWEEN TWO OF THEM PASSES.**
-  Deliberate (see the rule), and the failure it leaves reachable is the mesher's own: a
-  fold, reported as an inverted-cell count. No shipped case reaches it, and nothing
-  measures how deep a dip would have to be.
+- **THE ARC-LENGTH RULE IGNORES THE BODY's SHAPE, AND NOTHING MEASURES WHERE THAT IS
+  WRONG.** It pairs fractions and nothing else, so a body with one long flat and one tiny
+  nose gives most of the ellipse to the flat. That is what the drawn path does too, and
+  what the two shipped bodies want; a body for which it is the wrong answer would show up
+  as a poor mesh and no message. The knob that would answer it is the far field's
+  `aspect`, and that one is MEASURED NOT TO HELP: stretching the ellipse on an aerofoil
+  takes the mean from 33.58° to 57.97 and the wall from 0.12% to 14.69 (ratio 62, aspect
+  1.00 → 0.12), so it is for a body that is itself elongated and not a repair for a ring.
 - **NO SHIPPED `config/multiblock_*.dat` USES THE GENERATED PATH.** Every shipped
   document was hand-written before this family existed, so the only coverage is the gate's
   own run through the real mesher. A shipped case would also be the first to exercise the
