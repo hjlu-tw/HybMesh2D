@@ -152,6 +152,40 @@ None of these is proposed here. This note measures; what to do is a ticket's dec
 
 ---
 
+## 4b. The partition, drawn the way the quilt sections draw one **[V]**
+
+`our-cgrid-vs-gridpro/partition.png` (regenerate with
+`our-cgrid-vs-gridpro/plot_cgrid_partition.py`, whose docstring carries the two-run recipe and
+the restore line). The convention is borrowed unchanged from
+`gridpro-blocking-method/plot_quilt_vs_gridpro.py` — **block fill by colour, the grid pale, the
+partition heavy** — which is GridPro's own convention in its published figures. Every number in
+the caption is derived from the mesh: 4 blocks, 5,760 quads as 960 + 1,920 + 1,920 + 960, 144
+seam edges, and each panel's span from the point bounds.
+
+**Two things had to be done differently, and both are stated in the script rather than left to
+be noticed.** The partition is measured by `seam_edges`, which by its own contract skips any
+cell that is not a quad — so against the shipped triangles it returns **zero** seam edges and
+would draw a mesh with no partition at all. The figure therefore comes from a second run with
+`MB_SPLIT_QUADS 0`, the diagnostic the config banner itself names, and that run **overwrites the
+shipped mesh**, so the recipe restores it. And `tab20` is strided by two: it is ten colour pairs,
+a saturated member then a pale one, which is harmless for a 54-to-82-block quilt and exactly
+wrong for four blocks, where the upper and lower wall blocks would read as one block lit
+differently.
+
+**What the drawing shows that the earlier renders did not.** Stripped to the partition, this
+mesh's entire block structure is **a cross**: one horizontal cut along y = 0 (the stagnation line
+forward of the body, the wake cut aft of it) and one vertical cut at x = 1 (the trailing-edge
+radial), each running the full depth of the domain. Four quadrants, three straight lines. **[V]**
+Nothing in the partition follows the body, and nothing changes between one chord and nineteen.
+Put beside the sample set's aerofoil partitions — entry 36's blocks wrapping the nose, entry 72's
+O-grid inside an H-grid, entry 6's 97 — the comparison is not about resolution at all, which is
+where Section 1's agreement sits. **It is that those meshes spend blocks on the geometry and this
+one spends them on the two cuts a C-grid needs to exist.** **[I]**
+
+Whether that is a deficiency or an economy is not settled here. Four blocks reaching 0 inverted
+cells and a 1.003 median seam jump is not an obviously bad trade, and the census found no
+published GridPro aerofoil whose block count is as low as four to compare the trade against.
+
 ## 5. What the comparison does not establish
 
 1. **One case, one mesher setting.** `config/multiblock_cgrid.dat` as shipped, with
