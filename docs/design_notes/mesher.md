@@ -6344,6 +6344,47 @@ that aerofoil adds 3840, and 89.4% of them inside one chord against the chain ca
 per step 4 no reduction leaves `docs/research/`, no topology family emits a corner block, and the
 one reducing mesh that passed gate 2 is a research document.
 
+**ONE REDUCTION SHIPS — #196, 2026-11-26, and it is #192 step 4 REVERSED on purpose.** That step
+decided no reduction would leave `docs/research/`, and the rule it produced carried its own blind
+spot: *"Do not read 'the device exists' as 'the capability is available.'"* The research document
+could say the device works; it could not say the device still works, which is what a shipped case
+and a gate are for.
+
+**WHAT SHIPS IS THE SMALLER CLAIM, DELIBERATELY.** `config/multiblock_reducing.dat` +
+`examples/topology/reducing_ogrid.json` — the EMBEDDED reducing O-grid, 36 blocks on the shipped
+circle geometries, body 192 intervals against far field 96, 0 inverted, worst non-orthogonality
+**53.576 deg against the plain four-block O-grid's 2.025 on the SAME two circles**. The sentence
+after "the device exists" is unchanged: no topology family emits a corner block, the reducing
+C-grid still goes to NaN, and the angle is why a reduction is a judgement and not a default. The
+config's own header prints the four-row comparison so a reader meets the price before the
+capability.
+
+**THE GATE HOLDS THE PART A RESEARCH DOCUMENT CANNOT**
+(`tools/PreProcessor/tests/test_multiblock_reducing_surface.py`), and the check that carries it is
+not the quality line:
+
+  * **The reduction is counted off the EXPORTED `.vrt`** — 192 nodes on the body circle against 96
+    on the far field — **with the plain O-grid on the same circles as the control, at 96 and 96**.
+    A declaration that reduced on paper and not in the mesh passes every other check in the file.
+    The count is a BAND and not an equality, because a wall node is placed by arc length along the
+    STORED polyline and sits inside the true circle by that facet's sagitta: counting `|p| == r`
+    returns 32 of the body's 192, which is the first thing this check got wrong.
+  * **The off-valence nodes are read off the UNSPLIT export.** Four valence 3 at the folds and four
+    valence 5 at the apexes, all INTERIOR. On the shipped split mesh a regular node sits in six
+    cells rather than four, so a valence counted there measures the diagonal rule and not the
+    blocking — which is the second thing this check got wrong, and both were found by the numbers
+    coming back as 32 and 0 rather than by review.
+  * **The committed document is compared against `build()`**, the ONE generator, imported from
+    `docs/research/gridpro-blocking-method/`. The shipped document is generated; a hand edit to it
+    is a document nothing reproduces.
+
+**AND IT COST A RE-BAND.** The ninth run command and its paragraph took `CLAUDE.md` from 557
+characters of slack to 150 — inside its budget, outside the band — so `ROOT_BUDGET` moved to
+54,000 on check 8's own printed arithmetic. Nothing was trimmed to avoid it, on #191's grounds: the
+entry names the case, the number that makes it worth shipping, the device that buys it and the
+angle it costs, and **a reduction quoted without its price is exactly the half-claim the blind spot
+above spent itself refusing.**
+
 **THE INJECTION ROUND IS WHERE THE WORK WAS**, and two of its three findings are about injections
 rather than about the code. IR1 — a fresh node per edge end instead of the shared declared corner —
 is INERT as an injection into check 66: it reddens 35 checks from group 1 onward and then segfaults

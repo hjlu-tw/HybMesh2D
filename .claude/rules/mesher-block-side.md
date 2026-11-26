@@ -184,12 +184,34 @@ is this file's.
       does its own no-corner-block CONTROL at the same iteration, so that is the construction and
       not the device. On the C-grid the reduction adds 2688 quads where every other way of putting
       97 nodes on that aerofoil adds 3840.
-    - **NOTHING IS SHIPPED.** No shipped case carries a corner block, no topology family emits
-      one, and the best worst cell measured anywhere is 53.6 degrees off orthogonal against a
-      plain O-grid's 2.02. The documents and the generators are
-      `docs/research/gridpro-blocking-method/make_reducing_annulus.py`, `make_reducing_cgrid.py`
-      and `bin_added_cells.py`; each committed document carries the command that wrote it in its
-      own header. **Do not read "the device exists" as "the capability is available."**
+    - ~~**NOTHING IS SHIPPED.**~~ **ONE CASE SHIPS SINCE #196**, and the rest of that
+      sentence survives unchanged because it was the part that mattered:
+      `config/multiblock_reducing.dat` + `examples/topology/reducing_ogrid.json` is the
+      EMBEDDED reducing O-grid on the shipped circle geometries — 36 blocks, 4 corner
+      blocks, body 192 intervals against far field 96, 0 inverted — and its worst cell is
+      still **53.576 degrees off orthogonal against a plain O-grid's 2.025 on the same two
+      circles**. **Do not read "the device exists" as "the capability is available"**: what
+      ships is one case and a gate, not a family. No topology family emits a corner block,
+      `make_reducing_cgrid.py`'s C-grid still goes to NaN, and the angle is why a reduction
+      is a judgement rather than a default.
+      - **THE DOCUMENT IS GENERATED AND THE GATE RE-DERIVES IT.**
+        `docs/research/gridpro-blocking-method/make_reducing_annulus.py` is still the ONE
+        generator — the shipped document is the same `build()` output under `examples/`, and
+        `tools/PreProcessor/tests/test_multiblock_reducing_surface.py` check 1 compares what
+        is committed against what that function returns. A hand edit to the shipped
+        document is caught there.
+      - **WHAT THE GATE MEASURES IS THAT THE REDUCTION IS REAL IN THE MESH**, counted off
+        the exported `.vrt`: 192 nodes on the body circle against 96 on the far field, with
+        the plain O-grid on the SAME circles as the control at 96 and 96. A declaration that
+        reduced on paper and not in the export would pass every other check in the file.
+        It also pins the eight off-valence nodes as INTERIOR (four valence 3 at the folds,
+        four valence 5 at the apexes), read off the UNSPLIT export because on the split mesh
+        a valence measures the diagonal rule; conformity; and the refusal when one of the
+        four radial classes is seeded, asserted on the SHIPPED document with three seeds
+        removed rather than on a fixture.
+      - **IT IS IN THE GOLDEN SET** (`mb_reducing`, 24 cases now) and is driven by
+        `test_multiblock_smooth_surface.py` group 13, where it is the only arrangement whose
+        shared edges END at a valence-3 node.
     - **SUPERSEDES #192 step 1's cost model**, which this file carried until this rule replaced
       it: a reduction is not one line per irregular node, because the lines a corner block removes
       TURN inside it rather than ending at its nodes.

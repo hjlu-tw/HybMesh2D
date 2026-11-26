@@ -84,6 +84,7 @@ import test_multiblock_binding_surface as mbb         # noqa: E402
 import test_multiblock_ogrid_surface as mbo          # noqa: E402
 import test_multiblock_cgrid_surface as mbc          # noqa: E402
 import test_multiblock_cgrid_chain_surface as mbcc   # noqa: E402
+import test_multiblock_reducing_surface as mbrd      # noqa: E402
 import test_multiblock_tworing_surface as mbt       # noqa: E402
 import test_multiblock_tworing_offset_surface as mbto  # noqa: E402
 import test_multiblock_curve_surface as mbcv       # noqa: E402
@@ -411,6 +412,19 @@ CASES = {
     #     `mb_tworing_curve` is as well: every shipped `config/multiblock_*.dat`
     #     is a case in this table, and nothing enforces that.
     "mb_cgrid_chain": _shipped_multiblock(mbcc),
+    #   mb_reducing (#196): the ONLY case here whose node count FALLS going
+    #     outward -- 192 intervals on the body against 96 on the far field,
+    #     through four corners each shared by THREE blocks. What a regression
+    #     would move, and which of the three files would say so: a corner block
+    #     resolved with both radials reaching the outer ring restores the count
+    #     and ADDS 96 nodes to the `.vrt`; an apex allocated twice instead of once
+    #     leaves two coincident nodes that the `.vtk` renders identically and the
+    #     `.cel` connectivity does not; and a reducing ring that started exporting
+    #     its interior arcs would add faces to the `.bnd` while leaving every
+    #     coordinate untouched. It is also here for the second reason the two
+    #     above it are: every shipped `config/multiblock_*.dat` is a case in this
+    #     table, and nothing enforces that.
+    "mb_reducing": _shipped_multiblock(mbrd),
     "mb_random": _multiblock(17, 13,
                              extra="MB_SPLIT_RULE 3\nMB_SPLIT_SEED 20260903\n"),
 }

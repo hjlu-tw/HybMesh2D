@@ -535,6 +535,12 @@ CASES = (
      ("i_wake_up", "i_upper", "i_lower", "i_wake_lo",
       "o_wake_up", "o_nose_up_aft", "o_nose_up_fwd",
       "o_nose_lo_fwd", "o_nose_lo_aft", "o_wake_lo")),
+    # #196. The FIRST shipped case whose node count FALLS going outward, and the
+    # only one with a corner shared by three blocks. 36 blocks is 12 in the
+    # reducing ring (4 corner + 8 ordinary) plus an ordinary body ring and far
+    # ring of 12 each, which is what puts both off-valence nodes INSIDE the mesh.
+    ("reducing", "multiblock_reducing",
+     ('Q0_0', 'Q0_1', 'C0', 'Q1_0', 'Q1_1', 'C1', 'Q2_0', 'Q2_1', 'C2', 'Q3_0', 'Q3_1', 'C3', 'B0', 'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'F0', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7')),
     ("tworing", "multiblock_tworing",
      ("q0", "q1", "q2", "q3", "p0", "p1", "p2", "p3")),
     ("tworing_offset", "multiblock_tworing_offset",
@@ -570,6 +576,15 @@ PINS = {
     # azimuthal spacing — while the median and p95 are LOWER, which is one half of
     # what splitting the ring bought and is recorded in
     # `test_multiblock_tworing_surface.py` check 9 beside the half it cost.
+    # #196. THE WORST SHAPE OF ANY SHIPPED CASE'S WALL BAND, and that is the
+    # trade this case exists to show rather than a defect: a corner block tapers
+    # from two inner arcs to a single apex, so the cells either side of its two
+    # radials are the most stretched in the family. 16.42 against the plain
+    # O-grid's 32.77 is still the better number of the two, because the O-grid's
+    # worst is its 1e-3 wall cell against a 0.033 arc and this ring's wall is
+    # reached through 24 nodes rather than 12.
+    "reducing": {"cells": 7872, "median": 1.549256, "p95": 11.393981,
+                 "max": 16.422289},
     "tworing": {"cells": 4608, "median": 1.685363, "p95": 21.128734,
                 "max": 32.767047},
     # Measured 2026-09-30 (#154). The same eight blocks on a 2:1 ELLIPSE, so its
@@ -619,6 +634,11 @@ BAND_PINS = {
     # clustering is at its seam end, not at a wall, so the walk has nothing to
     # follow there. That is the two-ring case's own statement of what the band
     # means, and it is why its bulk is larger than the O-grid's at the same budget.
+    # #196. 2984 of 7872 — the widest wall band in the family as a FRACTION
+    # (37.9% against the O-grid's 50.0% of a smaller mesh), because the body ring
+    # that embeds the reducing ring is 24 nodes deep where the plain O-grid's is
+    # 48, so the walk following the clustering stops sooner.
+    "reducing": (2984, 4888),
     "tworing": (2208, 2400),
     # #154. An even 2304/2304 where the circle's two rings split 2208/2400: the
     # ellipse's inner ring is a CONSTANT thickness, so the band's walk reaches the
@@ -663,6 +683,12 @@ SEAM_PINS = {
     # every sweep count: its four radials are one equivalence class that wraps, so
     # the blocks either side of each are the same shape by construction.
     "ogrid": (192, 8928),
+    # #196. 60 interior lines — the most of any shipped case — over 36 blocks,
+    # and 944 pairs across them. The fraction (944 of 15600) is small for that
+    # many seams because most of them are SHORT: a corner block's two radials are
+    # 12 intervals each, where the two embedding rings' seams run the whole way
+    # round.
+    "reducing": (944, 14656),
     # The C-grid's three radial interfaces and its wake cut.
     "cgrid": (144, 11216),
     # #191. Thirteen interior lines against the C-grid's four, and 408 pairs

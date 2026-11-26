@@ -24,7 +24,7 @@ own them rather than composed here — the same rule the golden comparator follo
 these files are documentation a user runs, and an edit to one has to be visible
 from a gate.
 
-SINCE #114 GROUP 13 ALSO DRIVES THE OTHER SEVEN — every shipped multi-block config
+SINCE #114 GROUP 13 ALSO DRIVES THE OTHER EIGHT — every shipped multi-block config
 this file does not import a ``base_config`` for, so all of them are exercised for the
 wall warning's floor. That group ENUMERATES them from ``config/`` rather than from a
 list, which is what caught #153's two-ring O-grid arriving as a sixth. They enter
@@ -1589,7 +1589,8 @@ def main() -> int:
         driven = ["multiblock_cavity", "multiblock_cgrid",
                   "multiblock_cgrid_chain", "multiblock_curve_placeholder",
                   "multiblock_hgrid",
-                  "multiblock_ogrid", "multiblock_square", "multiblock_tworing",
+                  "multiblock_ogrid", "multiblock_reducing",
+                  "multiblock_square", "multiblock_tworing",
                   "multiblock_tworing_curve", "multiblock_tworing_offset"]
         driven.remove("multiblock_curve_placeholder")
         check(f"13. the shipped multi-block configs are exactly the ones this file "
@@ -1637,13 +1638,35 @@ def main() -> int:
         # count and nothing else in this file would notice.
         cfg_cgrid_chain = shipped_config("multiblock_cgrid_chain")
         rc_cc, cc, _ = run(tmp, "cc191", config=lambda: cfg_cgrid_chain)
-        check(f"13. all seven added configs EXIT 0 at the default cap, so the "
+        # #196's case is here for this group's own rule, and what it adds is the
+        # only arrangement in the tree where a shared edge ENDS at a node of
+        # valence 3. `mbSmoothPlan` builds its ghost layer only where two welded
+        # sides match station for station, and nothing else shipped puts three
+        # blocks around one point — so a change to that walk could leave an apex
+        # unghosted, or ghost it from the wrong neighbour, and no other case here
+        # would move.
+        cfg_reducing = shipped_config("multiblock_reducing")
+        rc_rd, rd, _ = run(tmp, "rd196", config=lambda: cfg_reducing)
+        check(f"13. all eight added configs EXIT 0 at the default cap, so the "
               f"banners the checks below parse describe a mesh that was actually "
               f"exported (square {rc_sq}, cavity {rc_cv}, hgrid {rc_hg}, tworing "
               f"{rc_tr}, tworing_offset {rc_to}, tworing_curve {rc_tc}, "
-              f"cgrid_chain {rc_cc})",
-              (rc_sq, rc_cv, rc_hg, rc_tr, rc_to, rc_tc, rc_cc)
-              == (0, 0, 0, 0, 0, 0, 0))
+              f"cgrid_chain {rc_cc}, reducing {rc_rd})",
+              (rc_sq, rc_cv, rc_hg, rc_tr, rc_to, rc_tc, rc_cc, rc_rd)
+              == (0, 0, 0, 0, 0, 0, 0, 0))
+        # THE REDUCING CASE'S OWN ARITHMETIC. Sixty shared edges, the most of any
+        # shipped document, and the count of their nodes that MOVE is what a
+        # change at the three-block corners would shift. Pinned as the number this
+        # run reports rather than derived: unlike the chain case above, the ghost
+        # walk's answer at an apex is not something this file can predict from the
+        # declaration, and saying so is better than a derivation that looks like
+        # one and is really the measurement written backwards.
+        rd_shared = [int(m) for m in re.findall(r"(\d+) shared nodes", rd)]
+        rd_sm = smooth_line(rd)
+        check(f"13. ...and the REDUCING case reports its 60 shared edges and a "
+              f"moved-shared count of 708 ({rd_sm.get('moved_shared')}, "
+              f"{len(rd_shared)} edges)",
+              len(rd_shared) == 60 and rd_sm.get("moved_shared") == 708)
         # THE CHAIN CASE'S FREEZE ARITHMETIC, stated as the sum rather than as a
         # number read off a run. Fifteen shared edges; the four chain members
         # declare the ellipse they ARE, so the freeze rule holds them and they

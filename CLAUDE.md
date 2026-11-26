@@ -22,8 +22,8 @@ its entry there.
 this file's size: Claude Code loads a `CLAUDE.md` of up to **4 MiB in full** and **skips** a larger
 one — no longer a figure carried in from documentation, but measured on this build in #61, where
 the loader's own `4194304`-byte limit and its `skipping <path>: … exceeds <N> byte limit` line were
-observed. The cost is therefore not truncation but **always-loaded context** — **52,943
-characters (53,253 bytes, 2026-11-11) ≈ 13k tokens**, paid by every session before it reads a line of
+observed. The cost is therefore not truncation but **always-loaded context** — **53,350
+characters (53,664 bytes, 2026-11-26) ≈ 13k tokens**, paid by every session before it reads a line of
 source, down from **149,141 characters (≈37k tokens)** before #62, the first relocation. That
 number decays on the next commit, and since #79 it and the other figures this file states about
 ITSELF are re-derived rather than trusted: `python3
@@ -32,7 +32,7 @@ FAILS on a stale one instead of shipping it — which until #79 took a human or 
 every time. The dated facts beside them (the 149,141 above, #75's lock below) are history, and are
 deliberately left alone. What stops the size itself
 decaying *silently* is that file, whose `ROOT_BUDGET` is
-**53,500**, leaving 557 characters of slack — derived by a rule the gate states at that
+**54,000**, leaving 650 characters of slack — derived by a rule the gate states at that
 constant's own definition, and stated there only (#78). **That shape is the rule, not the number**: never so
 tight that a typo fix must also edit the gate, never so loose that a feature can add 3k in
 silence, which is #59's user story 12 and is now held by an INJECTION in that gate rather than by
@@ -45,7 +45,7 @@ feature commit ever ran against it, and the file drifted 110 characters in total
 the missing guard, not damage done; #78 closed it. Before #75 it was a
 ratchet that TRACKED this file rather than only descending — over every commit touching the gate
 it fell 7 times and ROSE 8, the largest **+789** in #62's own review. **The unit is CHARACTERS**: the budget #59 states is in
-characters while `wc -c` reports bytes, and the two differ by 310 today because of the CJK in this
+characters while `wc -c` reports bytes, and the two differ by 314 today because of the CJK in this
 repo's own prose, so both numbers are given rather than one silently replacing the other. The 4 MiB loader
 limit above is in BYTES; a character budget is conservative against it either way, since a
 character is never fewer than one byte. The token count is characters/4 and is named rather than
@@ -304,6 +304,9 @@ Invoked by `cd`-ing in rather than with `--test-dir`, which needs CMake >= 3.20 
 ```bash
 ./run.sh -conf config/multiblock_cgrid_chain.dat  # -> examples/topology/cgrid_chain_naca0012.json
 ```
+```bash
+./run.sh -conf config/multiblock_reducing.dat  # -> examples/topology/reducing_ogrid.json
+```
 `MESH_MODE 1` fills a DECLARED block topology with structured quads and splits them
 to triangles; it uses Gmsh nowhere. The second case attaches its corners to a geometry by
 arc length and reads each wall's boundary condition off that geometry's source segments.
@@ -324,7 +327,11 @@ cannot express, and it is where #150's two halves meet. The same chain runs head
 The eighth is the fifth again with a CHAIN side — the ONE shipped document where a block side is
 an ordered LIST of edges — so its aerofoil carries 97 nodes against that case's 49 while every
 far-field edge keeps the number it has there; its rules are `.claude/rules/mesher-block-side.md`'s,
-and #191's own gate measures what a chain does NOT buy. The
+and #191's own gate measures what a chain does NOT buy. The ninth is the ONLY one whose node
+count FALLS going outward — 192 intervals on the body against 96 on the far field, through four
+corners each shared by THREE blocks — and it costs 53.6 deg of non-orthogonality against the
+fourth's 2.0 on the same two circles, which is a capability and not a quality.
+The
 rules for the other seven — "The multi-block path is ONE pure entry point", "Boundary conditions are
 DECLARED", "Blocks are welded TOPOLOGICALLY", "A circular O-GRID", "A four-block C-GRID",
 "A TWO-RING O-GRID", "A TWO-RING O-GRID WHOSE MIDDLE RING WAS COMPUTED",
