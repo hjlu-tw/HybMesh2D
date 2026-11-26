@@ -1006,6 +1006,11 @@ MODE_SPECS_WITHOUT_KEY = {
     "topo_ogrid_body_segs": "as topo_ogrid_body_geom",
     "topo_ogrid_far_geom": "as topo_ogrid_body_geom",
     "topo_ogrid_far_segs": "as topo_ogrid_body_geom",
+    # #197. The generated far field's two numbers. No mesher key for the same
+    # reason the rows above have none: the mesher never sees them, it sees the
+    # ellipse they produced.
+    "topo_ogrid_far_ratio": "as topo_ogrid_body_geom",
+    "topo_ogrid_far_aspect": "as topo_ogrid_body_geom",
     "topo_ogrid_splits": "as topo_ogrid_body_geom",
     "topo_ogrid_cell": "as topo_ogrid_body_geom",
     "topo_ogrid_radial_count": "as topo_ogrid_body_geom",

@@ -154,6 +154,7 @@ def check(msg, cond):
 # it would be a second `.meta` format, and the format is what the binding rule rests
 # on.
 from topology_outline_fixture import write_outline  # noqa: E402
+from app.services import topology_genfar as genfar  # noqa: E402
 
 
 class Cfg:
@@ -303,7 +304,11 @@ check(f"8c. ...so a 1e-3 first cell is about 33x flatter than 1:1, and 103 radia
 check(f"8d. ...and the read-out SHOWS that working rather than only its result — "
       f"the ratio's own expression, the two first cells and the factor between "
       f"them: {P.lines()!r}",
-      len(P.lines()) == 4
+      # FIVE SINCE #197, the extra line naming which of the two far-field paths
+      # is in force. Asserted as a count so a line going missing is a failure and
+      # not a silently shorter read-out.
+      len(P.lines()) == 5
+      and any("far field: DRAWN" in ln for ln in P.lines())
       and any("2π/96" in ln for ln in P.lines())
       and any("32.7" in ln for ln in P.lines())
       and any("BL_INITIAL_THICKNESS" in ln for ln in P.lines()))
@@ -640,6 +645,181 @@ else:
               "BL_INITIAL_THICKNESS, to the percentage the mesher itself reports "
               f"({wf.group(0) if wf else 'no row'})",
               bool(wf) and float(wf.group(1)) < 1.0)
+
+# ── 18. THE FAR FIELD IS OPTIONALLY DRAWN, AND GENERATED WHEN IT IS NOT (#197) ──
+#
+# The O-grid used to REFUSE a user who had drawn only a body: the far field was
+# required, and required to pair one to one with the body's segments. The C-grid has
+# generated its own since #149; this is that decision applied here, and these checks
+# hold the three things that makes true and the three refusals it needs.
+#
+# WHAT MAKES 18 NON-VACUOUS IS 18f: naming a far-field geometry must put the family
+# back on the drawn path EXACTLY as before, document for document. A generated path
+# that quietly took over would pass every other check in this group.
+if True:
+    import math as _math
+    import json as _json
+
+    body1, far1 = FIX["4seg"]
+    gen_ctx = tb.context_for_config(Cfg([body1]))
+
+    def gen_model(**kw):
+        kw.setdefault("ogrid_cell", 0.2)
+        kw.setdefault("ogrid_splits", 3)
+        return tm.TopologyModel(family=og.FAMILY, ogrid_body_geom=body1,
+                                ogrid_far_geom="", **kw)
+
+    p18 = og.plan(gen_model(), gen_ctx)
+    check(f"18. a model naming ONLY a body plans with no problem at all — which is "
+          f"the whole ticket: this used to be a refusal ({p18.problem!r})",
+          not p18.problem and not p18.far_bound)
+    doc18 = og.build(gen_model(), gen_ctx)
+    kinds = [c["kind"] for c in doc18["corners"]]
+    check(f"18. ...and its outer corners are FREE while its body corners stay "
+          f"ON_GEOMETRY, so nothing was invented about the user's CAD "
+          f"({sorted(set(kinds))})",
+          kinds.count("free") == kinds.count("on_geometry") == p18.blocks)
+    outer = [e for e in doc18["edges"] if e["id"].startswith("o")]
+    check(f"18. ...and every outer side IS the ellipse rather than a chord across "
+          f"it ({len(outer)} sides)",
+          len(outer) == p18.blocks
+          and all(e.get("curve", {}).get("kind") == "ellipse" for e in outer)
+          and not any("binding" in e for e in outer))
+    # EXACTLY on the curve, which is the mesher's own requirement and not a nicety:
+    # it inverse-maps a curve edge's corners and refuses one off by more than 1e-9
+    # of the larger semi-axis. Asserted at 1e-12, three orders inside that bar.
+    pos = {c["id"]: c["xy"] for c in doc18["corners"] if c["kind"] == "free"}
+    worst = max(abs(((x - p18.far_centre[0]) / p18.far_a) ** 2
+                    + ((y - p18.far_centre[1]) / p18.far_b) ** 2 - 1.0)
+                for x, y in pos.values())
+    check(f"18. ...and every one of those corners lies ON the ellipse to "
+          f"{worst:.2e}, against the mesher's own 1e-9 bar", worst < 1e-12)
+
+    # ── 18b. the size means the same thing at every aspect ──────────────────
+    circle = og.plan(gen_model(ogrid_far_ratio=8.0), gen_ctx)
+    squash = og.plan(gen_model(ogrid_far_ratio=8.0, ogrid_far_aspect=4.0), gen_ctx)
+    check(f"18b. 'size' is an EQUIVALENT radius, so stretching the far field does "
+          f"not move it: sqrt(a*b) is {_math.sqrt(circle.far_a * circle.far_b):.6g} "
+          f"at aspect 1 and {_math.sqrt(squash.far_a * squash.far_b):.6g} at aspect "
+          f"4, and the derived radial count is {circle.radial} either way",
+          abs(_math.sqrt(circle.far_a * circle.far_b)
+              - _math.sqrt(squash.far_a * squash.far_b)) < 1e-9
+          and circle.radial == squash.radial
+          and abs(squash.far_b / squash.far_a - 4.0) < 1e-9)
+
+    # ── 18c-18e. the three refusals the generated path needs ────────────────
+    low = og.plan(gen_model(ogrid_far_ratio=1.2), gen_ctx)
+    check(f"18c. a size under the floor is refused by name rather than meshed as a "
+          f"sliver ({low.problem[:60]!r})",
+          "Generated Far Field Size" in low.problem and str(genfar.MIN_RATIO) in low.problem)
+    check("18c. ...and so is a non-positive aspect",
+          "Aspect" in og.plan(gen_model(ogrid_far_aspect=0.0), gen_ctx).problem)
+
+    # A 4.0 x 0.2 slab: equivalent radius 0.505, so a far field at 1.5 "radii" is an
+    # ellipse of radius 0.76 and the body reaches x = +-2 straight through it. The
+    # SAME body #165 measured the drawn path's ruler mistake on.
+    # 4.0 x 0.2, written here rather than by widening the shared outline writer:
+    # every other fixture in this file is a circle or a square about the origin,
+    # and a scale knob on that writer would be a parameter with ONE caller.
+    slab = os.path.join(_T, "slab.dat")
+    _pts, _rows = [], []
+    for _sid, (_x0, _y0, _x1, _y1) in enumerate(
+            ((-2.0, -0.1, 2.0, -0.1), (2.0, -0.1, 2.0, 0.1),
+             (2.0, 0.1, -2.0, 0.1), (-2.0, 0.1, -2.0, -0.1))):
+        for _k in range(10):
+            _pts.append((_x0 + (_x1 - _x0) * _k / 10.0,
+                         _y0 + (_y1 - _y0) * _k / 10.0))
+            _rows.append((_sid, 1 if _k == 0 else 0))
+    _pts.append(_pts[0])
+    _rows.append((0, 1))
+    with open(slab, "w", encoding="utf-8") as _f:
+        _f.write("".join("%.12f %.12f\n" % _p for _p in _pts))
+    with open(slab + ".meta", "w", encoding="utf-8") as _f:
+        _f.write("HYBMESH_META 2\nCOUNT %d\nNPIECES 0\nNSEGMENTS 4\n" % len(_pts)
+                 + "".join("%d wall line\n" % _i for _i in range(4))
+                 + "POINTS %d\n" % len(_pts)
+                 + "".join("%d %d\n" % _r for _r in _rows))
+    slab_ctx = tb.context_for_config(Cfg([slab]))
+    out18 = og.plan(tm.TopologyModel(family=og.FAMILY, ogrid_body_geom=slab,
+                                     ogrid_far_geom="", ogrid_cell=0.2,
+                                     ogrid_splits=2, ogrid_far_ratio=1.5), slab_ctx)
+    check(f"18d. a long thin body is refused because the generated ellipse does not "
+          f"CONTAIN it — walked over the body's own points, not compared against an "
+          f"equivalent radius, which is the ruler mistake #165 measured on this very "
+          f"shape ({out18.problem[:70]!r})",
+          "does not contain the body" in out18.problem)
+    check("18d. ...and raising the size far enough clears it, so the refusal is "
+          "about the size and not about the shape",
+          not og.plan(tm.TopologyModel(family=og.FAMILY, ogrid_body_geom=slab,
+                                       ogrid_far_geom="", ogrid_cell=0.2,
+                                       ogrid_splits=2, ogrid_far_ratio=12.0),
+                      slab_ctx).problem)
+
+    # ── 18f. THE DRAWN PATH IS UNTOUCHED, document for document ─────────────
+    drawn_ctx = tb.context_for_config(Cfg([body1, far1]))
+    was = og.build(model(body1, far1, ogrid_splits=3), drawn_ctx)
+    now_plan = og.plan(model(body1, far1, ogrid_splits=3), drawn_ctx)
+    check("18f. naming a far-field geometry puts the family back on the DRAWN path "
+          "and its document is unchanged — the one outcome every other check in "
+          "this group would pass without",
+          now_plan.far_bound and all("binding" in e for e in was["edges"]
+                                     if e["id"].startswith("o")))
+    check(f"18f. ...and the two generated-path rows are then INERT, so the panel "
+          f"greys out what no longer decides anything ({now_plan.inert_rows})",
+          now_plan.inert_rows == og.INERT_WHEN_BOUND
+          and og.plan(gen_model(), gen_ctx).inert_rows == ())
+
+    # ── 18g. THROUGH THE REAL MESHER, AND AGAINST THE DRAWN PATH ───────────
+    #
+    # THE BAR IS THE DRAWN FAR FIELD'S OWN NUMBER, not a constant. A constant here
+    # measures the FIXTURE: these outlines carry ten points per segment, so their
+    # faceting alone is worth 15 degrees of non-orthogonality (#93's residue), and
+    # a threshold tuned to that would pass a generated far field that was twice as
+    # bad on the shipped circles. Running both paths on the SAME body cancels the
+    # faceting out of the comparison, and what is left is the question worth
+    # asking: does not drawing a far field cost anything?
+    if os.path.exists(_BIN):
+        d = tempfile.mkdtemp(prefix="ogrid_gen_")
+
+        def _mesh(tag, doc, geoms):
+            jp = os.path.join(d, tag + ".json")
+            with open(jp, "w", encoding="utf-8") as f:
+                _json.dump(doc, f)
+            lines = [f"MESH_TOPOLOGY_FILE {jp}"]
+            lines += [f"GEOM_FILE {os.path.abspath(g)}" for g in geoms]
+            conf = ("MESH_MODE 1\n" + "\n".join(lines)
+                    + f"\nBL_INITIAL_THICKNESS 0.001\nMB_SPLIT_QUADS 1\n"
+                      f"BC_GEOM wall\nEXPORT_VTK 1\nEXPORT_STARCD 0\n"
+                      f"OUTPUT_FILENAME {d}/{tag}.vtk\n")
+            cp = os.path.join(d, tag + ".dat")
+            with open(cp, "w", encoding="utf-8") as f:
+                f.write(conf)
+            env = dict(os.environ)
+            env["HYBMESH_MB_QUALITY"] = "1"
+            r = subprocess.run([_BIN, "-conf", cp], capture_output=True, text=True,
+                               env=env, timeout=600)
+            out = r.stdout + r.stderr
+            inv = re.search(r"Inverted cells\s*:\s*(\d+) of", out)
+            nor = re.search(r"Non-orthogonality\s*:\s*max ([0-9.]+) deg", out)
+            return (r.returncode,
+                    int(inv.group(1)) if inv else -1,
+                    float(nor.group(1)) if nor else -1.0)
+
+        rc_g, inv_g, nor_g = _mesh("gen", doc18, [body1])
+        rc_d, inv_d, nor_d = _mesh("drawn", was, [body1, far1])
+        check(f"18g. the document a body ALONE produces meshes: exit {rc_g}, "
+              f"{inv_g} inverted", rc_g == 0 and inv_g == 0)
+        check(f"18g. ...and the DRAWN control on the same body meshes too, so the "
+              f"comparison below is between two meshes and not against a constant "
+              f"(exit {rc_d}, {inv_d} inverted)", rc_d == 0 and inv_d == 0)
+        check(f"18g. ...and NOT DRAWING THE FAR FIELD COSTS NOTHING in the worst "
+              f"angle: {nor_g:.3f} deg generated against {nor_d:.3f} drawn, on the "
+              f"same body at the same counts — the generated side is an exact "
+              f"ellipse where a drawn one is a stored polyline, so it has no "
+              f"faceting of its own to contribute",
+              0.0 < nor_g <= nor_d + 1e-6)
+    else:
+        print("SKIP 18g. %s not built" % _BIN)
 
 print()
 if failures:

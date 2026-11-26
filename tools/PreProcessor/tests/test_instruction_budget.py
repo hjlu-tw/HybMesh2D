@@ -167,7 +167,7 @@ Checks:
     check 6 collided with check 2's injection 6.
 
 Sizes are measured in CHARACTERS, which is the unit #59 states the budgets in — not
-bytes, which the root file has 314 more of today because this repo's own prose
+bytes, which the root file has 318 more of today because this repo's own prose
 contains CJK. That figure moves with every relocation ticket — it was 197 before
 #76 — and is re-derived here, never carried. The tooling's own per-file limit (4 MiB, observed in #61) is in bytes,
 and a character budget is conservative against it either way, since a character is
@@ -510,10 +510,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    18 rule files now — 59,992 / 59,780 / 59,600 / 59,523 / 56,802 / 56,405 / 41,250 / 37,516 / 30,991 / 25,539 / 23,846 / 23,361 / 22,126 / 20,568 / 16,993 / 16,710 / 15,762 / 8,969  characters (gui-topology, gui-handoff, mesher, mesher-multiblock, mesher-smoothing, pipeline-case, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, mesher-block-side, gui-canvas-edit, gui-apply, gui-evidence, mesher-spacing, gui-preflight, gui-results, gui-lifecycle) — so "moving text into another rule file
+    19 rule files now — 59,992 / 59,780 / 59,600 / 59,523 / 56,802 / 56,405 / 41,250 / 37,516 / 30,991 / 25,539 / 23,846 / 23,361 / 22,126 / 20,568 / 16,993 / 16,710 / 15,762 / 8,969 / 8,004  characters (gui-topology, gui-handoff, mesher, mesher-multiblock, mesher-smoothing, pipeline-case, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, mesher-block-side, gui-canvas-edit, gui-apply, gui-evidence, mesher-spacing, gui-preflight, gui-results, gui-lifecycle, gui-generated-boundary) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 8 / 220 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    16, which have 400 / 477 / 3,198 / 3,595 / 18,750 / 22,484 / 29,009 / 34,461 / 36,154 / 36,639 / 37,874 / 39,432 / 43,007 / 43,290 / 44,238 / 51,031. #76 spent 3,446 of
+    17, which have 400 / 477 / 3,198 / 3,595 / 18,750 / 22,484 / 29,009 / 34,461 / 36,154 / 36,639 / 37,874 / 39,432 / 43,007 / 43,290 / 44,238 / 51,031 / 51,996. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a
@@ -671,9 +671,9 @@ _SOURCES = {
 # (`fccff2c..374ad04`): three ran inside the band and `374ad04` took the slack to 333,
 # under the same floor, on 223 characters of prose about something else. That is what a
 # hand re-derivation bought, which is why #109 gave the band a check (check 8) rather
-# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 53,350 characters
+# than a third one. Re-derived at #109 and kept LIVE by #120: CLAUDE.md is 53,974 characters
 # -- a joint fixed point with the figures that file states about itself, since two of them
-# are its size and its slack -- and 53,350 taken down to the boundary above is 53,000, to
+# are its size and its slack -- and 53,974 taken down to the boundary above is 53,500, to
 # which the ceiling is added. The value below is the one check 8 itself recommended, at
 # #136 -- and at #131 before it, after that ticket's rule-file row and its two new globs
 # took the slack to 303, under the floor, on 294 characters of prose about something
@@ -893,7 +893,19 @@ _SOURCES = {
 # is the half-claim `.claude/rules/mesher-block-side.md` spent a whole blind spot
 # refusing. Check 8 printed `ROOT_BUDGET = 54000` as the band's own ARITHMETIC (the size
 # taken DOWN to a 500 boundary, plus 1,000) and this is a paste of it, leaving 650.
-ROOT_BUDGET = 54_000
+#
+# RE-BANDED AGAIN AT #197, and this one is the OTHER reason the band moves: not a ninth
+# shipped case but a NINETEENTH RULE FILE, whose tripwire row is the root's own half of
+# the three-layer split. `gui-topology.md` says in its second line that it is full and
+# that the next block there is a new file, and it had EIGHT characters of slack -- so
+# the row was not optional and could not be squeezed next door. It WAS squeezed here:
+# the first draft ran 187 characters past the budget, check 1 said what it says -- move
+# the detail into the rule file, fitting the budget to the file is the evasion -- and
+# the history, the ordinal and the second glob list came out of the row and into
+# `gui-generated-boundary.md`, which is where a reader who follows the row lands anyway.
+# What is left is the question, the file, and the one thing a reader must not get wrong.
+# Check 8 then printed `ROOT_BUDGET = 54500` and this is a paste of it, leaving 526.
+ROOT_BUDGET = 54_500
 # Per rule file, and flat rather than ratcheted because #59 fixes the number. Well
 # inside the tooling's own limit — 4 MiB, confirmed on this build in #61 — so this is
 # repo policy, not a loader constraint, which is the right way round. Note the units

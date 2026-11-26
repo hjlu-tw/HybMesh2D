@@ -139,13 +139,42 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               "named rather than falling back to the default boundary condition.",
               model="ogrid_body_segs", group=GROUP, modes=_MB,
               opts=dict(placeholder="(all of the body's segments)", readonly=True)),
-    FieldSpec("topo_ogrid_far_geom", "path", "Far-Field Geometry",
-              "The outer outline. Its segments pair ONE TO ONE with the body's, so "
-              "segment it the same way you segmented the body; its own per-segment "
-              "conditions reach the export the same way the body's do.",
+    FieldSpec("topo_ogrid_far_geom", "path", "Far-Field Geometry (optional)",
+              "LEAVE BLANK to have the far field GENERATED as one ellipse about "
+              "the body's centroid, sized by the two rows below — then there is no "
+              "outline to draw and nothing to pair. Name one and its segments pair "
+              "ONE TO ONE with the body's, so segment it the same way you "
+              "segmented the body; its own per-segment conditions then reach the "
+              "export the same way the body's do, which a generated one cannot — "
+              "a generated side belongs to no geometry and carries the run's "
+              "BC_GEOM. Draw one when the outer boundary needs more than one "
+              "condition.",
               model="ogrid_far_geom", group=GROUP, modes=_MB,
               opts=dict(caption="Select far-field geometry",
                         filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_ogrid_far_ratio", "float", "Generated Far Field Size",
+              "GENERATED PATH ONLY — inert once you name a far-field geometry. How "
+              "far out the generated ellipse sits, as a multiple of the body's own "
+              "equivalent radius (the radius of the circle with the body's area). "
+              "An equivalent radius rather than a semi-axis so the number means the "
+              "same thing at every aspect. It is CHECKED against the body's own "
+              "points, not against that radius: a long thin body has a small "
+              "equivalent radius and can reach straight through a far field that "
+              "looks generous.",
+              # `float` AND NOT `sci`: the standing rule is that a PHYSICAL
+              # LENGTH is a SciDoubleSpinBox, and these two are dimensionless —
+              # a multiple and a ratio. The widget is also what
+              # `case_type_scale.LENGTH_KIND` is keyed on, so calling a
+              # dimensionless number a length there would ask a case type to
+              # rescale it into another drawing.
+              model="ogrid_far_ratio", group=GROUP, modes=_MB,
+              opts=dict(lo=1.5, hi=1e6, dec=3, step=1.0)),
+    FieldSpec("topo_ogrid_far_aspect", "float", "Generated Far Field Aspect",
+              "GENERATED PATH ONLY — inert once you name a far-field geometry. The "
+              "generated ellipse's height over its width. 1 is a circle. The size "
+              "above is held while this changes it, so the two are independent.",
+              model="ogrid_far_aspect", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-3, hi=1e3, dec=3, step=0.1)),
     FieldSpec("topo_ogrid_far_segs", "text", "Bound Far Segments",
               "The far field's bound segment ids. Same rule as the body's.",
               model="ogrid_far_segs", group=GROUP, modes=_MB,

@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 312, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 313, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -3701,6 +3701,64 @@ difference is **5.0e-08** (circle) and **8.0e-08** (ellipse). It is not zero and
 shipped files quote `ds_start` to 8 decimals where the family computes it in full, and this mesher
 is not byte-reproducible anyway. A document-level text diff is explicitly NOT the check — the
 family is free to order edges differently, and pinning that would pin the wrong thing.
+
+**A FAR FIELD NOBODY DREW — #197, measured 2026-11-26.** The O-grid REFUSED a user who had
+drawn only a body: a far-field outline was required, and required to pair one to one with the
+body's segments. That is two CAD actions and a segmenting decision before the first mesh, on the
+family a new user reaches for first.
+
+**THE RULE THAT LOOKED LIKE IT FORBADE THIS SAYS SOMETHING NARROWER, AND READING IT PROPERLY IS
+THE WHOLE TICKET.** "A template writes no geometry" is the slogan; the paragraph below it is the
+rule, and what it actually says is that a `follows` or a `binding` edge resolves to a stretch of a
+stored POLYLINE, so a generated one would be a written FILE with no stable-id scheme and no place
+in the round trip. An outer boundary is not that. Since #175 an edge may declare the CURVE IT IS,
+with no file anywhere, and its nodes are placed on that curve at exact arc length. **So the line
+is "a generated thing cannot be a stored polyline", and an analytic outer boundary falls on the
+legal side of it** — where the C-grid has been since #149. The rule did not bend; it was read.
+
+**ONE ELLIPSE, AND THE REASON IS THE BLOCK COUNT BEFORE IT IS THE QUALITY.** A ring's outer
+corners are placed one per block, so on a RECTANGLE some block side cuts across a corner unless
+the count happens to put one at each of the four. An ellipse has no corners, so every count lands
+on it exactly. The quality argument agrees and is already in the tree —
+`docs/research/gridpro-blocking-method.md` §12b measured a ring taken straight to a rectangle at
+**89.2°** against a circle's **48.1°** — and the rectangular far field a reader pictures wants an
+**H between the ring and the box**, which is a different family.
+
+**WHAT IT COSTS, SAID WHERE IT IS PAID.** A generated side belongs to no geometry, so it carries
+the run's `BC_GEOM` instead of a per-segment condition. That sentence is in the field-spec row
+that offers the choice, not in a note: a mesh wanting an inlet and an outlet on different parts of
+its outer boundary still has to draw one, and the drawn path is unchanged for it.
+
+**THREE REFUSALS THE DRAWN PATH NEVER NEEDED, and the second is #165's lesson arriving again.**
+The size is checked at a floor (1.5 body radii, below which the ring is a sliver the mesher folds
+rather than refuses); CONTAINMENT is walked over the body's OWN POINTS and never compared against
+an equivalent radius — the 4.0 × 0.2 body #165 measured that mistake on has an equivalent radius
+of 0.505, so a far field at 1.5 "radii" is an ellipse of radius 0.76 and the body reaches x = ±2
+straight through it, and that body is this gate's fixture; and THE FAN is refused when the rays
+that place the outer corners do not leave the centroid in ring order. The fan test is **at the
+corners and not over the whole outline**, deliberately: a cambered section's lower surface is not
+star-shaped about the area centroid everywhere while its block corners are, and over-refusing
+would turn a working aerofoil into an error.
+
+**THE COST IS MEASURED AGAINST THE DRAWN PATH, NOT AGAINST A CONSTANT, AND THE FIRST ATTEMPT WAS
+THE CONSTANT.** Check 18g first asserted "worst non-orthogonality under 10 degrees" and went red
+at 15.292 — which is the FIXTURE: these outlines carry ten points per segment and their faceting
+alone is worth that (#93's residue). A threshold tuned to it would have passed a generated far
+field twice as bad on the shipped circles. Running both paths on the SAME body cancels the
+faceting out, and the answer is **15.292 against 15.292, equal to six decimals**: the worst cell
+is on the body either way, and a generated side is an exact ellipse where a drawn one is a stored
+polyline, so it contributes no faceting of its own. On the shipped 40-per-quarter circle the
+generated path measures **3.09°** with the wall held to 0.05%.
+
+**AND IT COST A WIDGET DECISION THAT LOOKS LIKE A DETAIL AND IS NOT.** The two generated-path
+numbers went in as `sci`, which is this repo's widget for a PHYSICAL LENGTH — and `sci` is what
+`case_type_scale.LENGTH_KIND` is keyed on, so the scale gate demanded a judgement and the only
+honest one was "dimensionless". A fifth kind was written, then **reverted**: the two are `float`
+rows now, because calling a ratio a length is the error, not the classification of it. The
+reverted branch is recorded because its injection round found the hole that survives either way —
+classifying a dimensionless field as `SIZE` passes every assertion that gate has, since whether a
+number carries a dimension is a judgement and not a fact the field-spec row records. It is a named
+blind spot in `.claude/rules/gui-generated-boundary.md`.
 
 **#150's OWN QUESTION ARRIVED, AND THE ANSWER IS THAT THE RULE HOLDS.** #150 wrote: *"If a later
 family wants an offset the user never sees, that is a finding about this decision and should be

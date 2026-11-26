@@ -75,8 +75,21 @@ class TopologyModel:
     # refusal. See services/topology_binding.py.
     ogrid_body_geom: str = ""
     ogrid_body_segs: str = ""
+    # THE FAR FIELD IS OPTIONALLY DRAWN SINCE #197, the way the C-grid's has been
+    # since #149, and BLANK IS THE DEFAULT rather than a degraded state: the far
+    # field is then GENERATED as one ellipse about the body's own centroid, from
+    # the two numbers below. The cost is stated where it is paid — a generated
+    # side belongs to no geometry, so it carries the run's BC_GEOM instead of a
+    # per-segment condition, and a mesh that wants an inlet and an outlet on
+    # different parts of its outer boundary still has to draw one.
     ogrid_far_geom: str = ""
     ogrid_far_segs: str = ""
+    # GENERATED-PATH ONLY, and INERT when a far field is drawn — the panel greys
+    # them out through `Plan.inert_rows`, which is the C-grid's own mechanism.
+    # The size is an EQUIVALENT RADIUS multiple so that it means the same thing at
+    # every aspect: the derived radial count reads that figure.
+    ogrid_far_ratio: float = 12.0
+    ogrid_far_aspect: float = 1.0
     ogrid_splits: int = 1
     ogrid_cell: float = 0.05
     # 0 = take the derived count. Not a magic blank: the row is an int spin box, so

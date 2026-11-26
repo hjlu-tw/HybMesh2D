@@ -284,10 +284,19 @@ BINDING_LISTS = (("body", "ogrid_body_segs", "ogrid_body_geom", "w"),
 def broken_bindings(model, ctx) -> tuple:
     """The O-grid's two lists, walked by :func:`broken_in_ring_lists`.
 
-    What stays HERE is the family's own answer — which two lists it binds
+    What stays HERE is the family's own answer — which lists it binds
     (:data:`BINDING_LISTS`) — and nothing else.
+
+    SINCE #197 THAT ANSWER HAS TWO VALUES. With no far-field geometry named the
+    far field is GENERATED, so there is no second list and nothing about it can be
+    broken; asking anyway would report the body's own problem twice under the far
+    field's role word. Keyed on the stored NAME and never on whether the lookup
+    found anything, which is the same rule ``plan`` tells the two paths apart by:
+    a name that resolves to nothing is a broken binding, not a generated far field.
     """
-    return broken_in_ring_lists(model, ctx, BINDING_LISTS, model.ogrid_splits)
+    lists = BINDING_LISTS if str(model.ogrid_far_geom).strip() \
+        else BINDING_LISTS[:1]
+    return broken_in_ring_lists(model, ctx, lists, model.ogrid_splits)
 
 
 def order_problem(who: str, g, segs, splits: int, edge_at) -> tuple:

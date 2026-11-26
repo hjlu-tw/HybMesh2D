@@ -54,6 +54,7 @@ from app.services.topology_preflight import (
     nesting_refusal, no_context_refusal, outline_refusal, plan_refusal,
 )
 from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
+from app.services import topology_genfar as genfar
 from app.services.topology_ogrid_binding import (
     BINDING_LISTS, parse_binding, ring_binding_problem,
 )
@@ -72,6 +73,12 @@ CLOSED_NOTE = "and an O-grid is a ring around a closed body."
 #: -0.000000)" and the run is refused with the topology exit code. Two was this
 #: family's first floor; the gate's winding check caught it.
 MIN_BLOCKS = 3
+
+#: The field-spec rows the GENERATED far field owns, which naming a far-field
+#: geometry makes inert (#197). The C-grid's own mechanism and its own direction:
+#: a row is inert because of what the user CONFIGURED, never because of what they
+#: typed into it, so these two grey out on the drawn path and are live otherwise.
+INERT_WHEN_BOUND = ("topo_ogrid_far_ratio", "topo_ogrid_far_aspect")
 
 
 @dataclass
@@ -110,12 +117,21 @@ class Plan:
     body_segs: tuple[int, ...] = ()
     far_segs: tuple[int, ...] = ()
     ccw: bool = True
+    #: True when the far field is DRAWN and bound rather than GENERATED (#197),
+    #: the C-grid's own flag under the C-grid's own name. A drawn one carries each
+    #: side's condition off its own CAD segment; a generated one carries the run's
+    #: BC_GEOM, because a free corner and a declared curve belong to no geometry.
+    far_bound: bool = True
+    #: The generated ellipse, empty on the drawn path: centre and the two semi-axes.
+    far_centre: tuple[float, float] = (0.0, 0.0)
+    far_a: float = 0.0
+    far_b: float = 0.0
     #: Field-spec rows this plan's own configuration has made INERT — a control the
-    #: panel must grey out because nothing reads it any more (#149). ALWAYS EMPTY
-    #: here, and declared rather than left off: the O-grid has no mode in which one
-    #: of its parameters stops deciding something, and saying so is what lets the
-    #: panel ask every binding family the same question instead of naming the one
-    #: that answers yes.
+    #: panel must grey out because nothing reads it any more (#149). NO LONGER
+    #: ALWAYS EMPTY: since #197 this family has two modes, and naming a far-field
+    #: geometry stops the two generated-path numbers deciding anything. The
+    #: mechanism is the C-grid's and so is the direction — a row is inert because
+    #: of what the user configured, never because of what they typed into it.
     inert_rows: tuple[str, ...] = ()
 
     @property
@@ -147,6 +163,11 @@ class Plan:
             f"cell {self.first_cell_11:.3e} at r = {self.radius:.4g}",
             f"yours: BL_INITIAL_THICKNESS {self.first_cell:.3e}  →  wall cells "
             f"{self.aspect:.3g}x longer than tall",
+            ("far field: DRAWN as bound outline"
+             if self.far_bound else
+             f"far field: GENERATED — ellipse {2 * self.far_a:.4g} x "
+             f"{2 * self.far_b:.4g} about ({self.far_centre[0]:.4g}, "
+             f"{self.far_centre[1]:.4g}); its sides carry the run's BC_GEOM"),
             f"radial: {self.radial} nodes"
             + (" (overridden)" if self.overridden
                else f" (derived: q from {self.first_cell:.3e} spans "
@@ -190,6 +211,17 @@ def _ring(segs, splits: int) -> list:
     return [(s, j / float(splits)) for s in segs for j in range(splits)]
 
 
+def _ring_points(g, ring) -> list:
+    """The ring's corner POSITIONS, for the questions only the generated path asks."""
+    out = []
+    for sid, t in ring:
+        sp = g.spans.get(sid)
+        xy = sp.point_at(t) if sp is not None else None
+        if xy is not None:
+            out.append(xy)
+    return out
+
+
 def plan(model, ctx) -> Plan:
     """Everything the O-grid derives from ``model`` against ``ctx``.
 
@@ -204,13 +236,22 @@ def plan(model, ctx) -> Plan:
         return p
 
     body = ctx.geometry(model.ogrid_body_geom)
-    far = ctx.geometry(model.ogrid_far_geom)
-    for role, name, g in (("body", model.ogrid_body_geom, body),
-                          ("far field", model.ogrid_far_geom, far)):
+    # BLANK IS THE GENERATED PATH, not a half-typed name (#197). The two are told
+    # apart by the stored NAME and never by whether the lookup found anything: a
+    # name that resolves to nothing is a refusal, and silently generating a far
+    # field there would hide a geometry the user removed.
+    p.far_bound = bool(str(model.ogrid_far_geom).strip())
+    far = ctx.geometry(model.ogrid_far_geom) if p.far_bound else None
+    pairs = [("body", model.ogrid_body_geom, body)]
+    if p.far_bound:
+        pairs.append(("far field", model.ogrid_far_geom, far))
+    for role, name, g in pairs:
         why = outline_problem(ctx, role, name, g, closed_note=CLOSED_NOTE)
         if why:
             p.problem = why
             return p
+    if p.far_bound:
+        p.inert_rows = INERT_WHEN_BOUND
 
     # `BINDING_LISTS` names each list's ROLE, and it is the only spelling: this
     # function used to say "far-field" where that table says "far field", so one
@@ -219,7 +260,7 @@ def plan(model, ctx) -> Plan:
     # cannot spell it differently" — the third reader was this one.
     _BODY_ROLE, _FAR_ROLE = (row[0] for row in BINDING_LISTS)
     p.body_segs, why = parse_binding(model.ogrid_body_segs, body.seg_ids, _BODY_ROLE)
-    if not why:
+    if not why and p.far_bound:
         p.far_segs, why = parse_binding(model.ogrid_far_segs, far.seg_ids, _FAR_ROLE)
     if why:
         p.problem = why
@@ -231,13 +272,15 @@ def plan(model, ctx) -> Plan:
     # that order; the family's answer is only WHICH lists and how it names an edge.
     # The edge id it names is the one `build` spells below — the wall of ring position
     # k is `w{k}`, and the stored position i is ring position i*splits.
-    lists = tuple((row[0], g, segs, row[3]) for row, g, segs in
-                  zip(BINDING_LISTS, (body, far), (p.body_segs, p.far_segs)))
+    bound = ((body, p.body_segs), (far, p.far_segs)) if p.far_bound \
+        else ((body, p.body_segs),)
+    lists = tuple((row[0], g, segs, row[3]) for row, (g, segs) in
+                  zip(BINDING_LISTS, bound))
     p.broken_edge, p.problem = ring_binding_problem(ctx, lists, splits)
     if p.problem:
         return p
 
-    if len(p.body_segs) != len(p.far_segs):
+    if p.far_bound and len(p.body_segs) != len(p.far_segs):
         p.problem = (f"the body binds {len(p.body_segs)} source segment(s) and the "
                      f"far field {len(p.far_segs)}. An O-grid pairs them one to one, "
                      f"so segment the far field the same way you segmented the body.")
@@ -252,7 +295,7 @@ def plan(model, ctx) -> Plan:
         return p
 
     body_ring = _ring(p.body_segs, splits)
-    far_ring = _ring(p.far_segs, splits)
+    far_ring = _ring(p.far_segs, splits) if p.far_bound else ()
 
     cell = float(model.ogrid_cell)
     if cell <= 0.0:
@@ -266,7 +309,14 @@ def plan(model, ctx) -> Plan:
     p.n_theta = sum(c - 1 for c in counts)
 
     p.radius = body.equivalent_radius()
-    p.far_radius = far.equivalent_radius()
+    if p.far_bound:
+        p.far_radius = far.equivalent_radius()
+    else:
+        # THE GENERATED ELLIPSE, derived before anything reads its radius.
+        p.problem = genfar.derive(p, float(model.ogrid_far_ratio),
+                                  float(model.ogrid_far_aspect), body)
+        if p.problem:
+            return p
     # BEFORE the derivation, not after it: a far field inside the body gives a
     # negative span, and `radial_count` would then answer on it rather than refuse.
     if p.far_radius <= p.radius:
@@ -287,17 +337,30 @@ def plan(model, ctx) -> Plan:
     # order walks the outline backwards, and only the ring can see that. Reachable
     # for every legal ring because MIN_BLOCKS is three.
     a_body = body.signed_area([s for s, _ in body_ring], [t for _, t in body_ring])
-    a_far = far.signed_area([s for s, _ in far_ring], [t for _, t in far_ring])
-    if a_body == 0.0 or a_far == 0.0:
-        p.problem = ("the corner ring has no area — check that the two geometries "
-                     "are the closed outlines they look like.")
+    if a_body == 0.0:
+        p.problem = ("the corner ring has no area — check that the geometry is the "
+                     "closed outline it looks like.")
         return p
-    if (a_body > 0.0) != (a_far > 0.0):
-        p.problem = ("the body and the far field are wound in opposite directions, "
-                     "so every radial edge would cross the ring. Redraw one of them "
-                     "in the other direction.")
-        return p
+    if p.far_bound:
+        a_far = far.signed_area([s for s, _ in far_ring], [t for _, t in far_ring])
+        if a_far == 0.0:
+            p.problem = ("the corner ring has no area — check that the two "
+                         "geometries are the closed outlines they look like.")
+            return p
+        if (a_body > 0.0) != (a_far > 0.0):
+            p.problem = ("the body and the far field are wound in opposite "
+                         "directions, so every radial edge would cross the ring. "
+                         "Redraw one of them in the other direction.")
+            return p
     p.ccw = a_body > 0.0
+    if not p.far_bound:
+        # TWO QUESTIONS THE DRAWN PATH NEVER HAS TO ASK, and both are about the
+        # FAN rather than about the ellipse: does the body fit inside it, and do
+        # the rays that place its corners leave the centroid in ring order. The
+        # winding is known by now, which is why they are here and not above.
+        p.problem = genfar.fan_problem(p, body, _ring_points(body, body_ring))
+        if p.problem:
+            return p
     return p
 
 
@@ -310,20 +373,29 @@ def build(model, ctx=None) -> dict:
             edge=p.broken_edge)
 
     body = ctx.geometry(model.ogrid_body_geom)
-    far = ctx.geometry(model.ogrid_far_geom)
+    far = ctx.geometry(model.ogrid_far_geom) if p.far_bound else None
     splits = max(1, int(model.ogrid_splits))
     body_ring = _ring(p.body_segs, splits)
-    far_ring = _ring(p.far_segs, splits)
+    far_ring = _ring(p.far_segs, splits) if p.far_bound else ()
     n = len(body_ring)
 
     corners, edges, blocks = [], [], []
     for k in range(n):
         bs, bt = body_ring[k]
-        fs, ft = far_ring[k]
         corners.append({"id": f"b{k}", "kind": "on_geometry",
                         "geom": body.spelling, "seg": bs, "t": bt})
-        corners.append({"id": f"f{k}", "kind": "on_geometry",
-                        "geom": far.spelling, "seg": fs, "t": ft})
+        if p.far_bound:
+            fs, ft = far_ring[k]
+            corners.append({"id": f"f{k}", "kind": "on_geometry",
+                            "geom": far.spelling, "seg": fs, "t": ft})
+        else:
+            # A FREE corner, placed where the ray from the body's centroid through
+            # this body corner meets the generated ellipse — EXACTLY on it, because
+            # the mesher inverse-maps a curve edge's corners onto the curve and
+            # refuses one that is off by more than 1e-9 of the larger semi-axis.
+            # `plan` has already refused the two cases that make this None.
+            corners.append(genfar.corner(p, f"f{k}",
+                                         body.spans[bs].point_at(bt)))
 
     for k in range(n):
         # The radials are ONE equivalence class that wraps around and closes, so only
@@ -337,7 +409,7 @@ def build(model, ctx=None) -> dict:
         edges.append(e)
     for k in range(n):
         bs, _ = body_ring[k]
-        fs, _ = far_ring[k]
+        fs = far_ring[k][0] if p.far_bound else -1
         nxt = (k + 1) % n
         # One seed per (wall, far arc) class, declared on the WALL — the side whose
         # length the user asked for in physical units.
@@ -350,9 +422,13 @@ def build(model, ctx=None) -> dict:
                       "count": p.wall_counts[k],
                       "binding": {"geom": body.spelling,
                                   "seg": ctx.resolve(f"w{k}", body.spelling, bs)}})
-        edges.append({"id": f"o{k}", "corners": [f"f{k}", f"f{nxt}"], "kind": "wall",
-                      "binding": {"geom": far.spelling,
-                                  "seg": ctx.resolve(f"o{k}", far.spelling, fs)}})
+        if p.far_bound:
+            edges.append({"id": f"o{k}", "corners": [f"f{k}", f"f{nxt}"],
+                          "kind": "wall",
+                          "binding": {"geom": far.spelling,
+                                      "seg": ctx.resolve(f"o{k}", far.spelling, fs)}})
+        else:
+            edges.append(genfar.edge(p, f"o{k}", f"f{k}", f"f{nxt}"))
     for k in range(n):
         nxt = (k + 1) % n
         # [south, east, north, west]. CCW body: i runs OUTWARD and j anticlockwise.
@@ -393,16 +469,25 @@ def preflight(model, ctx=None) -> tuple:
     if ctx is None:
         return no_context_refusal("geometry", "the body and the far field")
     body = ctx.geometry(model.ogrid_body_geom)
-    far = ctx.geometry(model.ogrid_far_geom)
-    pairs = ((BINDING_LISTS[0][0], model.ogrid_body_geom, body),
-             (BINDING_LISTS[1][0], model.ogrid_far_geom, far))
+    # ON THE GENERATED PATH THERE IS NO SECOND OUTLINE TO ASK ABOUT, and the two
+    # questions layer 2 asks of one — is it closed, does it contain the body — are
+    # asked instead by `genfar.fan_problem` against the ellipse's own equation,
+    # which is exact where `nesting_refusal`'s equivalent radius is a ruler
+    # (#165's own measurement: a 4.0 x 0.2 body has an equivalent radius of
+    # 0.505). So layer 3 carries them here rather than layer 2.
+    far_bound = bool(str(model.ogrid_far_geom).strip())
+    far = ctx.geometry(model.ogrid_far_geom) if far_bound else None
+    pairs = [(BINDING_LISTS[0][0], model.ogrid_body_geom, body)]
+    if far_bound:
+        pairs.append((BINDING_LISTS[1][0], model.ogrid_far_geom, far))
     out = [r for r in (outline_refusal(ctx, role, name, g,
                                        closed_note=CLOSED_NOTE)
                        for role, name, g in pairs) if r is not None]
     if out:
         return tuple(out)
-    nested = nesting_refusal(((BINDING_LISTS[0][0], body),
-                              (BINDING_LISTS[1][0], far)))
-    if nested:
-        return nested
+    if far_bound:
+        nested = nesting_refusal(((BINDING_LISTS[0][0], body),
+                                  (BINDING_LISTS[1][0], far)))
+        if nested:
+            return nested
     return plan_refusal(plan(model, ctx).problem)
