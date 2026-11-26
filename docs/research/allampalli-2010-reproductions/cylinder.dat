@@ -1,0 +1,16 @@
+# TARGET: entry 17, Figures 6.15 and 6.16 -- the 2-D cylinder case.
+# Written by docs/research/allampalli-2010-reproductions/make_cylinder.py -- do not hand-edit.
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/allampalli-2010-reproductions/cylinder.json
+
+GEOM_FILE docs/research/allampalli-2010-reproductions/cyl_body.dat
+DOMAIN_FILE docs/research/allampalli-2010-reproductions/cyl_far.dat nobl
+
+BL_INITIAL_THICKNESS 0.005
+MB_SPLIT_QUADS 1
+BC_GEOM wall
+
+EXPORT_VTK 1
+EXPORT_STARCD 0
+OUTPUT_FILENAME docs/research/allampalli-2010-reproductions/out/cylinder.vtk

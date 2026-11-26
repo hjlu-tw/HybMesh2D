@@ -1,0 +1,28 @@
+# TARGET: entry 17, Figures 6.1-6.3 -- flow over a flat plate.
+# Written by docs/research/allampalli-2010-reproductions/make_plate.py -- do not hand-edit.
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/allampalli-2010-reproductions/plate.json
+
+GEOM_FILE docs/research/allampalli-2010-reproductions/plate_body.dat
+
+BL_INITIAL_THICKNESS 0.001
+MB_SPLIT_QUADS 1
+BC_GEOM wall
+
+# ZERO SWEEPS. The nose is a circle of radius 0.005 and the
+# first cell off it is 0.001, so the wall's radius of
+# curvature is five first-cells and the smoother's control
+# functions cannot hold that height. Measured on THIS
+# declaration, worst wall first cell against sweeps:
+#   0 -> 6.99%   5 -> 31.45%   10 -> 41.32%   20 -> 60.61%
+#   40 -> 90.71%
+# 20 is the shipped default. At 40 sweeps 28 cells FOLD,
+# against none at any lower count. Non-orthogonality barely
+# moves either way over that range: max 50.948 -> 56.067 deg
+# at 20, mean 5.990 -> 6.097.
+MB_SMOOTH_ITERS 0
+
+EXPORT_VTK 1
+EXPORT_STARCD 0
+OUTPUT_FILENAME docs/research/allampalli-2010-reproductions/out/plate.vtk

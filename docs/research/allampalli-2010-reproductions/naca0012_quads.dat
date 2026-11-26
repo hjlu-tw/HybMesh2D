@@ -1,0 +1,37 @@
+# TARGET: entry 17, naca0012.
+# Written by docs/research/allampalli-2010-reproductions/make_naca0012.py -- do not hand-edit.
+
+MESH_MODE 1
+MESH_TOPOLOGY_FILE docs/research/allampalli-2010-reproductions/naca0012.json
+
+GEOM_FILE docs/research/allampalli-2010-reproductions/naca0012_r0.dat
+GEOM_FILE docs/research/allampalli-2010-reproductions/naca0012_r1.dat nobl
+GEOM_FILE docs/research/allampalli-2010-reproductions/naca0012_r2.dat nobl
+GEOM_FILE docs/research/allampalli-2010-reproductions/naca0012_r3.dat nobl
+
+BL_INITIAL_THICKNESS 0.0015
+MB_SPLIT_QUADS 0
+BC_GEOM wall
+
+# ZERO SWEEPS. The shipped default is 20 and both of these
+# cases are measurably worse with it. Worst wall first cell
+# against sweeps, measured on these declarations:
+#   NACA 0012   0 -> 12.58%  5 -> 59.00%  10 -> 72.36%
+#               20 -> 92.38%  40 -> 86.96%, with 2 cells
+#               folded at 5 and 6 from 10 on, none at 0.
+#   NACA 64A010 0 -> 14.10%  5 -> 61.40%  10 -> 74.06%
+#               20 -> 93.18%  40 -> 86.19%, with 2 folded
+#               from 10 on, none below.
+# Mean non-orthogonality moves the other way and barely
+# (5.802 -> 5.446 deg on the 0012 over 0 to 20 sweeps) and
+# the max does not improve: it is the sharp trailing edge at
+# every count, and on the 0012 it gets worse, 81.738 ->
+# 84.991 deg.
+# The shipped cases the default was tuned on have a smooth
+# convex body and a single ring; these have a 163-degree
+# corner and a rectangular outer boundary.
+MB_SMOOTH_ITERS 0
+
+EXPORT_VTK 1
+EXPORT_STARCD 0
+OUTPUT_FILENAME docs/research/allampalli-2010-reproductions/out/naca0012_quads.vtk

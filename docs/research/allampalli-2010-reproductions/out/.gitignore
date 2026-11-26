@@ -1,0 +1,5 @@
+# The meshes themselves are REGENERATED, not committed: `bash ../rebuild.sh`
+# from the repo root writes them here in about ten seconds, and the four of
+# them together are 55 MB.
+*.vtk
+*.provenance.json

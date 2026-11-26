@@ -1,0 +1,256 @@
+// TARGET: entry 17 (Allampalli 2010), Figures 6.15 and 6.16 -- the 2-D cylinder.
+//
+// WRITTEN BY docs/research/allampalli-2010-reproductions/make_cylinder.py.
+// Do not hand-edit: the two circles' .meta sidecars are written by the same run
+// and a corner here is an arc-length position on one of them.
+//
+// A four-block O-grid, topologically identical to the shipped
+// examples/topology/ogrid_circle.json. Only the far-field radius and the two node
+// counts differ, and both counts are read off the published figure rather than
+// chosen (see the generator's docstring).
+{
+  "format_version": 1,
+  "corners": [
+    {
+      "id": "b0",
+      "kind": "on_geometry",
+      "geom": "cyl_body.dat",
+      "seg": 0,
+      "t": 0.0
+    },
+    {
+      "id": "f0",
+      "kind": "on_geometry",
+      "geom": "cyl_far.dat",
+      "seg": 0,
+      "t": 0.0
+    },
+    {
+      "id": "b1",
+      "kind": "on_geometry",
+      "geom": "cyl_body.dat",
+      "seg": 1,
+      "t": 0.0
+    },
+    {
+      "id": "f1",
+      "kind": "on_geometry",
+      "geom": "cyl_far.dat",
+      "seg": 1,
+      "t": 0.0
+    },
+    {
+      "id": "b2",
+      "kind": "on_geometry",
+      "geom": "cyl_body.dat",
+      "seg": 2,
+      "t": 0.0
+    },
+    {
+      "id": "f2",
+      "kind": "on_geometry",
+      "geom": "cyl_far.dat",
+      "seg": 2,
+      "t": 0.0
+    },
+    {
+      "id": "b3",
+      "kind": "on_geometry",
+      "geom": "cyl_body.dat",
+      "seg": 3,
+      "t": 0.0
+    },
+    {
+      "id": "f3",
+      "kind": "on_geometry",
+      "geom": "cyl_far.dat",
+      "seg": 3,
+      "t": 0.0
+    }
+  ],
+  "edges": [
+    {
+      "id": "r0",
+      "corners": [
+        "b0",
+        "f0"
+      ],
+      "kind": "interface",
+      "count": 257,
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r1",
+      "corners": [
+        "b1",
+        "f1"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r2",
+      "corners": [
+        "b2",
+        "f2"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "r3",
+      "corners": [
+        "b3",
+        "f3"
+      ],
+      "kind": "interface",
+      "spacing": {
+        "wall_ends": "start"
+      }
+    },
+    {
+      "id": "w0",
+      "corners": [
+        "b0",
+        "b1"
+      ],
+      "kind": "wall",
+      "count": 121,
+      "binding": {
+        "geom": "cyl_body.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "o0",
+      "corners": [
+        "f0",
+        "f1"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "cyl_far.dat",
+        "seg": 0
+      }
+    },
+    {
+      "id": "w1",
+      "corners": [
+        "b1",
+        "b2"
+      ],
+      "kind": "wall",
+      "count": 121,
+      "binding": {
+        "geom": "cyl_body.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "o1",
+      "corners": [
+        "f1",
+        "f2"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "cyl_far.dat",
+        "seg": 1
+      }
+    },
+    {
+      "id": "w2",
+      "corners": [
+        "b2",
+        "b3"
+      ],
+      "kind": "wall",
+      "count": 121,
+      "binding": {
+        "geom": "cyl_body.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "o2",
+      "corners": [
+        "f2",
+        "f3"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "cyl_far.dat",
+        "seg": 2
+      }
+    },
+    {
+      "id": "w3",
+      "corners": [
+        "b3",
+        "b0"
+      ],
+      "kind": "wall",
+      "count": 121,
+      "binding": {
+        "geom": "cyl_body.dat",
+        "seg": 3
+      }
+    },
+    {
+      "id": "o3",
+      "corners": [
+        "f3",
+        "f0"
+      ],
+      "kind": "wall",
+      "binding": {
+        "geom": "cyl_far.dat",
+        "seg": 3
+      }
+    }
+  ],
+  "blocks": [
+    {
+      "id": "q0",
+      "edges": [
+        "r0",
+        "o0",
+        "r1",
+        "w0"
+      ]
+    },
+    {
+      "id": "q1",
+      "edges": [
+        "r1",
+        "o1",
+        "r2",
+        "w1"
+      ]
+    },
+    {
+      "id": "q2",
+      "edges": [
+        "r2",
+        "o2",
+        "r3",
+        "w2"
+      ]
+    },
+    {
+      "id": "q3",
+      "edges": [
+        "r3",
+        "o3",
+        "r0",
+        "w3"
+      ]
+    }
+  ]
+}
