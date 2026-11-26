@@ -29,19 +29,19 @@ aerofoils share one.
 
 | target figures | case | generator | blocks | quads | triangles |
 |---|---|---|---|---|---|
-| 6.15, 6.16 | 2-D cylinder | `make_cylinder.py` | **4** | 122,880 | 245,760 |
+| 6.15, 6.16 | 2-D cylinder | `make_cylinder.py` | **4** | 36,000 | 72,000 |
 | 6.1, 6.2, 6.3 | flat plate | `make_plate.py` | **70** | 19,488 | 38,976 |
-| 5.1, 5.3 | NACA 0012 | `make_airfoil.py --case naca0012` | **98** | 26,736 | 53,472 |
-| 5.17 | NACA 64A010 | `make_airfoil.py --case naca64a010` | **98** | 22,290 | 44,580 |
+| 5.1, 5.3 | NACA 0012 | `make_airfoil.py --case naca0012` | **98** | 30,596 | 61,192 |
+| 5.17 | NACA 64A010 | `make_airfoil.py --case naca64a010` | **98** | 23,658 | 47,316 |
 
 All four measured through `HYBMESH_MB_QUALITY=1` on the committed declarations: **[V]**
 
 | case | inverted | non-orthogonality max | mean | corners over 45° | wall first cell |
 |---|---|---|---|---|---|
-| cylinder | **0** | **0.375°** | 0.375° | **0** of 491,520 | **0.0013 %** off |
+| cylinder | **0** | **0.750°** | 0.750° | **0** of 144,000 | **0.0043 %** off |
 | flat plate | **0** | 50.95° | 5.99° | 360 of 77,952 (0.462 %) | 6.99 % off |
-| NACA 0012 | **0** | 81.74° | 5.80° | 1,958 of 106,944 (1.831 %) | 12.58 % off |
-| NACA 64A010 | **0** | 83.82° | 5.13° | 1,020 of 89,160 (1.144 %) | 14.10 % off |
+| NACA 0012 | **0** | 81.74° | 5.07° | 1,958 of 122,384 (1.600 %) | 12.58 % off |
+| NACA 64A010 | **0** | 83.82° | 4.84° | 1,020 of 94,632 (1.078 %) | 14.10 % off |
 
 **Where the worst angle is, in every case, is a single point and I looked:** **[V]**
 `(1.0, ±0.0002)` on both aerofoils — the **sharp trailing edge itself** — and `(-1.93, 1.47)` on
@@ -62,24 +62,29 @@ O-grid and nothing else**, which is the topology `examples/topology/ogrid_circle
 ships. Only three numbers differ from the shipped case: the far-field radius (25 against 10) and
 the two node counts.
 
-**The density is measured off the figure, not guessed.** `measure_target.py` counts grid lines
-crossing a circle drawn on the image: **430 at r = 18.8** and still rising with radius, with the
-ink fraction saying the image has run out of resolution rather than the grid out of lines. **[V]**
-So the target carries **at least 430 radial lines** and the picture cannot say how many more; this
-reproduction declares **480** (120 per quadrant) × 257 radially, which reproduces the figure's
-moiré at the published pixel size. **[I]**
+**THE RADIAL LAW WAS WRONG HERE FIRST, AND ONLY LOOKING AT THE PICTURE FOUND IT.** The first
+version of this case put `BL_INITIAL_THICKNESS 0.005` on the wall, out of boundary-layer habit.
+Rendered beside the figure at the same pixel scale and the same window, its cells came out
+**three times longer radially than they are wide** while the published ones are square — and
+measuring the figure confirms it: on Fig. 6.16 (126 px per unit) the near-wall rings sit 0.010 to
+0.020 apart, and at r = 9 on Fig. 6.15 the cells are 0.2 in BOTH directions. **[V]** Entry 17's
+chapter 6 is **acoustic scattering**: a wave has to be resolved everywhere and nothing in that
+problem wants a clustered wall. So the shipped declaration is an **isotropic polar grid** —
+first cell `2*pi*0.5/240 = 0.01309`, which is the circumferential spacing at the wall — and it
+is 240 x 150 rather than the 528 x 256 the first version had.
 
-| | target (Fig. 6.15/6.16) | this repo |
-|---|---|---|
-| body / far field | r = 0.5 / r = 25 | same |
-| blocks | 4 quadrants, split on the axes | same |
-| quadrant colours | green / cyan / red / blue | matched deliberately, so the two can be compared colour for colour |
-| radial lines | ≥ 430 **[V]** | 480 |
-| inverted cells | — | 0 |
+**The density came with a CONTROL, and the control is the only reason a number is quoted.**
+`measure_target.py` counts grid lines crossing a circle drawn on the image: 430 at r = 18.8 on
+Fig. 6.15. Run on a render of THIS mesh, where the count is known, the same counter reads 388
+where the truth is 480 at the same relative radius, so it under-reads by about a quarter there —
+and at other radii it saturates completely and reads 0. **[V]** A floor of 430 is therefore all
+the figure supports; 240 is what the isotropy argument above fixes, and the two are consistent
+only to within the counter's own error. **Said plainly: the azimuthal count here is an estimate
+with a stated error bar, and the radial LAW is the part that is measured.** **[I]**
 
-**Nothing in this case is a workaround.** It is the shipped O-grid at a different radius and a
-higher count, and it is the one of the four where the reproduction and the target are the same
-construction.
+**Nothing in this case is a workaround.** It is the shipped O-grid at a different radius and
+density, and it is the one of the four where the reproduction and the target are the same
+construction. What it cost was a wrong assumption about the physics, caught by looking.
 
 ---
 
@@ -120,6 +125,7 @@ not jump at a shell boundary.
 | wall-normal lines to \|y\| = 0.6 | 28 **[V]** | 39 (38 intervals) | ≈ |
 | **plate thickness** | **zero to the figure's resolution** **[V]** | **a stadium of half-thickness 0.005** | ✘ — §5.1 |
 | where the shells' rays leave the plate's ends | at x ≈ 0.08 and 0.93, leaning **[V]** | at x = 0 and 1 exactly, vertical | ✘ — see below |
+| what a shell's shape is | flat in the middle, bending DOWN at the ends **[V]** | a constant-distance offset, bulging OUT at the ends | ✘ — §5.8 |
 | interior | elliptically solved **[V]** | transfinite, **0 sweeps** | ✘ — §5.3 |
 
 **The one difference worth naming here is the last-but-one row**, because it is a *placement*
@@ -344,6 +350,25 @@ Nothing errors and nothing warns; the mesh is simply wrong in a way that looks l
   same idea and should not be done first: two of these four cases deliberately want different laws
   on the two sides of a block.
 
+### 5.8 THE ONLY SHAPES AN INTERIOR LINE CAN TAKE ARE A CHORD, A STORED POLYLINE, AN ARC OR AN ELLIPSE **[V]**
+
+This is the shape difference the Fig. 6.2 comparison shows most plainly. GridPro's shells round
+the plate are **flat in the middle and bend DOWN toward the plate at both ends**, which is what an
+elliptic solve's isolines do. This repo's shells are **constant-distance offsets**, so at the ends
+they bulge OUT to x = -d instead, and each one meets the vertical ray at x = 0 and x = 1 in a
+corner. The structure is the same and the shapes are not.
+
+- **What the model offers**: a straight chord, a bound/`follows` stored polyline, and since #175 a
+  `curve` that is an **arc or an ellipse**. There is no spline and no "isoline of a solve".
+- **What would close most of it, with no mesher change**: make the OUTER shells ellipses about the
+  plate's own centre rather than constant-distance offsets — an ellipse pinches at the ends
+  exactly the way the figure's shells do, and `curve` already accepts one. The inner shells have
+  to stay offsets (an ellipse that thin would clip the plate's own ends), so the generator would
+  carry a blend. It is a generator change and it is NOT done here: this file reports the shape
+  difference rather than tuning it away, and the picture is in the tree so the claim is checkable.
+- **The other half is §5.3**: with the elliptic smoother off, nothing relaxes the kink at those
+  corners either.
+
 ### 5.7 SIXTEEN SECTORS IS A PARITY CONSTRAINT, AND IT COSTS TWO FEATURES OF FIG. 5.1 **[V]**
 
 Walking the rosette's rectangle counter-clockwise, its point list is
@@ -380,6 +405,26 @@ than the renderer can separate, so each number is a **floor** and not a count. W
 The one thing pixels give exactly is **extent**, because the axis ticks are labelled: all seven
 windows above are calibrated, and the two domains (x ∈ [-2, 3] × y ∈ [-1.5, 1.5] and
 x ∈ [-10, 24.06] × y ∈ [-10.13, 10.13]) are reproduced to the pixel. **[V]**
+
+---
+
+## 6a. The renderer was part of the measurement, and it was wrong twice **[V]**
+
+Two of the differences in the first version of this note were MINE, not the mesher's, and both
+were found by putting the pictures side by side rather than by reading numbers:
+
+1. **Anti-aliasing.** Matplotlib smooths a thin line over two or three pixels at partial alpha.
+   Measured on the cylinder: my render came out at ink fraction **0.81** against the published
+   figure's **0.52** on the same circle, **while carrying fewer lines than it**. `plot.py` now
+   draws every LineCollection with `antialiased=False` and shows the target with nearest-neighbour
+   interpolation.
+2. **Scale.** At 6 inches and 150 dpi a panel is 900 px across; the published figures are 575 to
+   692. The same declaration drawn 1.5x larger at the same line width reads as a denser mesh. Both
+   panels now share one figure aspect and `--lw` is set to the target's upscaled line width.
+
+**Neither changed a single node.** They changed what the comparison was a comparison OF, which is
+why they are recorded here: a reproduction note's renderer is an instrument, and an uncalibrated
+instrument produced two "findings" that were about matplotlib.
 
 ---
 

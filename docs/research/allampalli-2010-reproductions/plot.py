@@ -12,6 +12,15 @@ page, there is no fill, and no boundary is drawn heavy. Comparing a fill to a
 wireframe by eye is comparing two renderings and not two meshes, so this file
 reproduces the target's own rendering instead.
 
+AND THE LINES ARE DRAWN HARD, NOT ANTI-ALIASED. The targets are Tecplot
+rasters: one pixel per line, full saturation. Matplotlib's default smooths a
+thin line over two or three pixels at partial alpha, which at these densities
+reads as a PALER mesh -- measured, my own cylinder render came out at ink
+fraction 0.81 against the target's 0.52 on the same circle while carrying FEWER
+lines than it. A reader comparing those two panels is comparing renderers. So
+every LineCollection here sets `antialiased=False`, and the target image is
+shown with nearest-neighbour interpolation for the same reason.
+
 TWO CONSEQUENCES, both deliberate. The palette here is Tecplot's saturated one
 rather than the viewer's qualitative pastels, and it is given PER CASE so that
 a block can be drawn in the colour the published figure gave the same region --
@@ -43,7 +52,7 @@ SAMPLES = os.path.join(HERE, "..", "gridpro-mesh-samples")
 # colour rather than only shape for shape.
 TECPLOT = {
     "red": "#ff0000", "green": "#00c000", "blue": "#0000ff",
-    "cyan": "#00c0c0", "magenta": "#ff00ff", "yellow": "#e0d000",
+    "cyan": "#00ffff", "magenta": "#ff00ff", "yellow": "#ffff00",
     "black": "#000000", "orange": "#ff8000", "purple": "#8000ff",
     "grey": "#808080", "pink": "#ff80c0", "olive": "#808000",
     "teal": "#008080", "navy": "#000080", "lime": "#80ff00",
@@ -114,7 +123,8 @@ def draw(ax, path, palette, lw, window=None):
     for b in sorted(groups):
         name = palette[b % len(palette)]
         ax.add_collection(LineCollection(
-            groups[b], colors=TECPLOT.get(name, name), linewidths=lw))
+            groups[b], colors=TECPLOT.get(name, name), linewidths=lw,
+            antialiaseds=False))
     if window:
         ax.set_xlim(window[0], window[1])
         ax.set_ylim(window[2], window[3])
@@ -140,7 +150,15 @@ def main():
     ap.add_argument("--title", default="")
     ap.add_argument("--target-title", default="")
     ap.add_argument("--lw", type=float, default=0.3)
-    ap.add_argument("--size", type=float, default=7.0)
+    # Both panels are drawn at the SAME pixel height and the target is
+    # upscaled with nearest-neighbour, so its pixels stay pixels. The mesh
+    # panel then sits at roughly 1.5x the target's own data scale, and `--lw`
+    # is set to match the target's upscaled line width -- otherwise the
+    # comparison is between renderers: measured on the cylinder, a 0.18 pt
+    # anti-aliased line read as ink fraction 0.81 against the published
+    # figure's 0.52 on the same circle while carrying FEWER lines than it.
+    ap.add_argument("--size", type=float, default=6.0)
+    ap.add_argument("--dpi", type=float, default=150.0)
     a = ap.parse_args()
 
     pal = [s.strip() for s in a.palette.split(",") if s.strip()]
@@ -148,8 +166,12 @@ def main():
         import matplotlib.image as mpimg
         img = mpimg.imread(a.target if os.path.isabs(a.target)
                            else os.path.join(SAMPLES, a.target))
-        fig, axes = plt.subplots(1, 2, figsize=(2 * a.size, a.size))
-        axes[0].imshow(img)
+        # The figure keeps the TARGET's own aspect, so neither panel is
+        # stretched and the two can be laid over each other by eye.
+        size = a.size
+        fig, axes = plt.subplots(
+            1, 2, figsize=(2 * size, size * img.shape[0] / img.shape[1]))
+        axes[0].imshow(img, interpolation="nearest")
         axes[0].set_axis_off()
         axes[0].set_title(a.target_title or "GridPro (published figure)",
                           fontsize=11)
@@ -157,12 +179,12 @@ def main():
         axes[1].set_title(a.title or "this repo, MESH_MODE 1 — %d blocks, %d quads"
                           % (nblk, ncell), fontsize=11)
     else:
-        fig, ax = plt.subplots(figsize=(a.size, a.size))
+        fig, ax = plt.subplots(figsize=(a.size or 7.0, a.size or 7.0))
         ncell, nblk = draw(ax, a.mesh, pal, a.lw, a.window)
         ax.set_title(a.title or "%d blocks, %d quads" % (nblk, ncell),
                      fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(a.out, dpi=150, facecolor="white")
+    fig.savefig(a.out, dpi=a.dpi, facecolor="white")
     print("wrote %s  (%d blocks, %d cells)" % (a.out, nblk, ncell))
     return 0
 

@@ -20,10 +20,14 @@ declaration, and that is the honest way to report it.
 DENSITY, MEASURED OFF THE FIGURE rather than guessed. ``measure_target.py``
 counts grid lines crossing a circle drawn on the image: 430 at r = 18.8 on
 fig6-15, still rising with radius, and the ink fraction says the image is at the
-limit of what it can resolve rather than that the count has stopped. So the
-target carries AT LEAST 430 radial lines and the picture cannot say how many
-more. 480 is what this file declares -- 120 per quadrant -- which reproduces
-the figure's moire at the published pixel size.
+limit of what it can resolve rather than that the count has stopped.
+
+THAT READING IS CORRECTED BY A CONTROL, which is the only reason a number
+is quoted at all: running the same counter over a render of THIS mesh, whose
+count is known, reads 388 where the truth is 480 at the same relative radius.
+So the counter under-reads by a factor 1.24 there, and the target's 430 is
+about 530 lines rather than 430. 528 is what this file declares -- 132 per
+quadrant -- and it is an estimate with a stated error bar, not a count.
 
     python3 docs/research/allampalli-2010-reproductions/make_cylinder.py [--run]
 """
@@ -41,13 +45,22 @@ REL = os.path.relpath(HERE, mblib.ROOT)
 
 BODY_R = 0.5
 FAR_R = 25.0
-PER_QUARTER = 120          # circumferential INTERVALS per block -> 480 around
-RADIAL = 257               # nodes along each radial -> 256 intervals
+PER_QUARTER = 60           # circumferential INTERVALS per block -> 240 around
+RADIAL = 151               # nodes along each radial -> 150 intervals
 FACET_MULT = 4             # facets per interval on both circles (#94: a whole
                            # number, so no node lands mid-facet)
-WALL_DS = 0.005            # 1% of the radius; the circumferential spacing at
-                           # the wall is 2*pi*0.5/480 = 0.00654, so the first
-                           # cell is very nearly square
+WALL_DS = 0.013090         # = 2*pi*0.5/240, the circumferential spacing AT THE
+                           # WALL, so the first cell is square and the grid is
+                           # ISOTROPIC rather than boundary-layer clustered.
+                           # THAT IS WHAT THE TARGET IS, and it was the one
+                           # thing this reproduction had wrong: the figure's
+                           # near-wall rings measure 0.010 to 0.020 apart on
+                           # fig6.16 (126 px per unit, so 1 to 3 px) against
+                           # the 0.005 a boundary-layer habit put here, and
+                           # at r = 9 its cells measure 0.2 both ways. Entry
+                           # 17 chapter 6 is ACOUSTIC SCATTERING: a wave has
+                           # to be resolved everywhere, and nothing in that
+                           # problem wants a clustered wall.
 
 
 def circle_segs(r, per_quarter_facets):

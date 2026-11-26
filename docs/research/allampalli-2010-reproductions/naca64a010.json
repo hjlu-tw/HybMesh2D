@@ -2538,9 +2538,9 @@
         "g1"
       ],
       "kind": "wall",
-      "count": 19,
+      "count": 21,
       "spacing": {
-        "ds_end": 0.09
+        "ds_end": 0.08
       }
     },
     {
@@ -2550,9 +2550,9 @@
         "g2"
       ],
       "kind": "interface",
-      "count": 25,
+      "count": 27,
       "spacing": {
-        "ds_end": 0.18
+        "ds_end": 0.16
       }
     },
     {
@@ -2563,7 +2563,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.09
+        "ds_end": 0.08
       }
     },
     {
@@ -2574,7 +2574,7 @@
       ],
       "kind": "wall",
       "spacing": {
-        "ds_end": 0.18
+        "ds_end": 0.16
       }
     },
     {
@@ -2593,7 +2593,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.09
+        "ds_end": 0.08
       }
     },
     {
@@ -2620,7 +2620,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.09
+        "ds_end": 0.08
       }
     },
     {
@@ -2647,7 +2647,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.09
+        "ds_end": 0.08
       }
     },
     {
@@ -2674,7 +2674,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.09
+        "ds_end": 0.08
       }
     },
     {
@@ -2692,9 +2692,9 @@
         "g12"
       ],
       "kind": "interface",
-      "count": 25,
+      "count": 27,
       "spacing": {
-        "ds_start": 0.18
+        "ds_start": 0.16
       }
     },
     {
@@ -2705,7 +2705,7 @@
       ],
       "kind": "wall",
       "spacing": {
-        "ds_end": 0.09
+        "ds_end": 0.08
       }
     },
     {
@@ -2716,7 +2716,7 @@
       ],
       "kind": "wall",
       "spacing": {
-        "ds_start": 0.18
+        "ds_start": 0.16
       }
     },
     {
@@ -2726,7 +2726,7 @@
         "g14"
       ],
       "kind": "wall",
-      "count": 15
+      "count": 17
     },
     {
       "id": "h164",
@@ -2735,9 +2735,9 @@
         "n10"
       ],
       "kind": "interface",
-      "count": 25,
+      "count": 27,
       "spacing": {
-        "ds_end": 0.18
+        "ds_end": 0.16
       }
     },
     {
@@ -2787,9 +2787,9 @@
         "g20"
       ],
       "kind": "interface",
-      "count": 25,
+      "count": 27,
       "spacing": {
-        "ds_start": 0.18
+        "ds_start": 0.16
       }
     },
     {
@@ -2807,9 +2807,9 @@
         "g22"
       ],
       "kind": "wall",
-      "count": 21,
+      "count": 23,
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2820,7 +2820,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.18
+        "ds_end": 0.16
       }
     },
     {
@@ -2831,7 +2831,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2842,7 +2842,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.18
+        "ds_end": 0.16
       }
     },
     {
@@ -2861,7 +2861,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2880,7 +2880,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2899,7 +2899,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2918,7 +2918,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2937,7 +2937,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2956,7 +2956,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2967,7 +2967,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.18
+        "ds_start": 0.16
       }
     },
     {
@@ -2978,7 +2978,7 @@
       ],
       "kind": "wall",
       "spacing": {
-        "ds_start": 0.07
+        "ds_start": 0.06
       }
     },
     {
@@ -2989,7 +2989,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.18
+        "ds_start": 0.16
       }
     },
     {
@@ -2999,9 +2999,9 @@
         "g39"
       ],
       "kind": "wall",
-      "count": 23,
+      "count": 25,
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3012,7 +3012,7 @@
       ],
       "kind": "wall",
       "spacing": {
-        "ds_end": 0.18
+        "ds_end": 0.16
       }
     },
     {
@@ -3023,7 +3023,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3042,7 +3042,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3061,7 +3061,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3080,7 +3080,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3099,7 +3099,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3118,7 +3118,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3137,7 +3137,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3148,7 +3148,7 @@
       ],
       "kind": "wall",
       "spacing": {
-        "ds_start": 0.18
+        "ds_start": 0.16
       }
     },
     {
@@ -3159,7 +3159,7 @@
       ],
       "kind": "wall",
       "spacing": {
-        "ds_start": 0.22
+        "ds_start": 0.2
       }
     },
     {
@@ -3170,7 +3170,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.18
+        "ds_start": 0.16
       }
     },
     {
@@ -3197,7 +3197,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.18
+        "ds_end": 0.16
       }
     },
     {
@@ -3208,7 +3208,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_start": 0.18
+        "ds_start": 0.16
       }
     },
     {
@@ -3235,7 +3235,7 @@
       ],
       "kind": "interface",
       "spacing": {
-        "ds_end": 0.18
+        "ds_end": 0.16
       }
     },
     {
