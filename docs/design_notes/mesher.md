@@ -5562,6 +5562,64 @@ Blind spots, named:
     of 20. The cap sweep above was run by hand and is a dated quotation, like #85's.
 
 
+**A GRADED SIDE FACING A UNIFORM ONE** (#195, measured 2026-11-26). The rule
+`.claude/rules/mesher-multiblock.md` states in four words — *the COUNT propagates; the
+SPACING LAW does not* — is correct, is deliberate, and is a trap nothing used to say
+anything about.
+
+**WHERE IT WAS FOUND, and that it was found by building rather than by reading matters.**
+Reproducing the published GridPro flat-plate grid
+(`docs/research/allampalli-2010-reproductions.md`) needed the chordwise cells bunched at the
+plate's two ends. Declaring that on the WALL and leaving the concentric shells facing it at
+the default gives a mesh with no error, no warning and no symptom until the quality
+instrument is read:
+
+| | worst wall first cell | mean non-orthogonality |
+|---|---|---|
+| the clustering on the wall only | **531.17 %** off the declared height | **13.621 deg** |
+| the same law on every edge of the class | 6.99 % | 5.990 |
+
+The documentation said the right thing and the author — who had read it — still spent an
+hour on it, because the failure looks like a mesher bug rather than like a declaration with
+a hole in it. **A rule a reader can follow and still fall into is a rule that wants a
+warning beside it, not a better sentence.**
+
+**WHAT IS WARNED ABOUT IS NARROWER THAN "THE LAWS DIFFER", AND THE SHIPPED C-GRID IS WHY.**
+That case clusters its aerofoil at BOTH ends and the far-field side facing it at ONE,
+deliberately — it is what took it from 59.52 to 32.04 degrees and let it run at all. A
+predicate keyed on "these two laws are not the same" would name it on every run, and a
+warning that fires on a shipped case nobody intends to change is the permanently-red gate
+this repo's lint policy refuses in as many words. So the subject is **graded against NONE**:
+one side asks for a distribution that is not uniform and the side facing it says nothing at
+all. That is a shape with no legitimate reading, because the side saying nothing is not
+declining to cluster — it has not been asked the question.
+
+**AND `law: "uniform"` IS NOT A GRADING.** Tanh at delta 0 is the same expression as
+uniform, so the default already produces that distribution; declaring it is a statement
+about the document and not about where the nodes go. Gated by 67c.
+
+**THE RELATION IS THE BLOCK's TWO OPPOSITE SIDES AND NOT THE COUNT CLASS**, which was the
+first design and was wrong. A count class is transitive — it is what carries one seed across
+a whole topology — so a class-wide test would pair two edges at opposite ends of a mesh and
+name them in one sentence. The tilting is local: it happens inside ONE block, between the
+two sides the fill blends between, and that is the only pair a reader can act on.
+
+**ONE SHIPPED CASE NAMES ITSELF, AND IT IS LEFT ALONE ON PURPOSE.**
+`examples/topology/hgrid_blocks.json` grades `v00` against a uniform `v10`. Declaring the
+same law on `v10` and `v20` takes that mesh from **2.859 deg max / 0.435 mean
+non-orthogonality to exactly 0.000 / 0.000** — the whole of that example's
+non-orthogonality was this tilt, which is the sharpest evidence the warning has. It is still
+not fixed, because that declaration is the counter-example `.claude/rules/mesher-multiblock.md`
+uses for the Hermite fill ("`mb_hgrid` is straight-sided and DIFFs"): tidying the case would
+delete the evidence for a rule next door. The example's own header now says all of this, so
+the next reader meets the argument before the temptation.
+
+**THE INJECTION ROUND CAUGHT ITS OWN HARNESS FIRST.** Seven mutations, each verified to have
+changed the test binary before the gate was run — because the first attempt did not check,
+reused a stale object file, and scored one injection against the previous one's binary. An
+eighth is recorded as unreachable rather than missing: deleting the CALL does not compile,
+`-Werror -Wunused-function` rejecting the now-unreferenced function.
+
 **A DIFFERENT HEIGHT AT EACH END** (#177, measured 2026-10-20). Until this ticket an edge
 could cluster at one end, or at both ends to the SAME height, and two DIFFERENT heights was
 refused by name:

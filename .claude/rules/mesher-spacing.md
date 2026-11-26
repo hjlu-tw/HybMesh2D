@@ -142,6 +142,44 @@ dispatch is `spacingAlong` in `src/MultiBlock.cpp`; #177). **NO NEW KEY** — `d
   line in the exported `.vtk`.
   Why: `docs/design_notes/mesher.md`, "A DIFFERENT HEIGHT AT EACH END".
 
+**A GRADED SIDE FACING A UNIFORM ONE IS A WARNING, AND THE RELATION IS THE BLOCK's**
+(`warnGradedFacingUniform` / `edgeIsGraded` / `gradedLabel`, `src/MultiBlock.cpp`; #195).
+**THE PROPAGATION RULE IS UNCHANGED AND MUST STAY UNCHANGED**: a count propagates across a
+block, a spacing law does not, and two facing sides may carry different clustering on
+purpose — the shipped C-grid does, and that is what took it from 59.52 to 32.04 degrees.
+What is warned about is narrower: one side graded and the side FACING it left at the
+DEFAULT, where the fill blends two distributions that do not correspond and every line
+between them tilts.
+- **MEASURED, on a fourteen-sided flat plate whose wall was clustered and whose concentric
+  shells were left uniform**: worst wall first cell **531.17 %** off the height the
+  declaration asks for and mean non-orthogonality **13.621 deg**, against **6.99 %** and
+  **5.990** with the same law declared on both sides. Nothing errored and nothing warned;
+  the mesh was wrong in a way that reads as a mesher bug
+  (`docs/research/allampalli-2010-reproductions.md` section 5.6).
+- **GRADED means the nodes move, not that the document said something.** `cluster[]`, a raw
+  `delta` or the `geometric` law answer yes; **`law: "uniform"` answers NO**, because tanh at
+  delta 0 is the same expression and the default already produces that distribution.
+- **THE PAIR IS A BLOCK's TWO OPPOSITE SIDES, NEVER THE COUNT CLASS.** A class is transitive
+  and reaches across a topology, so a class-wide test would name two edges that never meet;
+  the tilting happens inside ONE block and that is what the message points at.
+- **A WARNING, NEVER A REFUSAL** — it is expressible, a generator cannot know the author did
+  not mean it, and `MbParams` has no switch to turn a refusal off. The message names the
+  block, both edges, which side of the block each one is, the law itself with its height, and
+  BOTH fixes (the same law scaled to the other side's length, or a spacing of its own).
+- **ONE SHIPPED CASE NAMES ITSELF AND IS DELIBERATELY NOT FIXED**: `examples/topology/hgrid_blocks.json`
+  grades `v00` (`geometric`, growth 1.3) against a uniform `v10`. Declaring the same law on
+  `v10` and `v20` takes that mesh's non-orthogonality from **2.859 deg max / 0.435 mean to
+  exactly 0.000 / 0.000** — measured — so the warning is right about it. It stays because
+  that declaration is `.claude/rules/mesher-multiblock.md`'s own counter-example for the
+  Hermite fill ("`mb_hgrid` is straight-sided and DIFFs"), and fixing the case would delete
+  the evidence for a different rule. **Do not "tidy" it without reading that bullet first.**
+- Gated by `tests/cpp/test_multiblock.cpp` 67 (7 hand injections, dated in that file, plus
+  one recorded as unreachable: deleting the call does not compile under
+  `-Werror -Wunused-function`). 67b is what makes the check non-vacuous — two facing sides
+  graded DIFFERENTLY must stay silent, which is the one outcome a laws-must-match predicate
+  would get wrong.
+  Why: `docs/design_notes/mesher.md`, "A GRADED SIDE FACING A UNIFORM ONE".
+
 ## Named blind spots
 
 Consolidated here rather than trailing each rule, so a coverage claim can be checked against
@@ -167,3 +205,12 @@ with the rules.
   about a first cell of 2e-7 of the edge. Past that a correct law reports itself as having
   missed. That is true of the one-parameter solvers since #55 and is not new here; no shipped
   case is within four orders of it.
+- **THE CHECK SKIPS A SIDE THAT IS A CHAIN**, so a chain member graded against a uniform
+  facing side is not named. A chain's members may legitimately carry different laws from
+  each other, so "does this side declare a law" has no single answer; 67e gates the skip
+  WITH a control that the same document warns through a non-chain pair, so the skip is the
+  chain and not the fixture. No shipped case carries both a chain and a grading.
+- **IT COMPARES DECLARATIONS, NOT NODES.** Two sides can both be graded and still not
+  correspond — different heights on sides of different lengths is the common case and is
+  often right, but so is the wrong version of it, and nothing here measures the result. The
+  tilt itself is visible to `MbQuality`'s non-orthogonality and to nothing earlier.

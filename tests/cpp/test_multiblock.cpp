@@ -6432,5 +6432,148 @@ int main() {
                 "corner and not any corner (" + std::to_string(irregular4) + ")");
     }
 
+    // CHECK 67'S INJECTIONS, run by HAND 2026-11-26 (#195). Each mutates
+    // `warnGradedFacingUniform` or `edgeIsGraded` in src/MultiBlock.cpp, is built
+    // with a FORCED mtime and is verified to have changed the binary before the
+    // gate is run — the first attempt at this round reused a stale object file
+    // and scored one injection against the previous one's binary.
+    //
+    //   A  the function returns before doing anything   -> 67, 67d, 67e-control
+    //   B  the predicate becomes "the two laws DIFFER"  -> 67b, 67c
+    //   C  `law: "uniform"` counts as a grading         -> 67c
+    //   D  ADJACENT sides compared instead of facing    -> 67 (x3), 67b, 67e
+    //   E  a chain side is no longer skipped            -> 67e
+    //   F  the first-cell height left out of the message-> 67
+    //   G  the block named by index, not by its id      -> 67, 67e-control
+    //
+    // AND ONE THAT NEVER REACHES THE GATE, recorded because it looks like a hole
+    // and is not: DELETING THE CALL does not compile. `-Werror -Wunused-function`
+    // rejects the now-unreferenced function, so that mutation is refused by the
+    // build rather than by this check. Injection A is the reachable version of it.
+    //
+    // ── 67. A GRADED SIDE FACING A UNIFORM ONE (#195) ───────────────────────
+    //
+    // A count propagates across a block and a SPACING LAW does not. That is the
+    // rule and it stays the rule: two facing sides may carry different clustering
+    // on purpose, and the shipped C-grid does. What is never meant is one side
+    // graded and the side FACING it left at the default — the fill then blends
+    // two distributions that do not correspond and every line between them tilts.
+    // Measured on a flat plate whose wall was clustered and whose shells were
+    // not: worst wall first cell 531.17% off the declared height and mean
+    // non-orthogonality 13.621 deg, against 6.99% and 5.990 with the law on both.
+    //
+    // WHAT MAKES THIS CHECK NON-VACUOUS is 67b: two facing sides graded
+    // DIFFERENTLY must stay silent. A test that only asserted "warns when the
+    // laws differ" would pass with a predicate that fires on the shipped C-grid,
+    // which is the one outcome this warning must not have.
+    {
+        // One block, four sides, each able to carry its own spacing object.
+        auto box = [](const std::string& sS, const std::string& sE,
+                      const std::string& sN, const std::string& sW) {
+            return std::string(R"({
+  "format_version": 1,
+  "corners": [
+    {"id": "sw", "kind": "free", "xy": [0.0, 0.0]},
+    {"id": "se", "kind": "free", "xy": [1.0, 0.0]},
+    {"id": "ne", "kind": "free", "xy": [1.0, 1.0]},
+    {"id": "nw", "kind": "free", "xy": [0.0, 1.0]}
+  ],
+  "edges": [
+    {"id": "s", "corners": ["sw", "se"], "kind": "wall", "count": 5)") + sS + R"(},
+    {"id": "e", "corners": ["se", "ne"], "kind": "wall", "count": 5)" + sE + R"(},
+    {"id": "n", "corners": ["nw", "ne"], "kind": "wall")" + sN + R"(},
+    {"id": "w", "corners": ["sw", "nw"], "kind": "wall")" + sW + R"(}
+  ],
+  "blocks": [
+    {"id": "b0", "edges": ["s", "e", "n", "w"]}
+  ]
+})";
+        };
+        auto tilts = [](const MbResult& r) {
+            std::vector<std::string> out;
+            for (const std::string& w : r.warnings)
+                if (mentions(w, "the side FACING it")) out.push_back(w);
+            return out;
+        };
+        const std::string kDs = R"(, "spacing": {"ds_start": 0.05})";
+
+        MbResult flat = build(box("", "", "", ""));
+        CHECK(flat.ok && tilts(flat).empty(),
+              "67. a document that grades nothing is silent");
+
+        MbResult one = build(box(kDs, "", "", ""));
+        CHECK(one.ok, "67. the graded document still meshes (err: " + one.error + ")");
+        std::vector<std::string> w1 = tilts(one);
+        CHECK(w1.size() == 1,
+              "67. ONE warning when the south is graded and the north is not ("
+              + std::to_string(w1.size()) + ")");
+        if (w1.size() == 1) {
+            // The message has to carry four things or it cannot be acted on: WHICH
+            // block, WHICH edge declared the law, WHICH edge faces it, and what the
+            // law actually is. Asserted one at a time so a message that drops one
+            // of them fails on that one.
+            CHECK(mentions(w1[0], "block 'b0'"), "67. ...naming the block");
+            CHECK(mentions(w1[0], "edge 's'"), "67. ...naming the graded edge");
+            CHECK(mentions(w1[0], "edge 'n'"), "67. ...naming the edge facing it");
+            CHECK(mentions(w1[0], "south") && mentions(w1[0], "north"),
+                  "67. ...and which side of the block each one is");
+            CHECK(mentions(w1[0], "5.000e-02"),
+                  "67. ...and the first-cell height it asks for, so the reader does "
+                  "not have to go and look it up");
+        }
+
+        // ── 67b. TWO FACING SIDES GRADED DIFFERENTLY ARE NOT THE SUBJECT ─────
+        //
+        // The shipped C-grid clusters its aerofoil at BOTH ends and the far-field
+        // side facing it at ONE, deliberately, and that is what took it from
+        // 59.52 to 32.04 degrees. A predicate keyed on "the laws differ" would
+        // name it on every run.
+        MbResult both = build(box(kDs, "", R"(, "spacing": {"ds_end": 0.02})", ""));
+        CHECK(both.ok && tilts(both).empty(),
+              "67b. two facing sides graded DIFFERENTLY are silent — the rule is "
+              "graded-against-none, not laws-must-match");
+
+        // ── 67c. `law: "uniform"` IS NOT A GRADING ───────────────────────────
+        //
+        // Tanh at delta 0 is the same expression as uniform, so the DEFAULT already
+        // produces that distribution: declaring it says something about the
+        // document and nothing about where the nodes go.
+        MbResult uni = build(box(R"(, "spacing": {"law": "uniform"})", "", "", ""));
+        CHECK(uni.ok && tilts(uni).empty(),
+              "67c. declaring the 'uniform' law on one side alone is silent");
+
+        // ── 67d. THE PAIR COMPARED IS THE FACING ONE ─────────────────────────
+        //
+        // Grading the WEST must name the west and the east, not the south and the
+        // north. A check that compared "any two sides" would pass 67 and fail here.
+        MbResult west = build(box("", "", "", kDs));
+        std::vector<std::string> w2 = tilts(west);
+        CHECK(w2.size() == 1 && mentions(w2[0], "edge 'w'") && mentions(w2[0], "edge 'e'")
+                  && !mentions(w2[0], "edge 's'"),
+              "67d. grading the west names the west and the EAST, and not the south");
+
+        // ── 67e. A CHAIN SIDE IS SKIPPED, with a control that it could fire ──
+        //
+        // A chain's members may legitimately carry different laws from each other,
+        // so "does this side declare a law" has no single answer. The skip is a
+        // named blind spot in `.claude/rules/mesher-spacing.md`, not an oversight.
+        MbResult chainTop = build(termination(R"(["n0", "n1"])", "interface",
+                                              R"(, "spacing": {"ds_start": 0.05})"));
+        CHECK(chainTop.ok, "67e. the chain document meshes (err: " + chainTop.error + ")");
+        CHECK(tilts(chainTop).empty(),
+              "67e. a block whose facing side is a CHAIN is skipped");
+        // THE CONTROL: the same fixture CAN produce the warning, through a pair
+        // that is two single edges. Without it the assertion above is satisfied by
+        // a predicate that never fires on this document at all.
+        MbResult chainCtl = build(swap1(termination(),
+                                        R"({"id": "w0", "corners": ["b0", "m0"], "kind": "wall", "count": 4})",
+                                        R"({"id": "w0", "corners": ["b0", "m0"], "kind": "wall", "count": 4, "spacing": {"ds_start": 0.05}})"));
+        std::vector<std::string> w3 = tilts(chainCtl);
+        CHECK(w3.size() == 1 && mentions(w3[0], "block 'L'") && mentions(w3[0], "edge 'w0'"),
+              "67e. ...and the control: grading a non-chain side of the SAME document "
+              "does warn, so the skip above is the chain and not the fixture ("
+              + std::to_string(w3.size()) + ")");
+    }
+
     return hybmesh::test::report("test_multiblock");
 }

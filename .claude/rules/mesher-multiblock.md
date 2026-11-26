@@ -315,6 +315,7 @@ findings and the dated injection log: `docs/design_notes/mesher.md`.**
 - **The relation is "opposite sides of one block", and there is NO second rule for an interface** — a
   shared edge is one edge two blocks name, so it propagates across blocks by itself. `count` is now a
   SEED. The COUNT propagates; the **SPACING LAW does not**.
+  **A GRADED SIDE FACING A UNIFORM ONE IS NOW WARNED ABOUT** (#195, `.claude/rules/mesher-spacing.md`); the propagation rule above is unchanged.
   **ONE EXCEPTION SINCE #190, and it is the one place this relation is NOT symmetric**: where a side
   is a CHAIN of edges the two are not merged at all — the chain's members are resolved by the
   relation above, their SUM decides the side facing it, and a seed that contradicts that sum is

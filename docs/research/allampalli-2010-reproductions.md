@@ -342,13 +342,23 @@ from `make_plate.py` and re-running:
 
 Nothing errors and nothing warns; the mesh is simply wrong in a way that looks like a mesher bug.
 
-- **Proposal: warn when one count class carries more than one spacing law.** The class is already
-  built (it is what propagates the count), each edge's law is already parsed, and the message
-  writes itself — *"edge X declares `ds_start` and the edge facing it across block B declares
-  none"*. It is the cheapest item on this list and it would have paid for itself twice in one
-  session. A **normalised** law that propagates with the count would be the larger version of the
-  same idea and should not be done first: two of these four cases deliberately want different laws
-  on the two sides of a block.
+- ~~**Proposal: warn when one count class carries more than one spacing law.**~~ **SHIPPED (#195),
+  AND NARROWER THAN THIS PROPOSAL IN TWO WAYS, both of which the proposal had wrong.** **[V]**
+  - **The pair is a BLOCK's two opposite sides, not the count class.** A class is transitive and
+    reaches across a topology, so the proposed version would have named two edges that never meet.
+  - **The subject is graded against NONE, not "the laws differ".** The shipped C-grid clusters its
+    aerofoil at both ends and the far-field side facing it at one, on purpose, and that is what
+    took it from 59.52° to 32.04°: a laws-must-match predicate would have named a shipped case on
+    every run. Gate check 67b is that outcome, asserted.
+
+  The rule is `.claude/rules/mesher-spacing.md`, the rationale
+  `docs/design_notes/mesher.md` ("A GRADED SIDE FACING A UNIFORM ONE"), the gate
+  `tests/cpp/test_multiblock.cpp` 67 with seven hand injections. **One shipped case names itself
+  and is deliberately left alone**: `examples/topology/hgrid_blocks.json`, whose whole
+  non-orthogonality turns out to BE this tilt (2.859° max / 0.435° mean → exactly 0.000 / 0.000
+  with the law declared on both sides) but whose declaration is another rule's counter-example.
+  Behaviour-preserving, measured: **23/23 golden cases SAME at 0.000e+00** across two separately
+  built binaries.
 
 ### 5.8 THE ONLY SHAPES AN INTERIOR LINE CAN TAKE ARE A CHORD, A STORED POLYLINE, AN ARC OR AN ELLIPSE **[V]**
 

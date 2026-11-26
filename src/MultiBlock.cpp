@@ -1700,6 +1700,101 @@ bool resolveBlockFrames(const std::vector<BlockSpec>& blocks,
     return true;
 }
 
+// ── A GRADED SIDE FACING A UNIFORM ONE (#195) ─────────────────────────────
+//
+// Does this edge's declaration ask for a distribution that is not uniform? Tanh
+// at delta 0 IS uniform (the same expression), so the DEFAULT law answers no and
+// only a clustering, a raw delta or the geometric law answers yes. `law:
+// "uniform"` answers no as well — it declares the distribution the default
+// already produces, which is a statement about the document and not about the
+// nodes.
+bool edgeIsGraded(const EdgeSpec& e) {
+    return e.cluster[END_START] || e.cluster[END_FINISH]
+        || e.delta != 0.0 || e.law == LAW_GEOMETRIC;
+}
+
+// How that declaration READS in the warning below. One place, because a message
+// that said only "declares a clustering" sends the reader to look for something
+// they then have to find for themselves.
+std::string gradedLabel(const EdgeSpec& e) {
+    std::ostringstream os;
+    os.setf(std::ios::scientific);
+    os.precision(3);
+    if (e.cluster[END_START] && e.cluster[END_FINISH])
+        os << "clusters at BOTH ends (" << e.ds[END_START] << ", "
+           << e.ds[END_FINISH] << ")";
+    else if (e.cluster[END_START])
+        os << "clusters at its 'start' end (" << e.ds[END_START] << ")";
+    else if (e.cluster[END_FINISH])
+        os << "clusters at its 'end' end (" << e.ds[END_FINISH] << ")";
+    else if (e.law == LAW_GEOMETRIC)
+        os << "declares the 'geometric' law (growth " << e.growth << ")";
+    else
+        os << "declares a raw tanh delta (" << e.delta << ")";
+    return os.str();
+}
+
+// WARN WHEN ONE SIDE OF A BLOCK IS GRADED AND THE SIDE FACING IT IS NOT.
+//
+// A count propagates across a block and a SPACING LAW does not. That stays the
+// rule, and the rule is right: two facing sides may legitimately carry different
+// clustering, and the shipped C-grid does — its far-field nose sides cluster at
+// one end against an aerofoil clustered at both, which is what took that case
+// from 59.52 to 32.04 degrees. What is never what anybody meant is one side
+// graded and the side FACING IT left at the default: the transfinite fill blends
+// between two distributions that do not correspond, so every line between them
+// tilts. Measured on a fourteen-sided flat plate whose wall was clustered and
+// whose concentric shells were left uniform: worst wall first cell 531.17% off
+// the height the declaration asks for and mean non-orthogonality 13.621 degrees,
+// against 6.99% and 5.990 with the same law declared on both sides. Nothing
+// errored and nothing warned; the mesh simply came out wrong in a way that reads
+// as a mesher bug.
+//
+// A WARNING AND NOT A REFUSAL, for the reason every warning on this path is one:
+// it is expressible, a generator cannot know the author did not mean it, and
+// `MbParams` has no switch to turn a refusal off.
+//
+// THE RELATION IS THE BLOCK's, NOT THE COUNT CLASS's, and that is deliberate.
+// A count class is transitive and can reach the other side of a topology, so a
+// class-wide test would name two edges that never meet; the tilting happens
+// inside ONE block, between its two opposite sides, and that is what the message
+// can point at.
+void warnGradedFacingUniform(const std::vector<BlockSpec>& blocks,
+                             const std::vector<EdgeSpec>& edges,
+                             std::vector<std::string>& warnings) {
+    // The two opposite-side pairs, in [south, east, north, west] order.
+    static const int kFacing[2][2] = {{0, 2}, {3, 1}};
+    for (const BlockSpec& b : blocks) {
+        for (int pr = 0; pr < 2; ++pr) {
+            const SideSpec& sa = b.sides[static_cast<size_t>(kFacing[pr][0])];
+            const SideSpec& sb = b.sides[static_cast<size_t>(kFacing[pr][1])];
+            // A CHAIN IS SKIPPED, and it is a named blind spot rather than an
+            // oversight: a chain's members may legitimately carry different laws
+            // from each other, so "the side declares a law" has no single answer
+            // and a test built on one would fire on documents that are correct.
+            if (sa.chain() || sb.chain()) continue;
+            const EdgeSpec& ea = edges[static_cast<size_t>(sa.member[0])];
+            const EdgeSpec& eb = edges[static_cast<size_t>(sb.member[0])];
+            if (edgeIsGraded(ea) == edgeIsGraded(eb)) continue;
+            bool firstIsGraded = edgeIsGraded(ea);
+            const EdgeSpec& g = firstIsGraded ? ea : eb;
+            const EdgeSpec& u = firstIsGraded ? eb : ea;
+            int gSide = kFacing[pr][firstIsGraded ? 0 : 1];
+            int uSide = kFacing[pr][firstIsGraded ? 1 : 0];
+            warnings.push_back(
+                "block '" + b.id + "': edge '" + g.id + "' (its " + sideName(gSide)
+                + ") " + gradedLabel(g) + ", and edge '" + u.id + "' (its "
+                + sideName(uSide) + "), the side FACING it, declares no spacing at "
+                "all. A node count propagates across a block but a spacing law does "
+                "not, so the fill blends between two distributions that do not "
+                "correspond and every line between them tilts. Declare the same law "
+                "on '" + u.id + "' — scaled to its own length if the two sides are "
+                "different lengths — or, if they are meant to differ, give it a "
+                "spacing of its own rather than leaving it to the default.");
+        }
+    }
+}
+
 // Resolve every edge's node count from the seeds the document declares, and
 // report which of the two each one got. The other resolving phase; see
 // `resolveBlockFrames` for why it is a function.
@@ -2689,6 +2784,11 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     std::vector<int> edgeClass;
     if (!resolveEdgeCounts(blocks, edges, r.edgeCounts, edgeClass, err))
         return fail(err);
+
+    // A graded side facing a uniform one — measured, and said out loud (#195).
+    // After the global defaults above, so `ds[]` in the message is the height
+    // that will actually be used rather than the one the edge happened to spell.
+    warnGradedFacingUniform(blocks, edges, r.warnings);
 
     // ── The fallback boundary condition ───────────────────────────────────
     // Resolved before attachment, because a bound edge whose segment carries no

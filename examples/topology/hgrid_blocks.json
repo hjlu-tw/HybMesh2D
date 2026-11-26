@@ -30,6 +30,15 @@
 //        v00     "bl"    v10     "br"    v20
 //         │               │               │
 //        c00 ────h00──── c10 ────h10──── c20
+//
+// THIS DOCUMENT NAMES ITSELF IN A WARNING, ON PURPOSE (#195). 'v00' declares the
+// geometric law and 'v10', the side facing it across block 'bl', declares nothing,
+// so the run says that the fill between them tilts -- and it is right: declaring the
+// same law on 'v10' and 'v20' takes this mesh from 2.859 deg max / 0.435 mean
+// non-orthogonality to exactly 0.000 / 0.000. It is NOT fixed, and the reason is in
+// another rule: this is .claude/rules/mesher-multiblock.md's counter-example for the
+// Hermite fill ("mb_hgrid is straight-sided and DIFFs"), so tidying it here would
+// delete the evidence for a rule next door. Read that bullet before changing it.
 {
   "format_version": 1,
 
