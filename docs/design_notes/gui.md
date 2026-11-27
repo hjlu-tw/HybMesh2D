@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 314, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 315, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -3850,6 +3850,79 @@ message now builds from the joined list. A ninth injection came back INERT and i
 NEGATIVE CONTROL rather than fixed: dropping only the sentence's last clause leaves "The
 C-grid family" standing, so the sentence still names the family and nothing should redden.
 See `.claude/rules/gui-preflight.md` for the rules this produced.
+
+**THE SAME DOOR, ONE FAMILY ALONG — #199, measured 2026-11-27.** #197 gave the O-grid a
+far field it could build for itself; the two-ring family had the same first-use problem
+and twice the drawing (three closed outlines before the first mesh). It now takes the
+same door, and the interesting part is which half of it stayed shut.
+
+**The far field became optional and the SEAM did not, in one family.** That is the
+clearest statement of where `.claude/rules/gui-topology.md`'s rule actually runs. An
+outer boundary is analytic — since #175 an edge may declare the curve it IS, with no file
+anywhere — so it may be generated. A seam is an interior line that a `follows` edge
+attaches to, and a `follows` edge resolves to a stretch of a stored POLYLINE; generating
+one would mean writing a FILE with no stable-id scheme, no sidecar and no place in the
+project round trip. So the blank-seam refusal is untouched and still names
+**CAD ▸ Offset Geometry…**, and the generated document's seam edges still `follow` a real
+geometry while the far-field edges beside them declare a curve. #150 asked what happens
+when a later family wants an offset the user never sees; the answer is still that the
+rule holds, and now it holds next to a generated thing rather than instead of one.
+
+**The one decision this family had to make for itself: a generated outer ring pairs with
+the SEAM's corners, not with the body's.** The outer blocks run from the seam outward, so
+the seam is the ring they have to stay normal to; pairing with the body hands them the
+INNER ring's arc-length distribution, which the seam has already departed from.
+
+**Three fixtures were needed before that claim could be tested at all, and the first two
+could not fail.** On a circle, body and seam corners sit at the same angles. On an
+ellipse with an offset seam they still coincide, because `_ring` places every corner at
+an equal arc FRACTION of its own segment and all four segments are equal — so both rings
+hand `ring_corners` the same normalised cumulative lengths. The rule only has content
+when the body's segments carry UNEQUAL shares of its perimeter against a seam whose
+shares are equal, which is a fixture nobody draws by accident. On that one:
+
+| | worst | mean |
+|---|---|---|
+| far field DRAWN | 53.699° | 21.613° |
+| GENERATED, paired with the seam | 53.699° | **21.613°** |
+| GENERATED, paired with the body | 64.312° | 24.688° |
+
+So generating costs nothing against a drawn far field at the same radius, measured on a
+fixture where it COULD have cost something — which is the thing #197's first evidence
+lacked — and the pairing rule buys 3.1 degrees of mean and 10.6 of worst.
+
+**A STALE `.pyc` MADE THREE OF THOSE MEASUREMENTS LIE, AND THEY LIED IN THE DIRECTION
+THAT LOOKS LIKE SUCCESS.** The injection — pair with the body instead — came back
+byte-identical three times running, on three different fixtures, while the two corner
+rings were in fact 18 units apart. Each run imported a module from `__pycache__` compiled
+before the feature existed. The failure mode is the one `an-injection-that-came-back-inert`
+names and it was invisible from inside: the mesher ran, the quality block printed, the
+numbers were plausible, and the conclusion being drawn was "this distinction is vacuous"
+— which would have been written into the rule file as a measured finding. The harness now
+clears `__pycache__` before every run and passes `-B`.
+
+**And the injection harness scored a CRASH as an inert mutation.** Dropping the seam from
+the required list makes `plan` index a two-element list that now has one, so the suite
+dies with an `IndexError`, prints no `FAIL` line, and a harness counting `FAIL` lines sees
+silence. That is #154's trap a second time in one ticket — the first was #198's own gate
+message raising inside an f-string. The harness now reports CRASH separately, and it is
+weaker evidence than a red check: the mutation is detected, but it takes every check below
+it with it.
+
+**One check was passing on the wrong refusal.** Containment is walked over the SEAM's own
+points — #165's ruler mistake, stated for this family — and the first draft of that check
+used the round fixture, where a circular seam cannot poke out of a generated circle. The
+equivalent-radius ORDERING refused first, with a sentence that also contains the word
+"seam", so the check passed while measuring something else, and two injections against
+containment came back silent. The fixture that works is an elongated seam: equivalent
+radius 0.894, reaching x = ±4, inside the generated ellipse by the ruler and nowhere near
+inside it in fact.
+
+**#198's named blind spot is closed by this ticket**, which #198 predicted in as many
+words: the thin-body advisory now reaches the second ring family, because the ruler was
+put in `topology_counts` so the second caller would be one line. It still had to be
+written — a shared function is not a second caller.
+
 
 **#150's OWN QUESTION ARRIVED, AND THE ANSWER IS THAT THE RULE HOLDS.** #150 wrote: *"If a later
 family wants an offset the user never sees, that is a finding about this decision and should be

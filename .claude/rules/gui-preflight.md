@@ -179,12 +179,13 @@ IS NOT A REFUSAL** (#198; `services/topology_counts.py::ring_advice`, carried by
 
 ## Named blind spots
 
-- **ONLY THE O-GRID MEASURES THIS, AND THE OTHER RING FAMILY HAS THE SAME PROBLEM.** The
-  two-ring family builds a ring too and says nothing about a body it suits no better. #198
-  put the ruler in `topology_counts` rather than in the O-grid precisely so the second
-  caller is one line, and then did not add it, because that family's own read-out was being
-  changed in the same breath by another ticket and two edits to one `lines()` is how a
-  sentence gets lost.
+- ~~**ONLY THE O-GRID MEASURES THIS.**~~ **CLOSED BY #199**, the ticket #198 said would
+  take it: the two-ring family's read-out calls the same `ring_advice`, and
+  `tests/test_topology_tworing.py` 25i is what holds it there. Kept as a line rather than
+  deleted because the shape is worth seeing — the ruler was put in `topology_counts` so
+  the second caller would be one line, and the second caller still had to be WRITTEN.
+  **The C-grid and H-grid families still do not ask**, and for the C-grid that is correct
+  (it is the family this advice SENDS people to); for the H-grid nobody has looked.
 - **THE THRESHOLD SEPARATES THE FOUR BODIES THIS REPO SHIPS AND NOTHING MORE.** 0.5 was
   chosen from four measurements, all of them this tool's own fixtures; no body was found
   that sits NEAR it, so nothing says whether the advice is right at 0.45 or wrong at 0.55.

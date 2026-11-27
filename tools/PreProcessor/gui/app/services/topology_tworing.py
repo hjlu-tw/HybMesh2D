@@ -45,19 +45,23 @@ by hand, as #153's circle is, so the pairing is CHECKED and refused by name.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from app.services.topology_binding import BindingError, outline_problem
 from app.services.topology_preflight import (
     Refusal, nesting_refusal, no_context_refusal, outline_refusal,
     plan_refusal,
 )
-from app.services.topology_counts import MAX_COUNT, nodes_for_growth, wall_count
+from app.services import topology_genfar as genfar
+from app.services.topology_counts import (
+    MAX_COUNT, circularity, nodes_for_growth, wall_count,
+)
 from app.services.topology_ogrid import MIN_BLOCKS, radial_law
 from app.services.topology_ogrid_binding import (
     broken_in_ring_lists, parse_binding, ring_binding_problem,
 )
 from app.services.topology_spacing import last_interval
+from app.services.topology_tworing_plan import (  # noqa: F401
+    INERT_WHEN_BOUND, RING_ADVICE_BELOW, Plan,
+)
 
 #: The template's own name for the family, as stored in the project file.
 FAMILY = "tworing"
@@ -85,95 +89,15 @@ BINDING_LISTS = (("body", "tworing_body_segs", "tworing_body_geom", "w"),
                  ("far field", "tworing_far_segs", "tworing_far_geom", "o"))
 
 
-@dataclass
-class Plan:
-    """What the parameters derive, and why — the ONE owner, shared with the panel.
+def _lists(far_bound: bool) -> tuple:
+    """:data:`BINDING_LISTS`, or its first two when the far field is GENERATED.
 
-    Every number the read-out displays is computed here, so the panel cannot show a
-    figure the generated document does not use. ``problem`` is non-empty exactly when
-    :func:`build` would refuse, and carries the same sentence.
+    A truncated list rather than a skipped row inside each loop: every walk over the
+    three outlines then asks its question of exactly the geometries that exist, and
+    `zip` against the three names truncates with it. The SEAM is never dropped —
+    `BINDING_LISTS[1]` — which is the rule this family is built on.
     """
-
-    problem: str = ""
-    #: The edge id a binding refusal is about, so the repair panel (#138) flags that
-    #: edge rather than re-parsing the sentence.
-    broken_edge: str = ""
-    #: Blocks PER RING; the document declares twice this many.
-    blocks: int = 0
-    wall_counts: tuple[int, ...] = ()
-    n_theta: int = 0
-    ratio: float = 0.0
-    first_cell: float = 0.0
-    radius: float = 0.0
-    seam_radius: float = 0.0
-    far_radius: float = 0.0
-    inner: int = 0
-    inner_derived: int = 0
-    inner_overridden: bool = False
-    inner_clamped: bool = False
-    outer: int = 0
-    outer_derived: int = 0
-    outer_overridden: bool = False
-    outer_clamped: bool = False
-    #: The chord of edge ``ri0`` — the length the mesher distributes the inner ring's
-    #: nodes along, and therefore the length ``ds_start`` is solved from.
-    inner_chord: float = 0.0
-    #: The outer ring's first cell: the inner ring's own LAST interval.
-    ds_start: float = 0.0
-    body_segs: tuple[int, ...] = ()
-    seam_segs: tuple[int, ...] = ()
-    far_segs: tuple[int, ...] = ()
-    ccw: bool = True
-    seam_geom: str = ""
-    #: Rows this configuration has made inert (#149). ALWAYS EMPTY here, and declared
-    #: rather than left off, so the panel can ask every binding family the same
-    #: question instead of naming the ones that answer yes.
-    inert_rows: tuple[str, ...] = ()
-
-    def lines(self) -> list:
-        """The derivation, RESULT AND WORKING — #137's rule, and the read-out's text."""
-        if self.problem:
-            return [f"—  {self.problem}"]
-        return [
-            f"rings: {self.blocks} inner + {self.blocks} outer blocks, "
-            f"{self.n_theta} circumferential cells "
-            f"(counts {', '.join(str(c) for c in self.wall_counts[:8])}"
-            f"{'…' if len(self.wall_counts) > 8 else ''})",
-            f"1:1 law: q = 1 + 2π/{self.n_theta} = {self.ratio:.5f}",
-            f"inner: {self.inner} nodes over r {self.radius:.4g} → "
-            f"{self.seam_radius:.4g}"
-            + (" (overridden)" if self.inner_overridden
-               else f" (derived from BL_INITIAL_THICKNESS {self.first_cell:.3e})")
-            + (f" — CLAMPED at {MAX_COUNT}" if self.inner_clamped else ""),
-            f"seam: ds_start {self.ds_start:.6e} — DERIVED, the inner ring's own last "
-            f"interval over its {self.inner_chord:.4g} chord, so changing the inner "
-            f"count, the seam or the wall height moves it",
-            f"outer: {self.outer} nodes over r {self.seam_radius:.4g} → "
-            f"{self.far_radius:.4g}"
-            + (" (overridden)" if self.outer_overridden
-               else " (derived: q from that seam spacing)")
-            + (f" — CLAMPED at {MAX_COUNT}" if self.outer_clamped else ""),
-            # MORE CORNERS IS A QUALITY KNOB HERE, which it is not on the O-grid —
-            # but WHICH way of adding them matters, and the read-out says so because
-            # nothing else would. #155's research note measured the RE-SEGMENTING
-            # ladder and this family's first draft quoted it for `splits`; the Spec
-            # review measured `splits` itself and the two ladders are different. Both
-            # are on a 2:1 ellipse at 96 nodes around, unsmoothed, worst wall first
-            # cell. Gate: `test_topology_tworing.py` check 24 re-measures both.
-            f"corners: {self.blocks} edges per ring. The seam's nodes track the body's "
-            f"by ARC LENGTH, so the two rings are normal-opposite only on a circle, "
-            f"and the wall's first cell is out by that much before smoothing.",
-            "  · cutting the body AND the seam into more SOURCE segments, at the same "
-            "points, shrinks it fastest — 7.06% → 1.82% → 0.21% at 4, 8 and 16 "
-            "segments per ring, because those corners pair point for point.",
-            "  · raising Splits Per Segment helps LESS — 7.06% → 2.67% → 1.03% at the "
-            "same 4, 8 and 16 — because a split corner sits at equal arc FRACTION and "
-            "inherits the error. Unsmoothed only: the default 20 smoothing sweeps "
-            "repair either to 0.000000.",
-            f"seam BC: its {self.blocks} edges FOLLOW '{self.seam_geom}' as interfaces "
-            f"and export no face, so whatever you labelled those segments reaches "
-            f"nothing.",
-        ]
+    return BINDING_LISTS if far_bound else BINDING_LISTS[:2]
 
 
 def _ring(segs, splits: int) -> list:
@@ -199,9 +123,14 @@ def plan(model, ctx) -> Plan:
                      "mesh's geometry list; none was supplied.")
         return p
 
+    # THE FAR FIELD IS OPTIONAL AND THE SEAM IS NOT, which is this family's own
+    # shape rather than the O-grid's copied twice. A generated outer boundary is an
+    # analytic CURVE and legal (#197); a generated seam would have to be a stored
+    # POLYLINE for a `follows` edge to attach to, which is the rule that holds.
+    p.far_bound = bool(str(model.tworing_far_geom).strip())
     names = (model.tworing_body_geom, model.tworing_seam_geom, model.tworing_far_geom)
     gs = [ctx.geometry(n) for n in names]
-    for (role, _f, _gf, _pre), name, g in zip(BINDING_LISTS, names, gs):
+    for (role, _f, _gf, _pre), name, g in zip(_lists(p.far_bound), names, gs):
         why = outline_problem(ctx, role, name, g, closed_note=CLOSED_NOTE)
         # THE SEAM'S BLANK CASE IS THIS FAMILY'S OWN, and is the only one of the
         # twelve refusals in that cascade that is: it is the geometry a user is most
@@ -216,6 +145,8 @@ def plan(model, ctx) -> Plan:
             return p
     body, seam, far = gs
     p.seam_geom = seam.spelling
+    if p.far_bound:
+        p.inert_rows = INERT_WHEN_BOUND
 
     # Read by NAME rather than through `getattr(model, field)`: the parameter gate
     # derives what a family reads by walking this module for `<x>.<model field>`, so
@@ -224,13 +155,14 @@ def plan(model, ctx) -> Plan:
     stored = (model.tworing_body_segs, model.tworing_seam_segs,
               model.tworing_far_segs)
     held = []
-    for (role, _f, _gf, _pre), g, text in zip(BINDING_LISTS, gs, stored):
+    for (role, _f, _gf, _pre), g, text in zip(_lists(p.far_bound), gs, stored):
         ids, why = parse_binding(text, g.seg_ids, role)
         if why:
             p.problem = why
             return p
         held.append(ids)
-    p.body_segs, p.seam_segs, p.far_segs = held
+    p.body_segs, p.seam_segs = held[0], held[1]
+    p.far_segs = held[2] if p.far_bound else ()
     splits = max(1, int(model.tworing_splits))
 
     # Resolve, then order, then cover — every list before any question about counts.
@@ -239,7 +171,7 @@ def plan(model, ctx) -> Plan:
     # length complaint raised before the resolve would name no edge and point at any
     # of three geometries.
     lists = tuple((row[0], g, segs, row[3])
-                  for row, g, segs in zip(BINDING_LISTS, gs, held))
+                  for row, g, segs in zip(_lists(p.far_bound), gs, held))
     p.broken_edge, p.problem = ring_binding_problem(ctx, lists, splits)
     if p.problem:
         return p
@@ -254,7 +186,7 @@ def plan(model, ctx) -> Plan:
                      f"so segment it the same way you segmented the body — or make it "
                      f"with {OFFSET_ACTION}, which pairs by construction.")
         return p
-    if len(p.far_segs) != nb:
+    if p.far_bound and len(p.far_segs) != nb:
         p.problem = (f"the body binds {nb} source segment(s) and the far field "
                      f"{len(p.far_segs)}. Both rings pair one to one, so segment the "
                      f"far field the same way you segmented the body.")
@@ -280,7 +212,26 @@ def plan(model, ctx) -> Plan:
 
     p.radius = body.equivalent_radius()
     p.seam_radius = seam.equivalent_radius()
-    p.far_radius = far.equivalent_radius()
+    p.circularity = circularity(p.radius, body.perimeter)
+    if p.far_bound:
+        p.far_radius = far.equivalent_radius()
+    else:
+        # THE GENERATED ELLIPSE, derived before anything reads its radius, and sized
+        # off the BODY's equivalent radius rather than the seam's so that the number
+        # in the row means what it means on the O-grid — and so that moving the seam
+        # does not move the far field.
+        p.problem = genfar.derive(p, float(model.tworing_far_ratio),
+                                  float(model.tworing_far_aspect), body)
+        if p.problem:
+            return p
+        # CONTAINMENT IS WALKED OVER THE SEAM's OWN POINTS, not the body's and never
+        # against an equivalent radius (#165's ruler mistake): the seam is the outer
+        # ring's inner side, so an ellipse that contains the body and crosses the
+        # seam is a far field with no ring outside it in places.
+        p.problem = genfar.outside_body(p.far_centre, p.far_a, p.far_b, seam,
+                                        what="seam")
+        if p.problem:
+            return p
     # BEFORE either derivation: a seam outside the far field or inside the body gives a
     # negative span, and `nodes_for_growth` would answer on it rather than refuse.
     if not p.radius < p.seam_radius < p.far_radius:
@@ -363,18 +314,32 @@ def build(model, ctx=None) -> dict:
 
     body = ctx.geometry(model.tworing_body_geom)
     seam = ctx.geometry(model.tworing_seam_geom)
-    far = ctx.geometry(model.tworing_far_geom)
+    far = ctx.geometry(model.tworing_far_geom) if p.far_bound else None
     splits = max(1, int(model.tworing_splits))
     rings = (_ring(p.body_segs, splits), _ring(p.seam_segs, splits),
-             _ring(p.far_segs, splits))
+             _ring(p.far_segs, splits) if p.far_bound else ())
     n = len(rings[0])
 
     corners, edges, blocks = [], [], []
+    # THE GENERATED CORNERS PAIR WITH THE SEAM's, not with the body's, and that is
+    # this family's one decision the O-grid does not have to make. The outer blocks
+    # run from the seam to the far field, so it is the SEAM they have to stay normal
+    # to; pairing with the body would hand the outer ring the inner ring's own
+    # arc-length distribution, which the seam has already departed from.
+    gen_far = [] if p.far_bound else genfar.corners(
+        p, [f"f{k}" for k in range(n)],
+        [seam.spans[s].point_at(t) for s, t in rings[1]])
     for k in range(n):
-        for pre, g, ring in zip("bmf", (body, seam, far), rings):
+        for pre, g, ring in zip("bm", (body, seam), rings):
             s, t = ring[k]
             corners.append({"id": f"{pre}{k}", "kind": "on_geometry",
                             "geom": g.spelling, "seg": s, "t": t})
+        if p.far_bound:
+            s, t = rings[2][k]
+            corners.append({"id": f"f{k}", "kind": "on_geometry",
+                            "geom": far.spelling, "seg": s, "t": t})
+        else:
+            corners.append(gen_far[k])
 
     for k in range(n):
         # TWO equivalence classes, each wrapping around and closing, so each declares
@@ -393,7 +358,7 @@ def build(model, ctx=None) -> dict:
         edges += [ri, ro]
     for k in range(n):
         nxt = (k + 1) % n
-        bs, ms, fs = (ring[k][0] for ring in rings)
+        bs, ms = rings[0][k][0], rings[1][k][0]
         # One seed per circumferential class, declared on the WALL — the side whose
         # length the user asked for in physical units. The seam edge and the far arc
         # arrive by propagation through the two blocks that share this position.
@@ -409,9 +374,14 @@ def build(model, ctx=None) -> dict:
                       "kind": "interface",
                       "follows": {"geom": seam.spelling,
                                   "seg": ctx.resolve(f"s{k}", seam.spelling, ms)}})
-        edges.append({"id": f"o{k}", "corners": [f"f{k}", f"f{nxt}"], "kind": "wall",
-                      "binding": {"geom": far.spelling,
-                                  "seg": ctx.resolve(f"o{k}", far.spelling, fs)}})
+        if p.far_bound:
+            edges.append({"id": f"o{k}", "corners": [f"f{k}", f"f{nxt}"],
+                          "kind": "wall",
+                          "binding": {"geom": far.spelling,
+                                      "seg": ctx.resolve(f"o{k}", far.spelling,
+                                                         rings[2][k][0])}})
+        else:
+            edges.append(genfar.edge(p, f"o{k}", f"f{k}", f"f{nxt}"))
     for k in range(n):
         nxt = (k + 1) % n
         # [south, east, north, west]. CCW: i runs OUTWARD and j anticlockwise, so the
@@ -435,7 +405,12 @@ def broken_bindings(model, ctx) -> tuple:
     the seam at once cannot tell two unlabelled rows apart. The role words are
     :data:`BINDING_LISTS`'s, which is also where every refusal above takes its noun.
     """
-    return broken_in_ring_lists(model, ctx, BINDING_LISTS, model.tworing_splits)
+    # THE FAR FIELD's ROW GOES WITH IT when it is generated: there is no binding to
+    # be broken, and a repair row for a geometry the user never named would be the
+    # panel inventing work. `_lists` is the one place that decision is made.
+    return broken_in_ring_lists(model, ctx,
+                                _lists(bool(str(model.tworing_far_geom).strip())),
+                                model.tworing_splits)
 
 
 def preflight(model, ctx=None) -> tuple:
@@ -457,11 +432,12 @@ def preflight(model, ctx=None) -> tuple:
     if ctx is None:
         return no_context_refusal(
             "geometry", "the body, the seam and the far field")
+    far_bound = bool(str(model.tworing_far_geom).strip())
     names = (model.tworing_body_geom, model.tworing_seam_geom,
              model.tworing_far_geom)
     gs = [ctx.geometry(n) for n in names]
     out = []
-    for (role, _f, _gf, _pre), name, g in zip(BINDING_LISTS, names, gs):
+    for (role, _f, _gf, _pre), name, g in zip(_lists(far_bound), names, gs):
         r = outline_refusal(ctx, role, name, g, closed_note=CLOSED_NOTE)
         if r is not None and role == SEAM_ROLE and not str(name or "").strip():
             r = Refusal(
@@ -475,7 +451,7 @@ def preflight(model, ctx=None) -> tuple:
     if out:
         return tuple(out)
     nested = nesting_refusal(tuple((row[0], g)
-                                   for row, g in zip(BINDING_LISTS, gs)))
+                                   for row, g in zip(_lists(far_bound), gs)))
     if nested:
         return nested
     return plan_refusal(plan(model, ctx).problem)

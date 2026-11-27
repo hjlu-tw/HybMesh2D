@@ -176,8 +176,13 @@ def ring_corners(centre, a: float, b: float, body_xy, ccw: bool) -> list:
     return out
 
 
-def outside_body(centre, a: float, b: float, g) -> str:
-    """Why the generated ellipse does not contain the body, or "".
+def outside_body(centre, a: float, b: float, g, what: str = "body") -> str:
+    """Why the generated ellipse does not contain ``g``, or "".
+
+    ``what`` NAMES THE OUTLINE IN THE SENTENCE and is not cosmetic: the two-ring
+    family checks the SEAM rather than the body (#199), because the seam is the
+    outer ring's inner side, and a refusal saying "the body" would send that user
+    to look at the wrong curve.
 
     THE RATIO IS NOT THE CHECK. ``ratio`` scales an EQUIVALENT RADIUS, an
     area-derived figure, and a long thin body has a small one: a 4.0 x 0.2 body has an
@@ -195,7 +200,7 @@ def outside_body(centre, a: float, b: float, g) -> str:
     if worst is None or worst[0] <= 1.0:
         return ""
     return (f"the generated far field (an ellipse {2 * a:.4g} by {2 * b:.4g} about the "
-            f"body's centroid) does not contain the body: its point "
+            f"body's centroid) does not contain the {what}: its point "
             f"({worst[1]:.4g}, {worst[2]:.4g}) is outside it. Raise 'Generated Far "
             f"Field Size', or draw a far-field outline.")
 

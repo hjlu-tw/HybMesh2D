@@ -142,6 +142,12 @@ class TopologyModel:
     tworing_seam_segs: str = ""
     tworing_far_geom: str = ""
     tworing_far_segs: str = ""
+    # GENERATED-PATH ONLY, and INERT when a far field is drawn — the O-grid's
+    # two rows and its defaults, because the question is the same one. What is
+    # this family's own is WHAT THE GENERATED RING PAIRS WITH: the SEAM, not
+    # the body, since the seam is the outer blocks' inner side.
+    tworing_far_ratio: float = 12.0
+    tworing_far_aspect: float = 1.0
     tworing_splits: int = 1
     tworing_cell: float = 0.05
     # TWO radial counts, not one: splitting the ring is pointless if a single

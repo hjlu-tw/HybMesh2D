@@ -123,6 +123,7 @@ Skips the real-binary half cleanly if ./build/HybMesh2D is not built.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -142,6 +143,7 @@ import topology_doc_invariants as inv                            # noqa: E402
 from app.services import topology_binding as tb                  # noqa: E402
 from app.services import topology_model as tm                    # noqa: E402
 from app.services import topology_spacing as ts                  # noqa: E402
+from app.services import topology_genfar as genfar                # noqa: E402
 from app.services import topology_tworing as tw                  # noqa: E402
 from topology_outline_fixture import (                           # noqa: E402
     meta_stamp, split_segment_in_meta, write_outline,
@@ -907,6 +909,212 @@ else:
               f"a segment boundary sits at the same POINT INDEX on the body and its "
               f"offset while a split sits at equal arc FRACTION of each",
               _sg_spread < 0.001 < _sp_spread)
+
+# ── 25. A FAR FIELD NOBODY DREW, AND THE SEAM THAT STAYS DRAWN (#199) ──────
+#
+# The O-grid's #197 applied to the family next door, with ONE decision that is this
+# family's own: a generated outer ring pairs with the SEAM's corners, not with the
+# body's, because the outer blocks run from the seam outward. The two ARE different
+# whenever the two rings' own arc-length distributions differ, which is what this
+# group's second fixture is built to make true — on three outlines segmented the same
+# way they coincide and nothing here could fail.
+_FR = dict(tworing_cell=0.3, tworing_splits=4, tworing_far_ratio=28.3)
+
+
+def _gen_model(body, seam, far="", **kw):
+    kw = dict(_FR, **kw)
+    return tm.TopologyModel(family=tw.FAMILY, tworing_body_geom=body,
+                            tworing_seam_geom=seam, tworing_far_geom=far, **kw)
+
+
+_b23, _m23, _f23 = FIX["4seg"]
+_cg23 = tb.context_for_config(Cfg([_b23, _m23]))          # NO far field in the list
+_pg23 = tw.plan(_gen_model(_b23, _m23), _cg23)
+check(f"25. with no far-field geometry named the family PLANS rather than refusing, "
+      f"and sizes an ellipse off the BODY's equivalent radius "
+      f"({_pg23.radius:.4g} x {_FR['tworing_far_ratio']:g} = {_pg23.far_radius:.4g})",
+      not _pg23.problem and not _pg23.far_bound
+      and abs(_pg23.far_radius - _pg23.radius * _FR["tworing_far_ratio"]) < 1e-9)
+_dg23 = tm.build_document(_gen_model(_b23, _m23), _cg23)
+_fc23 = [c for c in _dg23["corners"] if c["id"].startswith("f")]
+_oe23 = [e for e in _dg23["edges"] if e["id"].startswith("o")]
+check(f"25. ...and the outer boundary is declared as the CURVE IT IS — "
+      f"{len(_fc23)} FREE corners and {len(_oe23)} ellipse edges, no geometry and no "
+      f"file, which is the whole of what makes this legal",
+      bool(_fc23) and all(c["kind"] == "free" for c in _fc23)
+      and bool(_oe23)
+      and all(e.get("curve", {}).get("kind") == "ellipse" for e in _oe23)
+      and not any("binding" in e or "follows" in e for e in _oe23))
+# THE SEAM DOES NOT GET THE SAME TREATMENT, and that is the rule rather than an
+# omission: a `follows` edge resolves to a stretch of a stored POLYLINE.
+_ps23 = tw.plan(_gen_model(_b23, ""), tb.context_for_config(Cfg([_b23])))
+check(f"25b. a blank SEAM is still refused, and still by the sentence that names the "
+      f"CAD action rather than by a correction ({_ps23.problem[:48]!r})",
+      bool(_ps23.problem) and tw.OFFSET_ACTION in _ps23.problem)
+_se23 = [e for e in _dg23["edges"] if e["id"].startswith("s")]
+check("25b. ...so the generated document's seam edges still FOLLOW a real geometry, "
+      "which is what the generated far-field edges beside them do not",
+      bool(_se23) and all("follows" in e for e in _se23))
+# A NAME THAT RESOLVES TO NOTHING IS A REFUSAL, never a quiet generation: #197's
+# rule, and the reason the two paths are told apart by the stored NAME.
+_pm23 = tw.plan(_gen_model(_b23, _m23, far=os.path.join(_T, "no_such_far.dat")),
+                _cg23)
+check(f"25c. a far-field NAME that resolves to nothing REFUSES rather than silently "
+      f"generating one, so a geometry the user deleted cannot be papered over "
+      f"({_pm23.problem[:46]!r})", bool(_pm23.problem))
+# Naming one puts the family back on the drawn path, document for document.
+_cd23 = tb.context_for_config(Cfg([_b23, _m23, _f23]))
+_pd23 = tw.plan(_gen_model(_b23, _m23, far=_f23), _cd23)
+check(f"25d. naming a far field puts it back on the drawn path and marks the two "
+      f"generated rows INERT ({_pd23.inert_rows})",
+      _pd23.far_bound and _pd23.inert_rows == tw.INERT_WHEN_BOUND
+      and _pg23.inert_rows == ())
+check("25d. ...and the generated path leaves them live, so a row is inert because of "
+      "what was CONFIGURED and not because of what was typed into it",
+      _pg23.inert_rows == ())
+# The two refusals the drawn path never needs.
+_pr23 = tw.plan(_gen_model(_b23, _m23, tworing_far_ratio=1.0), _cg23)
+check(f"25e. a size below MIN_RATIO is refused, naming the row and the number "
+      f"({_pr23.problem[:44]!r})",
+      bool(_pr23.problem) and str(genfar.MIN_RATIO) in _pr23.problem.replace(".0", ".0"))
+# 25f is BELOW, with the fixture it needs: a round seam cannot poke out of a
+# generated circle, so the ellipse-radius ordering fires first and a check written
+# here would measure the NESTING refusal while claiming to measure containment.
+# Two injections came back silent against the first draft of it.
+
+# ── 24g-25h. THE PAIRING, ON A FIXTURE WHERE IT CAN BE WRONG ───────────────
+#
+# 24g is the comparison that CANNOT fail and is kept for what it measures: three
+# outlines segmented the same way put every ring's corners at the same arc
+# fractions, so seam-pairing and body-pairing coincide and so does the drawn path.
+# Quoting it alone would be #197's own mistake. 24h is the one that can fail.
+def _far_angles(model_, ctx_):
+    d = tm.build_document(model_, ctx_)
+    return [math.degrees(math.atan2(c["xy"][1], c["xy"][0])) % 360.0
+            for c in d["corners"] if c["id"].startswith("f")]
+
+
+def _paired_with(p_, g, segs, splits):
+    """Where the generated corners WOULD go if paired with ``g``'s ring."""
+    xy = [g.spans[s].point_at(t) for s in segs for t in
+          (j / float(splits) for j in range(splits))]
+    return [math.degrees(math.atan2(q[1] - p_.far_centre[1],
+                                    q[0] - p_.far_centre[0])) % 360.0
+            for q in genfar.ring_corners(p_.far_centre, p_.far_a, p_.far_b, xy,
+                                         p_.ccw)]
+
+
+_bs23 = tb.context_for_config(Cfg([_b23, _m23])).geometry(_b23)
+_ms23 = tb.context_for_config(Cfg([_b23, _m23])).geometry(_m23)
+_as_seam = _paired_with(_pg23, _ms23, _pg23.seam_segs, 4)
+_as_body = _paired_with(_pg23, _bs23, _pg23.body_segs, 4)
+check(f"25g. on three outlines segmented ALIKE the two pairings COINCIDE "
+      f"({max(abs(a - b) for a, b in zip(_as_seam, _as_body)):.2e} deg apart), so "
+      f"this fixture cannot tell them apart and 23h is the check that can",
+      max(abs(a - b) for a, b in zip(_as_seam, _as_body)) < 1e-9)
+
+# The fixture that CAN: a body whose four segments carry UNEQUAL shares of its
+# perimeter against a seam whose four are equal. The two rings' arc fractions then
+# genuinely differ, which is the only situation in which the rule has content.
+_U = os.path.join(_T, "uneq")
+os.makedirs(_U, exist_ok=True)
+
+
+def _uneven(stem, rx, ry, blocks, bc):
+    pts, col, st = [], [], []
+    tot = sum(n for _, n in blocks)
+    k = 0
+    for sid, n in blocks:
+        for j in range(n):
+            a = 2.0 * math.pi * k / float(tot)
+            pts.append((rx * math.cos(a), ry * math.sin(a)))
+            col.append(sid)
+            st.append(1 if j == 0 else 0)
+            k += 1
+    pts.append(pts[0])
+    col.append(blocks[0][0])
+    st.append(0)
+    with open(stem + ".dat", "w", encoding="utf-8") as fh:
+        for x, y in pts:
+            fh.write(f"{x:.12f} {y:.12f}\n")
+    with open(stem + ".dat.meta", "w", encoding="utf-8") as fh:
+        fh.write(f"HYBMESH_META 2\nCOUNT {len(pts)}\nNPIECES 0\n"
+                 f"NSEGMENTS {len(blocks)}\n")
+        for sid, _n in blocks:
+            fh.write(f"{sid} {bc} line\n")
+        fh.write(f"POINTS {len(pts)}\n")
+        for sid, s0 in zip(col, st):
+            fh.write(f"{sid} {s0}\n")
+    return stem + ".dat"
+
+
+_ub = _uneven(os.path.join(_U, "b"), 1.0, 0.5,
+              [(0, 60), (1, 20), (2, 20), (3, 60)], "wall")
+_um = _uneven(os.path.join(_U, "m"), 2.0, 2.0,
+              [(0, 40), (1, 40), (2, 40), (3, 40)], "seam")
+_uf = _uneven(os.path.join(_U, "f"), 20.0, 20.0,
+              [(0, 40), (1, 40), (2, 40), (3, 40)], "farfield")
+_cu = tb.context_for_config(Cfg([_ub, _um]))
+_pu = tw.plan(_gen_model(_ub, _um, tworing_far_ratio=28.3), _cu)
+_u_seam = _paired_with(_pu, _cu.geometry(_um), _pu.seam_segs, 4)
+_u_body = _paired_with(_pu, _cu.geometry(_ub), _pu.body_segs, 4)
+_spread = max(abs(a - b) for a, b in zip(_u_seam, _u_body))
+check(f"25h. on a body whose segments carry UNEQUAL shares the two pairings diverge "
+      f"by {_spread:.1f} deg, so the rule has content here",
+      _spread > 5.0 and not _pu.problem)
+check("25h. ...and what the family BUILDS is the SEAM's, which is the ring the "
+      "outer blocks have to stay normal to",
+      max(abs(a - b) for a, b in zip(_far_angles(
+          _gen_model(_ub, _um, tworing_far_ratio=28.3), _cu), _u_seam)) < 1e-9)
+
+# ── 25f. CONTAINMENT, ON A SEAM THAT CAN ACTUALLY POKE OUT ─────────────────
+#
+# An ELONGATED seam: equivalent radius 0.894 (so it is comfortably inside a
+# generated ellipse by that ruler) while it reaches x = +-4.0 (so it is not inside
+# it at all). That is #165's ruler mistake stated as a fixture, and it is the only
+# arrangement in which the containment check is the one that fires.
+_cb25 = _uneven(os.path.join(_U, "cb"), 0.30, 0.30,
+                [(0, 40), (1, 40), (2, 40), (3, 40)], "wall")
+_cm25 = _uneven(os.path.join(_U, "cm"), 4.0, 0.2,
+                [(0, 40), (1, 40), (2, 40), (3, 40)], "seam")
+_cc25 = tb.context_for_config(Cfg([_cb25, _cm25]))
+_pc25 = tw.plan(_gen_model(_cb25, _cm25, tworing_far_ratio=4.0), _cc25)
+check(f"25f. CONTAINMENT is walked over the SEAM's own points, and fires on a seam "
+      f"whose EQUIVALENT RADIUS "
+      f"({_cc25.geometry(_cm25).equivalent_radius():.4g}) is well inside the "
+      f"generated ellipse ({_pc25.far_radius:.4g}) while the seam itself is not "
+      f"({_pc25.problem[:46]!r})",
+      bool(_pc25.problem) and "does not contain the seam" in _pc25.problem)
+check("25f. ...and it names the SEAM rather than the body, which that same ellipse "
+      "DOES contain — a refusal naming the body would send the user to a curve "
+      "there is nothing wrong with",
+      "does not contain the body" not in _pc25.problem
+      and not genfar.outside_body(_pc25.far_centre, _pc25.far_a, _pc25.far_b,
+                                  _cc25.geometry(_cb25)))
+
+
+# ── 25i. AND THE THIN-BODY ADVICE REACHES THIS FAMILY TOO (#198's blind spot) ─
+#
+# #198 put the circularity ruler in `topology_counts` rather than in the O-grid
+# precisely so the second ring family would be one call, then did not make that call
+# and wrote the gap down as a named blind spot. This is the call, and this check is
+# what retires it.
+_tb23 = _uneven(os.path.join(_U, "thin"), 2.0, 0.2,
+                [(0, 40), (1, 40), (2, 40), (3, 40)], "wall")
+_tm23 = _uneven(os.path.join(_U, "thinm"), 2.6, 2.6,
+                [(0, 40), (1, 40), (2, 40), (3, 40)], "seam")
+_ct23 = tb.context_for_config(Cfg([_tb23, _tm23]))
+_pt23 = tw.plan(_gen_model(_tb23, _tm23, tworing_far_ratio=28.3), _ct23)
+check(f"25i. a THIN body gets #198's one advisory line here as well — the ruler went "
+      f"into `topology_counts` so the second ring family is ONE call, and #198 wrote "
+      f"not making it down as a blind spot (circularity {_pt23.circularity:.4f} "
+      f"against the round fixture's {_pg23.circularity:.4f})",
+      (not _pt23.problem)
+      and any("circularity" in ln for ln in _pt23.lines())
+      and not any("circularity" in ln for ln in _pg23.lines()))
+check("25i. ...and it names the C-grid, the same sentence the O-grid shows, because "
+      "both families import the one function rather than restating it",
+      any("C-grid family" in ln for ln in _pt23.lines()))
 
 print()
 if failures:

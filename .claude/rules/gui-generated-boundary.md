@@ -1,8 +1,8 @@
 ---
 paths:
   - services/topology_genfar*
-  - services/topology_ogrid.py
-  - services/topology_tworing.py
+  - services/topology_ogrid*
+  - services/topology_tworing*
   - services/topology_cgrid_section.py
 ---
 
@@ -109,6 +109,44 @@ NOT** (#197; `services/topology_genfar.py` + the generated branch of
   the drawn path's own checks unchanged beside it.
   Why: `docs/design_notes/gui.md`, "A FAR FIELD NOBODY DREW".
 
+**AND THE TWO-RING FAMILY TOOK THE SAME PATH, WITH ONE DECISION OF ITS OWN** (#199; the
+generated branch of `services/topology_tworing.py`)
+
+- **THE FAR FIELD IS OPTIONAL AND THE SEAM IS NOT**, in the same family, which is the
+  clearest statement of where the line actually runs. The outer boundary is analytic and
+  may be generated; the seam is an interior line a `follows` edge attaches to, so it has
+  to be a stored polyline the user drew. The refusal for a blank seam is unchanged and
+  still names **CAD ▸ Offset Geometry…**. Gate: `tests/test_topology_tworing.py` 25b,
+  both halves — the blank seam refuses, and the generated document's seam edges still
+  `follow` a real geometry while the far-field edges beside them declare a curve.
+- **A GENERATED OUTER RING PAIRS WITH THE SEAM's CORNERS, NEVER WITH THE BODY's.** The
+  outer blocks run from the seam outward, so the seam is the ring they have to stay
+  normal to; pairing with the body hands them the INNER ring's arc-length distribution,
+  which the seam has already departed from. Measured on a body whose four segments carry
+  unequal shares of its perimeter against an equal-segmented seam: mean non-orthogonality
+  **21.613°** seam-paired against **24.688** body-paired, worst **53.70** against
+  **64.31**. Gate: 25h, with the body pairing as its injection.
+- **THE SIZE IS A MULTIPLE OF THE BODY's EQUIVALENT RADIUS AND CONTAINMENT IS WALKED OVER
+  THE SEAM's POINTS.** Two different outlines on purpose: the row means what it means on
+  the O-grid and moving the seam does not move the far field, while the thing that must
+  be INSIDE the generated ellipse is the seam, because it is the outer ring's inner side.
+  `genfar.outside_body` takes the noun as an argument so the refusal names the curve the
+  user has to look at. Gate: 25f, **on a seam that can actually poke out** — an elongated
+  one whose equivalent radius is 0.894 while it reaches x = ±4. **A ROUND SEAM CANNOT**,
+  and the first draft of that check was written on one: the ellipse-radius ordering fired
+  first, so two injections against the containment rule came back silent while the check
+  passed on a different refusal.
+- **THE GENERATED PATH COSTS NOTHING AGAINST A DRAWN FAR FIELD AT THE SAME RADIUS** —
+  **21.613° mean, 53.70 worst, both paths, to six decimals** on that same unequal-segment
+  fixture. The fixture is one where the paths CAN differ (the body pairing proves it), so
+  unlike #197's first evidence this comparison is not measuring a symmetry. 25g is the
+  coincident case and is kept for what it rules out, never quoted alone.
+- Gated by `tests/test_topology_tworing.py` group 25 (25, 25b–25i), eleven hand
+  injections. Ten reddened a check; the eleventh — dropping the SEAM from the required
+  list — makes `plan` die on a short list instead, which is detected but takes the checks
+  below it with it.
+  Why: `docs/design_notes/gui.md`, "THE SAME DOOR, ONE FAMILY ALONG".
+
 ## Named blind spots
 
 - **NOTHING CHECKS THAT A `RATIO` FIELD REALLY IS DIMENSIONLESS.** `test_case_type_scale.py`
@@ -126,6 +164,11 @@ NOT** (#197; `services/topology_genfar.py` + the generated branch of
   `aspect`, and that one is MEASURED NOT TO HELP: stretching the ellipse on an aerofoil
   takes the mean from 33.58° to 57.97 and the wall from 0.12% to 14.69 (ratio 62, aspect
   1.00 → 0.12), so it is for a body that is itself elongated and not a repair for a ring.
+- **NOTHING MEASURES THE PAIRING ON A SEAM THAT IS NOT AN OFFSET OF THE BODY.** 25h's
+  fixture is a hand-built body with deliberately unequal segment shares, which is the
+  situation the rule has content in — but every seam this repo SHIPS is either a circle
+  or an offset, and on those the body and seam pairings coincide to 5.8e-12 degrees. So
+  the rule is right and no shipped case exercises it.
 - **NO SHIPPED `config/multiblock_*.dat` USES THE GENERATED PATH.** Every shipped
   document was hand-written before this family existed, so the only coverage is the gate's
   own run through the real mesher. A shipped case would also be the first to exercise the

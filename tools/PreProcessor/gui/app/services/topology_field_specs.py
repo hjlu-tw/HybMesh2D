@@ -331,12 +331,34 @@ TOPOLOGY_SPECS: tuple[FieldSpec, ...] = (
               model="tworing_seam_segs", group=GROUP, modes=_MB,
               opts=dict(placeholder="(all of the seam's segments)", readonly=True)),
     FieldSpec("topo_tworing_far_geom", "path", "Far-Field Geometry",
-              "The outer outline. Its segments pair ONE TO ONE with the body's and "
-              "with the seam's, so segment all three the same way; its own "
-              "per-segment conditions reach the export the way the body's do.",
+              "OPTIONAL. Leave it blank and the outer boundary is GENERATED as one "
+              "ellipse, sized by the two rows below. Name one and its segments pair "
+              "ONE TO ONE with the body's and with the seam's, so segment all three "
+              "the same way; its own per-segment conditions then reach the export "
+              "the way the body's do, which a generated one cannot — a generated "
+              "side carries the run's BC_GEOM. The SEAM stays required either way: "
+              "an interior line has to lie on a geometry you drew.",
               model="tworing_far_geom", group=GROUP, modes=_MB,
               opts=dict(caption="Select far-field geometry",
                         filter="Geometry (*.dat);;All files (*)")),
+    FieldSpec("topo_tworing_far_ratio", "float", "Generated Far Field Size",
+              "GENERATED PATH ONLY — inert once you name a far-field geometry. How "
+              "far out the generated ellipse sits, as a multiple of the BODY's own "
+              "equivalent radius — the body's and not the seam's, so the number "
+              "means what it means on the O-grid and moving the seam does not move "
+              "the far field. It is CHECKED against the SEAM's own points, because "
+              "the seam is what the generated ring has to contain.",
+              # `float` AND NOT `sci`: dimensionless, and `sci` is what
+              # `case_type_scale.LENGTH_KIND` is keyed on. The O-grid's two rows
+              # state the whole argument.
+              model="tworing_far_ratio", group=GROUP, modes=_MB,
+              opts=dict(lo=1.5, hi=1e6, dec=3, step=1.0)),
+    FieldSpec("topo_tworing_far_aspect", "float", "Generated Far Field Aspect",
+              "GENERATED PATH ONLY — inert once you name a far-field geometry. The "
+              "generated ellipse's height over its width. 1 is a circle. The size "
+              "above is held while this changes it, so the two are independent.",
+              model="tworing_far_aspect", group=GROUP, modes=_MB,
+              opts=dict(lo=1e-3, hi=1e3, dec=3, step=0.1)),
     FieldSpec("topo_tworing_far_segs", "text", "Bound Far Segments",
               "The far field's bound segment ids. Same rule as the body's.",
               model="tworing_far_segs", group=GROUP, modes=_MB,

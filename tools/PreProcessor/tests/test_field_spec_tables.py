@@ -1034,6 +1034,10 @@ MODE_SPECS_WITHOUT_KEY = {
     "topo_tworing_seam_segs": "as topo_ogrid_body_geom",
     "topo_tworing_far_geom": "as topo_ogrid_body_geom",
     "topo_tworing_far_segs": "as topo_ogrid_body_geom",
+    # #199. The same two numbers, in the second family that generates a far
+    # field. No mesher key for the same reason: the mesher sees the ellipse.
+    "topo_tworing_far_ratio": "as topo_ogrid_body_geom",
+    "topo_tworing_far_aspect": "as topo_ogrid_body_geom",
     "topo_tworing_splits": "as topo_ogrid_body_geom",
     "topo_tworing_cell": "as topo_ogrid_body_geom",
     "topo_tworing_radial_inner": "as topo_ogrid_body_geom",
