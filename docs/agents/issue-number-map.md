@@ -33,6 +33,13 @@ numbers, and the six commit subjects carry them too — those cannot be correcte
 rebase. The map is the correction. A rewrite was weighed and declined: it would fix the
 files and leave the commit log stale, which is a half-correction that reads as a whole one.
 
+## Numbers in that range that are NOT suspect
+
+**#196** (a straight interior line cannot declare its shape) and **#203** (the size-jump
+figure is measured, printed, and acted on by nobody) were filed BEFORE the work, so their
+numbers came from `gh issue create`. They are ordinary tracker numbers and need no
+translation. Anything in this tree that cites them means them.
+
 ## Why this keeps happening, and the one habit that stops it
 
 A session that is going to produce a ticket's worth of work **files the issue first** and
