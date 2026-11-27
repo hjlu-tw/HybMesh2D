@@ -214,6 +214,16 @@ field unreduced.
 
 ## 5. What the model cannot do, and what would fix each
 
+> **Statuses are annotated inline and this section decays if they are not kept.** Each entry
+> below says what was true the day it was written; a **SHIPPED**, **FILED** or **STILL OPEN**
+> bullet says what has happened since. Every entry carries one, so an unmarked entry means
+> nobody has checked rather than nothing has changed. §5.2's headline is the standing warning: it calls its gap "the biggest
+> single gap" and that gap has since been closed.
+>
+> **A `#N` in this section may be a session-local number, not this tracker's.** Numbers written
+> before 2026-11-27 are local; see `docs/agents/issue-number-map.md`. Numbers added after that
+> date are tracker numbers and are marked as such.
+
 Everything here was hit while building the four cases above. Each item says what was measured,
 what the workaround was, and what the actual fix would be.
 
@@ -226,6 +236,9 @@ which the welding model would actually allow, since welding is **allocation** an
 one coordinate stay two nodes — but it also needs the two of them to **meet at the leading edge**,
 and a block with a side of zero length is a degenerate transfinite fill.
 
+- **STILL OPEN (2026-11-27).** Nothing has changed: a body is still a closed polyline and a
+  wall edge is still a side of exactly one block. The proposal below is a CAD-stage change
+  and no ticket exists for it.
 - **Workaround used:** a **stadium** — two flats at y = ±0.005 joined by semicircular ends of the
   same radius. At Fig. 6.2's scale that is 1.8 px and at Fig. 6.3's about 10 px, which is the same
   pair of readings the target gives (a 2-px sliver, a small circle). **[V]**
@@ -251,6 +264,15 @@ over-resolves the outer field by more than an order of magnitude and the other w
   first ray off the trailing edge lands: moving it from y = 0.35 to y = 1.00 on the rectangle (the
   figure's own value) takes the worst non-orthogonality from **88.598° to 81.738°** and the mean
   from **6.248° to 5.802°**. **[V]**
+- **SHIPPED — THIS HEADLINE IS NOW FALSE.** `examples/topology/reducing_ogrid.json` +
+  `config/multiblock_reducing.dat` (tracker **#198**) is a case whose node count FALLS going
+  outward: 192 intervals on the body against 96 on the far field, through four corners each
+  shared by three blocks. A generator writes it and
+  `tools/PreProcessor/tests/test_multiblock_reducing_surface.py` holds it.
+  **The price is in the gate rather than in this note**: 53.6° of worst non-orthogonality
+  against the plain four-block O-grid's 2.0° on the same two circles. That is a CAPABILITY and
+  not a QUALITY, and this reproduction's own numbers were never re-measured with it — the 0012
+  here still uses the geometric-mean compromise below. Doing that is an open experiment.
 - **Proposal: ship the count-reducing corner block.** #192 already measured the device — **a
   corner shared by three blocks is the only thing in this model that ends a grid line**, a ring of
   K of them reduces an inner count by exactly `2Ka`, and a reducing O-grid on the shipped circle
@@ -353,6 +375,12 @@ orthogonal — 1.8 % and 1.1 % of cell corners are over 45° and the rest of eac
 reason is structural: an **O-ring** has to turn 163° at a point, and the two sectors that do it
 have a 2 %-of-chord side facing a long arc.
 
+- **SHIPPED — the tool now says so, which it did not when this was written** (tracker **#200**). The
+  O-grid family measures the body's circularity and, below 0.5, its derivation read-out gains one
+  line naming the C-grid family. It is advice and not a refusal. Measured on this same section:
+  a ring gives **14.8° mean / 81.7° worst**, this repo's C-grid family **3.8° / 29.9°**.
+  (The first cut of that sentence quoted 5.07°, which is the hand-written rosette + H of §3 and
+  is NOT a family — corrected in `bfc6ec3`.)
 - `examples/topology/cgrid_naca0012.json` — a **C-grid with a `cut`** — does not have this
   problem, because the wake cut carries the turn into the wake instead of concentrating it at a
   corner.
@@ -404,6 +432,15 @@ elliptic solve's isolines do. This repo's shells are **constant-distance offsets
 they bulge OUT to x = -d instead, and each one meets the vertical ray at x = 0 and x = 1 in a
 corner. The structure is the same and the shapes are not.
 
+- **FILED as tracker #196 — but for the OTHER half of this heading.** This entry is about the
+  SHAPES an interior line can take. A second cost of the same list surfaced on 2026-11-27 and is
+  sharper: a straight interior line cannot declare that it IS straight, so
+  `MbSharedEdge::hasDeclaredShape()` answers no and the smoother is free to move its nodes ALONG
+  it. On this repo's own NACA 0012 the wake centreline then collapses — the fill gives three nodes
+  at 1.50e-03 spacing and 20 sweeps leave two of them **5.70e-06** apart, bounding two cells at
+  **1.4e-05 of the median area** with a 173:1 edge aspect. A `{"kind": "line"}` would hold them
+  through the freeze rule that already exists, changing nothing about the fill. The ellipse-shell
+  proposal below is still open and is a different change.
 - **What the model offers**: a straight chord, a bound/`follows` stored polyline, and since #175 a
   `curve` that is an **arc or an ellipse**. There is no spline and no "isoline of a solve".
 - **What would close most of it, with no mesher change**: make the OUTER shells ellipses about the
@@ -431,6 +468,10 @@ NOT a product of columns and rows: one block's side faces several. This repo can
 a side may be a **chain** of edges (#190) — but no generator here emits one, so the reproduction
 puts a column boundary there and the target does not.
 
+- **STILL OPEN (2026-11-27).** Both halves are untouched. The chain spelling the second half
+  needs did ship a shipped CASE since (`config/multiblock_cgrid_chain.dat`), so the schema
+  half is no longer theoretical — but no generator here emits one, which is what this entry
+  is about.
 - **Proposal:** both are generator-side, not mesher-side. An odd sector count needs the station
   list and the rectangle walk to stop assuming a point at each edge's midpoint; the merged
   top-right block needs `SideSpec`'s chain spelling, which the schema already accepts and
