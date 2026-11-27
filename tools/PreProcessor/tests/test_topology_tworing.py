@@ -976,7 +976,7 @@ check("25d. ...and the generated path leaves them live, so a row is inert becaus
 _pr23 = tw.plan(_gen_model(_b23, _m23, tworing_far_ratio=1.0), _cg23)
 check(f"25e. a size below MIN_RATIO is refused, naming the row and the number "
       f"({_pr23.problem[:44]!r})",
-      bool(_pr23.problem) and str(genfar.MIN_RATIO) in _pr23.problem.replace(".0", ".0"))
+      bool(_pr23.problem) and f"{genfar.MIN_RATIO:g}" in _pr23.problem)
 # 25f is BELOW, with the fixture it needs: a round seam cannot poke out of a
 # generated circle, so the ellipse-radius ordering fires first and a check written
 # here would measure the NESTING refusal while claiming to measure containment.

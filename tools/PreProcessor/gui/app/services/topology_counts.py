@@ -86,15 +86,36 @@ def circularity(equivalent_radius: float, perimeter: float) -> float:
         / (perimeter * perimeter)
 
 
-def ring_advice(circ: float, below: float) -> list:
+#: Below this circularity a RING is the wrong construction for the body, and the
+#: read-out says so. HERE and not in a family's plan module, which is where #198
+#: put it: it is :func:`ring_advice`'s own threshold, both ring families call that
+#: function, and the second one was reaching into the FIRST one's plan module to
+#: import a constant neither of them owns. Calibrated on this repo's own bodies —
+#: circle 0.9999, 2:1 ellipse 0.8412, NACA 0012 0.2468, the research flat plate
+#: (1.01 x 0.01, a 101:1 strip) 0.0307 — note that body and NOT "a 4.0 x 0.2
+#: plate", which #198 wrote three times and which is 0.142; the decision is
+#: unaffected either way and the LABEL was wrong —
+#: with the nearest body a factor of 1.7 away on one side and 2.0 on the other,
+#: which is why no decimal place was argued over.
+RING_ADVICE_BELOW = 0.5
+
+
+def ring_advice(circ: float, below: float = RING_ADVICE_BELOW) -> list:
     """The read-out's one line about a body a RING is the wrong construction for.
 
     A SENTENCE AND NOT A REFUSAL. A ring around a thin body is legal, meshes, and is
     what somebody may actually want; it is simply not the best construction this tool
-    has for that shape, and the family that is lives next door. Measured on a NACA
-    0012 at 24 blocks: mean non-orthogonality 14.84 deg from a ring against 5.07 from
-    the rosette-and-H arrangement the C-grid family builds toward, with the same worst
-    cell (81.8 deg, the sharp trailing edge) in both.
+    has for that shape, and the family that is lives next door.
+
+    THE FIGURE IS THE C-GRID FAMILY'S OWN, because that is the family the sentence
+    sends the reader to. On a NACA 0012: mean non-orthogonality 14.84 deg from a ring
+    (`docs/research/allampalli-2010-reproductions.md` §5.4) against 3.8 from this
+    repo's C-grid family on the same section (`docs/research/our-cgrid-vs-gridpro.md`),
+    whose worst cell is 29.9 deg against the ring's 81.7. #198 first quoted 5.07 here
+    and called it "a C-grid's" -- that figure is the HAND-WRITTEN rosette + H of the
+    research note, which is not a family and which the note says so in as many words.
+    A number carried over from a neighbouring construction is the error this repo has
+    a memory file about; the correct number happens to argue harder.
 
     Returned as a LIST so the caller concatenates rather than branching, and empty
     for a body the advice is not about -- which is most of them.
@@ -104,5 +125,6 @@ def ring_advice(circ: float, below: float) -> list:
     return [f"shape: this body's circularity is {circ:.3f} (a circle is 1.000), so a "
             f"RING is a poor fit — its radial lines leave a long flat surface at a "
             f"shallow angle. Measured on a NACA 0012: mean non-orthogonality 14.8 deg "
-            f"from a ring against 5.1 from a C-grid's arrangement. The C-grid family "
-            f"is the one for a sharp-tailed section."]
+            f"from a ring against 3.8 from this repo's C-grid family on the same "
+            f"section, whose worst cell is 29.9 deg against the ring's 81.7. The "
+            f"C-grid family is the one for a sharp-tailed section."]

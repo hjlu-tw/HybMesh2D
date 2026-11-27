@@ -181,17 +181,23 @@ MESH_SPECS: tuple[FieldSpec, ...] = (
               "cell height your BL_INITIAL_THICKNESS asked for; the sweeps only "
               "TARGET that height, and on a body with a corner they lose. Held at "
               "1 the wall keeps exactly the height the fill gave it while the "
-              "interior still gets every sweep. Measured on a NACA 0012 at 20 "
-              "sweeps: the worst wall first cell goes from 92.4% off the declared "
-              "height to 12.6%, which is the unsmoothed figure, with the mean non-"
-              "orthogonality unchanged (4.79 deg both ways) — at a cost of two more "
-              "folded cells, 4 to 6. On a flat plate it is 60.6% to 7.0% with no "
-              "folding either way and the WORST cell angle improving too, 56.1 to "
-              "52.9 deg. 0 is the default and is what has shipped: raising it "
-              "changes every multi-block mesh, so the run's before/after quality "
-              "report is the thing to read, not this description.",
+              "interior still gets every sweep. It is NOT an improvement — it "
+              "CHOOSES which height you get, and which one is better depends on "
+              "the case. On a NACA 0012 with a sharp corner the worst wall first "
+              "cell goes from 92.4% off the declared height to 12.6%. On this "
+              "repo's OWN shipped cases it mostly goes the other way — six of "
+              "the seven that declare a wall height are worse frozen, one by a "
+              "factor of 263 — because those are the cases the smoother's "
+              "default was tuned on. Raise it when the smoother is LOSING your "
+              "wall height, which the run's own before/after quality report is "
+              "what tells you. 0 is the default and is what has shipped.",
               key="MB_SMOOTH_WALL_FREEZE", group="mode",
               modes=(MESH_MODE_MULTIBLOCK,),
+              # `hi` IS A WIDGET BOUND AND NOT THE KEY'S. The mesher caps this
+              # at nothing — `include/Config.hpp` says so and gives the reason
+              # (nothing measured says where it stops being useful) — but a spin
+              # box has to have a maximum, and 1000 is past any block this
+              # mesher will fill. A reader who needs more writes the `.dat` key.
               opts=dict(lo=0, hi=1000)),
 
     # ── Domain & Geometry: the rectangular bounding box ──────────────────────

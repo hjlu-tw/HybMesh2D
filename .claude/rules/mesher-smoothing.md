@@ -530,6 +530,11 @@ is a dated quotation.
 
 ## Named blind spots
 
+Consolidated here rather than trailing each rule, so a coverage claim can be checked against
+one list — the habit `.claude/rules/mesher-multiblock.md` set and #85 carried across with the
+rules. **One of that file's own blind spots still covers this arc**: nothing runs the solver or the
+grid converter on a FOLDED mesh, which is `MbQuality`'s sharpest and is not duplicated here.
+
 - **GROUP 14's FUSE IS STILL WORDS, AND A SENTENCE WITH NO DOWNWARD VERB ESCAPES IT** (#156).
   The JOIN matches a family — a downward verb (`lower`/`reduce`/`decrease`/…) applied to the cap
   in one sentence, un-negated — rather than three literals, which an injection walked past; and
@@ -629,3 +634,10 @@ is a dated quotation.
   — 0.750° of turn on the shipped far field, exactly the 0.375° gap between that mesh's max and
   mean non-orthogonality. What nothing relates to it is the SWEEP's additional +0.026°.
   Why: `docs/design_notes/mesher.md`, "THE O-GRID's RESIDUE IS A SAMPLING RATIO, NOT A FROZEN WALL".
+- ~~**Non-orthogonality is a BASELINE here, never a gate.**~~ **SUPERSEDED by #85:** it is a GATE
+  (`tools/PreProcessor/tests/test_multiblock_quality_gate.py`), because #80's arc exists to move
+  exactly these numbers and a quality feature nothing enforces is a claim. #57's reason — that
+  transfinite interpolation was not expected to beat the BL path, and that a binary gate stops "not
+  pretty enough yet" blocking a release — held until the last kernel landed. Kept here as a
+  specimen rather than deleted.
+  Why: `docs/design_notes/mesher.md`, "THE BASELINE BECOMES A GATE".

@@ -60,7 +60,7 @@ from app.services.topology_ogrid_binding import (
 )
 from app.services.topology_spacing import last_interval
 from app.services.topology_tworing_plan import (  # noqa: F401
-    INERT_WHEN_BOUND, RING_ADVICE_BELOW, Plan,
+    INERT_WHEN_BOUND, Plan,
 )
 
 #: The template's own name for the family, as stored in the project file.
@@ -89,7 +89,20 @@ BINDING_LISTS = (("body", "tworing_body_segs", "tworing_body_geom", "w"),
                  ("far field", "tworing_far_segs", "tworing_far_geom", "o"))
 
 
-def _lists(far_bound: bool) -> tuple:
+def far_is_bound(model) -> bool:
+    """Did the user NAME a far-field geometry? THE ONE PLACE that is decided.
+
+    The stored NAME and never whether the lookup found anything: a name that
+    resolves to nothing is a REFUSAL, because silently generating a far field
+    there would hide a geometry the user deleted (#197's rule). It was spelled
+    out at three call sites while a comment next door claimed `required_lists`
+    was "the one place that decision is made" — it consumes the answer, it does
+    not make it.
+    """
+    return bool(str(model.tworing_far_geom).strip())
+
+
+def required_lists(far_bound: bool) -> tuple:
     """:data:`BINDING_LISTS`, or its first two when the far field is GENERATED.
 
     A truncated list rather than a skipped row inside each loop: every walk over the
@@ -127,10 +140,10 @@ def plan(model, ctx) -> Plan:
     # shape rather than the O-grid's copied twice. A generated outer boundary is an
     # analytic CURVE and legal (#197); a generated seam would have to be a stored
     # POLYLINE for a `follows` edge to attach to, which is the rule that holds.
-    p.far_bound = bool(str(model.tworing_far_geom).strip())
+    p.far_bound = far_is_bound(model)
     names = (model.tworing_body_geom, model.tworing_seam_geom, model.tworing_far_geom)
     gs = [ctx.geometry(n) for n in names]
-    for (role, _f, _gf, _pre), name, g in zip(_lists(p.far_bound), names, gs):
+    for (role, _f, _gf, _pre), name, g in zip(required_lists(p.far_bound), names, gs):
         why = outline_problem(ctx, role, name, g, closed_note=CLOSED_NOTE)
         # THE SEAM'S BLANK CASE IS THIS FAMILY'S OWN, and is the only one of the
         # twelve refusals in that cascade that is: it is the geometry a user is most
@@ -155,7 +168,7 @@ def plan(model, ctx) -> Plan:
     stored = (model.tworing_body_segs, model.tworing_seam_segs,
               model.tworing_far_segs)
     held = []
-    for (role, _f, _gf, _pre), g, text in zip(_lists(p.far_bound), gs, stored):
+    for (role, _f, _gf, _pre), g, text in zip(required_lists(p.far_bound), gs, stored):
         ids, why = parse_binding(text, g.seg_ids, role)
         if why:
             p.problem = why
@@ -171,7 +184,7 @@ def plan(model, ctx) -> Plan:
     # length complaint raised before the resolve would name no edge and point at any
     # of three geometries.
     lists = tuple((row[0], g, segs, row[3])
-                  for row, g, segs in zip(_lists(p.far_bound), gs, held))
+                  for row, g, segs in zip(required_lists(p.far_bound), gs, held))
     p.broken_edge, p.problem = ring_binding_problem(ctx, lists, splits)
     if p.problem:
         return p
@@ -407,9 +420,9 @@ def broken_bindings(model, ctx) -> tuple:
     """
     # THE FAR FIELD's ROW GOES WITH IT when it is generated: there is no binding to
     # be broken, and a repair row for a geometry the user never named would be the
-    # panel inventing work. `_lists` is the one place that decision is made.
+    # panel inventing work. `far_is_bound` is where that is decided, once.
     return broken_in_ring_lists(model, ctx,
-                                _lists(bool(str(model.tworing_far_geom).strip())),
+                                required_lists(far_is_bound(model)),
                                 model.tworing_splits)
 
 
@@ -432,12 +445,12 @@ def preflight(model, ctx=None) -> tuple:
     if ctx is None:
         return no_context_refusal(
             "geometry", "the body, the seam and the far field")
-    far_bound = bool(str(model.tworing_far_geom).strip())
+    far_bound = far_is_bound(model)
     names = (model.tworing_body_geom, model.tworing_seam_geom,
              model.tworing_far_geom)
     gs = [ctx.geometry(n) for n in names]
     out = []
-    for (role, _f, _gf, _pre), name, g in zip(_lists(far_bound), names, gs):
+    for (role, _f, _gf, _pre), name, g in zip(required_lists(far_bound), names, gs):
         r = outline_refusal(ctx, role, name, g, closed_note=CLOSED_NOTE)
         if r is not None and role == SEAM_ROLE and not str(name or "").strip():
             r = Refusal(
@@ -451,7 +464,7 @@ def preflight(model, ctx=None) -> tuple:
     if out:
         return tuple(out)
     nested = nesting_refusal(tuple((row[0], g)
-                                   for row, g in zip(_lists(far_bound), gs)))
+                                   for row, g in zip(required_lists(far_bound), gs)))
     if nested:
         return nested
     return plan_refusal(plan(model, ctx).problem)

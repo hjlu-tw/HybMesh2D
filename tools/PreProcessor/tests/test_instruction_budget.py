@@ -510,10 +510,10 @@ Known remaining blind spots, stated rather than pretended away:
     figure whose anchor a reword moved to the wrong sentence would be rewritten there, and
     the exactly-once rule is the only thing standing between those two outcomes.
  d. `RULE_BUDGET` is a flat 60,000 with no ratchet, because #59 fixes the number.
-    20 rule files now — 59,992 / 59,780 / 59,600 / 59,523 / 56,405 / 55,838 / 41,250 / 37,516 / 30,991 / 25,539 / 23,846 / 23,361 / 22,126 / 20,568 / 20,397 / 16,993 / 15,762 / 12,718 / 8,969 / 7,543  characters (gui-topology, gui-handoff, mesher, mesher-multiblock, pipeline-case, mesher-smoothing, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, mesher-block-side, gui-canvas-edit, gui-apply, gui-evidence, gui-preflight, mesher-spacing, gui-results, gui-generated-boundary, gui-lifecycle, mesher-wall-freeze) — so "moving text into another rule file
+    20 rule files now — 59,992 / 59,780 / 59,600 / 59,523 / 56,802 / 56,405 / 41,250 / 37,516 / 30,991 / 25,539 / 23,846 / 23,361 / 22,126 / 21,018 / 20,568 / 16,993 / 15,762 / 12,718 / 8,969 / 8,201  characters (gui-topology, gui-handoff, mesher, mesher-multiblock, mesher-smoothing, pipeline-case, gui-panels-config, gui-dispositions, mesher-quality, gui-seams, mesher-block-side, gui-canvas-edit, gui-apply, gui-preflight, gui-evidence, mesher-spacing, gui-results, gui-generated-boundary, gui-lifecycle, mesher-wall-freeze) — so "moving text into another rule file
     is not a legal evasion" only bites for a move larger than the 8 / 220 of
     headroom the two large ones have left, and not at all for a move into any of the other
-    18, which have 400 / 477 / 3,595 / 4,162 / 18,750 / 22,484 / 29,009 / 34,461 / 36,154 / 36,639 / 37,874 / 39,432 / 39,603 / 43,007 / 44,238 / 47,282 / 51,031 / 52,457. #76 spent 3,446 of
+    18, which have 400 / 477 / 3,198 / 3,595 / 18,750 / 22,484 / 29,009 / 34,461 / 36,154 / 36,639 / 37,874 / 38,982 / 39,432 / 43,007 / 44,238 / 47,282 / 51,031 / 51,799. #76 spent 3,446 of
     pipeline-case's headroom moving the export rules in, and that is the first move in this
     series the flat budget could plausibly have refused: two more of that size would. #70's
     compression of that same file gave 263 of it back, which is the shape of the trade: a

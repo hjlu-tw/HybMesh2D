@@ -289,6 +289,15 @@ boundary. **[I]**
   of a converged elliptic solve and bend smoothly through the plate's ends and round the
   aerofoil's nose; ours are piecewise — a chord here, an arc there — and the curvature break shows
   in the Fig. 6.3 comparison.
+- **SHIPPED as `MB_SMOOTH_WALL_FREEZE`** (default 0, opt-in). It does what this proposal
+  asked — the wall first cell at freeze 1 is EXACTLY the unsmoothed figure in the table
+  above, with the mean non-orthogonality unchanged (4.792° → 4.799 on the 0012). Two things
+  the proposal did not anticipate: it costs **two more folded cells** on each aerofoil, and
+  on this repo's OWN shipped cases it is mostly a LOSS (six of seven worse, one by 263×),
+  because those are the cases the smoother's default was tuned on. The four configs here
+  still ship `MB_SMOOTH_ITERS 0` rather than `MB_SMOOTH_WALL_FREEZE 1`: changing them would
+  move committed figures all through this document, which is a re-measurement and not a
+  footnote. Rules: `.claude/rules/mesher-wall-freeze.md`.
 - **Proposal: a wall-layer freeze.** `.claude/rules/mesher-smoothing.md`'s control functions
   already *target* the first-cell position; what is missing is the option to **hold row 1 exactly**
   and let the solve relax only from row 2 outward. That would make the interior smooth (which is

@@ -60,7 +60,7 @@ from app.services import topology_genfar as genfar
 # gate already writes, and the split that moved them (#198) is a file-length
 # decision rather than a change of owner.
 from app.services.topology_ogrid_plan import (  # noqa: F401
-    INERT_WHEN_BOUND, RING_ADVICE_BELOW, Plan,
+    INERT_WHEN_BOUND, Plan,
 )
 from app.services.topology_ogrid_binding import (
     BINDING_LISTS, parse_binding, ring_binding_problem,

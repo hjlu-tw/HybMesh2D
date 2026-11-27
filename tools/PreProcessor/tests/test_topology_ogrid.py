@@ -954,7 +954,10 @@ if True:
     # The advice, over the BOUNDARY rather than at one value: a body just rounder
     # than the threshold is silent and one just thinner speaks. Without both, a
     # predicate that always fires — or never does — passes.
-    _below = og.RING_ADVICE_BELOW
+    # FROM ITS OWNER, not through a family's re-export: the threshold belongs
+    # to `ring_advice`, and reading it through `og.` was what let it live in a
+    # plan module that neither ring family owns.
+    _below = counts.RING_ADVICE_BELOW
     check(f"19b. a body just ROUNDER than the threshold gets no advice "
           f"({_below:.2f})", counts.ring_advice(_below + 1e-9, _below) == [])
     _said = counts.ring_advice(_below - 1e-9, _below)
@@ -970,6 +973,17 @@ if True:
     check("19b. ...which names the family that IS for this shape, so the reader is "
           "sent somewhere rather than told their body is wrong",
           "C-grid family" in _joined)
+    # THE FIGURE MUST BELONG TO THE FAMILY THE SENTENCE NAMES. #198 shipped 5.07
+    # here and called it "a C-grid's"; 5.07 is the hand-written rosette + H of
+    # `docs/research/allampalli-2010-reproductions.md` §5.4, which that note says
+    # outright is NOT a family — so the advisory named something the reader can
+    # select and quoted something they cannot produce. Three documents carried it.
+    # This check is what stops it drifting back: the C-grid family's own measured
+    # figures are 3.8 mean and 29.9 worst (`docs/research/our-cgrid-vs-gridpro.md`).
+    check(f"19b. ...and the figure it quotes is the NAMED FAMILY's own — 3.8, not "
+          f"the rosette-and-H's 5.07, which is not a family and which #198 shipped "
+          f"under the C-grid's name ({_joined[-90:]!r})",
+          "3.8" in _joined and "5.07" not in _joined and "5.1 " not in _joined)
     check("19b. ...and a circularity of 0 — a degenerate outline the caller has "
           "already refused for other reasons — says nothing, so this cannot become "
           "the message for an empty geometry",

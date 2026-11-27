@@ -13,16 +13,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services.topology_counts import MAX_COUNT, ring_advice
+from app.services.topology_counts import (  # noqa: F401
+    MAX_COUNT, RING_ADVICE_BELOW, ring_advice,
+)
 
-#: Below this circularity a RING is the wrong construction for the body, and the
-#: read-out says so (#198). 4*pi*A/P^2 is 1 for a circle and falls as an outline
-#: gets longer and thinner; measured on this repo's own bodies, the shipped circle
-#: is 0.9999, the 2:1 ellipse 0.8412, a NACA 0012 0.2468 and the flat plate 0.0307.
-#: 0.5 is the one value that puts the two round bodies on one side and the two thin
-#: ones on the other, and it is a TASTE boundary rather than a measured one -- which
-#: is why what it triggers is a sentence and not a refusal.
-RING_ADVICE_BELOW = 0.5
 
 
 #: The field-spec rows the GENERATED far field owns, which naming a far-field

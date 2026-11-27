@@ -19,9 +19,13 @@ So what this file holds is the chain the C++ gate structurally cannot reach:
 
   1. The key PARSES and REACHES the solve — the same shipped case at 0 and at 1
      produces measurably different meshes.
-  2. It does what it is for: the worst wall first cell, relative to the height
-     the declaration asked for, falls by more than a factor of five on a body
-     with a corner.
+  2. What it does to EVERY SHIPPED CASE THAT DECLARES A WALL HEIGHT — seven of
+     them, not one. The spec said "a measurement on the shipped cases" and the
+     first draft of this file measured exactly one, which is the difference
+     between a measurement and an example. The direction is NOT uniform and the
+     table this prints is the deliverable: on this repo's own cases the smoother
+     is mostly HELPING, so freezing is mostly a small loss. The research cases in
+     check 6 are where it reverses.
   3. **THE DEFAULT IS UNCHANGED**, which is the property every smoother ticket
      from #81 on has kept: writing the key with 0 is the same mesh as not
      writing it at all, node for node.
@@ -43,6 +47,16 @@ _REPO = os.path.abspath(os.path.join(_HERE, "..", "..", ".."))
 _BIN = os.path.join(_REPO, "build", "HybMesh2D")
 sys.path.insert(0, _HERE)
 from mesher_bin import mesher_env as _mesher_env               # noqa: E402
+# THE ONE PARSER and THE ONE NODE READER, imported rather than written again.
+# `qlines` matches the prefix WITH ITS TRAILING SPACE, which is not a detail here:
+# a SMOOTHED run — every run in this file — also prints
+# `HYBMESH_MB_QUALITY_BEFORE`, whose `cells=` tokens parse perfectly well and whose
+# numbers describe a mesh that was never exported. This file's first draft matched
+# with `in` and took the LAST line, so which of the two it read was decided by the
+# mesher's print order. That is the defect that parser's docstring exists about,
+# reached by copying instead of importing.
+from test_multiblock_quality_surface import qlines as _qlines   # noqa: E402
+from test_multiblock_weld_surface import vrt_nodes as _vrt      # noqa: E402
 
 #: The case this is measured on, and WHY it is not the circle: a smooth convex
 #: body is what the smoother's default was tuned on and it is already at 4.3e-05
@@ -60,10 +74,10 @@ def check(msg, cond):
         failures.append(msg)
 
 
-def run(tmp, tag, freeze, iters=20):
+def run(tmp, tag, freeze, iters=20, case=None):
     """The shipped case with one line appended, through the real binary."""
     out = os.path.join(tmp, tag)
-    with open(CASE, encoding="utf-8") as fh:
+    with open(case or CASE, encoding="utf-8") as fh:
         text = fh.read()
     lines = [ln for ln in text.splitlines()
              if not ln.strip().startswith(("OUTPUT_FILENAME", "MB_SMOOTH_ITERS",
@@ -78,37 +92,18 @@ def run(tmp, tag, freeze, iters=20):
     env = dict(_mesher_env(), HYBMESH_MB_QUALITY="1")
     p = subprocess.run([_BIN, "-conf", conf], cwd=_REPO, env=env,
                        capture_output=True, text=True, timeout=900)
-    q = {}
-    for ln in (p.stdout + p.stderr).splitlines():
-        if "HYBMESH_MB_QUALITY" in ln:
-            for tok in ln.split("HYBMESH_MB_QUALITY", 1)[1].split():
-                if "=" in tok:
-                    k, _, v = tok.partition("=")
-                    try:
-                        q[k] = float(v)
-                    except ValueError:
-                        pass
-    return p, out, q
+    rows = _qlines(p.stdout + p.stderr)
+    return p, out, (rows[-1] if rows else {})
 
 
 def nodes(stem):
     """The exported node coordinates, or [] when the run wrote none.
 
     `[]` rather than a raise, so a mutation that makes the mesher REFUSE reddens
-    the check it is about instead of crashing every check below it (#154).
+    the check it is about instead of crashing every check below it (#154) — which
+    is the ONE thing this adds over `vrt_nodes`, whose reader it otherwise is.
     """
-    path = stem + ".vrt"
-    if not os.path.exists(path):
-        return []
-    out = []
-    for ln in open(path, encoding="utf-8"):
-        parts = ln.split()
-        if len(parts) >= 4:
-            try:
-                out.append((float(parts[1]), float(parts[2])))
-            except ValueError:
-                pass
-    return out
+    return _vrt(stem) if os.path.exists(stem + ".vrt") else []
 
 
 if not os.path.exists(_BIN):
@@ -130,6 +125,56 @@ with tempfile.TemporaryDirectory() as tmp:
           f"anywhere else ({len(n0)} / {len(n1)} nodes)",
           bool(n0) and len(n0) == len(n1) and n0 != n1)
 
+    # ── 2. EVERY SHIPPED CASE THAT DECLARES A WALL HEIGHT ─────────────────
+    #
+    # Seven cases, printed as a table rather than reduced to one assertion: the
+    # key's effect is not uniform across them and a gate that asserted a single
+    # direction would be asserting something false. What IS asserted is the two
+    # things that must hold everywhere — every case still meshes, and the frozen
+    # run's wall height is EXACTLY its own unsmoothed one.
+    SHIPPED = [n for n in sorted(os.listdir(os.path.join(_REPO, "config")))
+               if n.startswith("multiblock_") and n.endswith(".dat")]
+    rows, all_meshed, all_exact = [], True, True
+    for name in SHIPPED:
+        path = os.path.join(_REPO, "config", name)
+        with open(path, encoding="utf-8") as fh:
+            if "BL_INITIAL_THICKNESS" not in fh.read():
+                continue        # no declared height, so nothing for this to hold
+        with tempfile.TemporaryDirectory() as t2:
+            pa, _sa, qa = run(t2, "a", 0, case=path)
+            pb, _sb, qb = run(t2, "b", 1, case=path)
+            pu, _su, qu = run(t2, "u", 0, iters=0, case=path)
+        a = qa.get("wall_first_cell_worst_rel")
+        b = qb.get("wall_first_cell_worst_rel")
+        u = qu.get("wall_first_cell_worst_rel")
+        rows.append((name, a, b, u))
+        if pa.returncode not in (0, 9) or pb.returncode not in (0, 9):
+            all_meshed = False
+        if a is None or b is None or u is None or abs(b - u) > 1e-6:
+            all_exact = False
+    print("      shipped case                      freeze 0   freeze 1   unsmoothed")
+    for name, a, b, u in rows:
+        if None in (a, b, u):
+            print(f"      {name:32s} (not measured)")
+            continue
+        print(f"      {name:32s} {a:9.6f}  {b:9.6f}  {u:9.6f}"
+              f"   {'LOSS' if b > a else 'win' if b < a else '='}")
+    check(f"2. all {len(rows)} shipped cases that declare a wall height still mesh "
+          f"at freeze 0 and freeze 1 — the spec asked for a measurement on the "
+          f"shipped CASES and the first draft of this file measured one",
+          len(rows) >= 5 and all_meshed)
+    _loss = sum(1 for _n, a, b, _u in rows if None not in (a, b) and b > a)
+    _win = sum(1 for _n, a, b, _u in rows if None not in (a, b) and b < a)
+    check(f"2. ...and on the SHIPPED set the freeze is mostly a LOSS — {_loss} of "
+          f"{len(rows)} worse, {_win} better — because these are the cases the "
+          f"smoother's default was tuned on. The rule file rests on this being "
+          f"non-uniform, so it is asserted rather than described",
+          _loss >= 1 and _win >= 1)
+    check("2. ...and on every one of them the frozen run's wall first cell is "
+          "EXACTLY its own unsmoothed figure, which is the mechanism rather than "
+          "a direction — the direction is not uniform and the table above is why",
+          all_exact)
+
     w0 = q0.get("wall_first_cell_worst_rel")
     w1 = q1.get("wall_first_cell_worst_rel")
     # ── 2. THE KEY IS NOT AN IMPROVEMENT. IT IS A CHOICE OF WHICH HEIGHT. ──
@@ -143,7 +188,7 @@ with tempfile.TemporaryDirectory() as tmp:
     # The gate asserts the loss rather than hiding it, because a check written as
     # "it improves" would have been RED here and the honest reading of that red
     # is not "the feature is broken".
-    check(f"2. on the SHIPPED C-grid the freeze is a small LOSS — {w0:.4f} of the "
+    check(f"2b. on the SHIPPED C-grid the freeze is a small LOSS — {w0:.4f} of the "
           f"declared height becomes {w1:.4f} — because here the smoother was "
           f"HELPING the wall. The key chooses which height you get, it does not "
           f"improve one.",
@@ -204,17 +249,8 @@ else:
                 [_BIN, "-conf", conf], cwd=_REPO, timeout=1800,
                 env=dict(_mesher_env(), HYBMESH_MB_QUALITY="1"),
                 capture_output=True, text=True)
-            q = {}
-            for ln in (pr_.stdout + pr_.stderr).splitlines():
-                if "HYBMESH_MB_QUALITY" in ln:
-                    for tok in ln.split("HYBMESH_MB_QUALITY", 1)[1].split():
-                        if "=" in tok:
-                            k, _, v = tok.partition("=")
-                            try:
-                                q[k] = float(v)
-                            except ValueError:
-                                pass
-            return pr_, q
+            rows_ = _qlines(pr_.stdout + pr_.stderr)
+            return pr_, (rows_[-1] if rows_ else {})
 
         pa, qa = research("a0", 0)
         pb, qb = research("a1", 1)

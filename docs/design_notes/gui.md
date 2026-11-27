@@ -3800,10 +3800,19 @@ blind spot in `.claude/rules/gui-generated-boundary.md`.
 **A RING ON A BODY A RING IS WRONG FOR — #198, measured 2026-11-27.** #197 left the O-grid
 able to build itself a far field, and the first thing anyone does with that is point it at
 an aerofoil. It works. It is also, measured, the wrong construction: mean non-orthogonality
-**14.84°** from a ring on a NACA 0012 at 24 blocks against **5.07°** from the rosette-and-H
-arrangement `docs/research/allampalli-2010-reproductions/make_airfoil.py` builds, with the
-SAME worst cell in both (81.8°, which is the sharp trailing edge and belongs to neither
-construction). The tool knew that and said nothing.
+**14.84°** from a ring on a NACA 0012 at 24 blocks against **3.8°** from this repo's own
+C-GRID FAMILY on the same section (`docs/research/our-cgrid-vs-gridpro.md`), whose worst cell
+is **29.9°** against the ring's **81.7**. The tool knew that and said nothing.
+
+**THE FIGURE #198 SHIPPED FIRST WAS THE WRONG CONSTRUCTION'S, and it was in user-facing text.**
+It quoted **5.07°** and called it "a C-grid's". 5.07 is the HAND-WRITTEN rosette + H that
+`docs/research/allampalli-2010-reproductions/make_airfoil.py` builds, and §5.4 of that note says
+outright that the arrangement is **not a family** — so the advisory named a family the reader can
+actually select and quoted a number produced by something they cannot. The clause beside it,
+"the same worst cell in both (81.8°)", was true of the rosette and FALSE of the C-grid family,
+whose max is 29.9. Three documents carried it. The correct number argues harder, which is the
+usual shape of this mistake: the wrong figure was not chosen because it flattered anything, it
+was the one that happened to be in the document being read at the time.
 
 **It is advice and not a refusal, and the line between them is whether the user can be
 WRONG.** The pre-flight refusals are for a drawing the family cannot mesh — no far field, a
@@ -3828,7 +3837,10 @@ there was whether a body fits inside an ellipse, and a summary statistic cannot 
 Here nothing is decided, so a summary statistic is the right instrument.
 
 Measured on this repo's own bodies: circle **0.9999**, 2:1 ellipse **0.8412**, NACA 0012
-**0.2468**, a 4.0 × 0.2 plate **0.0307**. The threshold is **0.5** — a factor of 1.7 from the
+**0.2468**, the research flat plate **0.0307** — that body is **1.01 × 0.01**, a 101:1
+strip, and NOT "a 4.0 × 0.2 plate", which #198 called it in three files and which is
+actually 0.142 as a rectangle and 0.123 as an ellipse; the threshold survives either
+reading and the LABEL was simply wrong. The threshold is **0.5** — a factor of 1.7 from the
 nearest body above it and 2.0 from the nearest below, which is why no decimal place was
 argued over. What those four cannot say is whether 0.5 is RIGHT; nothing this repo ships
 lands near it, so the band between 0.4 and 0.6 is untested and is a named blind spot rather

@@ -161,14 +161,20 @@ IS NOT A REFUSAL** (#198; `services/topology_counts.py::ring_advice`, carried by
   sampled circle reads slightly OVER 1 (the shipped 160-point circle: 0.9999). **That accuracy
   is enough because the number drives a SENTENCE and not a decision** — which is the same
   argument #165 lost by using an equivalent radius where containment was wanted, read the other
-  way round. Measured: circle 0.9999, 2:1 ellipse 0.8412, NACA 0012 0.2468, a 4.0 x 0.2 plate
-  0.0307. The threshold is **0.5** (`RING_ADVICE_BELOW`), which separates those four with the
+  way round. Measured: circle 0.9999, 2:1 ellipse 0.8412, NACA 0012 0.2468, the research flat
+  plate 0.0307 — that body is **1.01 x 0.01**, a 101:1 strip, and NOT "a 4.0 x 0.2 plate",
+  which #198 wrote three times and which is 0.142. The threshold is **0.5** (`RING_ADVICE_BELOW`), which separates those four with the
   nearest body a factor of 1.7 away on one side and 2.0 on the other.
 - **IT NAMES THE FAMILY THAT IS FOR THE SHAPE, AND A FIGURE FOR WHAT THE SWAP BUYS.** "Your body
   is not round" is not actionable; "the C-grid family is the one for a sharp-tailed section",
-  with #197's own measurement beside it — mean non-orthogonality **14.8 deg** from a ring on a
-  NACA 0012 against **5.1** from the rosette-and-H arrangement, the SAME worst cell (81.8, the
-  trailing edge) in both — is. Gate: 19b asserts the family is named, over the threshold's two
+  with the measurement beside it — mean non-orthogonality **14.8 deg** from a ring on a NACA
+  0012 against **3.8** from THIS REPO'S C-GRID FAMILY on the same section, whose worst cell is
+  **29.9** against the ring's **81.7** — is. **SUPERSEDES #198:** the figure quoted must be the
+  named family's own. #198 wrote **5.07** here and called it "a C-grid's"; that is the
+  HAND-WRITTEN rosette + H of `docs/research/allampalli-2010-reproductions.md` §5.4, which that
+  note says in as many words is not a family — and the "same worst cell in both" clause was true
+  of the rosette and false of the C-grid family.
+  Why: `docs/design_notes/gui.md`, "A RING ON A BODY A RING IS WRONG FOR". Gate: 19b asserts the family is named, over the threshold's two
   sides rather than at one value.
 - **A CIRCULARITY OF 0 SAYS NOTHING.** `ring_advice` is bounded `0 < circ < below`, so a
   degenerate or unreadable outline — which the caller has already refused for its own reasons —
@@ -179,11 +185,12 @@ IS NOT A REFUSAL** (#198; `services/topology_counts.py::ring_advice`, carried by
 
 ## Named blind spots
 
-- ~~**ONLY THE O-GRID MEASURES THIS.**~~ **CLOSED BY #199**, the ticket #198 said would
-  take it: the two-ring family's read-out calls the same `ring_advice`, and
+- **SUPERSEDES #198:** the two-ring family DOES measure this now — its read-out calls the
+  same `ring_advice`, and
   `tests/test_topology_tworing.py` 25i is what holds it there. Kept as a line rather than
   deleted because the shape is worth seeing — the ruler was put in `topology_counts` so
   the second caller would be one line, and the second caller still had to be WRITTEN.
+  Why: `docs/design_notes/gui.md`, "THE SAME DOOR, ONE FAMILY ALONG".
   **The C-grid and H-grid families still do not ask**, and for the C-grid that is correct
   (it is the family this advice SENDS people to); for the H-grid nobody has looked.
 - **THE THRESHOLD SEPARATES THE FOUR BODIES THIS REPO SHIPS AND NOTHING MORE.** 0.5 was

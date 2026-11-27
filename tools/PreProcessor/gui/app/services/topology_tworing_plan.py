@@ -10,13 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.services.topology_counts import MAX_COUNT, ring_advice
+from app.services.topology_counts import (
+    MAX_COUNT, RING_ADVICE_BELOW, ring_advice,
+)
 
-#: Below this circularity the read-out says a RING is the wrong construction for this
-#: body. :data:`topology_ogrid_plan.RING_ADVICE_BELOW`'s value and its whole argument,
-#: imported rather than restated so the two ring families cannot drift apart on what
-#: counts as thin. Re-exported here only so this module reads as one unit.
-from app.services.topology_ogrid_plan import RING_ADVICE_BELOW
 
 #: The two rows a NAMED far field makes inert (#199). The O-grid's mechanism and
 #: its direction: a row is inert because of what the user CONFIGURED, never because

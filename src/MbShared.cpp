@@ -271,13 +271,21 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh, bool slide,
                     bool nearWall = false;
                     for (int sd = 0; sd < 4 && !nearWall; ++sd) {
                         if (!isWall[bi][static_cast<size_t>(sd)]) continue;
-                        // SOUTH is j = 0, NORTH j = nj-1, WEST i = 0, EAST
-                        // i = ni-1 — `MbSide`'s own order, which `sidesAt` and
-                        // `perpWalls` both read the same way.
-                        const int d = (sd == MB_SOUTH) ? j
-                                    : (sd == MB_NORTH) ? (b.nj - 1 - j)
-                                    : (sd == MB_WEST)  ? i
-                                                       : (b.ni - 1 - i);
+                        // THE SIDE CONVENTION IS DATA AND IS READ, NEVER
+                        // RESTATED (`.claude/rules/mesher-quality.md`: "The
+                        // `[south, east, north, west]` convention is DATA, in
+                        // one place"). `mbSideAxis` answers exactly the two
+                        // questions this distance needs — which index the side
+                        // runs along, and whether it sits at that index's far
+                        // end — so the four cases are one expression over those
+                        // two bools. The first draft here was a fourth hand
+                        // encoding of the order, under a comment claiming
+                        // `perpWalls` restates it too; `perpWalls` does not, it
+                        // reads `mbSideAxis.alongI` like this does.
+                        const MbSideAxis ax = hybmesh::mbSideAxis(MbSide(sd));
+                        const int d = ax.alongI
+                            ? (ax.atFarEnd ? (b.nj - 1 - j) : j)
+                            : (ax.atFarEnd ? (b.ni - 1 - i) : i);
                         if (d <= wallFreeze) nearWall = true;
                     }
                     if (nearWall) continue;

@@ -5590,16 +5590,38 @@ property of the case, and **it goes both ways**:
 
 | case | freeze 0 | freeze 1 | folded cells |
 |---|---|---|---|
-| shipped C-grid | 0.10% | **0.44%** (worse) | 0 → 0 |
-| flat plate | 60.61% | **6.99%** | 0 → 0 |
-| NACA 0012 | 92.38% | **12.58%** | 4 → 6 |
-| NACA 64A010 | 93.18% | **14.10%** | 2 → 4 |
-| cylinder | 0.0043% | **0.0000%** | 0 → 0 |
+| flat plate (research) | 60.61% | **6.99%** | 0 → 0 |
+| NACA 0012 (research) | 92.38% | **12.58%** | 4 → 6 |
+| NACA 64A010 (research) | 93.18% | **14.10%** | 2 → 4 |
+| cylinder (research) | 0.0043% | **0.0000%** | 0 → 0 |
 
-The shipped C-grid is the one where the smoother was HELPING, so freezing gives that help
-up. Both figures there are negligible; the DIRECTION is the point, and the gate asserts it
-as a loss on purpose. A check written as "it improves" would be red on the shipped case,
-and the honest reading of that red is not "the feature is broken".
+**AND ON THE SHIPPED SET IT IS MOSTLY A LOSS — which this ticket only measured because the
+review asked.** The spec's words were "a measurement on the shipped **cases**"; the gate's
+first draft measured exactly ONE, generalised from it, and called the loss "small". Running
+all seven `config/multiblock_*.dat` cases that declare a wall height says otherwise: **six
+are worse frozen, one is better**, and `multiblock_cgrid_chain.dat` goes 0.000666 → 0.175201,
+a factor of **263** — which "small" does not survive.
+
+| shipped case | freeze 0 | freeze 1 | |
+|---|---|---|---|
+| `multiblock_cgrid.dat` | 0.000968 | 0.004368 | LOSS |
+| `multiblock_cgrid_chain.dat` | 0.000666 | **0.175201** | LOSS |
+| `multiblock_ogrid.dat` | 0.000371 | **0.000036** | win |
+| `multiblock_reducing.dat` | 0.000045 | 0.044834 | LOSS |
+| `multiblock_tworing.dat` | 0.000000 | 0.000171 | LOSS |
+| `multiblock_tworing_curve.dat` | 0.000000 | 0.037367 | LOSS |
+| `multiblock_tworing_offset.dat` | 0.000000 | 0.070625 | LOSS |
+
+That direction is not a surprise — these are the cases the smoother's default was tuned on —
+but it is the fact the key has to be described by: **it is for a drawing the smoother is
+failing, and this repo's own drawings are not that.** The gate therefore asserts the
+direction is non-uniform rather than asserting a direction, because a check saying "it
+improves" would be red on six of seven shipped cases and the honest reading of that red is
+not "the feature is broken".
+
+**THE GENERALISATION FROM ONE CASE IS THE LESSON, not the table.** One measurement, an
+adjective ("small"), and a rule file written from it — the spec said "cases" in the plural
+and the word was read past. What caught it was a reviewer quoting the spec line back.
 
 **THE INTERIOR STILL RELAXES.** Mean non-orthogonality on the 0012 is 4.792° at freeze 0
 against 4.799 at freeze 1 — within a hundredth of a degree, so the smoothing is not being
