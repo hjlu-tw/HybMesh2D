@@ -174,6 +174,25 @@ MESH_SPECS: tuple[FieldSpec, ...] = (
               "to the cases in this repo.",
               key="MB_SMOOTH_SLIDE", group="mode",
               modes=(MESH_MODE_MULTIBLOCK,)),
+    FieldSpec("mb_smooth_wall_freeze", "int", "Wall Rows Held",
+              "HOW MANY INTERIOR ROWS beside each wall the sweeps above may not "
+              "move, on top of the wall row itself, which is always frozen. The "
+              "row one step off the wall is the one whose distance IS the first-"
+              "cell height your BL_INITIAL_THICKNESS asked for; the sweeps only "
+              "TARGET that height, and on a body with a corner they lose. Held at "
+              "1 the wall keeps exactly the height the fill gave it while the "
+              "interior still gets every sweep. Measured on a NACA 0012 at 20 "
+              "sweeps: the worst wall first cell goes from 92.4% off the declared "
+              "height to 12.6%, which is the unsmoothed figure, with the mean non-"
+              "orthogonality unchanged (4.79 deg both ways) — at a cost of two more "
+              "folded cells, 4 to 6. On a flat plate it is 60.6% to 7.0% with no "
+              "folding either way and the WORST cell angle improving too, 56.1 to "
+              "52.9 deg. 0 is the default and is what has shipped: raising it "
+              "changes every multi-block mesh, so the run's before/after quality "
+              "report is the thing to read, not this description.",
+              key="MB_SMOOTH_WALL_FREEZE", group="mode",
+              modes=(MESH_MODE_MULTIBLOCK,),
+              opts=dict(lo=0, hi=1000)),
 
     # ── Domain & Geometry: the rectangular bounding box ──────────────────────
     # modes: the multi-block domain is bounded by the topology's own outer edges,

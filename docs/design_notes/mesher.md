@@ -5562,6 +5562,84 @@ Blind spots, named:
     of 20. The cap sweep above was run by hand and is a dated quotation, like #85's.
 
 
+**A ROW THAT CARRIES A DECLARATION** (#200, measured 2026-11-27). `MB_SMOOTH_WALL_FREEZE`,
+default 0. The fifth change to the smoother and the first to touch WHICH NODES it may
+move since #176.
+
+**WHERE IT CAME FROM, AND IT WAS NOT A BUG REPORT.** Reproducing eight published GridPro
+figures (`docs/research/allampalli-2010-reproductions.md` §5.3) measured all three
+non-circular cases as MEASURABLY WORSE at the shipped default of 20 sweeps: the worst wall
+first cell is 6.99% off the declared height unsmoothed on a flat plate and 60.61% off at
+20 sweeps; on a NACA 0012, 12.58% and 92.38%. All four committed research configs ship
+`MB_SMOOTH_ITERS 0` for that reason, which is giving up the interior smoothing to keep the
+wall — the trade this key removes.
+
+**THE TWO FREEZES ARE NOT THE SAME CLAIM, and keeping them separate is the whole design.**
+#83 froze the wall ROW because a node on a wall may not leave the DOMAIN. That is geometry.
+The row one step in is a DISCRETISATION: its distance from the wall IS the first-cell height
+the fill solved for by bisection, and the control functions only TARGET that height — they
+pull, the Winslow operator pulls back, and on a body with a corner the operator wins. Saying
+"the smoother does not respect the wall height" conflates the two; what it does not respect
+is a row that nothing holds.
+
+**WHAT IT ACTUALLY DOES IS CHOOSE WHICH HEIGHT YOU GET.** Not improve one. With the row held,
+the wall first cell is EXACTLY the unsmoothed figure — the gate asserts equality to 1e-6,
+not an inequality, because "better than before" is also what a stronger control function
+would give and that is a different mechanism. Which of the two heights is better is a
+property of the case, and **it goes both ways**:
+
+| case | freeze 0 | freeze 1 | folded cells |
+|---|---|---|---|
+| shipped C-grid | 0.10% | **0.44%** (worse) | 0 → 0 |
+| flat plate | 60.61% | **6.99%** | 0 → 0 |
+| NACA 0012 | 92.38% | **12.58%** | 4 → 6 |
+| NACA 64A010 | 93.18% | **14.10%** | 2 → 4 |
+| cylinder | 0.0043% | **0.0000%** | 0 → 0 |
+
+The shipped C-grid is the one where the smoother was HELPING, so freezing gives that help
+up. Both figures there are negligible; the DIRECTION is the point, and the gate asserts it
+as a loss on purpose. A check written as "it improves" would be red on the shipped case,
+and the honest reading of that red is not "the feature is broken".
+
+**THE INTERIOR STILL RELAXES.** Mean non-orthogonality on the 0012 is 4.792° at freeze 0
+against 4.799 at freeze 1 — within a hundredth of a degree, so the smoothing is not being
+handed back. That is what separates this key from `MB_SMOOTH_ITERS 0`, and it is asserted
+against the unsmoothed mesh of the same case rather than against a number.
+
+**THE COST IS FOLDED CELLS AND IT IS IN THE TABLE.** Holding a row stops the solve
+relieving the cells beside it: two more on each aerofoil. The flat plate folds nothing
+either way and its WORST cell angle improves as well, 56.07° → 52.91 → 51.36 at freeze 2.
+Freeze 2 gives the SAME wall height as freeze 1 — the first row sets it — at a slightly
+worse mean, so 1 is the value the measurements support and the key is not capped there
+because nothing measured says where it stops being useful.
+
+**TWO GATES, AND NEITHER IS REDUNDANT — which an injection round proved rather than
+argued.** `tests/cpp/test_multiblock.cpp` check 68 pins the PLAN: how many nodes are held at
+each setting, WHICH ones, that freeze 0 is the default argument's own plan node for node and
+in order, that the rule is keyed on a side being a WALL rather than on it being an edge of
+the block, and that the row then moves exactly zero while the interior moves. Four injections
+bite it. But `test_multiblock` links the PURE layer, so it compiles neither
+`include/Config.hpp` nor `src/cli.cpp` — and breaking the parse and breaking the wiring BOTH
+left that binary byte for byte identical. The harness only noticed because it hashes the
+binary; a harness counting reddened checks would have scored two real defects as inert. That
+is what `tools/PreProcessor/tests/test_mb_wall_freeze.py` exists for, and five config-path
+injections bite it.
+
+**AND A CHECK THAT MEASURED NOTHING, caught the same way as #199's.** 68e's first fixture was
+`square(9, 9)` — a UNIFORM grid, which is already the elliptic solution, so no node moves at
+either setting and every assertion passed on 0.000e+00 against 0.000e+00. Grading the two
+radial sides toward the south wall is what gives the operator something to undo. **A
+smoothing check on a mesh the smoother has no work to do on is green and empty**, and that
+is the third time in three tickets that a symmetric fixture hid the thing being measured.
+
+**ONE MORE THING THE ROUND FOUND, in the budget gate rather than here.** With the root file
+OVER its budget, `--sync` writes a NEGATIVE slack into `CLAUDE.md`, and the pattern check 7
+reads that figure with is `([\d,]+)`, which does not match a leading minus — so the anchor
+resolves zero times and check 7 dies on its own fixture assertion instead of saying the root
+is over. Re-band first and sync second, which is the order the rule at `ROOT_BUDGET` already
+implies. The pattern is deliberately left alone: widening it would make a figure that cannot
+legally exist readable.
+
 **A GRADED SIDE FACING A UNIFORM ONE** (#195, measured 2026-11-26). The rule
 `.claude/rules/mesher-multiblock.md` states in four words — *the COUNT propagates; the
 SPACING LAW does not* — is correct, is deliberate, and is a trap nothing used to say

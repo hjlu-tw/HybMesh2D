@@ -212,7 +212,23 @@ struct MbSmoothPlan {
 // The default argument is deliberate rather than convenient: every existing
 // caller asks the question this module has always answered, and spelling `false`
 // at each of them would say that something changed for them when nothing did.
-MbSmoothPlan mbSmoothPlan(const MbResult& mesh, bool slide = false);
+// `wallFreeze` HOLDS THAT MANY INTERIOR ROWS BESIDE EACH WALL, beyond the wall row
+// itself, which is already frozen and for a different reason (#200;
+// `MB_SMOOTH_WALL_FREEZE`). 0 is the shipped behaviour.
+//
+// THE TWO FREEZES ARE NOT THE SAME CLAIM. A wall node is frozen because moving it
+// would take it off the DOMAIN — that is geometry, and it is not negotiable. A node
+// one row in is frozen because its distance from the wall IS the first-cell height
+// the fill solved for, which is a DISCRETISATION the user asked for and which the
+// control functions only target. On a body with a corner the Winslow operator wins
+// that argument: 92.38% off the declared height on a NACA 0012 at the shipped cap.
+//
+// THE DISTANCE IS COUNTED IN THE BLOCK'S OWN INDEX FRAME from each of ITS wall
+// sides, out of the same `wallSpecs` the freeze rule above already walks — so a
+// node is held when its index distance from any wall side of the block the plan
+// reaches it through is at most `wallFreeze`.
+MbSmoothPlan mbSmoothPlan(const MbResult& mesh, bool slide = false,
+                          int wallFreeze = 0);
 
 }  // namespace hybmesh
 

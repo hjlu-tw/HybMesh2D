@@ -97,7 +97,8 @@ int sidesAt(const MbBlock& b, int i, int j, MbSide& only) {
 
 }  // namespace
 
-hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh, bool slide) {
+hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh, bool slide,
+                                            int wallFreeze) {
     MbSmoothPlan plan;
     const size_t nb = mesh.blocks.size();
     plan.frames.resize(nb);
@@ -253,6 +254,34 @@ hybmesh::MbSmoothPlan hybmesh::mbSmoothPlan(const MbResult& mesh, bool slide) {
                 if (on >= 2) continue;
                 const int id = b.nodeAt(i, j);
                 if (id < 0) continue;
+                // ── THE WALL-LAYER FREEZE (#200) ────────────────────────────
+                //
+                // ASKED OF EVERY NODE, not only of interior ones, and asked
+                // BEFORE the shared-side rules below rather than beside them.
+                // A node one row off a wall can also sit on a seam, and the two
+                // questions have different answers — "whose block moves this
+                // seam node" does not stop it from being the node that carries
+                // the declared first-cell height.
+                //
+                // `wallFreeze == 0` IS THE SHIPPED PATH AND COSTS NOTHING: the
+                // loop below does not run, so every golden case is byte for byte
+                // what it was. That is the property #81-#84 and #176 each kept,
+                // and it is what makes this change attributable.
+                if (wallFreeze > 0) {
+                    bool nearWall = false;
+                    for (int sd = 0; sd < 4 && !nearWall; ++sd) {
+                        if (!isWall[bi][static_cast<size_t>(sd)]) continue;
+                        // SOUTH is j = 0, NORTH j = nj-1, WEST i = 0, EAST
+                        // i = ni-1 — `MbSide`'s own order, which `sidesAt` and
+                        // `perpWalls` both read the same way.
+                        const int d = (sd == MB_SOUTH) ? j
+                                    : (sd == MB_NORTH) ? (b.nj - 1 - j)
+                                    : (sd == MB_WEST)  ? i
+                                                       : (b.ni - 1 - i);
+                        if (d <= wallFreeze) nearWall = true;
+                    }
+                    if (nearWall) continue;
+                }
                 const bool shared = (on == 1);
                 if (shared) {
                     // On a WALL side: the domain, not the discretisation.

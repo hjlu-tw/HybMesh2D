@@ -276,6 +276,9 @@ def config_to_text(cfg, path: str = "", topology_path: str = "") -> str:
     lines.append(f"MB_SMOOTH_ITERS {int(getattr(cfg, 'mb_smooth_iters', 0))}")
     lines.append(
         f"MB_SMOOTH_SLIDE {1 if getattr(cfg, 'mb_smooth_slide', False) else 0}")
+    lines.append(
+        f"MB_SMOOTH_WALL_FREEZE "
+        f"{int(getattr(cfg, 'mb_smooth_wall_freeze', 0))}")
     lines += [
         "",
         "# ==============================================================================",

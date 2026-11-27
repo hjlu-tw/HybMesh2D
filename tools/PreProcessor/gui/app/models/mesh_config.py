@@ -105,6 +105,12 @@ class MeshConfig(ConfigValidationMixin, GeomListMixin):
     # that C++ declaration, with the measurement that chose it: on every shipped
     # curved case sliding is a wash or a loss at the default cap.
     mb_smooth_slide: bool = False
+    # MB_SMOOTH_WALL_FREEZE: how many INTERIOR rows beside a wall the sweeps may
+    # not move, on top of the wall row itself. 0 is the shipped behaviour. The row
+    # one step off the wall carries the declared first-cell height, which the
+    # control functions only target; freezing it holds that height exactly while
+    # the interior still relaxes. See `include/Config.hpp` for the measurements.
+    mb_smooth_wall_freeze: int = 0
 
     # WHICH CASE TYPE JUDGES A RUN OF THIS CONFIGURATION (#169). A path, stored
     # repo-relative inside the repo and canonical-absolute outside, exactly as

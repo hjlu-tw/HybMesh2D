@@ -743,6 +743,7 @@ static int buildMultiBlockMesh(Mesh& mesh, Config& config,
     // existed.
     params.smoothIters = config.mbSmoothIters;
     params.smoothSlide = config.mbSmoothSlide;
+    params.smoothWallFreeze = config.mbSmoothWallFreeze;
 
     const hybmesh::MbResult res = hybmesh::buildMultiBlock(buf.str(), geoms, params);
     // Warnings are DATA on the way out of the seam; saying them is this layer's job.

@@ -187,6 +187,35 @@ struct Config {
     // a `bool` with the same default; the parity gate compares both.
     bool mbSmoothSlide = false;
 
+    // HOW MANY INTERIOR ROWS BESIDE A WALL THE SMOOTHER MAY NOT MOVE.
+    // `MB_SMOOTH_WALL_FREEZE`, 0 (the default and the behaviour that has shipped
+    // since #81) or a small positive count.
+    //
+    // At 0 only the wall ROW itself is frozen, which is #83's rule and is about
+    // the DOMAIN: a node on a wall may not leave it. The first INTERIOR row is
+    // what sets the wall's first-cell HEIGHT, and the control functions only
+    // TARGET it — they pull, the Winslow operator pulls back, and on a body with a
+    // corner the operator wins. Measured on the four reproductions in
+    // `docs/research/allampalli-2010-reproductions.md`: the worst wall first cell
+    // is 12.58% off the declared height unsmoothed on a NACA 0012 and 92.38% off
+    // at the shipped 20 sweeps, with six folded cells. At 1 that row is held
+    // EXACTLY and the solve relaxes from row 2 outward, so the interior gets the
+    // smoothing and the wall height is not spent paying for it.
+    //
+    // A COUNT AND NOT A BOOL, which is the one way it differs from the key above.
+    // The question "how far out does the declaration reach" has more than two
+    // answers: a boundary layer several cells deep is as declared as its first
+    // cell, and a user who wants the first three rows held should not have to
+    // choose between all of them and none. 1 is what the research cases want; the
+    // key is not capped at 1 because nothing measured says where it stops being
+    // useful.
+    //
+    // DEFAULT 0, following #81-#84 and #176: through five changes of the smoother
+    // the default stayed at the shipped behaviour and every pre-existing golden
+    // case was unchanged at each step, which is what makes each change
+    // attributable. Flipping it is a separate decision with its own acceptance run.
+    int mbSmoothWallFreeze = 0;
+
     // 預設參數值 (若檔案中未指定則使用)
     std::vector<std::string> geomFiles;
 
@@ -445,6 +474,7 @@ struct Config {
             else if (key == "MB_SPLIT_SEED") { double v; ss >> v; mbSplitSeed = static_cast<int>(v); }
             else if (key == "MB_SMOOTH_ITERS") { double v; ss >> v; mbSmoothIters = static_cast<int>(v); }
             else if (key == "MB_SMOOTH_SLIDE") { double v; ss >> v; mbSmoothSlide = (v != 0); }
+            else if (key == "MB_SMOOTH_WALL_FREEZE") { double v; ss >> v; mbSmoothWallFreeze = static_cast<int>(v); }
             else if (key == "DOMAIN_X_MIN") ss >> xMin;
             else if (key == "DOMAIN_X_MAX") ss >> xMax;
             else if (key == "DOMAIN_Y_MIN") ss >> yMin;
@@ -571,6 +601,13 @@ struct Config {
         // has no obviously right repair either. Clamping a negative one to 0 would
         // run no smoothing for someone who asked for some, which is a mesh nobody
         // asked for with nothing to look at.
+        if (mbSmoothWallFreeze < 0) {
+            LOG_ERROR("MB_SMOOTH_WALL_FREEZE " << mbSmoothWallFreeze
+                      << " is negative; it counts the interior rows beside a wall "
+                         "that the smoother may not move, so the smallest "
+                         "meaningful value is 0 (the wall row alone).");
+            ok = false;
+        }
         if (mbSmoothIters < 0) {
             LOG_ERROR("MB_SMOOTH_ITERS " << mbSmoothIters << " is negative; it caps "
                       "the elliptic smoother's sweeps over each multi-block block's "

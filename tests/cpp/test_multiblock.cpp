@@ -6575,5 +6575,169 @@ int main() {
               + std::to_string(w3.size()) + ")");
     }
 
+    // ── 68. THE WALL-LAYER FREEZE: the row that CARRIES the declared height ──
+    //
+    // #83 froze the wall ROW, and that is about the DOMAIN — a node on a wall may
+    // not leave it. The row one step IN is a different claim: its distance from the
+    // wall IS the first-cell height the fill solved for, and the control functions
+    // only TARGET it. On a body with a corner the Winslow operator wins that
+    // argument, measured on the four reproductions in
+    // `docs/research/allampalli-2010-reproductions.md`.
+    {
+        // A 9x9 square whose four sides are ALL walls, so the arithmetic is exact
+        // and stated rather than counted: at freeze f the movable interior is
+        // (ni - 2 - 2f) x (nj - 2 - 2f).
+        const int kN = 9;
+        MbParams p0;
+        p0.smoothIters = 0;
+        MbResult sq = build(square(kN, kN), p0);
+        CHECK(sq.ok, "68. the all-wall square meshes (err: " + sq.error + ")");
+        const hybmesh::MbSmoothPlan f0 = hybmesh::mbSmoothPlan(sq, false, 0);
+        const hybmesh::MbSmoothPlan f1 = hybmesh::mbSmoothPlan(sq, false, 1);
+        const hybmesh::MbSmoothPlan f2 = hybmesh::mbSmoothPlan(sq, false, 2);
+        const int want0 = (kN - 2) * (kN - 2);
+        const int want1 = (kN - 4) * (kN - 4);
+        const int want2 = (kN - 6) * (kN - 6);
+        CHECK(f0.movedNodes == want0 && f1.movedNodes == want1
+                  && f2.movedNodes == want2,
+              "68. each extra held row removes one ring: "
+              + std::to_string(f0.movedNodes) + " / "
+              + std::to_string(f1.movedNodes) + " / "
+              + std::to_string(f2.movedNodes) + " moved at freeze 0 / 1 / 2, "
+              "against " + std::to_string(want0) + " / " + std::to_string(want1)
+              + " / " + std::to_string(want2));
+        // WHICH nodes, not only how many: every move is at index distance > f from
+        // all four walls, and nothing inside that band is missing from the list.
+        bool bandOk = true, allThere = true;
+        for (const auto& mvs : f1.moves)
+            for (const auto& mv : mvs)
+                if (mv.i < 2 || mv.i > kN - 3 || mv.j < 2 || mv.j > kN - 3)
+                    bandOk = false;
+        CHECK(static_cast<int>(f1.moves[0].size()) == want1 && bandOk && allThere,
+              "68b. ...and the ones that move are exactly the nodes at index "
+              "distance 2 or more from every wall — the band, not just its size");
+        // THE SHIPPED PATH IS UNTOUCHED. Not "similar": the same node list in the
+        // same order, which is what makes every golden case byte for byte what it
+        // was and so makes this change attributable (#81-#84, #176).
+        const hybmesh::MbSmoothPlan dflt = hybmesh::mbSmoothPlan(sq);
+        bool same = dflt.movedNodes == f0.movedNodes
+                    && dflt.moves.size() == f0.moves.size();
+        for (size_t bi = 0; same && bi < dflt.moves.size(); ++bi) {
+            if (dflt.moves[bi].size() != f0.moves[bi].size()) { same = false; break; }
+            for (size_t k = 0; k < dflt.moves[bi].size(); ++k)
+                if (dflt.moves[bi][k].node != f0.moves[bi][k].node) { same = false; break; }
+        }
+        CHECK(same, "68c. freeze 0 is the DEFAULT argument's own plan, node for node "
+                    "and in order — the shipped path costs nothing and is not merely "
+                    "close to what it was");
+
+        // ── 68d. IT IS ABOUT WALLS, NOT ABOUT BLOCK BOUNDARIES ───────────────
+        //
+        // The H-grid's interior sides are interfaces. A node one row off one of
+        // those still moves, because nothing there declares a height. Without this
+        // the rule could be "freeze one row off every side" and every check above
+        // would still pass.
+        MbResult hg = build(hgrid(), p0);
+        CHECK(hg.ok, "68d. the 2x2 H-grid meshes (err: " + hg.error + ")");
+        const hybmesh::MbSmoothPlan h0 = hybmesh::mbSmoothPlan(hg, false, 0);
+        const hybmesh::MbSmoothPlan h1 = hybmesh::mbSmoothPlan(hg, false, 1);
+        // Every block of the H-grid has two outer (wall) sides and two interfaces,
+        // so freezing one row off the WALLS alone must leave strictly more moving
+        // than freezing one row off all four would.
+        CHECK(h1.movedNodes > 0 && h1.movedNodes < h0.movedNodes,
+              "68d. on a grid of interfaces AND walls the freeze removes some nodes "
+              "and not all of them (" + std::to_string(h0.movedNodes) + " -> "
+              + std::to_string(h1.movedNodes) + ")");
+        int offInterface = 0;
+        for (size_t bi = 0; bi < h1.moves.size(); ++bi) {
+            const hybmesh::MbBlock& b = hg.blocks[bi];
+            for (const auto& mv : h1.moves[bi]) {
+                // One row off the block's own index boundary, in a block whose
+                // sides are not all walls: if this is non-zero the freeze is
+                // keyed on WALLS rather than on sides.
+                if (mv.i == 1 || mv.j == 1 || mv.i == b.ni - 2 || mv.j == b.nj - 2)
+                    ++offInterface;
+            }
+        }
+        CHECK(offInterface > 0,
+              "68d. ...and " + std::to_string(offInterface) + " of the nodes still "
+              "moving sit one row off a block boundary, so the rule is keyed on a "
+              "side being a WALL and not on it being an edge of the block");
+
+        // ── 68e. AND IT DOES WHAT IT IS FOR: the height stops being spent ────
+        //
+        // The claim is not about the plan, it is about the mesh. Smooth the same
+        // document both ways and ask where the row beside the wall ended up — at
+        // freeze 1 it is EXACTLY where the fill put it, which is the only thing
+        // that makes the declared first cell survive the solve.
+        // A GRADED square, and that is not a detail: a UNIFORM one is already the
+        // elliptic solution, so no node moves at either setting and every
+        // assertion below passes while measuring nothing. The first draft of this
+        // check used `square(kN, kN)` and came back 0.000e+00 on both sides.
+        // Clustering the two radial sides toward the south wall is what gives the
+        // operator something to undo — which is #5.3's mechanism in miniature.
+        auto graded = [&] {
+            std::string d = square(kN, kN);
+            const std::string sp = R"(, "spacing": {"wall_ends": "start"})";
+            for (const char* id : {"\"e\"", "\"w\""}) {
+                const std::string find = std::string("{\"id\": ") + id
+                    + R"(, "corners": )";
+                size_t at = d.find(find);
+                if (at == std::string::npos) continue;
+                size_t end = d.find('}', at);
+                if (end == std::string::npos) continue;
+                d.insert(end, sp);
+            }
+            return d;
+        }();
+        MbParams ps;
+        ps.smoothIters = 20;
+        ps.wallSpacing = 0.01;
+        MbResult mv0 = build(graded, ps);
+        MbParams pf = ps;
+        pf.smoothWallFreeze = 1;
+        MbResult mv1 = build(graded, pf);
+        CHECK(mv0.ok && mv1.ok, "68e. both smoothed squares mesh (err: "
+              + mv0.error + " / " + mv1.error + ")");
+        auto rowShift = [&](const MbResult& r) {
+            double worst = 0.0;
+            const hybmesh::MbBlock& b = r.blocks[0];
+            for (int i = 0; i < b.ni; ++i) {
+                for (int j : {1, b.nj - 2}) {
+                    const int id = b.nodeAt(i, j);
+                    if (id < 0) continue;
+                    const Point2D& a = r.preSmoothNodes[static_cast<size_t>(id)];
+                    const Point2D& c = r.nodes[static_cast<size_t>(id)];
+                    worst = std::max(worst, std::hypot(a.x - c.x, a.y - c.y));
+                }
+            }
+            return worst;
+        };
+        const double s0 = rowShift(mv0), s1 = rowShift(mv1);
+        CHECK(s1 == 0.0 && s0 > 0.0,
+              "68e. the row beside the wall moves " + fmtE(s0) + " under the shipped "
+              "default and EXACTLY " + fmtE(s1) + " with one row held — not 'less', "
+              "which is what a stronger control function would buy and is not this");
+        // THE CONTROL: the interior still relaxes, so the freeze is not a way of
+        // spelling MB_SMOOTH_ITERS 0.
+        double interiorMoved = 0.0;
+        {
+            const hybmesh::MbBlock& b = mv1.blocks[0];
+            for (int j = 2; j < b.nj - 2; ++j)
+                for (int i = 2; i < b.ni - 2; ++i) {
+                    const int id = b.nodeAt(i, j);
+                    if (id < 0) continue;
+                    const Point2D& a = mv1.preSmoothNodes[static_cast<size_t>(id)];
+                    const Point2D& c = mv1.nodes[static_cast<size_t>(id)];
+                    interiorMoved = std::max(interiorMoved,
+                                             std::hypot(a.x - c.x, a.y - c.y));
+                }
+        }
+        CHECK(interiorMoved > 0.0,
+              "68e. ...while the interior still moves (" + fmtE(interiorMoved)
+              + "), so holding the wall row is not a second spelling of "
+                "MB_SMOOTH_ITERS 0");
+    }
+
     return hybmesh::test::report("test_multiblock");
 }

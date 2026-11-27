@@ -2198,7 +2198,8 @@ std::string fmtSci(double v) {
     return os.str();
 }
 
-void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps, bool slide) {
+void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps, bool slide,
+                    int wallFreeze) {
     r.preSmoothNodes = r.nodes;
     // The length the residual is expressed in. Taken from the mesh the solve
     // STARTS from, once, so a converging solve is not chasing a moving ruler.
@@ -2238,7 +2239,8 @@ void mbSmoothBlocks(hybmesh::MbResult& r, int maxSweeps, bool slide) {
     // TOPOLOGY, which no sweep changes. `include/MbShared.hpp` owns the freeze
     // rule, the ghost layer that continues a block's logical frame across a shared
     // edge, and the ownership rule that makes a shared node move exactly once.
-    const hybmesh::MbSmoothPlan plan = hybmesh::mbSmoothPlan(r, slide);
+    const hybmesh::MbSmoothPlan plan = hybmesh::mbSmoothPlan(r, slide,
+                                                             wallFreeze);
     r.smoothMoved = plan.movedNodes;
     r.smoothMovedShared = plan.movedShared;
     r.smoothMovedOnShape = plan.movedOnShape;
@@ -3610,7 +3612,8 @@ hybmesh::MbResult hybmesh::buildMultiBlock(const std::string& topologyJson,
     // which nodes move, why Jacobi, and what the three endings of a bounded
     // elliptic solve are. Here is only WHERE it runs.
     if (params.smoothIters > 0)
-        mbSmoothBlocks(r, params.smoothIters, params.smoothSlide);
+        mbSmoothBlocks(r, params.smoothIters, params.smoothSlide,
+                       params.smoothWallFreeze);
 
     // ── Split every block, and emit its boundary faces ────────────────────
     //

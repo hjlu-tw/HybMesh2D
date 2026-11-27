@@ -183,6 +183,23 @@ struct MbParams {
     // by arc length and sliding would spend it with no symptom; a declared corner
     // has no frame to move in. This key reaches interior lines only.
     bool smoothSlide = false;
+
+    // HOW MANY INTERIOR ROWS BESIDE A WALL ARE HELD, beyond the wall row itself.
+    // `MB_SMOOTH_WALL_FREEZE`, and 0 is the shipped behaviour.
+    //
+    // #83 froze the wall ROW because a node on a wall may not leave the domain.
+    // The row BESIDE it is a different claim and a weaker one: its distance from
+    // the wall IS the first-cell height the declaration solved for, and the
+    // control functions only pull it toward that height while the Winslow operator
+    // pulls it away. On a body with a corner the operator wins — 92.38% off on a
+    // NACA 0012 at the default cap. At 1 the row is held and the solve relaxes
+    // from row 2 outward.
+    //
+    // THE DISTANCE IS COUNTED IN A BLOCK'S OWN INDEX FRAME, from each of its WALL
+    // sides, which is the same `wallSpecs` list the freeze rule and the control
+    // targets already walk. A node is held when its index distance from any of
+    // them is at most this.
+    int smoothWallFreeze = 0;
 };
 
 // WHEN A BOUND EDGE's SAMPLE RATE IS WORTH TELLING THE USER ABOUT: the corner
