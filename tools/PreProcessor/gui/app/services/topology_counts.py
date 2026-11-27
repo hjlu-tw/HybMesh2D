@@ -64,3 +64,45 @@ def nodes_for_growth(span: float, first_cell: float, ratio: float) -> int:
         return 2
     n = math.log1p(span * (q - 1.0) / first_cell) / math.log(q)
     return max(2, min(MAX_COUNT, int(math.ceil(n)) + 1))
+
+
+def circularity(equivalent_radius: float, perimeter: float) -> float:
+    """``4*pi*A/P^2`` of a closed outline: 1 for a circle, less for anything else.
+
+    Taken from the EQUIVALENT RADIUS rather than from an area computed here, because
+    `GeomBinding.equivalent_radius` already owns that integral and states why it is
+    area-derived: a figure taken from the sampled points moves with the POINT COUNT,
+    so re-sampling a geometry would move it. ``A = pi * R^2`` by that definition, so
+    this is ``4 * pi^2 * R^2 / P^2`` and inherits the same stability.
+
+    THE PERIMETER DOES NOT INHERIT IT, and that is the limit of this number: a
+    polyline inscribed in a curve is shorter than the curve, so a coarsely sampled
+    circle reads slightly OVER 1. Measured on the shipped 160-point circle: 0.9999.
+    It is used for a sentence, not for a decision, which is the accuracy that buys.
+    """
+    if not (perimeter > 0.0):
+        return 0.0
+    return 4.0 * math.pi * (math.pi * equivalent_radius * equivalent_radius) \
+        / (perimeter * perimeter)
+
+
+def ring_advice(circ: float, below: float) -> list:
+    """The read-out's one line about a body a RING is the wrong construction for.
+
+    A SENTENCE AND NOT A REFUSAL. A ring around a thin body is legal, meshes, and is
+    what somebody may actually want; it is simply not the best construction this tool
+    has for that shape, and the family that is lives next door. Measured on a NACA
+    0012 at 24 blocks: mean non-orthogonality 14.84 deg from a ring against 5.07 from
+    the rosette-and-H arrangement the C-grid family builds toward, with the same worst
+    cell (81.8 deg, the sharp trailing edge) in both.
+
+    Returned as a LIST so the caller concatenates rather than branching, and empty
+    for a body the advice is not about -- which is most of them.
+    """
+    if not (0.0 < circ < below):
+        return []
+    return [f"shape: this body's circularity is {circ:.3f} (a circle is 1.000), so a "
+            f"RING is a poor fit — its radial lines leave a long flat surface at a "
+            f"shallow angle. Measured on a NACA 0012: mean non-orthogonality 14.8 deg "
+            f"from a ring against 5.1 from a C-grid's arrangement. The C-grid family "
+            f"is the one for a sharp-tailed section."]

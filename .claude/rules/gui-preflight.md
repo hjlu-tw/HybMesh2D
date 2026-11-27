@@ -6,6 +6,7 @@ paths:
   - tools/PreProcessor/gui/app/services/topology_cgrid*
   - tools/PreProcessor/gui/app/services/topology_tworing*
   - tools/PreProcessor/gui/app/services/topology_model*
+  - tools/PreProcessor/gui/app/services/topology_counts*
   - tools/PreProcessor/gui/app/controllers/mesh_gen_diag_ctrl*
 ---
 
@@ -27,9 +28,9 @@ file's remaining room is quoted here: it would be a number about another file th
 re-measures, which is the staleness `test_instruction_budget.py` check 7 exists against.
 
 **THIS FILE OVERLAPS `gui-topology.md` RATHER THAN PARTITIONING IT**, which is the shape #85, #89
-and #153 all took. Six of its seven globs are that file's as well, so a session reading
+and #153 all took. Seven of its eight globs are that file's as well, so a session reading
 `services/topology_ogrid.py` loads BOTH and needs both: what the family BUILDS is there, what it
-REFUSES is here. The seventh, `controllers/mesh_gen_diag_ctrl*`, is reached by no rule file's globs
+REFUSES is here. The eighth, `controllers/mesh_gen_diag_ctrl*`, is reached by no rule file's globs
 but `gui-seams.md`'s tree-wide one, which carries no rule about it.
 
 **These rules also govern files OUTSIDE the globs above, which cannot hand a reader the text**:
@@ -143,8 +144,51 @@ makes each of those reachable.
   check already has: assert the old answer accepted it, assert the new refusal names it, and run the
   real binary to show what the operator would otherwise have been told.
 
+**A FAMILY MAY ALSO SAY "THIS WILL WORK AND IT IS NOT THE RIGHT TOOL". THAT IS ADVICE, AND IT
+IS NOT A REFUSAL** (#198; `services/topology_counts.py::ring_advice`, carried by
+`services/topology_ogrid_plan.py::Plan.lines`)
+
+- **THE DISTINCTION IS WHETHER THE USER CAN BE WRONG.** A refusal here is for a drawing the
+  family CANNOT mesh — no far field, a body outside it, a count that will not divide. A ring
+  around an aerofoil is none of those: it meshes, it is legal, and somebody may want exactly it.
+  **So it plans, it builds, and the read-out gains ONE LINE.** Never promote this to a refusal
+  and never let it set `Plan.problem`. Gate: `tests/test_topology_ogrid.py` 19c, which asserts
+  the same model still builds while the advice is showing.
+- **THE RULER IS CIRCULARITY, `4*pi*A/P^2`, AND IT IS TAKEN FROM THE EQUIVALENT RADIUS.** Not
+  from an area computed in the advisory: `GeomBinding.equivalent_radius` already owns that
+  integral and is area-derived precisely so that re-sampling a geometry does not move it, and
+  `A = pi*R^2` by that definition. The PERIMETER does not inherit that stability, so a coarsely
+  sampled circle reads slightly OVER 1 (the shipped 160-point circle: 0.9999). **That accuracy
+  is enough because the number drives a SENTENCE and not a decision** — which is the same
+  argument #165 lost by using an equivalent radius where containment was wanted, read the other
+  way round. Measured: circle 0.9999, 2:1 ellipse 0.8412, NACA 0012 0.2468, a 4.0 x 0.2 plate
+  0.0307. The threshold is **0.5** (`RING_ADVICE_BELOW`), which separates those four with the
+  nearest body a factor of 1.7 away on one side and 2.0 on the other.
+- **IT NAMES THE FAMILY THAT IS FOR THE SHAPE, AND A FIGURE FOR WHAT THE SWAP BUYS.** "Your body
+  is not round" is not actionable; "the C-grid family is the one for a sharp-tailed section",
+  with #197's own measurement beside it — mean non-orthogonality **14.8 deg** from a ring on a
+  NACA 0012 against **5.1** from the rosette-and-H arrangement, the SAME worst cell (81.8, the
+  trailing edge) in both — is. Gate: 19b asserts the family is named, over the threshold's two
+  sides rather than at one value.
+- **A CIRCULARITY OF 0 SAYS NOTHING.** `ring_advice` is bounded `0 < circ < below`, so a
+  degenerate or unreadable outline — which the caller has already refused for its own reasons —
+  does not collect this sentence as well. Gate: 19b, with the open bound as its injection.
+- **IT IS ABOUT THE BODY, SO IT DOES NOT DEPEND ON WHICH FAR-FIELD PATH IS IN FORCE** (drawn or
+  generated, `.claude/rules/gui-generated-boundary.md`). Gate: 19d.
+  Why: `docs/design_notes/gui.md`, "A RING ON A BODY A RING IS WRONG FOR".
+
 ## Named blind spots
 
+- **ONLY THE O-GRID MEASURES THIS, AND THE OTHER RING FAMILY HAS THE SAME PROBLEM.** The
+  two-ring family builds a ring too and says nothing about a body it suits no better. #198
+  put the ruler in `topology_counts` rather than in the O-grid precisely so the second
+  caller is one line, and then did not add it, because that family's own read-out was being
+  changed in the same breath by another ticket and two edits to one `lines()` is how a
+  sentence gets lost.
+- **THE THRESHOLD SEPARATES THE FOUR BODIES THIS REPO SHIPS AND NOTHING MORE.** 0.5 was
+  chosen from four measurements, all of them this tool's own fixtures; no body was found
+  that sits NEAR it, so nothing says whether the advice is right at 0.45 or wrong at 0.55.
+  A body landing there would be the evidence, and there is none.
 - **NOTHING HERE RE-ASKS WHAT THE MESHER ASKS.** The two sides are held at opposite ends — check 6c
   proves the mesher refuses the one document this ticket's new check catches — and nothing asserts
   that the two refuse the SAME set of drawings. A drawing both accept that still folds is the next

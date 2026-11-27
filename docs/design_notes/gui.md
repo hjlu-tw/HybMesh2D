@@ -1559,7 +1559,7 @@ Three decisions inside that gate were bought rather than assumed:
   run killed between the write and its `finally` cannot leave an importable module behind, and the
   name is in `.gitignore` so such a leftover cannot be committed.
 
-The status figure the instruction files print about this standard (4 of 313, worst 520) is DERIVED
+The status figure the instruction files print about this standard (4 of 314, worst 520) is DERIVED
 from the same walk that ENFORCES it, in all three files that state it — this one, the root and
 `.claude/rules/gui-seams.md`, which lists every offender by name (#101). The 44/35 history
 count deliberately is NOT gated —
@@ -3716,6 +3716,7 @@ with no file anywhere, and its nodes are placed on that curve at exact arc lengt
 is "a generated thing cannot be a stored polyline", and an analytic outer boundary falls on the
 legal side of it** — where the C-grid has been since #149. The rule did not bend; it was read.
 
+
 **ONE ELLIPSE, AND THE REASON IS THE BLOCK COUNT BEFORE IT IS THE QUALITY.** A ring's outer
 corners are placed one per block, so on a RECTANGLE some block side cuts across a corner unless
 the count happens to put one at each of the four. An ellipse has no corners, so every count lands
@@ -3795,6 +3796,60 @@ reverted branch is recorded because its injection round found the hole that surv
 classifying a dimensionless field as `SIZE` passes every assertion that gate has, since whether a
 number carries a dimension is a judgement and not a fact the field-spec row records. It is a named
 blind spot in `.claude/rules/gui-generated-boundary.md`.
+
+**A RING ON A BODY A RING IS WRONG FOR — #198, measured 2026-11-27.** #197 left the O-grid
+able to build itself a far field, and the first thing anyone does with that is point it at
+an aerofoil. It works. It is also, measured, the wrong construction: mean non-orthogonality
+**14.84°** from a ring on a NACA 0012 at 24 blocks against **5.07°** from the rosette-and-H
+arrangement `docs/research/allampalli-2010-reproductions/make_airfoil.py` builds, with the
+SAME worst cell in both (81.8°, which is the sharp trailing edge and belongs to neither
+construction). The tool knew that and said nothing.
+
+**It is advice and not a refusal, and the line between them is whether the user can be
+WRONG.** The pre-flight refusals are for a drawing the family cannot mesh — no far field, a
+body outside it, a count that will not divide — and each names what to change. A ring around
+an aerofoil is in none of those categories: it meshes, it is legal, and somebody may want
+exactly it, for a wake they intend to resolve radially or because it is what their solver
+expects. Promoting this to a refusal would take a legal construction away on the strength of
+one quality figure. So the family plans, builds, and the derivation read-out gains one line.
+
+**The ruler is circularity, `4πA/P²`, and it is taken from the EQUIVALENT RADIUS rather than
+from an area computed in the advisory.** `GeomBinding.equivalent_radius` already owns that
+integral, and the reason it is area-derived is written at its own definition: a figure taken
+from the sampled points moves with the POINT COUNT, so re-sampling a geometry would move it.
+`A = πR²` by that definition, which makes this `4π²R²/P²` and inherits the stability.
+
+The PERIMETER does not inherit it, and that is this number's honest limit — a polyline
+inscribed in a curve is shorter than the curve, so a coarsely sampled circle reads slightly
+OVER 1. The shipped 160-point circle reads **0.9999**. That is accurate enough because the
+number drives a SENTENCE and not a decision, which is the same argument #165 lost by reaching
+for an equivalent radius where CONTAINMENT was wanted, read the other way round: the question
+there was whether a body fits inside an ellipse, and a summary statistic cannot answer it.
+Here nothing is decided, so a summary statistic is the right instrument.
+
+Measured on this repo's own bodies: circle **0.9999**, 2:1 ellipse **0.8412**, NACA 0012
+**0.2468**, a 4.0 × 0.2 plate **0.0307**. The threshold is **0.5** — a factor of 1.7 from the
+nearest body above it and 2.0 from the nearest below, which is why no decimal place was
+argued over. What those four cannot say is whether 0.5 is RIGHT; nothing this repo ships
+lands near it, so the band between 0.4 and 0.6 is untested and is a named blind spot rather
+than a tuned value.
+
+**What the sentence had to contain to be worth printing.** "Your body is not round" is not
+actionable, and a read-out line nobody can act on is noise that trains the reader to skip the
+read-out. It names the family that IS for the shape (the C-grid, for a sharp-tailed section)
+and the figure for what the swap buys (14.8 against 5.1), so the reader can decide whether
+8 degrees of mean non-orthogonality is worth changing families over. That is a judgement the
+tool should not make for them and should not hide from them either.
+
+**What the gate round found, and it was in the gate.** The eight injections all bit, and one
+of them bit the wrong way: with the advice injected away, check 19b's own MESSAGE indexed
+`_said[0]`, raised inside the f-string, and took the harness down at that line — so every
+check below it was skipped while the run printed one tidy failure, and the injection report
+scored it as a hit. A check must fail ON the thing it is about, not stop the suite; the
+message now builds from the joined list. A ninth injection came back INERT and is kept as a
+NEGATIVE CONTROL rather than fixed: dropping only the sentence's last clause leaves "The
+C-grid family" standing, so the sentence still names the family and nothing should redden.
+See `.claude/rules/gui-preflight.md` for the rules this produced.
 
 **#150's OWN QUESTION ARRIVED, AND THE ANSWER IS THAT THE RULE HOLDS.** #150 wrote: *"If a later
 family wants an offset the user never sees, that is a finding about this decision and should be

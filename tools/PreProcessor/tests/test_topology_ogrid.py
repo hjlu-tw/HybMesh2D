@@ -154,6 +154,7 @@ def check(msg, cond):
 # it would be a second `.meta` format, and the format is what the binding rule rests
 # on.
 from topology_outline_fixture import write_outline  # noqa: E402
+from app.services import topology_counts as counts  # noqa: E402
 from app.services import topology_genfar as genfar  # noqa: E402
 
 
@@ -913,6 +914,95 @@ if os.path.exists(_BIN):
               0.0 < _mg <= _md * 1.10)
 else:
     print("SKIP 18h. %s not built" % _BIN)
+
+# ── 19. A RING IS THE WRONG CONSTRUCTION FOR A THIN BODY, AND THE READ-OUT
+#       SAYS SO (#198) ────────────────────────────────────────────────────
+#
+# A SENTENCE AND NOT A REFUSAL: a ring around an aerofoil is legal, meshes, and is
+# what somebody may actually want. What it is not is the best construction this
+# tool has for that shape, and the family that is lives next door. #197's own
+# measurement is the reason this exists — 14.84 deg mean from a ring on a NACA 0012
+# against 5.07 from the rosette-and-H arrangement, with the SAME worst cell.
+if True:
+    import math as _m19
+
+    def _circ(a, b, n=2000):
+        """4*pi*A/P^2 of an ellipse, from its own closed form and polygon."""
+        pts = [(a * _m19.cos(2 * _m19.pi * k / n), b * _m19.sin(2 * _m19.pi * k / n))
+               for k in range(n)]
+        per = sum(_m19.hypot(pts[(k + 1) % n][0] - pts[k][0],
+                             pts[(k + 1) % n][1] - pts[k][1]) for k in range(n))
+        return 4.0 * _m19.pi * (_m19.pi * a * b) / (per * per)
+
+    # The measure itself, against a closed form rather than against itself.
+    _r_circ = counts.circularity(0.5, 2.0 * _m19.pi * 0.5)
+    check(f"19. the measure is 1 for a circle, computed from the equivalent radius "
+          f"and the perimeter ({_r_circ:.6f})", abs(_r_circ - 1.0) < 1e-9)
+    # A 2:1 ellipse: equivalent radius sqrt(a*b), perimeter from its own polygon.
+    _a19, _b19 = 1.0, 0.5
+    _n19 = 2000
+    _p19 = sum(_m19.hypot(_a19 * _m19.cos(2 * _m19.pi * (k + 1) / _n19)
+                          - _a19 * _m19.cos(2 * _m19.pi * k / _n19),
+                          _b19 * _m19.sin(2 * _m19.pi * (k + 1) / _n19)
+                          - _b19 * _m19.sin(2 * _m19.pi * k / _n19))
+               for k in range(_n19))
+    _got19 = counts.circularity(_m19.sqrt(_a19 * _b19), _p19)
+    check(f"19. ...and {_got19:.4f} for a 2:1 ellipse, which is that ellipse's own "
+          f"4*pi*A/P^2 ({_circ(_a19, _b19):.4f})",
+          abs(_got19 - _circ(_a19, _b19)) < 1e-6)
+
+    # The advice, over the BOUNDARY rather than at one value: a body just rounder
+    # than the threshold is silent and one just thinner speaks. Without both, a
+    # predicate that always fires — or never does — passes.
+    _below = og.RING_ADVICE_BELOW
+    check(f"19b. a body just ROUNDER than the threshold gets no advice "
+          f"({_below:.2f})", counts.ring_advice(_below + 1e-9, _below) == [])
+    _said = counts.ring_advice(_below - 1e-9, _below)
+    # The message is built from the WHOLE list and never from `_said[0]`: when the
+    # advice is missing — which is exactly what an injection here produces — indexing
+    # it raises inside the message, the harness stops at this line, and every check
+    # below is skipped while the run still reports one tidy failure. An injection
+    # round scored that as a hit. A check must FAIL on the thing it is about, not
+    # take the suite down with it.
+    _joined = " ".join(_said)
+    check(f"19b. ...and one just THINNER gets exactly one line "
+          f"({len(_said)}: {_joined[:50]!r})", len(_said) == 1)
+    check("19b. ...which names the family that IS for this shape, so the reader is "
+          "sent somewhere rather than told their body is wrong",
+          "C-grid family" in _joined)
+    check("19b. ...and a circularity of 0 — a degenerate outline the caller has "
+          "already refused for other reasons — says nothing, so this cannot become "
+          "the message for an empty geometry",
+          counts.ring_advice(0.0, _below) == [])
+
+    # On the REAL bodies, through the real plan, on both far-field paths.
+    _af19 = os.path.join(_REPO, "examples", "geometries", "naca0012_cgrid.dat")
+    _cb19 = os.path.join(_REPO, "examples", "geometries", "circle_body.dat")
+    for _name, _body, _splits, _want in (("aerofoil", _af19, 12, True),
+                                         ("circle", _cb19, 3, False)):
+        _c19 = tb.context_for_config(Cfg([_body], first_cell=1.5e-3))
+        _m19m = tm.TopologyModel(family=og.FAMILY, ogrid_body_geom=_body,
+                                 ogrid_far_geom="", ogrid_splits=_splits,
+                                 ogrid_cell=0.02, ogrid_far_ratio=20.0)
+        _pl19 = og.plan(_m19m, _c19)
+        _has = any("circularity" in ln for ln in _pl19.lines())
+        check(f"19c. the shipped {_name} (circularity {_pl19.circularity:.4f}) "
+              f"{'gets' if _want else 'does not get'} the advice, through the real "
+              f"plan", (not _pl19.problem) and _has == _want)
+        if _want:
+            check(f"19c. ...and it is ADVICE, not a refusal: the same model still "
+                  f"plans and builds ({len(og.build(_m19m, _c19)['blocks'])} blocks)",
+                  not _pl19.problem and len(og.build(_m19m, _c19)["blocks"]) > 0)
+
+    # And it is about the BODY, so a drawn far field does not silence it.
+    _b4, _f4 = FIX["4seg"]
+    _c19b = tb.context_for_config(Cfg([_af19, _f4], first_cell=1.5e-3))
+    _pl19b = og.plan(tm.TopologyModel(family=og.FAMILY, ogrid_body_geom=_af19,
+                                      ogrid_far_geom="", ogrid_splits=12,
+                                      ogrid_cell=0.02, ogrid_far_ratio=20.0), _c19b)
+    check("19d. the advice is about the BODY, so it does not depend on which "
+          "far-field path is in force",
+          any("circularity" in ln for ln in _pl19b.lines()))
 
 print()
 if failures:
