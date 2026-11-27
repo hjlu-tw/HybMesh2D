@@ -2,6 +2,16 @@
 
 Issues and specs for this repo live as GitHub issues in **`hjlu-tw/HybMesh2D`**. Use the `gh` CLI for all operations.
 
+## Before you follow a `#N`: it may not be a tracker number
+
+Work done without filing a ticket first takes a number the session guessed, and the tracker
+later issues that number to something else. **`docs/agents/issue-number-map.md` lists every
+such number in this tree; check it before `gh issue view <N>`.** As of 2026-11-27 six
+numbers are affected and every one of them resolves to a real but wrong issue.
+
+**When you write a `#N`, get it from `gh issue create` or `gh issue view` — never from
+counting.** If the ticket does not exist yet, file it or name the work in words instead.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
